@@ -21,6 +21,30 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2025-12-29
 
+### Session: Supporting Libraries & Final Tech Decisions
+
+Completed all technical decisions for the MVP stack.
+
+**Decisions Made:**
+- **Next.js 16** - Updated from 15, with `proxy.ts`, `"use cache"`, Turbopack, React 19.2
+- **API Layer:** tRPC v11 with new TanStack Query v5 integration
+- **UI:** shadcn/ui (Base UI), Lucide icons, Sonner toasts
+- **Forms:** TanStack Form + Zod validation
+- **Testing:** Vitest + @testing-library/react (unit), Playwright (E2E)
+- **Linting:** ESLint + Prettier
+- **Utilities:** date-fns, superjson
+- **Glacier-first storage** - All files go to Glacier by default
+
+**Files Modified:**
+- `docs/architecture/tech-stack.md` - Added Supporting Libraries section, updated Testing
+- `docs/ai/context.md` - Added all library decisions, updated file locations for tRPC
+- `docs/guides/nextjs-patterns.md` - Updated for Next.js 16 (`proxy.ts`, `"use cache"`)
+- `CLAUDE.md` - Updated stack to Next.js 16, added key decisions
+
+**Why:** Final review of all technical choices before starting implementation. Chose tools that work well together (TanStack ecosystem, shadcn + Tailwind, Drizzle + Zod).
+
+---
+
 ### Session: Monorepo & Infrastructure Decisions
 
 Documented monorepo structure and infrastructure-as-code decisions.

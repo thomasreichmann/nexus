@@ -39,7 +39,7 @@ Technology choices and rationale for the Nexus MVP.
 
 **Build:**
 - Turbopack (default bundler, 10x faster dev)
-- Biome or ESLint for linting (next lint removed)
+- ESLint + Prettier for linting/formatting
 
 **Development:** AI-assisted (Cursor/Claude Code)
 
@@ -50,15 +50,10 @@ Technology choices and rationale for the Nexus MVP.
 - Real-time capabilities
 - Row-level security
 
-**ORM:** Drizzle or Prisma (pending decision)
-
 ### Storage: AWS S3
 
-- **S3 Standard** - for frequently accessed files
-- **S3 Glacier Deep Archive** - for cold storage
-
-> [!note] Storage Tiers
-> The exact logic for when files transition from Standard to Deep Storage is still being defined. Key factors: access patterns, retrieval time requirements, and cost optimization.
+- **S3 Glacier Deep Archive** - default for all files (Glacier-first strategy)
+- Users don't see storage tiers - all files have retrieval time
 
 ### Payments: Stripe
 
@@ -73,9 +68,13 @@ Technology choices and rationale for the Nexus MVP.
 - Edge network
 - Preview deployments
 
-### Testing: Playwright
+### Testing
 
-E2E testing framework for automation.
+- **Vitest** - Unit testing (with @testing-library/react for components)
+- **Playwright** - E2E testing
+- **tRPC procedure mocks** - API mocking
+- File naming: `*.test.ts` (unit), `*.spec.ts` (E2E)
+- Test location: Colocated with source files
 
 ### Monorepo Tooling
 
@@ -109,16 +108,34 @@ Utility-first CSS framework for rapid UI development.
 
 Chunked upload approach for reliability with large files. Core feature requiring polish - different strategies may be needed for different file sizes.
 
-### Storage Strategy: Glacier-First
-
-Default all files to Glacier. Users don't need to know about storage tiers - from their perspective, all files have retrieval time. This simplifies the mental model and maximizes cost savings.
-
 ### ORM: Drizzle
 
 Lightweight, TypeScript-native ORM with SQL-like syntax. Chosen for:
 - Pure TypeScript (no separate schema language)
 - SQL-like queries (AI-friendly, transferable knowledge)
 - Lightweight bundle (~50kb vs Prisma's ~2MB)
+
+## Supporting Libraries
+
+### API Layer
+
+- **tRPC v11** - End-to-end typesafe APIs
+- **TanStack Query v5** - Data fetching (via tRPC integration)
+- New TanStack-native integration pattern (not classic wrapper)
+- `createCaller` for Server Components, hooks for Client Components
+
+### UI & Components
+
+- **shadcn/ui** - Component library (with Base UI primitives)
+- **Lucide** - Icon library
+- **Sonner** - Toast notifications
+- **TanStack Form** - Form handling
+- **Zod** - Schema validation (integrates with Drizzle via drizzle-zod)
+
+### Utilities
+
+- **date-fns** - Date formatting and manipulation
+- **superjson** - Serialization for tRPC
 
 ## Related
 

@@ -19,9 +19,7 @@ Detailed background for AI to understand the Nexus project deeply.
 
 ## What is Nexus?
 
-Nexus is a **deep storage solution** that helps users store files cost-effectively using AWS S3's tiered storage:
-- **Hot storage** (S3 Standard) - frequently accessed files
-- **Cold storage** (S3 Glacier/Deep Archive) - rarely accessed, very cheap
+Nexus is a **deep storage solution** that helps users store files cost-effectively using AWS S3 Glacier. All files go directly to cold storage - users understand upfront that retrieval takes time.
 
 Think of it as "Dropbox for archival" - users upload files they want to keep long-term but don't need instant access to.
 
@@ -62,8 +60,9 @@ Think of it as "Dropbox for archival" - users upload files they want to keep lon
 
 ### Storage
 - **AWS S3** for file storage
-- Standard tier → Glacier transition based on access patterns
+- Glacier-first strategy (all files go to Glacier by default)
 - Presigned URLs for secure uploads/downloads
+- Chunked uploads for large files
 
 ### Authentication
 - **Supabase Auth**
@@ -94,23 +93,17 @@ File
 
 ### Upload Flow
 1. User selects file(s)
-2. Client gets presigned URL from API
-3. Client uploads directly to S3 (Standard tier)
+2. Client initiates chunked upload via tRPC
+3. Chunks uploaded directly to S3 (Glacier)
 4. Metadata saved to Supabase
 5. User sees file in dashboard
 
-### Retrieval Flow (Cold Storage)
-1. User requests file from Glacier
-2. System initiates restore (takes 3-12 hours)
-3. User notified when ready
+### Retrieval Flow
+1. User requests file download
+2. System initiates Glacier restore (takes 3-12 hours)
+3. User notified when ready (realtime via Supabase)
 4. Presigned download URL generated
 5. File available for limited time
-
-### Tier Transition
-1. Files not accessed for X days flagged
-2. Lifecycle policy moves to Glacier
-3. Database updated with new tier
-4. User can still request retrieval
 
 ## Current Phase
 
@@ -150,6 +143,17 @@ File
 | Upload | Chunked | Reliability for large files |
 | Storage | Glacier-first | All files to Glacier by default |
 | ORM | Drizzle | TypeScript-native, SQL-like, AI-friendly |
+| API Layer | tRPC v11 | End-to-end typesafe APIs |
+| Data Fetching | TanStack Query v5 | Via tRPC integration |
+| Forms | TanStack Form | Modern, TypeScript-first |
+| Validation | Zod | Integrates with Drizzle |
+| UI Components | shadcn/ui | Base UI primitives, Tailwind |
+| Icons | Lucide | Pairs with shadcn |
+| Toasts | Sonner | Minimal, clean |
+| Dates | date-fns | Tree-shakeable |
+| Unit Testing | Vitest | Fast, ESM-native |
+| E2E Testing | Playwright | Browser automation |
+| Linting | ESLint + Prettier | Mature tooling |
 
 ## File Locations
 
@@ -158,10 +162,12 @@ File
 | Pages/Routes | `apps/web/app/` |
 | UI Components | `apps/web/components/ui/` |
 | Feature Components | `apps/web/components/features/` |
+| tRPC Router | `apps/web/server/trpc/` |
 | Server Actions | `apps/web/actions/` |
-| Database Queries | `apps/web/lib/supabase/` |
+| Database Schema | `apps/web/server/db/` |
 | S3 Operations | `apps/web/lib/s3/` |
 | Types | `apps/web/types/` |
+| Tests | Colocated (`*.test.ts`) |
 | Infrastructure | `infra/terraform/` |
 | Documentation | `docs/` |
 

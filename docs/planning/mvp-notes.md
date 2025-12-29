@@ -13,7 +13,8 @@ aliases:
 
 # MVP Planning Notes
 
-Initial architecture considerations and decisions for the Nexus MVP.
+Initial architecture considerations and decisions for the Nexus MVP. 
+(these were gathered from some random notes of mine, and then were parsed by OCR and GenAI)
 
 ## Background
 
@@ -21,7 +22,7 @@ A Proof of Concept was previously built that successfully demonstrated:
 - File upload capability
 - AWS S3 cold storage retrieval functionality
 
-The POC proved the concept is viable and feasible. However, it should NOT be used as a technical reference for the MVP - we're starting fresh with proper architecture.
+The [POC](https://github.com/thomasreichmann/upload-thomasar) proved the concept is viable and feasible. However, it should NOT be used as a technical reference for the MVP - we're starting fresh with proper architecture.
 
 ## Architecture Considerations
 

@@ -11,6 +11,7 @@ Nexus is a deep storage solution using AWS S3 tiers (Standard → Glacier) for c
 **Monorepo:** pnpm workspaces + Turborepo
 **IaC:** Terraform
 **ORM:** Drizzle | **Styling:** Tailwind | **Storage:** Glacier-first
+**API:** tRPC v11 | **Testing:** Vitest + Playwright
 
 ## Repository Structure
 
