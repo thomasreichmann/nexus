@@ -164,10 +164,9 @@ pnpm -F web add -D prettier eslint-config-prettier eslint-plugin-prettier
 ### 2.3 Create folder structure
 
 ```bash
-cd apps/web
-mkdir -p components/ui components/features
-mkdir -p server/trpc server/db
-mkdir -p lib actions types
+mkdir -p apps/web/components/{ui,features}
+mkdir -p apps/web/server/{trpc,db}
+mkdir -p apps/web/{lib,actions,types}
 ```
 
 **Final structure:**
@@ -193,8 +192,8 @@ apps/web/
 ### 3.1 shadcn/ui
 
 ```bash
-cd apps/web
-pnpm dlx shadcn@latest init
+# Run from apps/web directory (shadcn needs to be in the app root)
+cd apps/web && pnpm dlx shadcn@latest init && cd ../..
 ```
 
 **Options:**
@@ -206,8 +205,8 @@ pnpm dlx shadcn@latest init
 ### 3.2 Drizzle ORM
 
 ```bash
-pnpm add drizzle-orm postgres
-pnpm add -D drizzle-kit
+pnpm -F web add drizzle-orm postgres
+pnpm -F web add -D drizzle-kit
 ```
 
 **drizzle.config.ts:**
@@ -240,9 +239,7 @@ export const users = pgTable('users', {
 ### 3.3 tRPC v11
 
 ```bash
-pnpm add @trpc/server @trpc/client @trpc/tanstack-react-query
-pnpm add @tanstack/react-query
-pnpm add superjson
+pnpm -F web add @trpc/server @trpc/client @trpc/tanstack-react-query @tanstack/react-query superjson
 ```
 
 **server/trpc/init.ts:**
@@ -275,7 +272,7 @@ export type AppRouter = typeof appRouter;
 ### 3.4 Supabase
 
 ```bash
-pnpm add @supabase/ssr @supabase/supabase-js
+pnpm -F web add @supabase/ssr @supabase/supabase-js
 ```
 
 **lib/supabase/server.ts:**
@@ -309,7 +306,7 @@ export async function createClient() {
 ### 3.5 Supporting libraries
 
 ```bash
-pnpm add zod lucide-react sonner @tanstack/react-form date-fns
+pnpm -F web add zod lucide-react sonner @tanstack/react-form date-fns
 ```
 
 ---
@@ -319,7 +316,7 @@ pnpm add zod lucide-react sonner @tanstack/react-form date-fns
 ### 4.1 Vitest
 
 ```bash
-pnpm add -D vitest @testing-library/react @testing-library/jest-dom @vitejs/plugin-react jsdom
+pnpm -F web add -D vitest @testing-library/react @testing-library/jest-dom @vitejs/plugin-react jsdom
 ```
 
 **vitest.config.ts:**
