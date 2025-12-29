@@ -135,19 +135,18 @@ pnpm create next-app@latest apps/web
 
 **Options to select:**
 
--   TypeScript: Yes
--   ESLint: Yes
--   Tailwind CSS: Yes
--   `src/` directory: No
--   App Router: Yes
--   Turbopack: Yes (default in Next.js 16)
--   Import alias: @/\*
+- TypeScript: Yes
+- ESLint: Yes
+- Tailwind CSS: Yes
+- `src/` directory: No
+- App Router: Yes
+- Turbopack: Yes (default in Next.js 16)
+- Import alias: @/\*
 
 ### 2.2 Configure ESLint + Prettier
 
 ```bash
-cd apps/web
-pnpm add -D prettier eslint-config-prettier eslint-plugin-prettier
+pnpm -F web add -D prettier eslint-config-prettier eslint-plugin-prettier
 ```
 
 **.prettierrc:**
@@ -200,9 +199,9 @@ pnpm dlx shadcn@latest init
 
 **Options:**
 
--   Style: Default
--   Base color: Neutral (or preference)
--   CSS variables: Yes
+- Style: Default
+- Base color: Neutral (or preference)
+- CSS variables: Yes
 
 ### 3.2 Drizzle ORM
 
@@ -364,10 +363,10 @@ pnpm create playwright
 
 **Options:**
 
--   TypeScript: Yes
--   Tests folder: e2e
--   GitHub Actions: No (for now)
--   Install browsers: Yes
+- TypeScript: Yes
+- Tests folder: e2e
+- GitHub Actions: No (for now)
+- Install browsers: Yes
 
 ---
 
@@ -491,6 +490,6 @@ Commit after each phase:
 
 ## Related
 
--   [[tech-stack|Tech Stack]] - All technology decisions
--   [[roadmap|Roadmap]] - Project phases
--   [[planning/_index|Back to Planning]]
+- [[tech-stack|Tech Stack]] - All technology decisions
+- [[roadmap|Roadmap]] - Project phases
+- [[planning/_index|Back to Planning]]

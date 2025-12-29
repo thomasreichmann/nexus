@@ -4,10 +4,10 @@ created: <% tp.date.now("YYYY-MM-DD") %>
 updated: <% tp.date.now("YYYY-MM-DD") %>
 status: active
 tags:
-  - journal
-  - daily
+    - journal
+    - daily
 aliases:
-  - <% tp.date.now("dddd, MMMM D, YYYY") %>
+    - <% tp.date.now("dddd, MMMM D, YYYY") %>
 ---
 
 # <% tp.date.now("dddd, MMMM D, YYYY") %>

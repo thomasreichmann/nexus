@@ -4,10 +4,10 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - architecture
-  - moc
+    - architecture
+    - moc
 aliases:
-  - Architecture Index
+    - Architecture Index
 ---
 
 # Architecture
@@ -31,14 +31,14 @@ System architecture, design patterns, and technical decisions for the Nexus MVP.
 
 ## Quick Reference
 
-| Decision | Choice | Status |
-|----------|--------|--------|
-| Framework | Next.js (App Router) | Decided |
-| Database | Supabase (Postgres) | Decided |
-| Storage | AWS S3 + Glacier | Decided |
-| Deployment | Vercel | Decided |
-| Payments | Stripe | Decided |
-| ORM | Drizzle vs Prisma | Pending |
+| Decision   | Choice               | Status  |
+| ---------- | -------------------- | ------- |
+| Framework  | Next.js (App Router) | Decided |
+| Database   | Supabase (Postgres)  | Decided |
+| Storage    | AWS S3 + Glacier     | Decided |
+| Deployment | Vercel               | Decided |
+| Payments   | Stripe               | Decided |
+| ORM        | Drizzle vs Prisma    | Pending |
 
 ## Dataview
 

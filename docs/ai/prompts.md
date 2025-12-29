@@ -4,13 +4,13 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - ai
-  - prompts
-  - workflow
+    - ai
+    - prompts
+    - workflow
 aliases:
-  - Prompt Templates
-  - AI Prompts
-ai_summary: "Copy-paste prompts for common development tasks"
+    - Prompt Templates
+    - AI Prompts
+ai_summary: 'Copy-paste prompts for common development tasks'
 ---
 
 # Useful Prompts
@@ -20,6 +20,7 @@ Prompt templates for common development tasks. Copy and customize as needed.
 ## Feature Implementation
 
 ### New Feature
+
 ```
 Implement [feature name] for Nexus.
 
@@ -34,6 +35,7 @@ Update docs/ai/changelog.md when done.
 ```
 
 ### New Component
+
 ```
 Create a [ComponentName] component that [description].
 
@@ -46,6 +48,7 @@ Put in components/features/ if feature-specific, components/ui/ if reusable.
 ```
 
 ### New Server Action
+
 ```
 Create a Server Action to [description].
 
@@ -64,6 +67,7 @@ Follow the Server Action pattern in docs/ai/patterns.md.
 ## Bug Fixes
 
 ### Debug Issue
+
 ```
 There's an issue with [description].
 
@@ -74,6 +78,7 @@ Investigate and fix. Explain what caused the issue.
 ```
 
 ### Fix Type Error
+
 ```
 Fix the TypeScript error in [file]:
 
@@ -85,6 +90,7 @@ Don't use `any` - find the correct type.
 ## Code Review
 
 ### Review PR
+
 ```
 Review this code for:
 - TypeScript correctness
@@ -97,6 +103,7 @@ Review this code for:
 ```
 
 ### Refactor Code
+
 ```
 Refactor [file/component] to:
 - [improvement 1]
@@ -109,6 +116,7 @@ Follow existing patterns.
 ## Database
 
 ### Add Database Table
+
 ```
 Add a new table [table_name] to Supabase with:
 - [column1]: type
@@ -121,6 +129,7 @@ Include:
 ```
 
 ### Add Database Query
+
 ```
 Add a query function to get [description].
 
@@ -132,6 +141,7 @@ Follow the Supabase Query pattern in docs/ai/patterns.md.
 ## Documentation
 
 ### Document Feature
+
 ```
 Document [feature] for the docs.
 
@@ -146,6 +156,7 @@ Use Obsidian conventions (wikilinks, callouts).
 ```
 
 ### Write ADR
+
 ```
 Write an ADR for the decision to use [choice] for [problem].
 
@@ -162,6 +173,7 @@ Save as docs/decisions/[NNN]-[description].md.
 ## Testing
 
 ### Write Tests
+
 ```
 Write tests for [file/component].
 
@@ -176,6 +188,7 @@ Use Playwright for E2E, Vitest for unit tests.
 ## API
 
 ### Add API Route
+
 ```
 Add an API route for [description].
 
@@ -190,6 +203,7 @@ Follow API Route pattern in docs/ai/patterns.md.
 ## Stripe
 
 ### Add Subscription Feature
+
 ```
 Implement [subscription feature] with Stripe.
 
@@ -204,6 +218,7 @@ Use Stripe best practices.
 ## S3
 
 ### Add S3 Operation
+
 ```
 Add S3 operation for [description].
 
@@ -218,6 +233,7 @@ Put in lib/s3/.
 ## Ending Session
 
 ### Update Changelog
+
 ```
 Update docs/ai/changelog.md with today's changes:
 - What was created/modified

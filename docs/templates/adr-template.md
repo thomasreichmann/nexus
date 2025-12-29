@@ -1,14 +1,14 @@
 ---
-title: "ADR-000: <% tp.file.title %>"
+title: 'ADR-000: <% tp.file.title %>'
 created: <% tp.date.now("YYYY-MM-DD") %>
 updated: <% tp.date.now("YYYY-MM-DD") %>
 status: proposed
 tags:
-  - decisions
-  - adr
-  - <% tp.file.cursor() %>
+    - decisions
+    - adr
+    - <% tp.file.cursor() %>
 aliases:
-  -
+    -
 ---
 
 # ADR-000: Decision Title
@@ -34,10 +34,12 @@ What is the issue that we're seeing that is motivating this decision or change?
 Description of the option.
 
 **Pros:**
+
 - Pro 1
 - Pro 2
 
 **Cons:**
+
 - Con 1
 - Con 2
 
@@ -46,10 +48,12 @@ Description of the option.
 Description of the option.
 
 **Pros:**
+
 - Pro 1
 - Pro 2
 
 **Cons:**
+
 - Con 1
 - Con 2
 

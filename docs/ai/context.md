@@ -4,13 +4,13 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - ai
-  - context
-  - architecture
+    - ai
+    - context
+    - architecture
 aliases:
-  - Background
-  - Project Overview
-ai_summary: "Deep background on project goals, architecture, and business logic"
+    - Background
+    - Project Overview
+ai_summary: 'Deep background on project goals, architecture, and business logic'
 ---
 
 # Project Context
@@ -45,6 +45,7 @@ Think of it as "Dropbox for archival" - users upload files they want to keep lon
 ## Technical Architecture
 
 ### Frontend + Backend
+
 - **Next.js 16** with App Router
 - Server Components for performance
 - Server Actions for mutations
@@ -54,22 +55,26 @@ Think of it as "Dropbox for archival" - users upload files they want to keep lon
 - Deployed on **Vercel**
 
 ### Database
+
 - **Supabase** (PostgreSQL)
 - Row-level security for multi-tenancy
 - Real-time subscriptions for status updates
 
 ### Storage
+
 - **AWS S3** for file storage
 - Glacier-first strategy (all files go to Glacier by default)
 - Presigned URLs for secure uploads/downloads
 - Chunked uploads for large files
 
 ### Authentication
+
 - **Supabase Auth**
 - Email/password initially
 - OAuth providers later
 
 ### Payments
+
 - **Stripe** subscriptions
 - Webhook for subscription events
 
@@ -92,6 +97,7 @@ File
 ## Key User Flows
 
 ### Upload Flow
+
 1. User selects file(s)
 2. Client initiates chunked upload via tRPC
 3. Chunks uploaded directly to S3 (Glacier)
@@ -99,6 +105,7 @@ File
 5. User sees file in dashboard
 
 ### Retrieval Flow
+
 1. User requests file download
 2. System initiates Glacier restore (takes 3-12 hours)
 3. User notified when ready (realtime via Supabase)
@@ -130,46 +137,46 @@ File
 
 ## Technical Decisions Made
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Framework | Next.js | Full-stack, great DX, Vercel integration |
-| Database | Supabase | Postgres + Auth + Realtime in one |
-| Storage | AWS S3 | Industry standard, Glacier support |
-| Payments | Stripe | Developer-friendly, subscription support |
-| Deployment | Vercel | Best Next.js experience |
-| Monorepo | pnpm + Turborepo | Fast installs, build caching |
-| IaC | Terraform | Cloud-agnostic, industry standard |
-| Styling | Tailwind CSS | Utility-first, rapid development |
-| Upload | Chunked | Reliability for large files |
-| Storage | Glacier-first | All files to Glacier by default |
-| ORM | Drizzle | TypeScript-native, SQL-like, AI-friendly |
-| API Layer | tRPC v11 | End-to-end typesafe APIs |
-| Data Fetching | TanStack Query v5 | Via tRPC integration |
-| Forms | TanStack Form | Modern, TypeScript-first |
-| Validation | Zod | Integrates with Drizzle |
-| UI Components | shadcn/ui | Base UI primitives, Tailwind |
-| Icons | Lucide | Pairs with shadcn |
-| Toasts | Sonner | Minimal, clean |
-| Dates | date-fns | Tree-shakeable |
-| Unit Testing | Vitest | Fast, ESM-native |
-| E2E Testing | Playwright | Browser automation |
-| Linting | ESLint + Prettier | Mature tooling |
+| Decision      | Choice            | Rationale                                |
+| ------------- | ----------------- | ---------------------------------------- |
+| Framework     | Next.js           | Full-stack, great DX, Vercel integration |
+| Database      | Supabase          | Postgres + Auth + Realtime in one        |
+| Storage       | AWS S3            | Industry standard, Glacier support       |
+| Payments      | Stripe            | Developer-friendly, subscription support |
+| Deployment    | Vercel            | Best Next.js experience                  |
+| Monorepo      | pnpm + Turborepo  | Fast installs, build caching             |
+| IaC           | Terraform         | Cloud-agnostic, industry standard        |
+| Styling       | Tailwind CSS      | Utility-first, rapid development         |
+| Upload        | Chunked           | Reliability for large files              |
+| Storage       | Glacier-first     | All files to Glacier by default          |
+| ORM           | Drizzle           | TypeScript-native, SQL-like, AI-friendly |
+| API Layer     | tRPC v11          | End-to-end typesafe APIs                 |
+| Data Fetching | TanStack Query v5 | Via tRPC integration                     |
+| Forms         | TanStack Form     | Modern, TypeScript-first                 |
+| Validation    | Zod               | Integrates with Drizzle                  |
+| UI Components | shadcn/ui         | Base UI primitives, Tailwind             |
+| Icons         | Lucide            | Pairs with shadcn                        |
+| Toasts        | Sonner            | Minimal, clean                           |
+| Dates         | date-fns          | Tree-shakeable                           |
+| Unit Testing  | Vitest            | Fast, ESM-native                         |
+| E2E Testing   | Playwright        | Browser automation                       |
+| Linting       | ESLint + Prettier | Mature tooling                           |
 
 ## File Locations
 
-| Concern | Location |
-|---------|----------|
-| Pages/Routes | `apps/web/app/` |
-| UI Components | `apps/web/components/ui/` |
+| Concern            | Location                        |
+| ------------------ | ------------------------------- |
+| Pages/Routes       | `apps/web/app/`                 |
+| UI Components      | `apps/web/components/ui/`       |
 | Feature Components | `apps/web/components/features/` |
-| tRPC Router | `apps/web/server/trpc/` |
-| Server Actions | `apps/web/actions/` |
-| Database Schema | `apps/web/server/db/` |
-| S3 Operations | `apps/web/lib/s3/` |
-| Types | `apps/web/types/` |
-| Tests | Colocated (`*.test.ts`) |
-| Infrastructure | `infra/terraform/` |
-| Documentation | `docs/` |
+| tRPC Router        | `apps/web/server/trpc/`         |
+| Server Actions     | `apps/web/actions/`             |
+| Database Schema    | `apps/web/server/db/`           |
+| S3 Operations      | `apps/web/lib/s3/`              |
+| Types              | `apps/web/types/`               |
+| Tests              | Colocated (`*.test.ts`)         |
+| Infrastructure     | `infra/terraform/`              |
+| Documentation      | `docs/`                         |
 
 ## Environment Variables
 

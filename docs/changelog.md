@@ -4,11 +4,11 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - changelog
-  - meta
+    - changelog
+    - meta
 aliases:
-  - Release Notes
-  - Version History
+    - Release Notes
+    - Version History
 ---
 
 # Changelog
@@ -20,6 +20,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), and this projec
 ## [Unreleased]
 
 ### Added
+
 - Initial project documentation vault
 - Architecture documentation (tech stack, principles, system design)
 - Implementation guides (getting started, Next.js patterns)
@@ -29,18 +30,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), and this projec
 - Multiple templates (doc, ADR, meeting, feature spec, daily note)
 
 ### Changed
+
 - (none yet)
 
 ### Deprecated
+
 - (none yet)
 
 ### Removed
+
 - (none yet)
 
 ### Fixed
+
 - (none yet)
 
 ### Security
+
 - (none yet)
 
 ---
@@ -51,21 +57,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), and this projec
 ## [X.Y.Z] - YYYY-MM-DD
 
 ### Added
+
 - New features
 
 ### Changed
+
 - Changes in existing functionality
 
 ### Deprecated
+
 - Soon-to-be removed features
 
 ### Removed
+
 - Removed features
 
 ### Fixed
+
 - Bug fixes
 
 ### Security
+
 - Security fixes
 ```
 

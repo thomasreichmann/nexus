@@ -4,13 +4,13 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - ai
-  - moc
-  - meta
+    - ai
+    - moc
+    - meta
 aliases:
-  - AI Context
-  - AI Docs
-ai_summary: "Central hub for AI-readable project documentation"
+    - AI Context
+    - AI Docs
+ai_summary: 'Central hub for AI-readable project documentation'
 ---
 
 # AI Documentation
@@ -20,6 +20,7 @@ Documentation optimized for AI assistants (Claude Code, Cursor) to understand an
 ## Purpose
 
 This folder contains context and instructions that help AI:
+
 - Understand the project instantly
 - Generate code matching project patterns
 - Follow naming conventions automatically
@@ -29,11 +30,13 @@ This folder contains context and instructions that help AI:
 ## Documents
 
 ### Core Context
+
 - [[context|Project Context]] - Detailed background, business logic, data model
 - [[conventions|Conventions]] - Naming, structure, style rules
 - [[patterns|Code Patterns]] - Implementation examples to follow
 
 ### Workflow
+
 - [[changelog|AI Changelog]] - Recent changes (read first for context)
 - [[prompts|Useful Prompts]] - Templates for common tasks
 
@@ -46,10 +49,10 @@ This folder contains context and instructions that help AI:
 
 ## Root Files
 
-| File | Purpose |
-|------|---------|
-| `CLAUDE.md` | Claude Code reads this first |
-| `.cursorrules` | Cursor IDE context |
+| File           | Purpose                      |
+| -------------- | ---------------------------- |
+| `CLAUDE.md`    | Claude Code reads this first |
+| `.cursorrules` | Cursor IDE context           |
 
 ## Related
 

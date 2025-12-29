@@ -4,10 +4,10 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - planning
-  - moc
+    - planning
+    - moc
 aliases:
-  - Planning Index
+    - Planning Index
 ---
 
 # Planning

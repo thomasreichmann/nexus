@@ -4,10 +4,10 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - architecture
-  - principles
+    - architecture
+    - principles
 aliases:
-  - Architecture Principles
+    - Architecture Principles
 ---
 
 # Design Principles
@@ -52,6 +52,7 @@ All components should be designed to be swappable:
 > The POC proved the concept works. Do NOT use POC code as a reference for the MVP.
 
 The MVP should be built with:
+
 - Proper error handling
 - Security best practices
 - Scalable architecture

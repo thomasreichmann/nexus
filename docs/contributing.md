@@ -4,11 +4,11 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - meta
-  - guide
+    - meta
+    - guide
 aliases:
-  - How to Contribute
-  - Doc Guidelines
+    - How to Contribute
+    - Doc Guidelines
 ---
 
 # Contributing to Documentation
@@ -24,15 +24,15 @@ Guidelines for contributing to the Nexus documentation vault.
 
 ## Folder Structure
 
-| Folder | Purpose | Template |
-|--------|---------|----------|
-| `architecture/` | System design, tech decisions | `doc-template` |
-| `decisions/` | Architecture Decision Records | `adr-template` |
-| `guides/` | How-to documentation | `doc-template` |
-| `journal/` | Daily dev notes | `daily-note-template` |
-| `planning/` | Roadmap, MVP planning | `doc-template` |
-| `resources/` | External links | `doc-template` |
-| `templates/` | Document templates | — |
+| Folder          | Purpose                       | Template              |
+| --------------- | ----------------------------- | --------------------- |
+| `architecture/` | System design, tech decisions | `doc-template`        |
+| `decisions/`    | Architecture Decision Records | `adr-template`        |
+| `guides/`       | How-to documentation          | `doc-template`        |
+| `journal/`      | Daily dev notes               | `daily-note-template` |
+| `planning/`     | Roadmap, MVP planning         | `doc-template`        |
+| `resources/`    | External links                | `doc-template`        |
+| `templates/`    | Document templates            | —                     |
 
 ## Creating Documents
 
@@ -47,12 +47,12 @@ Always use the appropriate template:
 
 ### Naming Conventions
 
-| Type | Format | Example |
-|------|--------|---------|
-| Regular docs | `kebab-case.md` | `getting-started.md` |
-| ADRs | `NNN-description.md` | `001-use-nextjs.md` |
-| Daily notes | `YYYY-MM-DD.md` | `2025-01-15.md` |
-| MOC files | `_index.md` | `_index.md` |
+| Type         | Format               | Example              |
+| ------------ | -------------------- | -------------------- |
+| Regular docs | `kebab-case.md`      | `getting-started.md` |
+| ADRs         | `NNN-description.md` | `001-use-nextjs.md`  |
+| Daily notes  | `YYYY-MM-DD.md`      | `2025-01-15.md`      |
+| MOC files    | `_index.md`          | `_index.md`          |
 
 ## Writing Style
 
@@ -67,19 +67,19 @@ created: YYYY-MM-DD
 updated: YYYY-MM-DD
 status: draft | active | archived
 tags:
-  - relevant-tag
+    - relevant-tag
 aliases:
-  - alternate-name
+    - alternate-name
 ---
 ```
 
 ### Status Values
 
-| Status | Meaning |
-|--------|---------|
-| `draft` | Work in progress, not ready for use |
-| `active` | Current, maintained |
-| `archived` | Historical, no longer maintained |
+| Status     | Meaning                             |
+| ---------- | ----------------------------------- |
+| `draft`    | Work in progress, not ready for use |
+| `active`   | Current, maintained                 |
+| `archived` | Historical, no longer maintained    |
 
 ### Tags
 
@@ -131,6 +131,7 @@ Use Obsidian callouts for emphasis:
 ### Canvas
 
 Use Canvas for high-level architecture boards:
+
 - `Ctrl/Cmd + P` → "Create new canvas"
 - Add cards, link to notes, draw connections
 - Save in `architecture/` folder
@@ -138,6 +139,7 @@ Use Canvas for high-level architecture boards:
 ### Excalidraw
 
 Use Excalidraw for detailed diagrams:
+
 - `Ctrl/Cmd + P` → "Excalidraw: Create new drawing"
 - Hand-drawn style, great for flowcharts
 - Save in `architecture/drawings/` folder
@@ -149,7 +151,7 @@ Use language hints for syntax highlighting:
 
 ````markdown
 ```typescript
-const example = "code here";
+const example = 'code here';
 ```
 ````
 
