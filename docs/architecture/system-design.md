@@ -37,6 +37,27 @@ Stripe ◄── Payment Processing
 Deployment: Vercel Edge Network
 ```
 
+## Repository Structure
+
+Monorepo managed with pnpm workspaces + Turborepo:
+
+```
+nexus/
+├── package.json           # Root package.json
+├── pnpm-workspace.yaml    # Workspace configuration
+├── turbo.json             # Turborepo task config
+├── apps/
+│   └── web/               # Next.js application
+│       ├── app/           # App Router pages
+│       ├── components/    # React components
+│       ├── lib/           # Utilities (supabase, s3)
+│       ├── actions/       # Server Actions
+│       └── types/         # TypeScript types
+├── packages/              # Shared packages (when needed)
+└── infra/
+    └── terraform/         # AWS infrastructure (S3, IAM)
+```
+
 ## Data Flow
 
 ### File Upload Flow

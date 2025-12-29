@@ -47,9 +47,12 @@ Think of it as "Dropbox for archival" - users upload files they want to keep lon
 ## Technical Architecture
 
 ### Frontend + Backend
-- **Next.js 15+** with App Router
+- **Next.js 16** with App Router
 - Server Components for performance
 - Server Actions for mutations
+- `proxy.ts` for network boundary
+- Turbopack (default bundler)
+- React 19.2 with React Compiler
 - Deployed on **Vercel**
 
 ### Database
@@ -141,26 +144,25 @@ File
 | Storage | AWS S3 | Industry standard, Glacier support |
 | Payments | Stripe | Developer-friendly, subscription support |
 | Deployment | Vercel | Best Next.js experience |
-
-## Open Decisions
-
-| Question | Options | Leaning |
-|----------|---------|---------|
-| ORM | Drizzle vs Prisma | Drizzle (lighter) |
-| Styling | Tailwind vs CSS Modules | Tailwind |
-| Upload strategy | Chunked vs simple | Chunked for large files |
+| Monorepo | pnpm + Turborepo | Fast installs, build caching |
+| IaC | Terraform | Cloud-agnostic, industry standard |
+| Styling | Tailwind CSS | Utility-first, rapid development |
+| Upload | Chunked | Reliability for large files |
+| Storage | Glacier-first | All files to Glacier by default |
+| ORM | Drizzle | TypeScript-native, SQL-like, AI-friendly |
 
 ## File Locations
 
 | Concern | Location |
 |---------|----------|
-| Pages/Routes | `app/` |
-| UI Components | `components/ui/` |
-| Feature Components | `components/features/` |
-| Server Actions | `actions/` |
-| Database Queries | `lib/supabase/` |
-| S3 Operations | `lib/s3/` |
-| Types | `types/` |
+| Pages/Routes | `apps/web/app/` |
+| UI Components | `apps/web/components/ui/` |
+| Feature Components | `apps/web/components/features/` |
+| Server Actions | `apps/web/actions/` |
+| Database Queries | `apps/web/lib/supabase/` |
+| S3 Operations | `apps/web/lib/s3/` |
+| Types | `apps/web/types/` |
+| Infrastructure | `infra/terraform/` |
 | Documentation | `docs/` |
 
 ## Environment Variables

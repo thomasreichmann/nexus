@@ -20,23 +20,28 @@ Technology choices and rationale for the Nexus MVP.
 
 ## Decisions Made
 
-### Frontend & Backend: Next.js
+### Frontend & Backend: Next.js 16
 
-**Decision:** Full-stack Next.js with App Router
+**Decision:** Full-stack Next.js 16 with App Router
 
 **Frontend:**
-- Next.js (latest stable version)
 - Server Components for optimal performance
 - App Router for improved routing and layouts
-- Built-in image optimization
+- `"use cache"` directive for opt-in caching
+- React 19.2 with View Transitions
+- React Compiler (stable) for auto-memoization
 - Streaming and Suspense for better UX
-- React Server Actions for seamless data mutations
 
 **Backend:**
-- Next.js API Routes / Route Handlers
-- Server Actions for form submissions and mutations
+- Route Handlers for API endpoints
+- Server Actions for mutations
+- `proxy.ts` for network boundary (replaces middleware)
 
-**Development:** AI-assisted (Cursor with Claude)
+**Build:**
+- Turbopack (default bundler, 10x faster dev)
+- Biome or ESLint for linting (next lint removed)
+
+**Development:** AI-assisted (Cursor/Claude Code)
 
 ### Database: Supabase
 
@@ -72,13 +77,48 @@ Technology choices and rationale for the Nexus MVP.
 
 E2E testing framework for automation.
 
-## Open Decisions
+### Monorepo Tooling
 
-| Decision | Options | Notes |
-|----------|---------|-------|
-| ORM | Drizzle vs Prisma | Both viable, need to evaluate DX |
-| Styling | Tailwind CSS vs CSS Modules | Tailwind likely |
-| File Upload | Chunked vs Simple | Depends on file size limits |
+- **pnpm workspaces** - Package management and workspace linking
+- **Turborepo** - Build caching and task orchestration
+
+```
+nexus/
+├── apps/
+│   └── web/              # Next.js application
+├── packages/             # Shared code (when needed)
+└── infra/
+    └── terraform/        # AWS infrastructure
+```
+
+### Infrastructure as Code: Terraform
+
+- **Terraform** for AWS resource management
+- S3 buckets with lifecycle policies
+- IAM roles and policies
+- Keeps infrastructure version-controlled and reproducible
+
+> [!note] Why Terraform?
+> Chosen over CDK for cloud-agnostic flexibility and industry-standard tooling.
+
+### Styling: Tailwind CSS
+
+Utility-first CSS framework for rapid UI development.
+
+### File Upload: Chunked
+
+Chunked upload approach for reliability with large files. Core feature requiring polish - different strategies may be needed for different file sizes.
+
+### Storage Strategy: Glacier-First
+
+Default all files to Glacier. Users don't need to know about storage tiers - from their perspective, all files have retrieval time. This simplifies the mental model and maximizes cost savings.
+
+### ORM: Drizzle
+
+Lightweight, TypeScript-native ORM with SQL-like syntax. Chosen for:
+- Pure TypeScript (no separate schema language)
+- SQL-like queries (AI-friendly, transferable knowledge)
+- Lightweight bundle (~50kb vs Prisma's ~2MB)
 
 ## Related
 

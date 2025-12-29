@@ -18,10 +18,12 @@ Implementation patterns and best practices for the Nexus MVP.
 
 ## Version & Setup
 
-- **Target Version:** Next.js 15+ (latest stable)
+- **Target Version:** Next.js 16
 - **TypeScript:** Yes, strict mode
-- **Package Manager:** pnpm (recommended) or npm
+- **Package Manager:** pnpm
 - **Router:** App Router
+- **Bundler:** Turbopack (default)
+- **React:** 19.2 with React Compiler
 
 ## Server Components Strategy
 
@@ -184,14 +186,23 @@ export async function POST(request: NextRequest) {
 
 ## Caching Strategy
 
-### Configure Fetch Caching
+Next.js 16 uses opt-in caching with the `"use cache"` directive. All dynamic code runs at request time by default.
+
+### Cache Directive
 
 ```typescript
-// Revalidate every hour
-const data = await fetch(url, { next: { revalidate: 3600 } });
+// Cache a function
+async function getFiles() {
+  "use cache";
+  return await db.query.files.findMany();
+}
 
-// Force dynamic
-const data = await fetch(url, { cache: 'no-store' });
+// Cache a component
+async function FileStats() {
+  "use cache";
+  const stats = await getStats();
+  return <div>{stats.totalFiles} files</div>;
+}
 ```
 
 ### Revalidation
@@ -205,17 +216,23 @@ revalidatePath('/dashboard/files');
 revalidateTag('user-files');
 ```
 
-## Middleware for Auth
+## Proxy for Auth
+
+Next.js 16 replaces `middleware.ts` with `proxy.ts` for explicit network boundary control.
 
 ```typescript
-// middleware.ts
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
+// proxy.ts
+import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const res = NextResponse.next();
-  const supabase = createMiddlewareClient({ req, res });
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { /* cookie config */ } }
+  );
 
   const { data: { session } } = await supabase.auth.getSession();
 

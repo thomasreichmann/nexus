@@ -21,6 +21,25 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2025-12-29
 
+### Session: Monorepo & Infrastructure Decisions
+
+Documented monorepo structure and infrastructure-as-code decisions.
+
+**Decisions Made:**
+- **Monorepo tooling:** pnpm workspaces + Turborepo
+- **IaC:** Terraform (over CDK, for cloud-agnostic flexibility)
+- **Structure:** `apps/web/` for Next.js, `infra/terraform/` for AWS
+- **Shared packages:** Add `packages/` when needed, not upfront
+
+**Files Modified:**
+- `docs/architecture/tech-stack.md` - Added Monorepo Tooling and Terraform sections
+- `docs/architecture/system-design.md` - Added Repository Structure section
+- `docs/ai/context.md` - Updated file paths to `apps/web/` prefix, added IaC to decisions
+
+**Why:** Finalizing architecture decisions before building. Terraform chosen after consulting with someone with more devops experience.
+
+---
+
 ### Session: AI Documentation Simplification
 
 Removed overly prescriptive rules and undefined patterns from AI documentation.
