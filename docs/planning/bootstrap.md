@@ -4,19 +4,19 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - planning
-  - setup
-  - guide
+    - planning
+    - setup
+    - guide
 aliases:
-  - Project Setup
-  - Getting Started
+    - Project Setup
+    - Getting Started
 ---
 
 # Bootstrap Plan
 
 Step-by-step plan to initialize the Nexus monorepo from scratch.
 
-## Phase 1: Root Monorepo Setup
+## Phase 1: Root Monorepo Setup ✅
 
 ### 1.1 Initialize pnpm workspace
 
@@ -28,43 +28,46 @@ pnpm init
 ```
 
 **pnpm-workspace.yaml:**
+
 ```yaml
 packages:
-  - 'apps/*'
-  - 'packages/*'
+    - 'apps/*'
+    - 'packages/*'
 ```
 
 ### 1.2 Create turbo.json
 
 ```json
 {
-  "$schema": "https://turbo.build/schema.json",
-  "tasks": {
-    "build": {
-      "dependsOn": ["^build"],
-      "outputs": [".next/**", "dist/**"]
-    },
-    "dev": {
-      "cache": false,
-      "persistent": true
-    },
-    "lint": {},
-    "test": {},
-    "typecheck": {
-      "dependsOn": ["^typecheck"]
+    "$schema": "https://turbo.build/schema.json",
+    "tasks": {
+        "build": {
+            "dependsOn": ["^build"],
+            "outputs": [".next/**", "dist/**"]
+        },
+        "dev": {
+            "cache": false,
+            "persistent": true
+        },
+        "lint": {},
+        "test": {},
+        "typecheck": {
+            "dependsOn": ["^typecheck"]
+        }
     }
-  }
 }
 ```
 
 ### 1.3 Root configuration files
 
 **.nvmrc:**
+
 ```
 20
 ```
 
 **.gitignore additions:**
+
 ```
 # Dependencies
 node_modules/
@@ -104,25 +107,25 @@ infra/terraform/*.tfstate*
 
 ```json
 {
-  "name": "nexus",
-  "private": true,
-  "scripts": {
-    "dev": "turbo dev",
-    "build": "turbo build",
-    "lint": "turbo lint",
-    "test": "turbo test",
-    "typecheck": "turbo typecheck"
-  },
-  "devDependencies": {
-    "turbo": "^2"
-  },
-  "packageManager": "pnpm@9.15.0"
+    "name": "nexus",
+    "private": true,
+    "scripts": {
+        "dev": "turbo dev",
+        "build": "turbo build",
+        "lint": "turbo lint",
+        "test": "turbo test",
+        "typecheck": "turbo typecheck"
+    },
+    "devDependencies": {
+        "turbo": "^2"
+    },
+    "packageManager": "pnpm@9.15.0"
 }
 ```
 
 ---
 
-## Phase 2: Next.js App
+## Phase 2: Next.js App ✅
 
 ### 2.1 Create Next.js 16 app
 
@@ -131,13 +134,14 @@ pnpm create next-app@latest apps/web
 ```
 
 **Options to select:**
-- TypeScript: Yes
-- ESLint: Yes
-- Tailwind CSS: Yes
-- `src/` directory: No
-- App Router: Yes
-- Turbopack: Yes (default in Next.js 16)
-- Import alias: @/*
+
+-   TypeScript: Yes
+-   ESLint: Yes
+-   Tailwind CSS: Yes
+-   `src/` directory: No
+-   App Router: Yes
+-   Turbopack: Yes (default in Next.js 16)
+-   Import alias: @/\*
 
 ### 2.2 Configure ESLint + Prettier
 
@@ -147,13 +151,14 @@ pnpm add -D prettier eslint-config-prettier eslint-plugin-prettier
 ```
 
 **.prettierrc:**
+
 ```json
 {
-  "semi": true,
-  "singleQuote": true,
-  "tabWidth": 2,
-  "trailingComma": "es5",
-  "printWidth": 80
+    "semi": true,
+    "singleQuote": true,
+    "tabWidth": 2,
+    "trailingComma": "es5",
+    "printWidth": 80
 }
 ```
 
@@ -167,6 +172,7 @@ mkdir -p lib actions types
 ```
 
 **Final structure:**
+
 ```
 apps/web/
 ├── app/                 # Routes
@@ -193,9 +199,10 @@ pnpm dlx shadcn@latest init
 ```
 
 **Options:**
-- Style: Default
-- Base color: Neutral (or preference)
-- CSS variables: Yes
+
+-   Style: Default
+-   Base color: Neutral (or preference)
+-   CSS variables: Yes
 
 ### 3.2 Drizzle ORM
 
@@ -205,27 +212,29 @@ pnpm add -D drizzle-kit
 ```
 
 **drizzle.config.ts:**
+
 ```typescript
 import { defineConfig } from 'drizzle-kit';
 
 export default defineConfig({
-  schema: './server/db/schema.ts',
-  out: './server/db/migrations',
-  dialect: 'postgresql',
-  dbCredentials: {
-    url: process.env.DATABASE_URL!,
-  },
+    schema: './server/db/schema.ts',
+    out: './server/db/migrations',
+    dialect: 'postgresql',
+    dbCredentials: {
+        url: process.env.DATABASE_URL!,
+    },
 });
 ```
 
 **server/db/schema.ts:**
+
 ```typescript
 import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  email: text('email').notNull().unique(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+    id: uuid('id').primaryKey().defaultRandom(),
+    email: text('email').notNull().unique(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 ```
 
@@ -238,12 +247,13 @@ pnpm add superjson
 ```
 
 **server/trpc/init.ts:**
+
 ```typescript
 import { initTRPC } from '@trpc/server';
 import superjson from 'superjson';
 
 const t = initTRPC.create({
-  transformer: superjson,
+    transformer: superjson,
 });
 
 export const router = t.router;
@@ -251,12 +261,13 @@ export const publicProcedure = t.procedure;
 ```
 
 **server/trpc/router.ts:**
+
 ```typescript
 import { router } from './init';
 import { filesRouter } from './routers/files';
 
 export const appRouter = router({
-  files: filesRouter,
+    files: filesRouter,
 });
 
 export type AppRouter = typeof appRouter;
@@ -269,29 +280,30 @@ pnpm add @supabase/ssr @supabase/supabase-js
 ```
 
 **lib/supabase/server.ts:**
+
 ```typescript
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
 export async function createClient() {
-  const cookieStore = await cookies();
+    const cookieStore = await cookies();
 
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
+    return createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+            cookies: {
+                getAll() {
+                    return cookieStore.getAll();
+                },
+                setAll(cookiesToSet) {
+                    cookiesToSet.forEach(({ name, value, options }) =>
+                        cookieStore.set(name, value, options)
+                    );
+                },
+            },
+        }
+    );
 }
 ```
 
@@ -312,32 +324,35 @@ pnpm add -D vitest @testing-library/react @testing-library/jest-dom @vitejs/plug
 ```
 
 **vitest.config.ts:**
+
 ```typescript
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  plugins: [react()],
-  test: {
-    environment: 'jsdom',
-    setupFiles: ['./vitest.setup.ts'],
-    include: ['**/*.test.{ts,tsx}'],
-  },
+    plugins: [react()],
+    test: {
+        environment: 'jsdom',
+        setupFiles: ['./vitest.setup.ts'],
+        include: ['**/*.test.{ts,tsx}'],
+    },
 });
 ```
 
 **vitest.setup.ts:**
+
 ```typescript
 import '@testing-library/jest-dom/vitest';
 ```
 
 **Add to package.json:**
+
 ```json
 {
-  "scripts": {
-    "test": "vitest",
-    "test:run": "vitest run"
-  }
+    "scripts": {
+        "test": "vitest",
+        "test:run": "vitest run"
+    }
 }
 ```
 
@@ -348,10 +363,11 @@ pnpm create playwright
 ```
 
 **Options:**
-- TypeScript: Yes
-- Tests folder: e2e
-- GitHub Actions: No (for now)
-- Install browsers: Yes
+
+-   TypeScript: Yes
+-   Tests folder: e2e
+-   GitHub Actions: No (for now)
+-   Install browsers: Yes
 
 ---
 
@@ -364,6 +380,7 @@ mkdir -p infra/terraform
 ```
 
 **infra/terraform/main.tf:**
+
 ```hcl
 terraform {
   required_providers {
@@ -380,6 +397,7 @@ provider "aws" {
 ```
 
 **infra/terraform/variables.tf:**
+
 ```hcl
 variable "aws_region" {
   description = "AWS region"
@@ -401,6 +419,7 @@ variable "project_name" {
 ```
 
 **infra/terraform/s3.tf:**
+
 ```hcl
 resource "aws_s3_bucket" "storage" {
   bucket = "${var.project_name}-storage-${var.environment}"
@@ -422,6 +441,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "glacier" {
 ```
 
 **infra/terraform/outputs.tf:**
+
 ```hcl
 output "bucket_name" {
   value = aws_s3_bucket.storage.bucket
@@ -471,6 +491,6 @@ Commit after each phase:
 
 ## Related
 
-- [[tech-stack|Tech Stack]] - All technology decisions
-- [[roadmap|Roadmap]] - Project phases
-- [[planning/_index|Back to Planning]]
+-   [[tech-stack|Tech Stack]] - All technology decisions
+-   [[roadmap|Roadmap]] - Project phases
+-   [[planning/_index|Back to Planning]]
