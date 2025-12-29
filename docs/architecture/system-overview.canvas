@@ -1,143 +1,21 @@
 {
-  "nodes": [
-    {
-      "id": "user",
-      "type": "text",
-      "text": "## 👤 User\n\nBrowser-based interface",
-      "x": -400,
-      "y": -300,
-      "width": 200,
-      "height": 100,
-      "color": "4"
-    },
-    {
-      "id": "nextjs",
-      "type": "text",
-      "text": "## ⚡ Next.js\n\n- Server Components\n- App Router\n- API Routes\n- Server Actions",
-      "x": -400,
-      "y": -120,
-      "width": 200,
-      "height": 160,
-      "color": "6"
-    },
-    {
-      "id": "supabase",
-      "type": "text",
-      "text": "## 🗄️ Supabase\n\n- PostgreSQL\n- Auth\n- Real-time\n- Row-level security",
-      "x": -100,
-      "y": -120,
-      "width": 200,
-      "height": 160,
-      "color": "3"
-    },
-    {
-      "id": "s3-standard",
-      "type": "text",
-      "text": "## 📦 S3 Standard\n\nFrequently accessed files\n- Fast retrieval\n- Higher cost",
-      "x": 200,
-      "y": -200,
-      "width": 200,
-      "height": 120,
-      "color": "5"
-    },
-    {
-      "id": "s3-glacier",
-      "type": "text",
-      "text": "## 🧊 S3 Glacier\n\nCold storage / Archive\n- Slow retrieval\n- Low cost",
-      "x": 200,
-      "y": -40,
-      "width": 200,
-      "height": 120,
-      "color": "1"
-    },
-    {
-      "id": "stripe",
-      "type": "text",
-      "text": "## 💳 Stripe\n\nPayment processing\n- Subscriptions\n- Usage billing",
-      "x": -100,
-      "y": 120,
-      "width": 200,
-      "height": 120,
-      "color": "2"
-    },
-    {
-      "id": "vercel",
-      "type": "text",
-      "text": "## ▲ Vercel\n\nDeployment\n- Edge network\n- CI/CD\n- Preview deploys",
-      "x": -400,
-      "y": 120,
-      "width": 200,
-      "height": 120,
-      "color": "6"
-    },
-    {
-      "id": "docs-link",
-      "type": "file",
-      "file": "architecture/system-design.md",
-      "x": 200,
-      "y": 120,
-      "width": 200,
-      "height": 60
-    },
-    {
-      "id": "title",
-      "type": "text",
-      "text": "# 🏗️ Nexus System Architecture\n\nVisual overview of the MVP tech stack",
-      "x": -100,
-      "y": -340,
-      "width": 300,
-      "height": 80,
-      "color": "0"
-    }
-  ],
-  "edges": [
-    {
-      "id": "user-to-nextjs",
-      "fromNode": "user",
-      "fromSide": "bottom",
-      "toNode": "nextjs",
-      "toSide": "top",
-      "label": "HTTP"
-    },
-    {
-      "id": "nextjs-to-supabase",
-      "fromNode": "nextjs",
-      "fromSide": "right",
-      "toNode": "supabase",
-      "toSide": "left",
-      "label": "Queries"
-    },
-    {
-      "id": "nextjs-to-s3-standard",
-      "fromNode": "nextjs",
-      "fromSide": "right",
-      "toNode": "s3-standard",
-      "toSide": "left",
-      "label": "Upload/Download"
-    },
-    {
-      "id": "s3-standard-to-glacier",
-      "fromNode": "s3-standard",
-      "fromSide": "bottom",
-      "toNode": "s3-glacier",
-      "toSide": "top",
-      "label": "Lifecycle"
-    },
-    {
-      "id": "nextjs-to-stripe",
-      "fromNode": "nextjs",
-      "fromSide": "bottom",
-      "toNode": "stripe",
-      "toSide": "top",
-      "label": "Payments"
-    },
-    {
-      "id": "nextjs-to-vercel",
-      "fromNode": "nextjs",
-      "fromSide": "bottom",
-      "toNode": "vercel",
-      "toSide": "top",
-      "label": "Deploy"
-    }
-  ]
+	"nodes":[
+		{"id":"user","type":"text","text":"## 👤 User\n\nBrowser-based interface","x":-400,"y":-300,"width":200,"height":100,"color":"4"},
+		{"id":"nextjs","type":"text","text":"## ⚡ Next.js\n\n- Server Components\n- App Router\n- API Routes\n- Server Actions","x":-400,"y":-120,"width":200,"height":160,"color":"6"},
+		{"id":"supabase","type":"text","text":"## 🗄️ Supabase\n\n- PostgreSQL\n- Auth\n- Real-time\n- Row-level security","x":-100,"y":-120,"width":200,"height":160,"color":"3"},
+		{"id":"s3-standard","type":"text","text":"## 📦 S3 Standard\n\nFrequently accessed files\n- Fast retrieval\n- Higher cost","x":200,"y":-200,"width":200,"height":120,"color":"5"},
+		{"id":"s3-glacier","type":"text","text":"## 🧊 S3 Glacier\n\nCold storage / Archive\n- Slow retrieval\n- Low cost","x":200,"y":-40,"width":200,"height":120,"color":"1"},
+		{"id":"stripe","type":"text","text":"## 💳 Stripe\n\nPayment processing\n- Subscriptions\n- Usage billing","x":-100,"y":120,"width":200,"height":120,"color":"2"},
+		{"id":"vercel","type":"text","text":"## ▲ Vercel\n\nDeployment\n- Edge network\n- CI/CD\n- Preview deploys","x":-400,"y":120,"width":200,"height":120,"color":"6"},
+		{"id":"docs-link","type":"file","file":"architecture/system-design.md","x":200,"y":120,"width":200,"height":60},
+		{"id":"title","type":"text","text":"# 🏗️ Nexus System Architecture\n\nVisual overview of the MVP tech stack","x":-100,"y":-340,"width":300,"height":80,"color":"0"}
+	],
+	"edges":[
+		{"id":"user-to-nextjs","fromNode":"user","fromSide":"bottom","toNode":"nextjs","toSide":"top","label":"HTTP"},
+		{"id":"nextjs-to-supabase","fromNode":"nextjs","fromSide":"right","toNode":"supabase","toSide":"left","label":"Queries"},
+		{"id":"nextjs-to-s3-standard","fromNode":"nextjs","fromSide":"right","toNode":"s3-standard","toSide":"left","label":"Upload/Download"},
+		{"id":"s3-standard-to-glacier","fromNode":"s3-standard","fromSide":"bottom","toNode":"s3-glacier","toSide":"top","label":"Lifecycle"},
+		{"id":"nextjs-to-stripe","fromNode":"nextjs","fromSide":"bottom","toNode":"stripe","toSide":"top","label":"Payments"},
+		{"id":"nextjs-to-vercel","fromNode":"nextjs","fromSide":"bottom","toNode":"vercel","toSide":"top","label":"Deploy"}
+	]
 }

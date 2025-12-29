@@ -23,35 +23,6 @@ Implementation patterns and best practices for the Nexus MVP.
 - **Package Manager:** pnpm (recommended) or npm
 - **Router:** App Router
 
-## Project Structure
-
-```
-nexus/
-├── app/
-│   ├── (auth)/           # Route group for auth pages
-│   │   ├── login/
-│   │   └── signup/
-│   ├── (dashboard)/      # Route group for main app
-│   │   ├── layout.tsx    # Dashboard layout
-│   │   ├── page.tsx      # Dashboard home
-│   │   ├── files/
-│   │   └── settings/
-│   ├── api/              # API routes
-│   │   ├── upload/
-│   │   └── files/
-│   ├── layout.tsx        # Root layout
-│   └── page.tsx          # Landing page
-├── components/
-│   ├── ui/               # Reusable UI components
-│   └── features/         # Feature-specific components
-├── lib/
-│   ├── supabase/         # Supabase client & utilities
-│   ├── s3/               # AWS S3 utilities
-│   └── utils/            # Helper functions
-├── actions/              # Server Actions
-└── types/                # TypeScript types
-```
-
 ## Server Components Strategy
 
 > [!important] Default to Server

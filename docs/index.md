@@ -52,6 +52,13 @@ Welcome to the Nexus project documentation. This is your central hub for buildin
 - [[journal/_index|Dev Journal]] - Daily development notes
 - Use [[templates/daily-note-template|Daily Note Template]]
 
+### AI Documentation
+- [[ai/_index|AI Docs Hub]] - Context for AI assistants
+- [[ai/changelog|AI Changelog]] - Recent AI changes (read first!)
+- [[ai/patterns|Code Patterns]] - Implementation templates
+- [[ai/conventions|Conventions]] - Naming and style rules
+- [[ai/prompts|Useful Prompts]] - Task prompt templates
+
 ### Resources
 - [[resources/references|Resources & References]] - External documentation and links
 - [[changelog|Changelog]] - Project version history
@@ -115,3 +122,6 @@ SORT file.folder, file.name ASC
 
 > [!tip] Philosophy
 > This is a "poster" project - keep it simple, focused, and not over-engineered.
+
+> [!note] For AI Assistants
+> See `CLAUDE.md` (repo root) for quick context, or `docs/ai/changelog.md` for recent changes.
