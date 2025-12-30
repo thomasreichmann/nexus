@@ -4,11 +4,11 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - journal
-  - moc
+    - journal
+    - moc
 aliases:
-  - Daily Notes
-  - Dev Log
+    - Daily Notes
+    - Dev Log
 ---
 
 # Dev Journal

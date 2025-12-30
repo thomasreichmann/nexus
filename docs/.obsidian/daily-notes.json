@@ -1,4 +1,4 @@
 {
-  "template": "templates/daily-note-template",
-  "folder": "journal"
+    "template": "templates/daily-note-template",
+    "folder": "journal"
 }

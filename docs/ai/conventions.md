@@ -4,13 +4,13 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - ai
-  - conventions
-  - standards
+    - ai
+    - conventions
+    - standards
 aliases:
-  - Naming Conventions
-  - Style Guide
-ai_summary: "Naming, structure, and style rules for consistent code"
+    - Naming Conventions
+    - Style Guide
+ai_summary: 'Naming, structure, and style rules for consistent code'
 ---
 
 # Code Conventions
@@ -19,14 +19,14 @@ Naming conventions, file structure, and code style rules for the Nexus project.
 
 ## File Naming
 
-| Type | Convention | Example |
-|------|------------|---------|
-| Components | `PascalCase.tsx` | `FileUploader.tsx` |
-| Utilities | `camelCase.ts` | `formatBytes.ts` |
-| Hooks | `useCamelCase.ts` | `useFileUpload.ts` |
-| Actions | `camelCase.ts` | `uploadFile.ts` |
-| Types | `camelCase.ts` | `fileTypes.ts` |
-| Tests | `*.test.ts` / `*.spec.ts` | `formatBytes.test.ts` |
+| Type       | Convention                | Example               |
+| ---------- | ------------------------- | --------------------- |
+| Components | `PascalCase.tsx`          | `FileUploader.tsx`    |
+| Utilities  | `camelCase.ts`            | `formatBytes.ts`      |
+| Hooks      | `useCamelCase.ts`         | `useFileUpload.ts`    |
+| Actions    | `camelCase.ts`            | `uploadFile.ts`       |
+| Types      | `camelCase.ts`            | `fileTypes.ts`        |
+| Tests      | `*.test.ts` / `*.spec.ts` | `formatBytes.test.ts` |
 
 ## Component Naming
 
@@ -37,9 +37,9 @@ export function StorageTierBadge() {}
 export function DashboardSidebar() {}
 
 // ❌ Bad
-export function fileUploader() {}  // lowercase
-export function FU() {}            // abbreviation
-export function Uploader() {}      // too generic
+export function fileUploader() {} // lowercase
+export function FU() {} // abbreviation
+export function Uploader() {} // too generic
 ```
 
 ## Component Structure
@@ -103,9 +103,9 @@ function handleFileSelect() {}
 function formatBytes() {}
 
 // ❌ Bad
-function file_upload() {}   // snake_case
-function FileUpload() {}    // PascalCase (for components)
-function data() {}          // no verb, too generic
+function file_upload() {} // snake_case
+function FileUpload() {} // PascalCase (for components)
+function data() {} // no verb, too generic
 ```
 
 ## Variable Naming
@@ -118,20 +118,21 @@ const currentUser = await getUser();
 const storageUsageBytes = 1024;
 
 // ❌ Bad
-const uploading = true;     // missing 'is' prefix for boolean
-const fc = 5;               // abbreviation
-const data = await get();   // too generic
+const uploading = true; // missing 'is' prefix for boolean
+const fc = 5; // abbreviation
+const data = await get(); // too generic
 ```
 
 ## TypeScript
 
 ### Prefer Interfaces for Objects
+
 ```typescript
 // ✅ Good
 interface User {
-  id: string;
-  email: string;
-  createdAt: Date;
+    id: string;
+    email: string;
+    createdAt: Date;
 }
 
 // Use type for unions, primitives
@@ -140,10 +141,11 @@ type FileId = string;
 ```
 
 ### Explicit Return Types
+
 ```typescript
 // ✅ Good - explicit return for public functions
 export function formatBytes(bytes: number): string {
-  // ...
+    // ...
 }
 
 // ✅ OK - inferred for simple internal functions
@@ -151,6 +153,7 @@ const double = (n: number) => n * 2;
 ```
 
 ### Avoid `any`
+
 ```typescript
 // ✅ Good
 function processData(data: unknown): void {}
@@ -184,15 +187,16 @@ import type { User } from '@/types';
 ```
 
 ## Props Interface
+
 ```typescript
 // ✅ Good - named interface above component
 interface FileCardProps {
-  file: FileData;
-  onDelete?: (id: string) => void;
+    file: FileData;
+    onDelete?: (id: string) => void;
 }
 
 export function FileCard({ file, onDelete }: FileCardProps) {
-  // ...
+    // ...
 }
 ```
 
@@ -217,16 +221,16 @@ setIsUploading(true);
 ```typescript
 // ✅ Good - specific error types
 try {
-  await uploadFile(file);
+    await uploadFile(file);
 } catch (error) {
-  if (error instanceof StorageQuotaError) {
-    toast.error('Storage quota exceeded');
-  } else if (error instanceof NetworkError) {
-    toast.error('Network error, please retry');
-  } else {
-    toast.error('Upload failed');
-    console.error('Unexpected upload error:', error);
-  }
+    if (error instanceof StorageQuotaError) {
+        toast.error('Storage quota exceeded');
+    } else if (error instanceof NetworkError) {
+        toast.error('Network error, please retry');
+    } else {
+        toast.error('Upload failed');
+        console.error('Unexpected upload error:', error);
+    }
 }
 ```
 

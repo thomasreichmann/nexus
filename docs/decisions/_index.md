@@ -4,12 +4,12 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - decisions
-  - adr
-  - moc
+    - decisions
+    - adr
+    - moc
 aliases:
-  - ADRs
-  - Decision Log
+    - ADRs
+    - Decision Log
 ---
 
 # Architecture Decision Records
@@ -25,12 +25,12 @@ This folder contains Architecture Decision Records (ADRs) - documents that captu
 
 ## ADR Status
 
-| Status | Meaning |
-|--------|---------|
-| `proposed` | Under discussion, not yet decided |
-| `accepted` | Decision made and in effect |
-| `deprecated` | No longer applies, superseded |
-| `superseded` | Replaced by another ADR |
+| Status       | Meaning                           |
+| ------------ | --------------------------------- |
+| `proposed`   | Under discussion, not yet decided |
+| `accepted`   | Decision made and in effect       |
+| `deprecated` | No longer applies, superseded     |
+| `superseded` | Replaced by another ADR           |
 
 ## Decisions
 

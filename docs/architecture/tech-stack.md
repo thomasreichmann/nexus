@@ -4,14 +4,14 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - architecture
-  - decision
-  - nextjs
-  - supabase
-  - aws
+    - architecture
+    - decision
+    - nextjs
+    - supabase
+    - aws
 aliases:
-  - Technology Stack
-  - Stack Decisions
+    - Technology Stack
+    - Stack Decisions
 ---
 
 # Tech Stack
@@ -25,6 +25,7 @@ Technology choices and rationale for the Nexus MVP.
 **Decision:** Full-stack Next.js 16 with App Router
 
 **Frontend:**
+
 - Server Components for optimal performance
 - App Router for improved routing and layouts
 - `"use cache"` directive for opt-in caching
@@ -33,11 +34,13 @@ Technology choices and rationale for the Nexus MVP.
 - Streaming and Suspense for better UX
 
 **Backend:**
+
 - Route Handlers for API endpoints
 - Server Actions for mutations
 - `proxy.ts` for network boundary (replaces middleware)
 
 **Build:**
+
 - Turbopack (default bundler, 10x faster dev)
 - ESLint + Prettier for linting/formatting
 
@@ -111,6 +114,7 @@ Chunked upload approach for reliability with large files. Core feature requiring
 ### ORM: Drizzle
 
 Lightweight, TypeScript-native ORM with SQL-like syntax. Chosen for:
+
 - Pure TypeScript (no separate schema language)
 - SQL-like queries (AI-friendly, transferable knowledge)
 - Lightweight bundle (~50kb vs Prisma's ~2MB)

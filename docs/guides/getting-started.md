@@ -4,14 +4,14 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - guide
-  - setup
-  - nextjs
-  - supabase
-  - aws
+    - guide
+    - setup
+    - nextjs
+    - supabase
+    - aws
 aliases:
-  - Development Setup
-  - Quick Start
+    - Development Setup
+    - Quick Start
 ---
 
 # Getting Started
@@ -81,8 +81,8 @@ import { cookies } from 'next/headers';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export const createServerClient = () => {
-  const cookieStore = cookies();
-  return createServerComponentClient({ cookies: () => cookieStore });
+    const cookieStore = cookies();
+    return createServerComponentClient({ cookies: () => cookieStore });
 };
 ```
 
@@ -169,8 +169,8 @@ mkdir -p types
 1. Go to [vercel.com](https://vercel.com)
 2. Import your GitHub repository
 3. Configure project:
-   - Framework Preset: Next.js
-   - Root Directory: ./
+    - Framework Preset: Next.js
+    - Root Directory: ./
 4. Add environment variables from `.env.local`
 5. Deploy
 
@@ -203,13 +203,13 @@ vercel --prod     # Deploy to production
 
 ### Important Files
 
-| File | Purpose |
-|------|---------|
-| `app/layout.tsx` | Root layout |
-| `app/page.tsx` | Landing page |
-| `middleware.ts` | Auth middleware |
+| File             | Purpose               |
+| ---------------- | --------------------- |
+| `app/layout.tsx` | Root layout           |
+| `app/page.tsx`   | Landing page          |
+| `middleware.ts`  | Auth middleware       |
 | `next.config.js` | Next.js configuration |
-| `.env.local` | Environment variables |
+| `.env.local`     | Environment variables |
 
 ## Next Steps
 

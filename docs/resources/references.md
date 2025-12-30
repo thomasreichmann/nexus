@@ -4,11 +4,11 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - reference
-  - links
+    - reference
+    - links
 aliases:
-  - External Links
-  - Documentation Links
+    - External Links
+    - Documentation Links
 ---
 
 # Resources & References
@@ -24,20 +24,24 @@ Useful links, documentation, and reference materials for the Nexus project.
 ## Development Tools
 
 ### AI Coding Assistants
+
 - [Cursor](https://cursor.sh/)
 - [Claude API Documentation](https://docs.anthropic.com/)
 
 ### Backend
+
 - [Supabase Documentation](https://supabase.com/docs)
 - [Drizzle ORM](https://orm.drizzle.team/)
 - [Prisma Documentation](https://www.prisma.io/docs)
 
 ### Frontend
+
 - [Next.js Documentation](https://nextjs.org/docs)
 - [React Documentation](https://react.dev/)
 - [Tailwind CSS](https://tailwindcss.com/docs)
 
 ### Testing
+
 - [Playwright Documentation](https://playwright.dev/)
 
 ## Payment Integration
@@ -67,8 +71,8 @@ Useful links, documentation, and reference materials for the Nexus project.
 > [!note] Secure Storage
 > API keys and credentials should be stored securely in environment variables or a secrets manager. Never commit them to the repository.
 
-- POC Repository: *Link to be added*
-- Design Files: *Link to be added*
+- POC Repository: _Link to be added_
+- Design Files: _Link to be added_
 
 ## Related
 

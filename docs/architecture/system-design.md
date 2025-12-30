@@ -4,11 +4,11 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - architecture
-  - diagram
+    - architecture
+    - diagram
 aliases:
-  - Architecture Diagram
-  - System Architecture
+    - Architecture Diagram
+    - System Architecture
 ---
 
 # System Design

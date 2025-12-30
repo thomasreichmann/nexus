@@ -4,13 +4,13 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - ai
-  - changelog
-  - meta
+    - ai
+    - changelog
+    - meta
 aliases:
-  - AI Changes
-  - Session Log
-ai_summary: "Recent AI changes - READ THIS FIRST for context"
+    - AI Changes
+    - Session Log
+ai_summary: 'Recent AI changes - READ THIS FIRST for context'
 ---
 
 # AI Changelog
@@ -26,6 +26,7 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 Completed all technical decisions for the MVP stack.
 
 **Decisions Made:**
+
 - **Next.js 16** - Updated from 15, with `proxy.ts`, `"use cache"`, Turbopack, React 19.2
 - **API Layer:** tRPC v11 with new TanStack Query v5 integration
 - **UI:** shadcn/ui (Base UI), Lucide icons, Sonner toasts
@@ -36,6 +37,7 @@ Completed all technical decisions for the MVP stack.
 - **Glacier-first storage** - All files go to Glacier by default
 
 **Files Modified:**
+
 - `docs/architecture/tech-stack.md` - Added Supporting Libraries section, updated Testing
 - `docs/ai/context.md` - Added all library decisions, updated file locations for tRPC
 - `docs/guides/nextjs-patterns.md` - Updated for Next.js 16 (`proxy.ts`, `"use cache"`)
@@ -50,12 +52,14 @@ Completed all technical decisions for the MVP stack.
 Documented monorepo structure and infrastructure-as-code decisions.
 
 **Decisions Made:**
+
 - **Monorepo tooling:** pnpm workspaces + Turborepo
 - **IaC:** Terraform (over CDK, for cloud-agnostic flexibility)
 - **Structure:** `apps/web/` for Next.js, `infra/terraform/` for AWS
 - **Shared packages:** Add `packages/` when needed, not upfront
 
 **Files Modified:**
+
 - `docs/architecture/tech-stack.md` - Added Monorepo Tooling and Terraform sections
 - `docs/architecture/system-design.md` - Added Repository Structure section
 - `docs/ai/context.md` - Updated file paths to `apps/web/` prefix, added IaC to decisions
@@ -69,6 +73,7 @@ Documented monorepo structure and infrastructure-as-code decisions.
 Removed overly prescriptive rules and undefined patterns from AI documentation.
 
 **Files Modified:**
+
 - `CLAUDE.md` - Removed Do's/Don'ts lists, removed app directory structure
 - `.cursorrules` - Removed patterns section and avoid section, simplified
 - `docs/ai/patterns.md` - Removed all code examples, marked as draft
@@ -77,6 +82,7 @@ Removed overly prescriptive rules and undefined patterns from AI documentation.
 **Why:** User feedback that defining hard rules limits AI creativity and can cause over-focus on don'ts. App structure isn't finalized, so specific patterns shouldn't be defined yet.
 
 **Notes:**
+
 - Keep general code quality guidelines (TypeScript, naming, error handling)
 - Remove specific architecture that isn't decided yet
 - Patterns will be added as they emerge during development
@@ -88,6 +94,7 @@ Removed overly prescriptive rules and undefined patterns from AI documentation.
 Created AI-friendly documentation structure for Claude Code and Cursor.
 
 **Files Created:**
+
 - `docs/ai/_index.md` - AI docs hub
 - `docs/ai/context.md` - Project background and architecture
 - `docs/ai/conventions.md` - Naming and style rules
@@ -99,6 +106,7 @@ Created AI-friendly documentation structure for Claude Code and Cursor.
 **Why:** Enable AI assistants to understand the project instantly and generate consistent code.
 
 **Notes:**
+
 - All AI docs use `ai_summary` frontmatter for quick parsing
 - Patterns are copy-paste ready templates
 - Check `conventions.md` before generating code
@@ -110,15 +118,18 @@ Created AI-friendly documentation structure for Claude Code and Cursor.
 Added Canvas and Excalidraw support for visual documentation.
 
 **Files Created:**
+
 - `docs/architecture/system-overview.canvas` - Interactive architecture board
 - `docs/architecture/drawings/` - Folder for Excalidraw diagrams
 
 **Files Modified:**
+
 - `docs/.obsidian/community-plugins.json` - Added excalidraw plugin
 - `docs/architecture/_index.md` - Added Visual Tools section
 - `docs/contributing.md` - Added Canvas/Excalidraw instructions
 
 **Notes:**
+
 - Canvas is for high-level architecture boards
 - Excalidraw is for detailed hand-drawn diagrams
 - Excalidraw files saved to `architecture/drawings/`
@@ -130,6 +141,7 @@ Added Canvas and Excalidraw support for visual documentation.
 Added ADRs, dev journal, and additional templates.
 
 **Files Created:**
+
 - `docs/decisions/_index.md` - ADR index
 - `docs/journal/_index.md` - Dev journal index
 - `docs/templates/adr-template.md` - Architecture Decision Record template
@@ -140,6 +152,7 @@ Added ADRs, dev journal, and additional templates.
 - `docs/contributing.md` - Contribution guidelines
 
 **Notes:**
+
 - ADRs use numbered format: `001-decision-name.md`
 - Daily notes configured for Templater plugin
 - All templates use Templater syntax
@@ -151,6 +164,7 @@ Added ADRs, dev journal, and additional templates.
 Migrated all documentation from Notion to Obsidian vault.
 
 **Structure Created:**
+
 ```
 docs/
 ├── index.md                # Main hub
@@ -169,6 +183,7 @@ docs/
 ```
 
 **Features Implemented:**
+
 - YAML frontmatter on all docs
 - Obsidian callouts (> [!note], etc.)
 - Wikilinks for internal navigation
@@ -176,10 +191,12 @@ docs/
 - Tags: #architecture, #guide, #planning, etc.
 
 **Plugins Configured:**
+
 - Dataview (required for queries)
 - Templater (for templates)
 
 **Notes:**
+
 - Task tracking removed per user preference
 - Emojis removed from filenames
 - POC status preserved in prose
@@ -197,8 +214,10 @@ After completing significant work:
 5. Add **Notes** for gotchas or context
 
 Example:
+
 ```markdown
 ### Session: Auth Implementation
+
 - Created `lib/auth/session.ts`
 - Updated `middleware.ts`
 - **Note:** Using Supabase auth helpers, not custom JWT

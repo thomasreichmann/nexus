@@ -1,14 +1,14 @@
 ---
-title: "Feature: <% tp.file.title %>"
+title: 'Feature: <% tp.file.title %>'
 created: <% tp.date.now("YYYY-MM-DD") %>
 updated: <% tp.date.now("YYYY-MM-DD") %>
 status: draft
 tags:
-  - feature
-  - spec
-  - <% tp.file.cursor() %>
+    - feature
+    - spec
+    - <% tp.file.cursor() %>
 aliases:
-  -
+    -
 ---
 
 # Feature: Feature Name
@@ -37,10 +37,12 @@ What is explicitly out of scope for this feature?
 ## User Stories
 
 ### As a [user type]
+
 I want to [action]
 So that [benefit]
 
 ### As a [user type]
+
 I want to [action]
 So that [benefit]
 

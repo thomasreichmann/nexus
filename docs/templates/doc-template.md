@@ -4,9 +4,9 @@ created: <% tp.date.now("YYYY-MM-DD") %>
 updated: <% tp.date.now("YYYY-MM-DD") %>
 status: draft
 tags:
-  - <% tp.file.cursor() %>
+    - <% tp.file.cursor() %>
 aliases:
-  -
+    -
 ---
 
 # <% tp.file.title %>

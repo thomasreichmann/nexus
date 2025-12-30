@@ -4,11 +4,11 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - planning
-  - roadmap
+    - planning
+    - roadmap
 aliases:
-  - Development Phases
-  - Milestones
+    - Development Phases
+    - Milestones
 ---
 
 # Project Roadmap
@@ -33,6 +33,7 @@ Development phases and milestones for the Nexus Deep Storage Solution MVP.
 **Status:** In Progress
 
 **Completed:**
+
 - Initial concept brainstorming documented
 - Notion workspace set up for project tracking
 - Technical notes digitized and organized
@@ -40,6 +41,7 @@ Development phases and milestones for the Nexus Deep Storage Solution MVP.
 - AI development tool decision: Cursor with Claude
 
 **In Progress:**
+
 - Finalize MVP feature scope
 - Research S3 Glacier pricing and cost modeling
 - Define storage tier transition logic
@@ -47,6 +49,7 @@ Development phases and milestones for the Nexus Deep Storage Solution MVP.
 - Choose ORM (Drizzle vs Prisma)
 
 **Next Up:**
+
 - Create detailed MVP specification document
 - Design database schema
 - Plan API endpoints and structure
@@ -58,6 +61,7 @@ Development phases and milestones for the Nexus Deep Storage Solution MVP.
 **Status:** Pending
 
 #### Infrastructure Setup
+
 - Set up cloud infrastructure
 - Configure AWS S3 buckets and storage tiers
 - Set up Supabase project
@@ -68,32 +72,38 @@ Development phases and milestones for the Nexus Deep Storage Solution MVP.
 #### Core Feature Development
 
 **File Upload System**
+
 - Upload interface
 - Progress tracking
 - Error handling
 - File validation
 
 **Storage Management**
+
 - Storage tier assignment logic
 - Lifecycle policies
 - Cost tracking per user
 
 **Retrieval System**
+
 - Retrieval request handling
 - Glacier restore process
 - Download management
 
 **User Dashboard**
+
 - File browser/list view
 - Storage usage statistics
 - Account management
 
 **Billing Integration**
+
 - Stripe integration
 - Subscription management
 - Usage tracking
 
 #### Testing & Quality
+
 - Unit test coverage
 - Integration testing
 - Performance testing
@@ -105,6 +115,7 @@ Development phases and milestones for the Nexus Deep Storage Solution MVP.
 **Status:** Pending
 
 #### Beta Testing
+
 - Recruit beta users (friends, family, early adopters)
 - Gather feedback and iterate
 - Fix critical bugs
@@ -112,6 +123,7 @@ Development phases and milestones for the Nexus Deep Storage Solution MVP.
 - Refine user experience
 
 #### Production Launch
+
 - Final security review
 - Set up production monitoring
 - Prepare support documentation
@@ -120,6 +132,7 @@ Development phases and milestones for the Nexus Deep Storage Solution MVP.
 - Soft launch announcement
 
 #### Post-Launch
+
 - Monitor system health and errors
 - Gather user feedback
 - Quick iteration on critical issues
@@ -130,6 +143,7 @@ Development phases and milestones for the Nexus Deep Storage Solution MVP.
 **Status:** Future
 
 #### Potential Features
+
 - Mobile app
 - Team collaboration features
 - API for developers
@@ -139,6 +153,7 @@ Development phases and milestones for the Nexus Deep Storage Solution MVP.
 - File sharing capabilities
 
 #### Infrastructure Improvements
+
 - Evaluate usage-based pricing model
 - Consider multi-region deployment
 - Optimize costs at scale
@@ -146,23 +161,25 @@ Development phases and milestones for the Nexus Deep Storage Solution MVP.
 
 ## Key Milestones
 
-| Milestone | Status |
-|-----------|--------|
-| POC Completed | Done |
+| Milestone           | Status      |
+| ------------------- | ----------- |
+| POC Completed       | Done        |
 | MVP Scope Finalized | In Progress |
-| Development Start | Pending |
-| Beta Launch | Pending |
-| Production Launch | Pending |
+| Development Start   | Pending     |
+| Beta Launch         | Pending     |
+| Production Launch   | Pending     |
 
 ## Current Sprint Focus
 
 **This Week:**
+
 - Research S3 pricing in depth
 - Start MVP specification document
 - Choose ORM (Drizzle vs Prisma)
 - Decide on App Router implementation strategy
 
 **This Month:**
+
 - Complete all Phase 1 planning tasks
 - Initialize Next.js project repository
 - Begin Phase 2 infrastructure setup

@@ -1,13 +1,13 @@
 ---
-title: "Meeting: <% tp.file.title %>"
+title: 'Meeting: <% tp.file.title %>'
 created: <% tp.date.now("YYYY-MM-DD") %>
 updated: <% tp.date.now("YYYY-MM-DD") %>
 status: active
 tags:
-  - meeting
-  - <% tp.file.cursor() %>
+    - meeting
+    - <% tp.file.cursor() %>
 aliases:
-  -
+    -
 ---
 
 # Meeting: <% tp.date.now("YYYY-MM-DD") %> - Topic
@@ -40,8 +40,8 @@ Notes here...
 
 ## Action Items
 
-| Action | Owner | Due |
-|--------|-------|-----|
+| Action   | Owner   | Due  |
+| -------- | ------- | ---- |
 | Action 1 | @person | date |
 | Action 2 | @person | date |
 

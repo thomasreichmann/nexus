@@ -4,10 +4,10 @@ created: 2025-12-29
 updated: 2025-12-29
 status: active
 tags:
-  - guide
-  - moc
+    - guide
+    - moc
 aliases:
-  - Guides Index
+    - Guides Index
 ---
 
 # Guides

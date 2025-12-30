@@ -4,13 +4,13 @@ created: 2025-12-29
 updated: 2025-12-29
 status: draft
 tags:
-  - ai
-  - patterns
-  - code
+    - ai
+    - patterns
+    - code
 aliases:
-  - Implementation Patterns
-  - Code Examples
-ai_summary: "Code patterns will be defined as the project develops"
+    - Implementation Patterns
+    - Code Examples
+ai_summary: 'Code patterns will be defined as the project develops'
 ---
 
 # Code Patterns
@@ -39,6 +39,7 @@ As development progresses, this document will include:
 ## For Now
 
 When generating code:
+
 - Follow the naming conventions in [[conventions|Conventions]]
 - Check existing code for established patterns
 - Prefer simple, readable solutions
