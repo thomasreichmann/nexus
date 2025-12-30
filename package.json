@@ -20,6 +20,9 @@
         "onlyBuiltDependencies": [
             "sharp",
             "unrs-resolver"
+        ],
+        "ignoredBuiltDependencies": [
+            "esbuild"
         ]
     }
 }
