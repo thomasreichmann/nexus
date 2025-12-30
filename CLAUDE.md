@@ -49,13 +49,35 @@ import { env } from '@/lib/env';
 const bucket = env.S3_BUCKET;  // Validated at runtime
 ```
 
+## Database (Drizzle)
+
+Commands run from `apps/web/` or use `-F web` filter:
+
+```bash
+pnpm -F web db:generate         # Generate migration from schema changes
+pnpm -F web db:migrate          # Apply pending migrations
+pnpm -F web db:studio           # Open Drizzle Studio
+pnpm -F web db:custom <name>    # Generate empty migration for RLS/functions
+```
+
+**Workflow:**
+- Schema changes → edit `server/db/schema.ts` → `db:generate` → `db:migrate`
+- RLS/functions → `db:custom <name>` → edit SQL file → `db:migrate`
+
+**Rules:**
+- Always use drizzle-kit commands (never manually create migration files)
+- Never edit `server/db/migrations/meta/` journal
+- Flag destructive changes (dropping columns/tables) before running
+
 ## Repository Structure
 
 ```
 nexus/
-├── apps/web/          # Next.js application
-├── infra/terraform/   # AWS infrastructure (S3, IAM)
-└── docs/              # Obsidian documentation vault
+├── apps/web/              # Next.js application
+│   ├── server/db/         # Drizzle schema & migrations
+│   └── lib/env.ts         # Type-safe env validation
+├── infra/terraform/       # AWS infrastructure (S3, IAM)
+└── docs/                  # Obsidian documentation vault
 ```
 
 ## Documentation

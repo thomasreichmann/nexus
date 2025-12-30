@@ -6,13 +6,13 @@
             "outputs": [".next/**", "dist/**"],
             "env": [
                 "NEXT_PUBLIC_SUPABASE_URL",
-                "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+                "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
                 "NEXT_PUBLIC_STRIPE_PUBLIC_KEY",
                 "NEXT_PUBLIC_APP_URL"
             ],
             "passThroughEnv": [
                 "DATABASE_URL",
-                "SUPABASE_SERVICE_ROLE_KEY",
+                "SUPABASE_SECRET_KEY",
                 "AWS_ACCESS_KEY_ID",
                 "AWS_SECRET_ACCESS_KEY",
                 "AWS_REGION",

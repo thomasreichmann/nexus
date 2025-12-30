@@ -234,8 +234,37 @@ try {
 }
 ```
 
+## Database (Drizzle)
+
+### Schema Changes
+
+Edit `server/db/schema.ts`, then generate migration:
+
+```bash
+pnpm -F web db:generate
+pnpm -F web db:migrate
+```
+
+### Non-Schema Changes (RLS, functions)
+
+Generate empty migration, then edit the SQL:
+
+```bash
+pnpm -F web db:custom add-rls-policies
+# Edit server/db/migrations/XXXX_add-rls-policies.sql
+pnpm -F web db:migrate
+```
+
+### AI Rules
+
+1. **Always use drizzle-kit** - Never manually create migration files
+2. **Never edit `meta/` journal** - Managed by drizzle-kit
+3. **Flag destructive changes** - Warn before dropping columns/tables
+4. **Commit migrations** - Schema + migration files go together
+
 ## Related
 
 - [[patterns|Code Patterns]] - Implementation examples
 - [[context|Project Context]] - Background and architecture
+- [[database-workflow|Database Workflow]] - Full migration guide
 - [[ai/_index|Back to AI Docs]]

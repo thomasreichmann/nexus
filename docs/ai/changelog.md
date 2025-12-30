@@ -21,6 +21,81 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2025-12-30
 
+### Session: Supabase New API Keys
+
+Updated env var names to match Supabase's new API key system.
+
+**Changes:**
+
+| Old Name | New Name |
+|----------|----------|
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` |
+| `SUPABASE_SERVICE_ROLE_KEY` | `SUPABASE_SECRET_KEY` |
+
+**Files Modified:**
+
+- `apps/web/lib/env.ts` - Updated schema
+- `apps/web/.env.example` - Updated template
+- `turbo.json` - Updated env var references
+- `docs/guides/environment-setup.md` - Updated docs with new key names
+
+**Why:** Supabase introduced new `sb_publishable_...` and `sb_secret_...` keys to replace JWT-based anon/service_role keys. New projects only have the new keys.
+
+---
+
+### Session: Drizzle ORM Setup & Database Workflow
+
+Added Drizzle ORM and defined the database workflow for AI-assisted development.
+
+**Decisions Made:**
+
+- **Migrations over push** - Use `db:generate` + `db:migrate` for all changes (not `db:push`)
+- **Single environment** - Local dev uses cloud Supabase (no local Docker)
+- **Custom migrations** - Use `db:custom <name>` for RLS policies, functions, triggers
+- **AI rules** - Never manually create migration files, always use drizzle-kit
+
+**Packages Added:**
+
+- `drizzle-orm` - ORM with type-safe queries
+- `postgres` - Postgres.js driver
+- `dotenv` - Env loading for drizzle-kit CLI
+- `drizzle-kit` (dev) - Migrations and studio
+
+**Files Created:**
+
+- `apps/web/drizzle.config.ts` - Drizzle config with dotenv for CLI commands
+- `apps/web/server/db/schema.ts` - Initial schema with users table
+- `apps/web/server/db/index.ts` - Database client export
+- `docs/guides/database-workflow.md` - Full migration workflow documentation
+
+**Files Modified:**
+
+- `apps/web/package.json` - Added db:generate, db:migrate, db:push, db:studio, db:custom, typecheck scripts
+- `docs/ai/conventions.md` - Added Database (Drizzle) section with AI rules
+- `docs/guides/environment-setup.md` - Clarified single-env (cloud-only) approach
+
+**Why migrations over push:**
+
+1. Git history of all schema changes
+2. Can include RLS policies, functions, triggers in migrations
+3. Reproducible across environments
+4. Safer - review SQL before applying
+
+**Migration workflow:**
+
+```bash
+# Schema changes
+pnpm -F web db:generate
+pnpm -F web db:migrate
+
+# RLS/functions
+pnpm -F web db:custom add-rls-policies
+# Edit the SQL file
+pnpm -F web db:migrate
+```
+
+---
+
 ### Session: Environment Setup & Type-Safe Configuration
 
 Added environment variable management strategy with type-safe validation.

@@ -18,12 +18,15 @@ Environment variable management and configuration strategy for Nexus.
 
 ## Overview
 
-Nexus uses Vercel as the source of truth for environment variables:
+Nexus uses a **single environment** approach for simplicity:
 
-- Variables configured once in Vercel dashboard
-- Pulled locally via npm scripts
-- Type-safe validation with Zod at runtime
-- Clear separation of server vs client variables
+- **Cloud-only development** - Local dev connects to cloud Supabase (no local Docker)
+- **Single `.env.local`** - Contains cloud credentials pulled from Vercel
+- **Vercel as source of truth** - Variables configured once in Vercel dashboard
+- **Type-safe validation** - Zod validates at runtime
+
+> [!note] Why cloud-only?
+> Managing multiple environment files (local, dev, staging, prod) adds complexity. For MVP, we use the cloud dev environment for all local development. This requires an internet connection but eliminates env file juggling.
 
 ## Quick Start
 
@@ -49,15 +52,18 @@ apps/web/
 
 ## Environment Variables
 
-### Supabase (Client)
+### Supabase
 
 Used by Supabase JS client for auth and real-time features.
 
 | Variable | Type | Description |
 |----------|------|-------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Public | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public | Supabase anonymous key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server | Service role key (admin access) |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public | Client key (respects RLS) |
+| `SUPABASE_SECRET_KEY` | Server | Secret key (bypasses RLS) |
+
+> [!note] New API Keys
+> Supabase now uses `sb_publishable_...` and `sb_secret_...` keys instead of the legacy JWT-based anon/service_role keys. New projects only have the new keys.
 
 ### Database (Drizzle)
 

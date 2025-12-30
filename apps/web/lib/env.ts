@@ -3,7 +3,7 @@ import { z } from 'zod';
 // Server-side env vars (not exposed to client)
 const serverSchema = z.object({
     DATABASE_URL: z.string().url(),
-    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+    SUPABASE_SECRET_KEY: z.string().min(1),
     AWS_ACCESS_KEY_ID: z.string().min(1),
     AWS_SECRET_ACCESS_KEY: z.string().min(1),
     AWS_REGION: z.string().min(1),
@@ -15,7 +15,7 @@ const serverSchema = z.object({
 // Client-side env vars (NEXT_PUBLIC_ prefix)
 const clientSchema = z.object({
     NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
     NEXT_PUBLIC_STRIPE_PUBLIC_KEY: z.string().min(1),
     NEXT_PUBLIC_APP_URL: z.string().url(),
 });
@@ -27,7 +27,7 @@ type Env = ServerEnv & ClientEnv;
 // Client vars validated at build time (inlined by Next.js)
 const clientEnv = clientSchema.parse({
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
     NEXT_PUBLIC_STRIPE_PUBLIC_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
 });
