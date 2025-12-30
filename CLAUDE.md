@@ -13,6 +13,42 @@ Nexus is a deep storage solution using AWS S3 tiers (Standard → Glacier) for c
 **ORM:** Drizzle | **Styling:** Tailwind | **Storage:** Glacier-first
 **API:** tRPC v11 | **Testing:** Vitest + Playwright
 
+## Commands
+
+All commands run from monorepo root:
+
+```bash
+pnpm dev          # Start dev server (Turbopack)
+pnpm build        # Build all workspaces
+pnpm lint         # Run ESLint
+pnpm test         # Run tests
+pnpm typecheck    # TypeScript check
+pnpm env:pull     # Pull env vars from Vercel
+```
+
+Workspace-specific commands use `-F` filter:
+
+```bash
+pnpm -F web add <package>      # Add dependency to web app
+pnpm -F web add -D <package>   # Add dev dependency
+```
+
+## Environment Setup
+
+Env vars managed via Vercel, pulled locally:
+
+```bash
+vercel link       # One-time setup
+pnpm env:pull     # Creates apps/web/.env.local
+```
+
+Type-safe access via `@/lib/env`:
+
+```typescript
+import { env } from '@/lib/env';
+const bucket = env.S3_BUCKET;  // Validated at runtime
+```
+
 ## Repository Structure
 
 ```

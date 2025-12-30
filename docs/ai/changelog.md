@@ -19,6 +19,41 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ---
 
+## 2025-12-30
+
+### Session: Environment Setup & Type-Safe Configuration
+
+Added environment variable management strategy with type-safe validation.
+
+**Decisions Made:**
+
+- **Env file location:** `apps/web/` (Next.js auto-loads)
+- **Source of truth:** Vercel dashboard, pulled via `pnpm env:pull`
+- **Type safety:** Manual Zod validation in `lib/env.ts`
+- **Database access:** Both Drizzle (direct Postgres) and Supabase client
+
+**Files Created:**
+
+- `docs/guides/environment-setup.md` - Full environment documentation
+- `apps/web/.env.example` - Template with all 13 env vars
+- `apps/web/lib/env.ts` - Zod validation & typed exports
+
+**Files Modified:**
+
+- `docs/planning/bootstrap.md` - Added step 3.2 for environment setup
+- `docs/ai/context.md` - Updated env vars section, added DATABASE_URL
+- `package.json` - Added `env:pull` script
+
+**Why:** Environment setup was missing from bootstrap guide. Added type-safe validation to fail fast on missing vars and provide TypeScript autocomplete.
+
+**Notes:**
+
+- Use `vercel link` first (one-time), then `pnpm env:pull`
+- Server vars validated separately from client (NEXT_PUBLIC_) vars
+- DATABASE_URL needed for Drizzle direct Postgres access
+
+---
+
 ## 2025-12-29
 
 ### Session: Supporting Libraries & Final Tech Decisions

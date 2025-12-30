@@ -173,6 +173,7 @@ File
 | Server Actions     | `apps/web/actions/`             |
 | Database Schema    | `apps/web/server/db/`           |
 | S3 Operations      | `apps/web/lib/s3/`              |
+| Environment        | `apps/web/lib/env.ts`           |
 | Types              | `apps/web/types/`               |
 | Tests              | Colocated (`*.test.ts`)         |
 | Infrastructure     | `infra/terraform/`              |
@@ -180,20 +181,29 @@ File
 
 ## Environment Variables
 
+Managed via Vercel - pull locally with `pnpm env:pull`.
+
+Type-safe access via `@/lib/env` (Zod validation at runtime).
+
 ```bash
-# Required
+# Supabase (client)
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
+
+# Database (Drizzle)
+DATABASE_URL=
+
+# AWS S3
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_REGION=
 S3_BUCKET=
 
-# Payments
+# Stripe
+NEXT_PUBLIC_STRIPE_PUBLIC_KEY=
 STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
-NEXT_PUBLIC_STRIPE_PUBLIC_KEY=
 
 # App
 NEXT_PUBLIC_APP_URL=

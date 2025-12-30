@@ -202,7 +202,88 @@ cd apps/web && pnpm dlx shadcn@latest init && cd ../..
 - Base color: Neutral (or preference)
 - CSS variables: Yes
 
-### 3.2 Drizzle ORM
+### 3.2 Environment Setup
+
+**Create `.env.example` template:**
+
+```bash
+# apps/web/.env.example
+
+# Supabase (client)
+NEXT_PUBLIC_SUPABASE_URL=your-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Database (Drizzle)
+DATABASE_URL=postgresql://user:password@host:5432/postgres
+
+# AWS S3
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+AWS_REGION=us-east-1
+S3_BUCKET=nexus-storage-dev
+
+# Stripe
+NEXT_PUBLIC_STRIPE_PUBLIC_KEY=pk_test_xxx
+STRIPE_SECRET_KEY=sk_test_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+
+# App
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+**Add env script to root package.json:**
+
+```json
+{
+    "scripts": {
+        "env:pull": "vercel env pull apps/web/.env.local"
+    }
+}
+```
+
+**Create type-safe env validation (`lib/env.ts`):**
+
+```typescript
+import { z } from 'zod';
+
+const serverSchema = z.object({
+    DATABASE_URL: z.string().url(),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+    AWS_ACCESS_KEY_ID: z.string().min(1),
+    AWS_SECRET_ACCESS_KEY: z.string().min(1),
+    AWS_REGION: z.string().min(1),
+    S3_BUCKET: z.string().min(1),
+    STRIPE_SECRET_KEY: z.string().min(1),
+    STRIPE_WEBHOOK_SECRET: z.string().min(1),
+});
+
+const clientSchema = z.object({
+    NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
+    NEXT_PUBLIC_STRIPE_PUBLIC_KEY: z.string().min(1),
+    NEXT_PUBLIC_APP_URL: z.string().url(),
+});
+
+const serverEnv = serverSchema.parse(process.env);
+const clientEnv = clientSchema.parse({
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    NEXT_PUBLIC_STRIPE_PUBLIC_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY,
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+});
+
+export const env = { ...serverEnv, ...clientEnv };
+```
+
+**Pull environment variables from Vercel:**
+
+```bash
+vercel link      # First time only
+pnpm env:pull    # Creates apps/web/.env.local
+```
+
+### 3.3 Drizzle ORM
 
 ```bash
 pnpm -F web add drizzle-orm postgres
@@ -236,7 +317,7 @@ export const users = pgTable('users', {
 });
 ```
 
-### 3.3 tRPC v11
+### 3.4 tRPC v11
 
 ```bash
 pnpm -F web add @trpc/server @trpc/client @trpc/tanstack-react-query @tanstack/react-query superjson
@@ -269,7 +350,7 @@ export const appRouter = router({
 export type AppRouter = typeof appRouter;
 ```
 
-### 3.4 Supabase
+### 3.5 Supabase
 
 ```bash
 pnpm -F web add @supabase/ssr @supabase/supabase-js
@@ -303,7 +384,7 @@ export async function createClient() {
 }
 ```
 
-### 3.5 Supporting libraries
+### 3.6 Supporting libraries
 
 ```bash
 pnpm -F web add zod lucide-react sonner @tanstack/react-form date-fns
