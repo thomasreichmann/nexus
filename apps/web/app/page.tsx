@@ -1,8 +1,12 @@
-import { env } from '@/lib/env';
+import { db } from '@/server/db';
+import { users } from '@/server/db/schema';
+import { sql } from 'drizzle-orm';
 import Image from 'next/image';
+import { AddUserButton } from './add-user-button';
 
-export default function Home() {
-    const fromEnv = env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY;
+export default async function Home() {
+    const result = await db.select({ count: sql<number>`count(*)` }).from(users);
+    const userCount = result[0]?.count ?? 0;
 
     return (
         <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
@@ -16,8 +20,14 @@ export default function Home() {
                     priority
                 />
                 <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
+                    <div className="flex items-center gap-3">
+                        <p className="rounded-full bg-green-100 px-4 py-2 text-sm text-green-800 dark:bg-green-900 dark:text-green-100">
+                            DB connected - {userCount} users
+                        </p>
+                        <AddUserButton />
+                    </div>
                     <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-                        To get started, edit the page.tsx file. {fromEnv}
+                        To get started, edit the page.tsx file.
                     </h1>
                     <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
                         Looking for a starting point or more instructions? Head
