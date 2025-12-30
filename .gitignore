@@ -32,6 +32,7 @@ infra/terraform/.terraform/
 infra/terraform/*.tfstate*
 
 # Obsidian vault metadata
-# Personal workspace layouts and preferences
 docs/.obsidian/workspace.json
 docs/.obsidian/appearance.json
+docs/.obsidian/plugins/
+docs/.obsidian/cache
