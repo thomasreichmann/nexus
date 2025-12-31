@@ -34,7 +34,7 @@ Updated env var names to match Supabase's new API key system.
 
 **Files Modified:**
 
-- `apps/web/lib/env.ts` - Updated schema
+- `apps/web/lib/env/` - Updated schema
 - `apps/web/.env.example` - Updated template
 - `turbo.json` - Updated env var references
 - `docs/guides/environment-setup.md` - Updated docs with new key names
@@ -104,14 +104,14 @@ Added environment variable management strategy with type-safe validation.
 
 - **Env file location:** `apps/web/` (Next.js auto-loads)
 - **Source of truth:** Vercel dashboard, pulled via `pnpm env:pull`
-- **Type safety:** Manual Zod validation in `lib/env.ts`
+- **Type safety:** Manual Zod validation in `lib/env/schema.ts`
 - **Database access:** Both Drizzle (direct Postgres) and Supabase client
 
 **Files Created:**
 
 - `docs/guides/environment-setup.md` - Full environment documentation
 - `apps/web/.env.example` - Template with all 13 env vars
-- `apps/web/lib/env.ts` - Zod validation & typed exports
+- `apps/web/lib/env/` - Zod validation & typed exports
 
 **Files Modified:**
 

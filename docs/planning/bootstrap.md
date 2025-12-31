@@ -242,7 +242,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 }
 ```
 
-**Create type-safe env validation (`lib/env.ts`):**
+**Create type-safe env validation (`lib/env/`):**
 
 ```typescript
 import { z } from 'zod';

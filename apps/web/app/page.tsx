@@ -4,9 +4,19 @@ import { sql } from 'drizzle-orm';
 import Image from 'next/image';
 import { AddUserButton } from './add-user-button';
 
+async function getCount() {
+    const [result] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(users);
+
+    const userCount = result.count;
+
+    return userCount;
+}
+
 export default async function Home() {
-    const result = await db.select({ count: sql<number>`count(*)` }).from(users);
-    const userCount = result[0]?.count ?? 0;
+    // const userCount = await getCount();
+    const userCount = 1;
 
     return (
         <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">

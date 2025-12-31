@@ -75,7 +75,7 @@ pnpm -F web db:custom <name>    # Generate empty migration for RLS/functions
 nexus/
 ├── apps/web/              # Next.js application
 │   ├── server/db/         # Drizzle schema & migrations
-│   └── lib/env.ts         # Type-safe env validation
+│   └── lib/env/           # Type-safe env validation
 ├── infra/terraform/       # AWS infrastructure (S3, IAM)
 └── docs/                  # Obsidian documentation vault
 ```

@@ -173,7 +173,7 @@ File
 | Server Actions     | `apps/web/actions/`             |
 | Database Schema    | `apps/web/server/db/`           |
 | S3 Operations      | `apps/web/lib/s3/`              |
-| Environment        | `apps/web/lib/env.ts`           |
+| Environment        | `apps/web/lib/env/`             |
 | Types              | `apps/web/types/`               |
 | Tests              | Colocated (`*.test.ts`)         |
 | Infrastructure     | `infra/terraform/`              |

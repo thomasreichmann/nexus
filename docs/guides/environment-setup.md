@@ -138,7 +138,7 @@ const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
 
 1. Add in Vercel dashboard for all environments
 2. Pull locally: `pnpm env:pull`
-3. Add to `lib/env.ts` schema (server or client)
+3. Add to `lib/env/schema.ts` (server or client schema)
 4. Update `.env.example` for reference
 5. Update this documentation
 
