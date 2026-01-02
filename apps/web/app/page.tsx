@@ -3,6 +3,7 @@ import { users } from '@/server/db/schema';
 import { sql } from 'drizzle-orm';
 import Image from 'next/image';
 import { AddUserButton } from './add-user-button';
+import { TrpcTestClientComponent } from './trpc-test-client-component';
 
 async function getCount() {
     const [result] = await db
@@ -36,6 +37,7 @@ export default async function Home() {
                         </p>
                         <AddUserButton />
                     </div>
+                    <TrpcTestClientComponent />
                     <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
                         To get started, edit the page.tsx file.
                     </h1>
