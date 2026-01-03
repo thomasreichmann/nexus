@@ -1,7 +1,7 @@
 ---
 title: Environment Setup
 created: 2025-12-30
-updated: 2025-12-30
+updated: 2026-01-03
 status: active
 tags:
     - guide
@@ -52,19 +52,6 @@ apps/web/
 
 ## Environment Variables
 
-### Supabase
-
-Used by Supabase JS client for auth and real-time features.
-
-| Variable | Type | Description |
-|----------|------|-------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Public | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public | Client key (respects RLS) |
-| `SUPABASE_SECRET_KEY` | Server | Secret key (bypasses RLS) |
-
-> [!note] New API Keys
-> Supabase now uses `sb_publishable_...` and `sb_secret_...` keys instead of the legacy JWT-based anon/service_role keys. New projects only have the new keys.
-
 ### Database (Drizzle)
 
 Direct PostgreSQL connection for Drizzle ORM queries.
@@ -75,6 +62,14 @@ Direct PostgreSQL connection for Drizzle ORM queries.
 
 > [!note] Connection Pooling
 > For production, use the pooled connection string (port 6543) instead of direct connection (port 5432).
+
+### Authentication (BetterAuth)
+
+Secret key for session signing and token generation.
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `BETTER_AUTH_SECRET` | Server | Random 32+ character string for signing |
 
 ### AWS S3
 
@@ -114,7 +109,7 @@ import { env } from '@/lib/env';
 
 // Type-safe, validated at runtime
 const bucket = env.S3_BUCKET;
-const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+const authSecret = env.BETTER_AUTH_SECRET;
 ```
 
 ### Benefits

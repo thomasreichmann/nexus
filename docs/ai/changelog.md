@@ -1,7 +1,7 @@
 ---
 title: AI Changelog
 created: 2025-12-29
-updated: 2025-12-29
+updated: 2026-01-03
 status: active
 tags:
     - ai
@@ -16,6 +16,69 @@ ai_summary: 'Recent AI changes - READ THIS FIRST for context'
 # AI Changelog
 
 Recent changes made by AI assistants. **Read this first** to understand recent context.
+
+---
+
+## 2026-01-03
+
+### Session: BetterAuth Setup
+
+Replaced Supabase Auth with BetterAuth for unified Drizzle + tRPC architecture.
+
+**Decisions Made:**
+
+- **Fresh user table** - Let BetterAuth create its own tables (user, session, account, verification)
+- **Email/password only** - OAuth providers to be added later
+- **Skip email sending** - No password reset or email verification for now
+
+**Files Created:**
+
+- `apps/web/lib/auth.ts` - BetterAuth server config with Drizzle adapter
+- `apps/web/lib/auth-client.ts` - Client-side auth hooks (signIn, signUp, signOut, useSession)
+- `apps/web/app/api/auth/[...all]/route.ts` - Auth API handler
+- `apps/web/app/(auth)/login/page.tsx` - Login page with route group
+- `apps/web/app/(auth)/signup/page.tsx` - Signup page with route group
+- `apps/web/app/sign-out-button.tsx` - Sign out with React Query cache invalidation
+- `apps/web/app/user-info-client.tsx` - Client-side user info via tRPC
+
+**Files Modified:**
+
+- `apps/web/server/db/schema.ts` - BetterAuth tables (user, session, account, verification)
+- `apps/web/server/trpc/init.ts` - Added session to context, added `protectedProcedure`
+- `apps/web/server/trpc/router.ts` - Added auth router
+- `apps/web/server/trpc/routers/auth.ts` - Created `me` procedure
+- `apps/web/app/page.tsx` - Homepage showing server (RSC) and client (tRPC) auth status
+- `apps/web/lib/env/schema.ts` - Added `BETTER_AUTH_SECRET`, removed Supabase auth keys
+
+**Why BetterAuth over Supabase Auth:**
+
+1. Application-layer auth that integrates cleanly with Drizzle ORM
+2. Session stored in our database (not Supabase-managed)
+3. Direct function calls for server-side auth (no HTTP self-calls)
+4. Clean integration with tRPC context for procedure gating
+
+**Key Patterns:**
+
+```typescript
+// Server-side session check (RSC)
+const session = await auth.api.getSession({ headers: await headers() });
+
+// tRPC context (session available in all procedures)
+export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.session) throw new TRPCError({ code: 'UNAUTHORIZED' });
+  return next({ ctx: { ...ctx, session: ctx.session } });
+});
+
+// Client-side auth
+await authClient.signIn.email({ email, password });
+await authClient.signOut({ fetchOptions: { onSuccess: () => queryClient.invalidateQueries() } });
+```
+
+**Notes:**
+
+- BetterAuth client functions make HTTP POST requests to `/api/auth/*`
+- `auth.api.getSession()` is a direct function call (not HTTP)
+- React Query cache must be invalidated on sign out for client components
 
 ---
 

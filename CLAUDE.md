@@ -7,11 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Nexus is a deep storage solution using AWS S3 tiers (Standard → Glacier) for cost-effective file archival. Think "Dropbox for archival" - users upload files they want to keep long-term but don't need instant access to.
 
 **Phase:** MVP Planning & Development (POC complete)
-**Stack:** Next.js 16 / Supabase / AWS S3 / Stripe / Vercel
-**Monorepo:** pnpm workspaces + Turborepo
-**IaC:** Terraform
-**ORM:** Drizzle | **Styling:** Tailwind | **Storage:** Glacier-first
-**API:** tRPC v11 | **Testing:** Vitest + Playwright
+**Stack:** Next.js 16 / Supabase (DB) / AWS S3 / Stripe / Vercel
+**Auth:** BetterAuth | **ORM:** Drizzle | **API:** tRPC v11
+**Monorepo:** pnpm workspaces + Turborepo | **IaC:** Terraform
+**Styling:** Tailwind | **Storage:** Glacier-first | **Testing:** Vitest + Playwright
 
 ## Commands
 

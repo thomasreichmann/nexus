@@ -1,7 +1,7 @@
 ---
 title: Tech Stack
 created: 2025-12-29
-updated: 2025-12-29
+updated: 2026-01-03
 status: active
 tags:
     - architecture
@@ -49,9 +49,15 @@ Technology choices and rationale for the Nexus MVP.
 ### Database: Supabase
 
 - PostgreSQL database
-- Built-in authentication
 - Real-time capabilities
 - Row-level security
+
+### Authentication: BetterAuth
+
+- Application-layer auth with Drizzle adapter
+- Session stored in database (user, session, account, verification tables)
+- Email/password authentication
+- Integrates with tRPC context for procedure gating
 
 ### Storage: AWS S3
 

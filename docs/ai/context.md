@@ -1,7 +1,7 @@
 ---
 title: Project Context
 created: 2025-12-29
-updated: 2025-12-29
+updated: 2026-01-03
 status: active
 tags:
     - ai
@@ -69,9 +69,10 @@ Think of it as "Dropbox for archival" - users upload files they want to keep lon
 
 ### Authentication
 
-- **Supabase Auth**
+- **BetterAuth** with Drizzle adapter
 - Email/password initially
 - OAuth providers later
+- Session in database, integrates with tRPC context
 
 ### Payments
 
@@ -140,7 +141,8 @@ File
 | Decision      | Choice            | Rationale                                |
 | ------------- | ----------------- | ---------------------------------------- |
 | Framework     | Next.js           | Full-stack, great DX, Vercel integration |
-| Database      | Supabase          | Postgres + Auth + Realtime in one        |
+| Database      | Supabase          | Postgres + Realtime in one               |
+| Auth          | BetterAuth        | Drizzle adapter, tRPC integration        |
 | Storage       | AWS S3            | Industry standard, Glacier support       |
 | Payments      | Stripe            | Developer-friendly, subscription support |
 | Deployment    | Vercel            | Best Next.js experience                  |
@@ -172,6 +174,7 @@ File
 | tRPC Router        | `apps/web/server/trpc/`         |
 | Server Actions     | `apps/web/actions/`             |
 | Database Schema    | `apps/web/server/db/`           |
+| Auth               | `apps/web/lib/auth.ts`          |
 | S3 Operations      | `apps/web/lib/s3/`              |
 | Environment        | `apps/web/lib/env/`             |
 | Types              | `apps/web/types/`               |
@@ -186,13 +189,11 @@ Managed via Vercel - pull locally with `pnpm env:pull`.
 Type-safe access via `@/lib/env` (Zod validation at runtime).
 
 ```bash
-# Supabase (client)
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-
 # Database (Drizzle)
 DATABASE_URL=
+
+# Auth (BetterAuth)
+BETTER_AUTH_SECRET=
 
 # AWS S3
 AWS_ACCESS_KEY_ID=
