@@ -80,6 +80,30 @@ await authClient.signOut({ fetchOptions: { onSuccess: () => queryClient.invalida
 - `auth.api.getSession()` is a direct function call (not HTTP)
 - React Query cache must be invalidated on sign out for client components
 
+### Session: `lib/` Organization (Auth + `cn`)
+
+Reorganized `apps/web/lib/` to use domain folders and concept modules, and documented the pattern for future additions.
+
+**Changes:**
+
+- Moved auth modules:
+	- `apps/web/lib/auth.ts` → `apps/web/lib/auth/server.ts`
+	- `apps/web/lib/auth-client.ts` → `apps/web/lib/auth/client.ts`
+- Extracted `cn` helper:
+	- `apps/web/lib/utils.ts` → `apps/web/lib/cn.ts`
+	- `apps/web/lib/utils.test.ts` → `apps/web/lib/cn.test.ts`
+- Updated imports to the new paths:
+	- Server code now imports `auth` from `@/lib/auth/server`
+	- Client code now imports `authClient` from `@/lib/auth/client`
+- Updated shadcn alias:
+	- `apps/web/components.json` `aliases.utils` now points at `@/lib/cn`
+
+**Why:**
+
+- Keep `lib/` scalable (domain folders + cohesive concept files)
+- Make server/client intent obvious for auth
+- Avoid `utils.ts` becoming a catch-all over time
+
 ---
 
 ## 2025-12-30

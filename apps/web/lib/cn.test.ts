@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cn } from './utils';
+import { cn } from './cn';
 
 describe('cn', () => {
     it('merges class names', () => {
@@ -20,3 +20,5 @@ describe('cn', () => {
         expect(cn('foo', undefined, null, 'bar')).toBe('foo bar');
     });
 });
+
+

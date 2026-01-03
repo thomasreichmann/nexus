@@ -1,7 +1,7 @@
 ---
 title: Code Conventions
 created: 2025-12-29
-updated: 2025-12-29
+updated: 2026-01-03
 status: active
 tags:
     - ai
@@ -27,6 +27,29 @@ Naming conventions, file structure, and code style rules for the Nexus project.
 | Actions    | `camelCase.ts`            | `uploadFile.ts`       |
 | Types      | `camelCase.ts`            | `fileTypes.ts`        |
 | Tests      | `*.test.ts` / `*.spec.ts` | `formatBytes.test.ts` |
+
+## Library (`apps/web/lib/`) Organization
+
+Use `apps/web/lib/` for **shared primitives** and **integration glue** used across the app (auth, env, tRPC, formatting, parsing). Avoid turning it into a generic dumping ground.
+
+**Structure**
+
+- Prefer **domain folders**: `lib/auth/*`, `lib/env/*`, `lib/trpc/*`, `lib/storage/*`, `lib/stripe/*`, etc.
+- Within a domain, prefer **concept modules** (one cohesive concept per file), not one function per file:
+	- ✅ `lib/storage/tiers.ts` exporting several tier-related helpers
+	- ❌ `lib/storage/getTierLabel.ts`, `lib/storage/getTierEta.ts`, ...
+- Only split a file when there’s a real boundary (size + separable concerns), not preemptively.
+
+**Client/server intent (when needed)**
+
+- When something is clearly client-only or server-only, encode it in the path/name:
+	- `lib/auth/client.ts` vs `lib/auth/server.ts`
+	- or `*.client.ts` / `*.server.ts` when that fits better
+
+**Promotion rule (to avoid duplication + file explosion)**
+
+- If a helper is used once, keep it **local** to the feature/component.
+- Promote into `lib/<domain>/...` when it’s reused (or clearly reusable), and keep a single canonical implementation there.
 
 ## Component Naming
 

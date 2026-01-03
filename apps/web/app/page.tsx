@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { headers } from 'next/headers';
-import { auth } from '@/lib/auth';
+import { auth } from '@/lib/auth/server';
 import { UserInfoClient } from './user-info-client';
 import { SignOutButton } from './sign-out-button';
 

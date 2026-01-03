@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { authClient } from '@/lib/auth-client';
+import { authClient } from '@/lib/auth/client';
 
 export function SignOutButton() {
     const router = useRouter();

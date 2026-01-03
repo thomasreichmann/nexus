@@ -16,7 +16,7 @@ vi.mock('@tanstack/react-query', () => ({
     }),
 }));
 
-vi.mock('@/lib/auth-client', () => ({
+vi.mock('@/lib/auth/client', () => ({
     authClient: {
         signOut: vi.fn(),
     },

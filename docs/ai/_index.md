@@ -1,7 +1,7 @@
 ---
 title: AI Documentation
 created: 2025-12-29
-updated: 2025-12-29
+updated: 2026-01-03
 status: active
 tags:
     - ai
@@ -33,6 +33,7 @@ This folder contains context and instructions that help AI:
 
 - [[context|Project Context]] - Detailed background, business logic, data model
 - [[conventions|Conventions]] - Naming, structure, style rules
+- [[conventions#Library (`apps/web/lib/`) Organization|lib/ organization]] - Where shared modules live and how to keep it scalable
 - [[patterns|Code Patterns]] - Implementation examples to follow
 
 ### Workflow
