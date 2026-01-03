@@ -18,7 +18,8 @@
                 "AWS_REGION",
                 "S3_BUCKET",
                 "STRIPE_SECRET_KEY",
-                "STRIPE_WEBHOOK_SECRET"
+                "STRIPE_WEBHOOK_SECRET",
+                "BETTER_AUTH_SECRET"
             ]
         },
         "dev": {
