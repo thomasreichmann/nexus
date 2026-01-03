@@ -8,6 +8,20 @@
       "when": 1767065310136,
       "tag": "0000_cloudy_namorita",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1767398239152,
+      "tag": "0001_absent_mac_gargan",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1767398862061,
+      "tag": "0002_calm_tana_nile",
+      "breakpoints": true
     }
   ]
 }
