@@ -429,9 +429,9 @@ pnpm -F web add zod lucide-react sonner @tanstack/react-form date-fns
 
 ---
 
-## Phase 4: Testing Setup
+## Phase 4: Testing Setup ✅
 
-### 4.1 Vitest
+### 4.1 Vitest ✅
 
 ```bash
 pnpm -F web add -D vitest @testing-library/react @testing-library/jest-dom @vitejs/plugin-react jsdom
@@ -470,10 +470,10 @@ import '@testing-library/jest-dom/vitest';
 }
 ```
 
-### 4.2 Playwright
+### 4.2 Playwright ✅
 
 ```bash
-pnpm create playwright
+pnpm -F web add -D @playwright/test
 ```
 
 **Options:**

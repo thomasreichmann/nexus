@@ -97,3 +97,9 @@ docs/
 **Before writing code:** Read `docs/ai/conventions.md` for naming conventions and component structure guidelines.
 
 **After making changes:** Update `docs/ai/changelog.md` with what changed and why.
+
+## Git Commits
+
+- No "Co-Authored-By" lines or AI attribution in commits
+- No "Generated with Claude Code" footers
+- Keep commit messages concise and conventional
