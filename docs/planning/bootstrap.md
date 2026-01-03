@@ -421,7 +421,7 @@ import { toNextJsHandler } from 'better-auth/next-js';
 export const { GET, POST } = toNextJsHandler(auth.handler);
 ```
 
-### 3.6 Supporting libraries
+### 3.6 Supporting libraries ✅
 
 ```bash
 pnpm -F web add zod lucide-react sonner @tanstack/react-form date-fns
