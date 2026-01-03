@@ -1,10 +1,10 @@
 import { router } from './init';
+import { authRouter } from './routers/auth';
 import { debugRouter } from './routers/debug';
-import { usersRouter } from './routers/users';
 
 export const appRouter = router({
+    auth: authRouter,
     debug: debugRouter,
-    users: usersRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -1,4 +1,4 @@
-import { publicProcedure, router } from '../init';
+import { protectedProcedure, publicProcedure, router } from '../init';
 
 export const debugRouter = router({
     random: publicProcedure.query(() => {
@@ -6,5 +6,8 @@ export const debugRouter = router({
             now: Date.now(),
             random: Math.random(),
         };
+    }),
+    user: protectedProcedure.query(({ ctx }) => {
+        return ctx.session.user;
     }),
 });
