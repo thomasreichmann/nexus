@@ -1,7 +1,7 @@
 ---
 title: Bootstrap Guide
 created: 2025-12-29
-updated: 2025-12-29
+updated: 2026-01-03
 status: active
 tags:
     - planning
@@ -187,9 +187,9 @@ apps/web/
 
 ---
 
-## Phase 3: Core Dependencies
+## Phase 3: Core Dependencies ✅
 
-### 3.1 shadcn/ui
+### 3.1 shadcn/ui ✅
 
 ```bash
 # Run from apps/web directory (shadcn needs to be in the app root)
@@ -202,20 +202,18 @@ cd apps/web && pnpm dlx shadcn@latest init && cd ../..
 - Base color: Neutral (or preference)
 - CSS variables: Yes
 
-### 3.2 Environment Setup
+### 3.2 Environment Setup ✅
 
 **Create `.env.example` template:**
 
 ```bash
 # apps/web/.env.example
 
-# Supabase (client)
-NEXT_PUBLIC_SUPABASE_URL=your-project-url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
 # Database (Drizzle)
 DATABASE_URL=postgresql://user:password@host:5432/postgres
+
+# Auth (BetterAuth)
+BETTER_AUTH_SECRET=your-secret-key-at-least-32-characters-long
 
 # AWS S3
 AWS_ACCESS_KEY_ID=your-access-key
@@ -249,7 +247,7 @@ import { z } from 'zod';
 
 const serverSchema = z.object({
     DATABASE_URL: z.string().url(),
-    SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+    BETTER_AUTH_SECRET: z.string().min(32),
     AWS_ACCESS_KEY_ID: z.string().min(1),
     AWS_SECRET_ACCESS_KEY: z.string().min(1),
     AWS_REGION: z.string().min(1),
@@ -259,16 +257,12 @@ const serverSchema = z.object({
 });
 
 const clientSchema = z.object({
-    NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
     NEXT_PUBLIC_STRIPE_PUBLIC_KEY: z.string().min(1),
     NEXT_PUBLIC_APP_URL: z.string().url(),
 });
 
 const serverEnv = serverSchema.parse(process.env);
 const clientEnv = clientSchema.parse({
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NEXT_PUBLIC_STRIPE_PUBLIC_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLIC_KEY,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
 });
@@ -283,7 +277,7 @@ vercel link      # First time only
 pnpm env:pull    # Creates apps/web/.env.local
 ```
 
-### 3.3 Drizzle ORM
+### 3.3 Drizzle ORM ✅
 
 ```bash
 pnpm -F web add drizzle-orm postgres
@@ -305,19 +299,33 @@ export default defineConfig({
 });
 ```
 
-**server/db/schema.ts:**
+**server/db/schema.ts** - BetterAuth creates these tables:
 
 ```typescript
-import { pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, boolean } from 'drizzle-orm/pg-core';
 
-export const users = pgTable('users', {
-    id: uuid('id').primaryKey().defaultRandom(),
+export const user = pgTable('user', {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
     email: text('email').notNull().unique(),
-    createdAt: timestamp('created_at').defaultNow().notNull(),
+    emailVerified: boolean('email_verified').notNull().default(false),
+    image: text('image'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
+
+export const session = pgTable('session', {
+    id: text('id').primaryKey(),
+    expiresAt: timestamp('expires_at').notNull(),
+    token: text('token').notNull().unique(),
+    userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+    // ... additional fields
+});
+
+// Also: account, verification tables
 ```
 
-### 3.4 tRPC v11
+### 3.4 tRPC v11 ✅
 
 ```bash
 pnpm -F web add @trpc/server @trpc/client @trpc/tanstack-react-query @tanstack/react-query superjson
@@ -326,62 +334,91 @@ pnpm -F web add @trpc/server @trpc/client @trpc/tanstack-react-query @tanstack/r
 **server/trpc/init.ts:**
 
 ```typescript
-import { initTRPC } from '@trpc/server';
+import { initTRPC, TRPCError } from '@trpc/server';
 import superjson from 'superjson';
+import { headers } from 'next/headers';
+import { db } from '@/server/db';
+import { auth } from '@/lib/auth';
 
-const t = initTRPC.create({
+export async function createTRPCContext() {
+    const session = await auth.api.getSession({
+        headers: await headers(),
+    });
+    return { db, session };
+}
+
+export type Context = Awaited<ReturnType<typeof createTRPCContext>>;
+
+const t = initTRPC.context<Context>().create({
     transformer: superjson,
 });
 
 export const router = t.router;
 export const publicProcedure = t.procedure;
+
+export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+    if (!ctx.session) {
+        throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+    return next({ ctx: { ...ctx, session: ctx.session } });
+});
 ```
 
 **server/trpc/router.ts:**
 
 ```typescript
 import { router } from './init';
-import { filesRouter } from './routers/files';
+import { authRouter } from './routers/auth';
 
 export const appRouter = router({
-    files: filesRouter,
+    auth: authRouter,
 });
 
 export type AppRouter = typeof appRouter;
 ```
 
-### 3.5 Supabase
+### 3.5 BetterAuth ✅
 
 ```bash
-pnpm -F web add @supabase/ssr @supabase/supabase-js
+pnpm -F web add better-auth
 ```
 
-**lib/supabase/server.ts:**
+**lib/auth.ts:**
 
 ```typescript
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { betterAuth } from 'better-auth';
+import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { db } from '@/server/db';
+import * as schema from '@/server/db/schema';
 
-export async function createClient() {
-    const cookieStore = await cookies();
+export const auth = betterAuth({
+    database: drizzleAdapter(db, {
+        provider: 'pg',
+        schema,
+    }),
+    emailAndPassword: {
+        enabled: true,
+    },
+});
+```
 
-    return createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-            cookies: {
-                getAll() {
-                    return cookieStore.getAll();
-                },
-                setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value, options }) =>
-                        cookieStore.set(name, value, options)
-                    );
-                },
-            },
-        }
-    );
-}
+**lib/auth-client.ts:**
+
+```typescript
+'use client';
+import { createAuthClient } from 'better-auth/react';
+
+export const authClient = createAuthClient();
+export const { useSession, signIn, signUp, signOut } = authClient;
+```
+
+**app/api/auth/[...all]/route.ts:**
+
+```typescript
+import { auth } from '@/lib/auth';
+import { toNextJsHandler } from 'better-auth/next-js';
+
+export const { GET, POST } = toNextJsHandler(auth.handler);
 ```
 
 ### 3.6 Supporting libraries
@@ -560,7 +597,7 @@ Commit after each phase:
 
 1. `chore: initialize monorepo with pnpm and turborepo`
 2. `chore: add next.js 16 app with tailwind`
-3. `chore: add core dependencies (shadcn, drizzle, trpc, supabase)`
+3. `chore: add core dependencies (shadcn, drizzle, trpc, betterauth)`
 4. `chore: add testing setup (vitest, playwright)`
 5. `chore: add terraform infrastructure`
 

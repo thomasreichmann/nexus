@@ -1,7 +1,7 @@
 ---
 title: Architecture Decision Records
 created: 2025-12-29
-updated: 2025-12-29
+updated: 2026-01-03
 status: active
 tags:
     - decisions
