@@ -1,26 +1,10 @@
 {
     "$schema": "https://turbo.build/schema.json",
+    "globalPassThroughEnv": ["*"],
     "tasks": {
         "build": {
             "dependsOn": ["^build"],
-            "outputs": [".next/**", "dist/**"],
-            "env": [
-                "NEXT_PUBLIC_SUPABASE_URL",
-                "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-                "NEXT_PUBLIC_STRIPE_PUBLIC_KEY",
-                "NEXT_PUBLIC_APP_URL"
-            ],
-            "passThroughEnv": [
-                "DATABASE_URL",
-                "SUPABASE_SECRET_KEY",
-                "AWS_ACCESS_KEY_ID",
-                "AWS_SECRET_ACCESS_KEY",
-                "AWS_REGION",
-                "S3_BUCKET",
-                "STRIPE_SECRET_KEY",
-                "STRIPE_WEBHOOK_SECRET",
-                "BETTER_AUTH_SECRET"
-            ]
+            "outputs": [".next/**", "dist/**"]
         },
         "dev": {
             "cache": false,
