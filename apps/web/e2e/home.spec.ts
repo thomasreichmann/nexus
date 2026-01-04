@@ -1,6 +1,28 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type ConsoleMessage } from '@playwright/test';
 
-test('homepage loads', async ({ page }) => {
-    await page.goto('/');
-    await expect(page).toHaveTitle(/Next/i);
+// Helper to collect console errors during page load
+function setupConsoleErrorTracking(page: import('@playwright/test').Page) {
+    const errors: string[] = [];
+    page.on('console', (msg: ConsoleMessage) => {
+        if (msg.type() === 'error') {
+            errors.push(msg.text());
+        }
+    });
+    return errors;
+}
+
+test.describe('Landing Page', () => {
+    test('renders without console errors', async ({ page }) => {
+        const errors = setupConsoleErrorTracking(page);
+
+        await page.goto('/');
+
+        // Verify key sections are present
+        await expect(page.getByRole('banner')).toBeVisible(); // Header
+        await expect(page.getByRole('main')).toBeVisible();
+        await expect(page.getByRole('contentinfo')).toBeVisible(); // Footer
+
+        // Check for console errors after render
+        expect(errors).toEqual([]);
+    });
 });
