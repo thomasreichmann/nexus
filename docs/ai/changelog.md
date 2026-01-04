@@ -21,6 +21,20 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2026-01-04
 
+### Session: Merge v0 Root Layout into Existing App Layout
+
+Merged v0-generated root layout bits into the existing Next.js root layout, keeping existing providers and font setup as the source of truth.
+
+**Files Modified:**
+
+- `apps/web/app/layout.tsx` - Updated metadata (title/description), added Vercel Analytics, ensured `font-sans` is applied while retaining Geist font variables + providers
+- `apps/web/app/(auth)/layout.tsx` - Fixed `Link` to use `next/link`, updated children typing to `ReactNode`
+- `apps/web/app/(dashboard)/layout.tsx` - Updated children typing to `ReactNode` and aligned import/style
+
+**Why:**
+
+v0 output contained useful marketing metadata + Analytics, but our existing root layout already wires up Theme + tRPC + font variables. This keeps the existing app structure intact while adopting the safe additions.
+
 ### Session: E2E Smoke Tests for v0 Imports
 
 Added Playwright smoke tests to catch render errors from v0-imported components.
@@ -50,6 +64,7 @@ When importing UI from v0, components often have subtle SSR/hydration issues tha
 **Pattern:**
 
 Every new page should have a smoke test that:
+
 1. Visits the page
 2. Verifies key elements render
 3. Asserts no console errors occurred
@@ -69,6 +84,7 @@ Migrated all shadcn/ui components from Radix UI primitives to Base UI primitives
 **Components Migrated:**
 
 All 10 UI components converted via basecn CLI:
+
 - `button.tsx` - Now uses `@base-ui/react/button`
 - `badge.tsx` - Uses native HTML with render prop pattern
 - `card.tsx` - Pure HTML (no primitives)
@@ -82,12 +98,12 @@ All 10 UI components converted via basecn CLI:
 
 **Key API Changes:**
 
-| Radix UI | Base UI |
-|----------|---------|
-| `asChild` prop | `render` prop |
-| `DropdownMenuContent` | `DropdownMenuPositioner` + `DropdownMenuContent` |
-| `data-[state=checked]` | `data-[checked]` |
-| `data-[state=open]` | `data-[open]` |
+| Radix UI               | Base UI                                          |
+| ---------------------- | ------------------------------------------------ |
+| `asChild` prop         | `render` prop                                    |
+| `DropdownMenuContent`  | `DropdownMenuPositioner` + `DropdownMenuContent` |
+| `data-[state=checked]` | `data-[checked]`                                 |
+| `data-[state=open]`    | `data-[open]`                                    |
 
 **Gotchas:**
 
@@ -96,6 +112,7 @@ All 10 UI components converted via basecn CLI:
 **Files Modified (Consumer Code):**
 
 Updated all files using `asChild` to use `render` prop:
+
 - `components/dashboard/file-browser.tsx` - DropdownMenu + Checkbox
 - `components/dashboard/header.tsx` - Sheet + DropdownMenu + Button
 - `components/dashboard/upload-zone.tsx` - Button
@@ -108,9 +125,11 @@ Updated all files using `asChild` to use `render` prop:
 **Dependencies:**
 
 Added:
+
 - `@base-ui/react`
 
 Removed:
+
 - `@radix-ui/react-checkbox`
 - `@radix-ui/react-dialog`
 - `@radix-ui/react-dropdown-menu`
@@ -172,13 +191,15 @@ const session = await auth.api.getSession({ headers: await headers() });
 
 // tRPC context (session available in all procedures)
 export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
-  if (!ctx.session) throw new TRPCError({ code: 'UNAUTHORIZED' });
-  return next({ ctx: { ...ctx, session: ctx.session } });
+    if (!ctx.session) throw new TRPCError({ code: 'UNAUTHORIZED' });
+    return next({ ctx: { ...ctx, session: ctx.session } });
 });
 
 // Client-side auth
 await authClient.signIn.email({ email, password });
-await authClient.signOut({ fetchOptions: { onSuccess: () => queryClient.invalidateQueries() } });
+await authClient.signOut({
+    fetchOptions: { onSuccess: () => queryClient.invalidateQueries() },
+});
 ```
 
 **Notes:**
@@ -194,16 +215,16 @@ Reorganized `apps/web/lib/` to use domain folders and concept modules, and docum
 **Changes:**
 
 - Moved auth modules:
-	- `apps/web/lib/auth.ts` → `apps/web/lib/auth/server.ts`
-	- `apps/web/lib/auth-client.ts` → `apps/web/lib/auth/client.ts`
+    - `apps/web/lib/auth.ts` → `apps/web/lib/auth/server.ts`
+    - `apps/web/lib/auth-client.ts` → `apps/web/lib/auth/client.ts`
 - Extracted `cn` helper:
-	- `apps/web/lib/utils.ts` → `apps/web/lib/cn.ts`
-	- `apps/web/lib/utils.test.ts` → `apps/web/lib/cn.test.ts`
+    - `apps/web/lib/utils.ts` → `apps/web/lib/cn.ts`
+    - `apps/web/lib/utils.test.ts` → `apps/web/lib/cn.test.ts`
 - Updated imports to the new paths:
-	- Server code now imports `auth` from `@/lib/auth/server`
-	- Client code now imports `authClient` from `@/lib/auth/client`
+    - Server code now imports `auth` from `@/lib/auth/server`
+    - Client code now imports `authClient` from `@/lib/auth/client`
 - Updated shadcn alias:
-	- `apps/web/components.json` `aliases.utils` now points at `@/lib/cn`
+    - `apps/web/components.json` `aliases.utils` now points at `@/lib/cn`
 
 **Why:**
 
@@ -221,10 +242,10 @@ Updated env var names to match Supabase's new API key system.
 
 **Changes:**
 
-| Old Name | New Name |
-|----------|----------|
+| Old Name                        | New Name                               |
+| ------------------------------- | -------------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` |
-| `SUPABASE_SERVICE_ROLE_KEY` | `SUPABASE_SECRET_KEY` |
+| `SUPABASE_SERVICE_ROLE_KEY`     | `SUPABASE_SECRET_KEY`                  |
 
 **Files Modified:**
 
@@ -318,7 +339,7 @@ Added environment variable management strategy with type-safe validation.
 **Notes:**
 
 - Use `vercel link` first (one-time), then `pnpm env:pull`
-- Server vars validated separately from client (NEXT_PUBLIC_) vars
+- Server vars validated separately from client (NEXT*PUBLIC*) vars
 - DATABASE_URL needed for Drizzle direct Postgres access
 
 ---
