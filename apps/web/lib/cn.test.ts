@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { cn } from './cn';
 
 describe('cn', () => {
@@ -20,5 +20,3 @@ describe('cn', () => {
         expect(cn('foo', undefined, null, 'bar')).toBe('foo bar');
     });
 });
-
-
