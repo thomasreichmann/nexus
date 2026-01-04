@@ -257,6 +257,53 @@ try {
 }
 ```
 
+## Testing
+
+### Smoke Tests for Pages
+
+Every new page should have a corresponding E2E smoke test in `apps/web/e2e/`. These tests verify that pages render without console errors, catching:
+
+- Hydration mismatches from SSR/client differences
+- Missing `nativeButton={false}` on Base UI components with non-button `render` props
+- Broken imports or missing dependencies
+- React warnings from invalid prop usage
+
+**Pattern:**
+
+```typescript
+// e2e/feature.spec.ts
+import { test, expect } from '@playwright/test';
+import { setupConsoleErrorTracking } from './utils';
+
+test('feature page renders without console errors', async ({ page }) => {
+    const errors = setupConsoleErrorTracking(page);
+
+    await page.goto('/feature');
+
+    // Verify key elements are present
+    await expect(page.getByRole('heading', { name: 'Feature' })).toBeVisible();
+
+    // Check for console errors after render
+    expect(errors).toEqual([]);
+});
+```
+
+The `setupConsoleErrorTracking` helper lives in `e2e/utils.ts` and is shared across all test files.
+
+**Why smoke tests matter:**
+
+When importing UI from v0 or other generators, components often have subtle issues that only surface at render time. Smoke tests catch these immediately rather than discovering them in production.
+
+### Unit Tests
+
+Unit test utilities and pure functions with logic. Skip unit tests for presentational components - E2E tests cover those better.
+
+```bash
+pnpm -F web test        # Watch mode
+pnpm -F web test:run    # Single run
+pnpm -F web test:e2e    # Playwright
+```
+
 ## Database (Drizzle)
 
 ### Schema Changes

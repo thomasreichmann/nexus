@@ -1,14 +1,5 @@
-import { test, expect, type ConsoleMessage } from '@playwright/test';
-
-function setupConsoleErrorTracking(page: import('@playwright/test').Page) {
-    const errors: string[] = [];
-    page.on('console', (msg: ConsoleMessage) => {
-        if (msg.type() === 'error') {
-            errors.push(msg.text());
-        }
-    });
-    return errors;
-}
+import { test, expect } from '@playwright/test';
+import { setupConsoleErrorTracking } from './utils';
 
 test.describe('Auth Pages', () => {
     test('sign-in page renders without console errors', async ({ page }) => {

@@ -21,6 +21,41 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2026-01-04
 
+### Session: E2E Smoke Tests for v0 Imports
+
+Added Playwright smoke tests to catch render errors from v0-imported components.
+
+**Files Created:**
+
+- `apps/web/e2e/utils.ts` - Shared test utilities (`setupConsoleErrorTracking`)
+- `apps/web/e2e/auth.spec.ts` - Sign-in and sign-up page smoke tests
+- `apps/web/e2e/dashboard.spec.ts` - Dashboard, files, upload, settings page smoke tests
+
+**Files Modified:**
+
+- `apps/web/e2e/home.spec.ts` - Updated with console error tracking
+- `apps/web/components/dashboard/upload-zone.tsx` - Added `nativeButton={false}` to fix Base UI warning
+- `apps/web/components/dashboard/header.tsx` - Replaced `Button` with `render={<Link>}` pattern with direct `Link` + `buttonVariants()` to fix hydration mismatch
+- `docs/ai/conventions.md` - Added Testing section with smoke test guidelines
+
+**Issues Caught & Fixed:**
+
+1. **Upload page**: Button with `render={<span />}` needed `nativeButton={false}`
+2. **Header**: Button with `render={<Link />}` caused hydration mismatch (type/role attributes differ between SSR and client)
+
+**Why:**
+
+When importing UI from v0, components often have subtle SSR/hydration issues that only surface at render time. Smoke tests that check for console errors catch these before production.
+
+**Pattern:**
+
+Every new page should have a smoke test that:
+1. Visits the page
+2. Verifies key elements render
+3. Asserts no console errors occurred
+
+---
+
 ### Session: Radix UI to Base UI Migration
 
 Migrated all shadcn/ui components from Radix UI primitives to Base UI primitives using basecn (https://basecn.dev).

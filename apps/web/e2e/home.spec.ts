@@ -1,15 +1,5 @@
-import { test, expect, type ConsoleMessage } from '@playwright/test';
-
-// Helper to collect console errors during page load
-function setupConsoleErrorTracking(page: import('@playwright/test').Page) {
-    const errors: string[] = [];
-    page.on('console', (msg: ConsoleMessage) => {
-        if (msg.type() === 'error') {
-            errors.push(msg.text());
-        }
-    });
-    return errors;
-}
+import { test, expect } from '@playwright/test';
+import { setupConsoleErrorTracking } from './utils';
 
 test.describe('Landing Page', () => {
     test('renders without console errors', async ({ page }) => {
