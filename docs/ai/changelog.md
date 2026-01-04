@@ -19,6 +19,78 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ---
 
+## 2026-01-04
+
+### Session: Radix UI to Base UI Migration
+
+Migrated all shadcn/ui components from Radix UI primitives to Base UI primitives using basecn (https://basecn.dev).
+
+**Why:**
+
+- Tech stack decision was to use "shadcn/ui with Base UI primitives"
+- Initial components from v0 CLI import used Radix UI (default shadcn)
+- Base UI is the newer headless component library from the MUI team
+
+**Components Migrated:**
+
+All 10 UI components converted via basecn CLI:
+- `button.tsx` - Now uses `@base-ui/react/button`
+- `badge.tsx` - Uses native HTML with render prop pattern
+- `card.tsx` - Pure HTML (no primitives)
+- `input.tsx` - Uses `@base-ui/react/input`
+- `label.tsx` - Uses `@base-ui/react/field`
+- `table.tsx` - Pure HTML (no primitives)
+- `checkbox.tsx` - Now uses `@base-ui/react/checkbox`
+- `progress.tsx` - Now uses `@base-ui/react/progress`
+- `dropdown-menu.tsx` - Now uses `@base-ui/react/menu`
+- `sheet.tsx` - Now uses `@base-ui/react/dialog`
+
+**Key API Changes:**
+
+| Radix UI | Base UI |
+|----------|---------|
+| `asChild` prop | `render` prop |
+| `DropdownMenuContent` | `DropdownMenuPositioner` + `DropdownMenuContent` |
+| `data-[state=checked]` | `data-[checked]` |
+| `data-[state=open]` | `data-[open]` |
+
+**Gotchas:**
+
+- Base UI `Button` defaults to rendering a native `<button>`. If you pass a non-`<button>` element to `render` (e.g. Next.js `Link`), set `nativeButton={false}` to avoid the dev warning.
+
+**Files Modified (Consumer Code):**
+
+Updated all files using `asChild` to use `render` prop:
+- `components/dashboard/file-browser.tsx` - DropdownMenu + Checkbox
+- `components/dashboard/header.tsx` - Sheet + DropdownMenu + Button
+- `components/dashboard/upload-zone.tsx` - Button
+- `components/landing/header.tsx` - Button
+- `components/landing/hero.tsx` - Button
+- `components/landing/cta.tsx` - Button
+- `components/landing/pricing.tsx` - Button
+- `app/(dashboard)/dashboard/page.tsx` - Button
+
+**Dependencies:**
+
+Added:
+- `@base-ui/react`
+
+Removed:
+- `@radix-ui/react-checkbox`
+- `@radix-ui/react-dialog`
+- `@radix-ui/react-dropdown-menu`
+- `@radix-ui/react-label`
+- `@radix-ui/react-progress`
+- `@radix-ui/react-slot`
+
+**Notes:**
+
+- Migration guide from basecn.dev: https://basecn.dev/docs/get-started/migrating-from-radix-ui
+- DropdownMenu now requires `DropdownMenuPositioner` wrapper with `align`/`side` props
+- **Important:** The `render` prop doesn't work with Next.js static page generation. For static pages (server components), use traditional pattern: `<Link href="/foo"><Button>Text</Button></Link>`. The `render` prop works in client components ("use client").
+
+---
+
 ## 2026-01-03
 
 ### Session: BetterAuth Setup
