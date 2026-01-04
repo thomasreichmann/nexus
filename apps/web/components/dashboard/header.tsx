@@ -1,6 +1,6 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -86,14 +86,16 @@ export function DashboardHeader() {
             <div className="hidden md:block" />
 
             <div className="flex items-center gap-3">
-                <Button
-                    size="sm"
-                    nativeButton={false}
-                    render={<Link href="/dashboard/upload" />}
+                <Link
+                    href="/dashboard/upload"
+                    className={cn(
+                        buttonVariants({ size: 'sm' }),
+                        'inline-flex items-center'
+                    )}
                 >
                     <Upload className="mr-2 h-4 w-4" />
                     Upload
-                </Button>
+                </Link>
                 <DropdownMenu>
                     <DropdownMenuTrigger
                         render={

@@ -109,7 +109,7 @@ export function UploadZone() {
                 onChange={(e) => addFiles(e.target.files)}
                 disabled={isUploading}
               />
-              <Button variant="outline" disabled={isUploading} render={<span />}>
+              <Button variant="outline" disabled={isUploading} nativeButton={false} render={<span />}>
                 Browse files
               </Button>
             </label>
