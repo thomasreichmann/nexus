@@ -42,15 +42,17 @@ Added Playwright smoke tests to catch render errors from v0-imported components.
 **Files Created:**
 
 - `apps/web/e2e/utils.ts` - Shared test utilities (`setupConsoleErrorTracking`)
-- `apps/web/e2e/auth.spec.ts` - Sign-in and sign-up page smoke tests
-- `apps/web/e2e/dashboard.spec.ts` - Dashboard, files, upload, settings page smoke tests
+- `apps/web/e2e/smoke/home.spec.ts` - Landing page smoke test
+- `apps/web/e2e/smoke/auth.spec.ts` - Sign-in and sign-up page smoke tests
+- `apps/web/e2e/smoke/dashboard.spec.ts` - Dashboard, files, upload, settings page smoke tests
 
 **Files Modified:**
 
-- `apps/web/e2e/home.spec.ts` - Updated with console error tracking
+- `apps/web/package.json` - Added `test:e2e:smoke` script for running only smoke tests
 - `apps/web/components/dashboard/upload-zone.tsx` - Added `nativeButton={false}` to fix Base UI warning
 - `apps/web/components/dashboard/header.tsx` - Replaced `Button` with `render={<Link>}` pattern with direct `Link` + `buttonVariants()` to fix hydration mismatch
 - `docs/ai/conventions.md` - Added Testing section with smoke test guidelines
+- `CLAUDE.md` - Added instruction to run smoke tests after modifying pages/components
 
 **Issues Caught & Fixed:**
 
@@ -61,13 +63,19 @@ Added Playwright smoke tests to catch render errors from v0-imported components.
 
 When importing UI from v0, components often have subtle SSR/hydration issues that only surface at render time. Smoke tests that check for console errors catch these before production.
 
-**Pattern:**
+**Test Structure:**
 
-Every new page should have a smoke test that:
+```
+e2e/
+├── smoke/           # Fast render tests (~2s) - run after changes
+│   ├── home.spec.ts
+│   ├── auth.spec.ts
+│   └── dashboard.spec.ts
+└── utils.ts         # Shared utilities
+```
 
-1. Visits the page
-2. Verifies key elements render
-3. Asserts no console errors occurred
+- `pnpm -F web test:e2e:smoke` - smoke tests only (fast, run after changes)
+- `pnpm -F web test:e2e` - all E2E tests (smoke + future interaction tests)
 
 ---
 

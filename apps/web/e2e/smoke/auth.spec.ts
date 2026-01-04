@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { setupConsoleErrorTracking } from './utils';
+import { setupConsoleErrorTracking } from '../utils';
 
 test.describe('Auth Pages', () => {
     test('sign-in page renders without console errors', async ({ page }) => {

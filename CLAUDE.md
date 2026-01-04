@@ -32,6 +32,8 @@ pnpm -F web add <package>      # Add dependency to web app
 pnpm -F web add -D <package>   # Add dev dependency
 ```
 
+**After modifying pages or components:** Run `pnpm -F web test:e2e:smoke` to catch render errors.
+
 ## Environment Setup
 
 Env vars managed via Vercel, pulled locally:
