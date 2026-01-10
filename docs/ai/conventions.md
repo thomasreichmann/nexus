@@ -356,5 +356,4 @@ All non-trivial work requires a GitHub Issue:
 - [[patterns|Code Patterns]] - Implementation examples
 - [[context|Project Context]] - Background and architecture
 - [[database-workflow|Database Workflow]] - Full migration guide
-- [[github-mcp-setup|GitHub MCP Setup]] - AI tool GitHub integration
 - [[ai/_index|Back to AI Docs]]
