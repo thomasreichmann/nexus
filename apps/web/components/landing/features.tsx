@@ -26,7 +26,7 @@ const features = [
     },
     {
         icon: Globe,
-        title: 'No AWS knowledge needed',
+        title: 'No technical setup',
         description:
             'We handle all the complexity. You just upload and download.',
     },

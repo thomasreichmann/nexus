@@ -144,8 +144,7 @@ export default function DesignPage() {
                             <CardHeader>
                                 <CardTitle>Storage Tier</CardTitle>
                                 <CardDescription>
-                                    Your files are stored in Glacier Deep
-                                    Archive
+                                    Your files are stored in cold storage
                                 </CardDescription>
                             </CardHeader>
                             <CardContent>

@@ -11,7 +11,7 @@ const steps = [
         icon: Database,
         title: 'We archive',
         description:
-            'Your files are automatically stored in AWS Glacier with 11 nines durability.',
+            'Your files are automatically stored in cold storage with 11 nines durability.',
     },
     {
         icon: Download,

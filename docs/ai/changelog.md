@@ -21,6 +21,31 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2026-01-10
 
+### Session: User-Facing Messaging Revision (#7)
+
+Removed technical jargon (AWS, Glacier, S3) and single-competitor comparisons (Dropbox) from all user-facing content.
+
+**Files Modified:**
+
+- `apps/web/components/landing/hero.tsx` - Replaced "AWS Glacier" with "Enterprise-grade durability", "90% cheaper than Dropbox" with "90% cheaper than traditional cloud storage", "No AWS expertise needed" with "No technical setup required"
+- `apps/web/components/landing/problem-solution.tsx` - Changed "Glacier is complex" to "Archival storage is complex", "paying Dropbox prices" to "paying premium prices"
+- `apps/web/components/landing/how-it-works.tsx` - Replaced "stored in AWS Glacier" with "stored in cold storage"
+- `apps/web/components/landing/features.tsx` - Changed "No AWS knowledge needed" to "No technical setup"
+- `apps/web/app/layout.tsx` - Updated meta description to remove "AWS complexity"
+- `apps/web/app/design/page.tsx` - Changed "Glacier Deep Archive" to "cold storage"
+- `docs/ai/context.md` - Updated internal docs for consistency: "AWS S3 Glacier" → "cold/archival storage", "Dropbox for archival" → "cloud storage for archival", "Glacier is cheap but complex" → "Archival storage is cheap but complex"
+
+**Why:**
+
+End users don't need to know our backend infrastructure. Technical terms like AWS/Glacier are meaningless to our target audience and narrowly position us. Similarly, comparing to Dropbox specifically forces a single competitor comparison when users may be coming from Google Drive, OneDrive, iCloud, etc.
+
+**Preserved:**
+
+- Retrieval time messaging (3-12 hours) - important for setting user expectations
+- 11 nines durability claim - communicates reliability without mentioning AWS
+
+---
+
 ### Session: Frontend Error Handling Patterns (#10)
 
 Documented error handling strategy for the frontend and created implementation issue.

@@ -12,7 +12,7 @@ export function Hero() {
                             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
                             <span className="relative inline-flex h-2 w-2 rounded-full bg-primary"></span>
                         </span>
-                        Now with faster retrieval times
+                        Now with dark mode
                     </div>
                     <h1 className="mb-6 text-4xl font-bold tracking-tight text-balance md:text-5xl lg:text-6xl">
                         Store everything.
@@ -22,9 +22,9 @@ export function Hero() {
                         </span>
                     </h1>
                     <p className="mb-10 text-lg text-muted-foreground text-balance md:text-xl">
-                        Nexus is deep storage that just works. Get the
-                        reliability of AWS Glacier without the complexity — for
-                        just $1/TB/month.
+                        Nexus is deep storage that just works. Enterprise-grade
+                        durability without the complexity — for just
+                        $1/TB/month.
                     </p>
                     <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
                         <Link href="/sign-up" className="w-full sm:w-auto">
@@ -46,7 +46,9 @@ export function Hero() {
                     <div className="mt-12 flex flex-wrap items-center justify-center gap-8 text-sm text-muted-foreground">
                         <div className="flex items-center gap-2">
                             <DollarSign className="h-4 w-4 text-primary" />
-                            <span>90% cheaper than Dropbox</span>
+                            <span>
+                                90% cheaper than traditional cloud storage
+                            </span>
                         </div>
                         <div className="flex items-center gap-2">
                             <Shield className="h-4 w-4 text-primary" />
@@ -54,7 +56,7 @@ export function Hero() {
                         </div>
                         <div className="flex items-center gap-2">
                             <Zap className="h-4 w-4 text-primary" />
-                            <span>No AWS expertise needed</span>
+                            <span>No technical setup required</span>
                         </div>
                     </div>
                 </div>

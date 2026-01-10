@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
     title: 'Nexus - Deep Storage Made Simple',
     description:
-        'Ultra-cheap archival storage for everyone. Store your files for $1/TB/month without AWS complexity.',
+        'Ultra-cheap archival storage for everyone. Store your files for $1/TB/month without the complexity.',
 };
 
 export default function RootLayout({

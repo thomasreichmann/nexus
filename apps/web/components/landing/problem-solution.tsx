@@ -6,13 +6,13 @@ export function ProblemSolution() {
                     <h2 className="mb-6 text-3xl font-bold tracking-tight md:text-4xl text-balance">
                         Cloud storage is expensive.
                         <br />
-                        Glacier is complex.
+                        Archival storage is complex.
                         <br />
                         <span className="text-primary">Nexus is neither.</span>
                     </h2>
                     <p className="text-lg text-muted-foreground text-balance">
                         You have terabytes of photos, videos, and archives you
-                        need to keep forever — but you&apos;re paying Dropbox
+                        need to keep forever — but you&apos;re paying premium
                         prices for files you access once a year. We fixed that.
                     </p>
                 </div>

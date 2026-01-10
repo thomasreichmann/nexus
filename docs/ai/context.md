@@ -19,14 +19,14 @@ Detailed background for AI to understand the Nexus project deeply.
 
 ## What is Nexus?
 
-Nexus is a **deep storage solution** that helps users store files cost-effectively using AWS S3 Glacier. All files go directly to cold storage - users understand upfront that retrieval takes time.
+Nexus is a **deep storage solution** that helps users store files cost-effectively using cold/archival storage. All files go directly to cold storage - users understand upfront that retrieval takes time.
 
-Think of it as "Dropbox for archival" - users upload files they want to keep long-term but don't need instant access to.
+Think of it as "cloud storage for archival" - users upload files they want to keep long-term but don't need instant access to.
 
 ## Problem We're Solving
 
 1. **Cloud storage is expensive** for large amounts of data
-2. **Glacier is cheap but complex** - most users can't set it up
+2. **Archival storage is cheap but complex** - most users can't set it up
 3. **No good middle-ground** between "instant access" and "tape archive"
 
 ## Target Users
