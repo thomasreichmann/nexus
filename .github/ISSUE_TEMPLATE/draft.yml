@@ -1,0 +1,12 @@
+name: Draft
+description: Quick capture of an idea or task for later refinement
+labels: [needs-details]
+body:
+    - type: textarea
+      id: description
+      attributes:
+          label: Description
+          description: Briefly describe the idea or task. This will be detailed later.
+          placeholder: What's the rough idea?
+      validations:
+          required: true
