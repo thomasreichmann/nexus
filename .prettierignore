@@ -1,0 +1,2 @@
+apps/web/server/db/migrations/*.json
+pnpm-lock.yaml
