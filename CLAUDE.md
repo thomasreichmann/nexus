@@ -47,7 +47,7 @@ Type-safe access via `@/lib/env`:
 
 ```typescript
 import { env } from '@/lib/env';
-const bucket = env.S3_BUCKET;  // Validated at runtime
+const bucket = env.S3_BUCKET; // Validated at runtime
 ```
 
 ## Database (Drizzle)
@@ -62,10 +62,12 @@ pnpm -F web db:custom <name>    # Generate empty migration for RLS/functions
 ```
 
 **Workflow:**
+
 - Schema changes → edit `server/db/schema.ts` → `db:generate` → `db:migrate`
 - RLS/functions → `db:custom <name>` → edit SQL file → `db:migrate`
 
 **Rules:**
+
 - Always use drizzle-kit commands (never manually create migration files)
 - Never edit `server/db/migrations/meta/` journal
 - Flag destructive changes (dropping columns/tables) before running

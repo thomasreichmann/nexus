@@ -27,5 +27,3 @@ export const env = new Proxy(clientEnv as Env, {
         return target[prop as keyof ClientEnv];
     },
 });
-
-

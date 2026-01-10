@@ -2,34 +2,34 @@
 name: create-tr-stack Generator
 overview: Build a decoupled npm-distributed create-* CLI named `create-tr-stack` that scaffolds a new Next.js app folder mirroring the current Nexus structure, with optional BetterAuth, tRPC v11, and Drizzle. Nexus remains the reference implementation; it is not converted into a generated instance.
 todos:
-  - id: boundary-audit
-    content: Audit `apps/web` and classify reusable baseline vs Nexus-specific pieces; produce file→template layer mapping.
-    status: pending
-  - id: generator-repo
-    content: Create standalone repo with `create-tr-stack` package skeleton (tsup build, bin entry, clack prompts stub).
-    status: pending
-    dependencies:
-      - boundary-audit
-  - id: cli-core
-    content: Implement CLI prompts + flags + copy/replace engine using clack + fs-extra; wire up --auth/--trpc/--db/--no-install.
-    status: pending
-    dependencies:
-      - generator-repo
-  - id: extract-templates
-    content: Extract `base`, `with-auth`, `with-trpc`, `with-db` from Nexus; remove Nexus branding; add {{VAR}} placeholders.
-    status: pending
-    dependencies:
-      - cli-core
-  - id: validate-output
-    content: Add Vitest regression suite that scaffolds preset combos into temp dirs and runs lint + typecheck in each.
-    status: pending
-    dependencies:
-      - extract-templates
-  - id: publish
-    content: Publish to npm as `create-tr-stack`; set up GitHub Actions for CI + npm publish on tag.
-    status: pending
-    dependencies:
-      - validate-output
+    - id: boundary-audit
+      content: Audit `apps/web` and classify reusable baseline vs Nexus-specific pieces; produce file→template layer mapping.
+      status: pending
+    - id: generator-repo
+      content: Create standalone repo with `create-tr-stack` package skeleton (tsup build, bin entry, clack prompts stub).
+      status: pending
+      dependencies:
+          - boundary-audit
+    - id: cli-core
+      content: Implement CLI prompts + flags + copy/replace engine using clack + fs-extra; wire up --auth/--trpc/--db/--no-install.
+      status: pending
+      dependencies:
+          - generator-repo
+    - id: extract-templates
+      content: Extract `base`, `with-auth`, `with-trpc`, `with-db` from Nexus; remove Nexus branding; add {{VAR}} placeholders.
+      status: pending
+      dependencies:
+          - cli-core
+    - id: validate-output
+      content: Add Vitest regression suite that scaffolds preset combos into temp dirs and runs lint + typecheck in each.
+      status: pending
+      dependencies:
+          - extract-templates
+    - id: publish
+      content: Publish to npm as `create-tr-stack`; set up GitHub Actions for CI + npm publish on tag.
+      status: pending
+      dependencies:
+          - validate-output
 ---
 
 # `create-tr-stack` (decoupled Nexus-style starter)
@@ -46,7 +46,7 @@ Create a reusable starter generator so you can run `pnpm create tr-stack <app-na
 
 |Nexus relationship | Extract templates from Nexus; Nexus itself is **not** generated|
 
-|Distribution | npm create-* package|
+|Distribution | npm create-\* package|
 
 |Package name | `create-tr-stack` (fallback: `@tr-stack/create` if taken)|
 
@@ -296,8 +296,6 @@ $ pnpm create tr-stack my-app
 
 ```
 
-
-
 ### Non-interactive
 
 ```bash
@@ -353,7 +351,6 @@ BETTER_AUTH_SECRET=your-secret-min-32-chars
 In the generator repo, a Vitest suite that:
 
 1. Scaffolds each combo into a temp directory:
-
     - `base`
     - `base + db`
     - `base + db + auth`
@@ -361,7 +358,6 @@ In the generator repo, a Vitest suite that:
     - `base + db + auth + trpc` (full stack)
 
 2. Runs in each:
-
     - `pnpm install`
     - `pnpm lint`
     - `pnpm typecheck`

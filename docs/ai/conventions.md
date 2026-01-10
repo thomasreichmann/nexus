@@ -36,15 +36,15 @@ Use `apps/web/lib/` for **shared primitives** and **integration glue** used acro
 
 - Prefer **domain folders**: `lib/auth/*`, `lib/env/*`, `lib/trpc/*`, `lib/storage/*`, `lib/stripe/*`, etc.
 - Within a domain, prefer **concept modules** (one cohesive concept per file), not one function per file:
-	- ✅ `lib/storage/tiers.ts` exporting several tier-related helpers
-	- ❌ `lib/storage/getTierLabel.ts`, `lib/storage/getTierEta.ts`, ...
+    - ✅ `lib/storage/tiers.ts` exporting several tier-related helpers
+    - ❌ `lib/storage/getTierLabel.ts`, `lib/storage/getTierEta.ts`, ...
 - Only split a file when there’s a real boundary (size + separable concerns), not preemptively.
 
 **Client/server intent (when needed)**
 
 - When something is clearly client-only or server-only, encode it in the path/name:
-	- `lib/auth/client.ts` vs `lib/auth/server.ts`
-	- or `*.client.ts` / `*.server.ts` when that fits better
+    - `lib/auth/client.ts` vs `lib/auth/server.ts`
+    - or `*.client.ts` / `*.server.ts` when that fits better
 
 **Promotion rule (to avoid duplication + file explosion)**
 

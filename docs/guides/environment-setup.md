@@ -56,8 +56,8 @@ apps/web/
 
 Direct PostgreSQL connection for Drizzle ORM queries.
 
-| Variable | Type | Description |
-|----------|------|-------------|
+| Variable       | Type   | Description                  |
+| -------------- | ------ | ---------------------------- |
 | `DATABASE_URL` | Server | PostgreSQL connection string |
 
 > [!note] Connection Pooling
@@ -67,37 +67,37 @@ Direct PostgreSQL connection for Drizzle ORM queries.
 
 Secret key for session signing and token generation.
 
-| Variable | Type | Description |
-|----------|------|-------------|
+| Variable             | Type   | Description                             |
+| -------------------- | ------ | --------------------------------------- |
 | `BETTER_AUTH_SECRET` | Server | Random 32+ character string for signing |
 
 ### AWS S3
 
 File storage credentials for S3/Glacier operations.
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `AWS_ACCESS_KEY_ID` | Server | IAM access key |
-| `AWS_SECRET_ACCESS_KEY` | Server | IAM secret key |
-| `AWS_REGION` | Server | AWS region (e.g., `us-east-1`) |
-| `S3_BUCKET` | Server | S3 bucket name |
+| Variable                | Type   | Description                    |
+| ----------------------- | ------ | ------------------------------ |
+| `AWS_ACCESS_KEY_ID`     | Server | IAM access key                 |
+| `AWS_SECRET_ACCESS_KEY` | Server | IAM secret key                 |
+| `AWS_REGION`            | Server | AWS region (e.g., `us-east-1`) |
+| `S3_BUCKET`             | Server | S3 bucket name                 |
 
 ### Stripe
 
 Payment processing credentials.
 
-| Variable | Type | Description |
-|----------|------|-------------|
-| `NEXT_PUBLIC_STRIPE_PUBLIC_KEY` | Public | Publishable key |
-| `STRIPE_SECRET_KEY` | Server | Secret key |
-| `STRIPE_WEBHOOK_SECRET` | Server | Webhook signing secret |
+| Variable                        | Type   | Description            |
+| ------------------------------- | ------ | ---------------------- |
+| `NEXT_PUBLIC_STRIPE_PUBLIC_KEY` | Public | Publishable key        |
+| `STRIPE_SECRET_KEY`             | Server | Secret key             |
+| `STRIPE_WEBHOOK_SECRET`         | Server | Webhook signing secret |
 
 ### App
 
 Application-level configuration.
 
-| Variable | Type | Description |
-|----------|------|-------------|
+| Variable              | Type   | Description                 |
+| --------------------- | ------ | --------------------------- |
 | `NEXT_PUBLIC_APP_URL` | Public | Base URL of the application |
 
 ## Type-Safe Access
@@ -125,9 +125,9 @@ const authSecret = env.BETTER_AUTH_SECRET;
 
 1. Go to Vercel Dashboard → Project Settings → Environment Variables
 2. Add all variables for each environment:
-   - **Production** - Live site values
-   - **Preview** - PR deployment values
-   - **Development** - Local development values
+    - **Production** - Live site values
+    - **Preview** - PR deployment values
+    - **Development** - Local development values
 
 ### Adding New Variables
 
