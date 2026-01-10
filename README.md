@@ -90,8 +90,14 @@ See `apps/web/lib/env/` for type-safe access.
 
 ## Documentation
 
-Detailed documentation lives in the `docs/` folder (Obsidian vault):
+Detailed documentation lives in [`docs/`](docs/index.md) (Obsidian vault):
 
-- `docs/ai/conventions.md` — Code style and naming conventions
-- `docs/architecture/` — System design and data flow
-- `docs/guides/` — Implementation patterns
+| Section                                     | Description                                        |
+| ------------------------------------------- | -------------------------------------------------- |
+| [Architecture](docs/architecture/_index.md) | System design, tech stack, principles              |
+| [Guides](docs/guides/_index.md)             | Getting started, database workflow, patterns       |
+| [Planning](docs/planning/_index.md)         | Roadmap and MVP scope                              |
+| [Decisions](docs/decisions/_index.md)       | Architecture Decision Records                      |
+| [AI Context](docs/ai/_index.md)             | Conventions, patterns, changelog for AI assistants |
+
+New contributors: start with [Getting Started](docs/guides/getting-started.md) and [Conventions](docs/ai/conventions.md).
