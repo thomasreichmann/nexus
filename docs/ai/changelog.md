@@ -21,6 +21,40 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2026-01-10
 
+### Session: Frontend Error Handling Patterns (#10)
+
+Documented error handling strategy for the frontend and created implementation issue.
+
+**Files Modified:**
+
+- `docs/ai/conventions.md` - Expanded Error Handling section with layered strategy, tRPC error handling, error boundaries, and form error handling patterns
+
+**Why:**
+
+Needed to establish consistent error handling patterns before implementing features. Documented the decisions:
+
+- Global tRPC error link with Sonner toasts + per-component override via `skipToast`
+- Next.js error boundaries (error.tsx, global-error.tsx)
+- TanStack Form + Zod for inline validation, toasts for submission errors
+
+**Implementation:** Tracked in GitHub issue #10
+
+---
+
+### Session: README Documentation Links (#6)
+
+Updated README to use proper markdown hyperlinks for documentation instead of plain text file paths.
+
+**Files Modified:**
+
+- `README.md` - Documentation section now has clickable links to all doc sections in a table format
+
+**Why:**
+
+Issue #6 identified that docs references like `docs/ai/conventions.md` weren't clickable. Chose relative links (simplest approach) over GitHub Wiki or Pages. Links work directly in GitHub's markdown renderer.
+
+---
+
 ### Session: v0 Dashboard & Landing Page Review (#5)
 
 Reviewed v0-generated dashboard and landing pages. Extracted shared components to reduce duplication.
