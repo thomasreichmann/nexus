@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Archive } from 'lucide-react';
+import { Logo } from './Logo';
 
 const footerLinks = {
     product: [
@@ -33,12 +33,7 @@ export function Footer() {
             <div className="container mx-auto px-4">
                 <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-6">
                     <div className="lg:col-span-2">
-                        <Link href="/" className="mb-4 flex items-center gap-2">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                                <Archive className="h-4 w-4 text-primary-foreground" />
-                            </div>
-                            <span className="text-xl font-semibold">Nexus</span>
-                        </Link>
+                        <Logo className="mb-4" />
                         <p className="text-sm text-muted-foreground">
                             Deep storage made simple. Store your files forever
                             for almost nothing.

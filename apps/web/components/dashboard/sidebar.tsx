@@ -3,20 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/cn';
-import {
-    Archive,
-    LayoutDashboard,
-    FolderOpen,
-    Upload,
-    Settings,
-} from 'lucide-react';
-
-const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Files', href: '/dashboard/files', icon: FolderOpen },
-    { name: 'Upload', href: '/dashboard/upload', icon: Upload },
-    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-];
+import { dashboardNavigation } from '@/lib/dashboard/navigation';
+import { Archive } from 'lucide-react';
 
 export function DashboardSidebar() {
     const pathname = usePathname();
@@ -31,7 +19,7 @@ export function DashboardSidebar() {
             </div>
             <nav className="flex-1 p-4">
                 <ul className="space-y-1">
-                    {navigation.map((item) => {
+                    {dashboardNavigation.map((item) => {
                         const isActive = pathname === item.href;
                         return (
                             <li key={item.name}>

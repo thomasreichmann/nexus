@@ -11,26 +11,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/cn';
-import {
-    Archive,
-    FolderOpen,
-    LayoutDashboard,
-    LogOut,
-    Menu,
-    Settings,
-    Upload,
-    User,
-} from 'lucide-react';
+import { dashboardNavigation } from '@/lib/dashboard/navigation';
+import { Archive, LogOut, Menu, Settings, Upload, User } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
-
-const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Files', href: '/dashboard/files', icon: FolderOpen },
-    { name: 'Upload', href: '/dashboard/upload', icon: Upload },
-    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-];
 
 export function DashboardHeader() {
     const pathname = usePathname();
@@ -55,7 +40,7 @@ export function DashboardHeader() {
                         </div>
                         <nav className="p-4">
                             <ul className="space-y-1">
-                                {navigation.map((item) => {
+                                {dashboardNavigation.map((item) => {
                                     const isActive = pathname === item.href;
                                     return (
                                         <li key={item.name}>

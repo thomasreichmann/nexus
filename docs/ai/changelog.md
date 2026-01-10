@@ -19,6 +19,37 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ---
 
+## 2026-01-10
+
+### Session: v0 Dashboard & Landing Page Review (#5)
+
+Reviewed v0-generated dashboard and landing pages. Extracted shared components to reduce duplication.
+
+**Files Created:**
+
+- `apps/web/lib/dashboard/navigation.ts` - Shared dashboard navigation constant
+- `apps/web/components/landing/Logo.tsx` - Shared logo component
+
+**Files Modified:**
+
+- `apps/web/components/dashboard/sidebar.tsx` - Now imports `dashboardNavigation` from shared constant
+- `apps/web/components/dashboard/header.tsx` - Now imports `dashboardNavigation` from shared constant
+- `apps/web/components/landing/header.tsx` - Now uses `<Logo />` component
+- `apps/web/components/landing/footer.tsx` - Now uses `<Logo />` component
+
+**Findings:**
+
+- Dashboard routes: Clean structure, no duplicates
+- Dashboard components: All follow conventions (function declarations, PascalCase)
+- Landing page: All 9 components follow conventions
+- Smoke tests: Already exist for all pages, all passing
+
+**Why:**
+
+Navigation arrays were duplicated in sidebar and header. Logo markup was duplicated in landing header and footer. Extracted to shared modules following the promotion rule in conventions.md.
+
+---
+
 ## 2026-01-04
 
 ### Session: Merge v0 Root Layout into Existing App Layout
