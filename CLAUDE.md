@@ -107,3 +107,52 @@ docs/
 - No "Co-Authored-By" lines or AI attribution in commits
 - No "Generated with Claude Code" footers
 - Keep commit messages concise and conventional
+
+## Task Workflow
+
+All non-trivial work should have a GitHub Issue before starting.
+
+### Before Starting Work
+
+1. Ask which issue this relates to, or list open issues
+2. If no issue exists, propose creating one (get user approval first)
+3. Read the issue to understand scope and acceptance criteria
+
+### Creating Issues
+
+When the user describes work without an issue:
+
+- Draft issue content: Description, Acceptance Criteria, Out of Scope
+- Propose labels: area (`frontend`, `backend`, `infra`, `docs`) + type (`feature`, `bug`, `chore`)
+- Present to user for approval
+- Create only after explicit approval
+
+### Referencing Issues
+
+- In commits: `feat: add login form (#42)`
+- In PRs: `Closes #42` in the PR body
+- For trivial changes (typos, deps, CI config): use `No-Issue: <reason>` instead
+
+### Updating Issues
+
+You can comment on and close issues:
+
+- No AI attribution (same rule as commits)
+
+### Managing Labels
+
+When editing issues, update labels to reflect current state:
+
+| After doing this...                | Update labels                       |
+| ---------------------------------- | ----------------------------------- |
+| Flesh out vague issue with details | Remove `needs-details`, add `ready` |
+| Confirm/reproduce a bug            | Remove `needs-triage`, add `ready`  |
+| Identify a blocker                 | Add `blocked`                       |
+| Resolve a blocker                  | Remove `blocked`, add `ready`       |
+| Complete work and close issue      | Labels auto-removed on close        |
+
+### Token Efficiency
+
+- Fetch only needed fields (title, body, state)
+- Cache issue context for the session
+- Don't re-fetch issues already read

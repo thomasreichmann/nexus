@@ -333,9 +333,28 @@ pnpm -F web db:migrate
 3. **Flag destructive changes** - Warn before dropping columns/tables
 4. **Commit migrations** - Schema + migration files go together
 
+## Issue-Driven Development
+
+All non-trivial work requires a GitHub Issue:
+
+| When        | What                                                   |
+| ----------- | ------------------------------------------------------ |
+| Before work | Issue defines scope, acceptance criteria, out-of-scope |
+| During work | Reference issue in commits: `feat: add X (#42)`        |
+| After work  | PR body includes `Closes #42`                          |
+
+**Why issues first?**
+
+- Prevents scope creep (out-of-scope is explicit)
+- Creates audit trail of decisions
+- Enables parallel work coordination
+
+**AI tools follow the same workflow** - ask for or propose issues before non-trivial work.
+
 ## Related
 
 - [[patterns|Code Patterns]] - Implementation examples
 - [[context|Project Context]] - Background and architecture
 - [[database-workflow|Database Workflow]] - Full migration guide
+- [[github-mcp-setup|GitHub MCP Setup]] - AI tool GitHub integration
 - [[ai/_index|Back to AI Docs]]

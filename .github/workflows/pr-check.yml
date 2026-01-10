@@ -1,0 +1,26 @@
+name: PR Check
+
+on:
+    pull_request:
+        types: [opened, edited, synchronize]
+
+jobs:
+    check-issue-reference:
+        name: Check issue reference
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check for issue reference or no-issue reason
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      const body = context.payload.pull_request.body || '';
+                      const issuePattern = /(closes|fixes|resolves)\s+#\d+/i;
+                      const noIssuePattern = /no-issue:\s*\S+/i;
+
+                      if (!issuePattern.test(body) && !noIssuePattern.test(body)) {
+                        core.setFailed(`PR must include one of:
+                      - Issue reference: "Closes #123"
+                      - No-issue reason: "No-Issue: typo fix"
+
+                      Valid no-issue reasons: typo, docs only, ci config, deps, hotfix`);
+                      }
