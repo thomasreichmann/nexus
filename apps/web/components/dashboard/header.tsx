@@ -70,17 +70,7 @@ export function DashboardHeader() {
 
             <div className="hidden md:block" />
 
-            <div className="flex items-center gap-3">
-                <Link
-                    href="/dashboard/upload"
-                    className={cn(
-                        buttonVariants({ size: 'sm' }),
-                        'inline-flex items-center'
-                    )}
-                >
-                    <Upload className="mr-2 h-4 w-4" />
-                    Upload
-                </Link>
+            <div className="flex items-center">
                 <DropdownMenu>
                     <DropdownMenuTrigger
                         render={
