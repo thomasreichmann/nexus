@@ -23,8 +23,8 @@ export function Hero() {
                     </h1>
                     <p className="mb-10 text-lg text-muted-foreground text-balance md:text-xl">
                         Nexus is deep storage that just works. Enterprise-grade
-                        durability without the complexity — for just
-                        $1/TB/month.
+                        durability without the complexity — up to 60% cheaper
+                        than traditional cloud storage.
                     </p>
                     <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
                         <Link href="/sign-up" className="w-full sm:w-auto">
@@ -47,7 +47,7 @@ export function Hero() {
                         <div className="flex items-center gap-2">
                             <DollarSign className="h-4 w-4 text-primary" />
                             <span>
-                                90% cheaper than traditional cloud storage
+                                Up to 60% cheaper than cloud storage
                             </span>
                         </div>
                         <div className="flex items-center gap-2">

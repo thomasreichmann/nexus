@@ -3,9 +3,9 @@ import { Shield, Wallet, Clock, Lock, Globe, Headphones } from 'lucide-react';
 const features = [
     {
         icon: Wallet,
-        title: '90% cost savings',
+        title: 'Up to 60% cheaper',
         description:
-            'Pay $1/TB/month instead of $10+ with traditional cloud storage.',
+            'Starting at $3/month for 1TB. Pay less than traditional cloud storage.',
     },
     {
         icon: Shield,
@@ -15,7 +15,7 @@ const features = [
     },
     {
         icon: Clock,
-        title: '3-12 hour retrieval',
+        title: '12-48 hour retrieval',
         description:
             "Request your files anytime. They're available within hours.",
     },

@@ -5,51 +5,64 @@ import { Check } from 'lucide-react';
 const plans = [
     {
         name: 'Starter',
-        storage: '100 GB',
-        price: '$2',
+        storage: '1 TB',
+        price: '$3',
         period: '/month',
         description: 'Perfect for personal archives',
         features: [
-            '100 GB storage',
+            '1 TB storage',
             'Unlimited uploads',
-            '3-12 hour retrieval',
+            '12-48 hour retrieval',
             'End-to-end encryption',
             'Email support',
         ],
-        cta: 'Get started',
+        cta: 'Start free trial',
         popular: false,
     },
     {
         name: 'Pro',
-        storage: '1 TB',
-        price: '$9',
+        storage: '5 TB',
+        price: '$12',
         period: '/month',
         description: 'For photographers & creators',
         features: [
-            '1 TB storage',
+            '5 TB storage',
             'Unlimited uploads',
-            '3-12 hour retrieval',
+            '12-48 hour retrieval',
             'End-to-end encryption',
             'Priority support',
-            'Bulk operations',
         ],
-        cta: 'Get started',
+        cta: 'Start free trial',
         popular: true,
     },
     {
-        name: 'Business',
-        storage: '5 TB',
-        price: '$39',
+        name: 'Max',
+        storage: '10 TB',
+        price: '$20',
         period: '/month',
+        description: 'For serious archivists',
+        features: [
+            '10 TB storage',
+            'Unlimited uploads',
+            '12-48 hour retrieval',
+            'End-to-end encryption',
+            'Priority support',
+        ],
+        cta: 'Start free trial',
+        popular: false,
+    },
+    {
+        name: 'Enterprise',
+        storage: 'Custom',
+        price: 'Custom',
+        period: '',
         description: 'For teams with compliance needs',
         features: [
-            '5 TB storage',
-            'Unlimited uploads',
-            'Faster retrieval options',
-            'End-to-end encryption',
-            'Dedicated support',
-            'Team management',
+            'Custom storage (20TB+)',
+            'SSO / SAML',
             'Audit logs',
+            'Dedicated support',
+            'SLA guarantees',
         ],
         cta: 'Contact sales',
         popular: false,
@@ -69,7 +82,7 @@ export function Pricing() {
                         storage.
                     </p>
                 </div>
-                <div className="mx-auto grid max-w-5xl gap-8 md:grid-cols-3">
+                <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-2 lg:grid-cols-4">
                     {plans.map((plan) => (
                         <div
                             key={plan.name}

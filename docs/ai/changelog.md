@@ -1,7 +1,7 @@
 ---
 title: AI Changelog
 created: 2025-12-29
-updated: 2026-01-03
+updated: 2026-01-11
 status: active
 tags:
     - ai
@@ -16,6 +16,59 @@ ai_summary: 'Recent AI changes - READ THIS FIRST for context'
 # AI Changelog
 
 Recent changes made by AI assistants. **Read this first** to understand recent context.
+
+---
+
+## 2026-01-11
+
+### Session: Pricing Model & Frontend Updates (#11)
+
+Created pricing model based on AWS S3 Glacier Deep Archive costs and competitor research. Updated frontend with real pricing tiers.
+
+**Research Conducted:**
+
+- AWS Glacier Deep Archive costs (~$1/TB storage, $0.0025/GB retrieval)
+- Competitor pricing (Google Drive, Dropbox, iCloud at ~$5-6/TB)
+- Archival storage alternatives (Backblaze B2, Wasabi)
+
+**Decisions Made:**
+
+| Decision | Choice |
+|----------|--------|
+| Tier structure | 3 fixed tiers (Starter/Pro/Max) + Enterprise |
+| Free tier | No (30-day free trial instead) |
+| Retrieval model | Unlimited (baked into price) |
+| Annual discount | ~17% (2 months free) |
+
+**Final Pricing:**
+
+| Tier | Storage | Monthly | Per TB | vs Competitors |
+|------|---------|---------|--------|----------------|
+| Starter | 1 TB | $3 | $3.00 | 40% cheaper |
+| Pro | 5 TB | $12 | $2.40 | 52% cheaper |
+| Max | 10 TB | $20 | $2.00 | 60% cheaper |
+| Enterprise | Custom | Contact | - | Usage-based option |
+
+**Files Created:**
+
+- `docs/planning/pricing-model.md` - Full cost breakdown, margin analysis, risk scenarios, tier definitions
+
+**Files Modified:**
+
+- `apps/web/components/landing/pricing.tsx` - Updated from 3 placeholder tiers to 4 real tiers (Starter/Pro/Max/Enterprise), fixed grid to 4-column layout
+- `apps/web/components/landing/hero.tsx` - Changed "$1/TB/month" to "up to 60% cheaper", updated savings claim from "90%" to "60%"
+- `apps/web/components/landing/features.tsx` - Changed "90% cost savings" to "Up to 60% cheaper", fixed retrieval time from "3-12 hour" to "12-48 hour"
+
+**Why:**
+
+- Original frontend had placeholder pricing that wasn't based on real costs
+- Retrieval time was incorrect (Glacier Deep Archive is 12-48h, not 3-12h)
+- "90% cheaper" claim wasn't accurate - actual savings vs competitors is 40-60%
+- Needed documented pricing model for business planning
+
+**Value Proposition:**
+
+Consumer-friendly interface + archival pricing = unique market position. No other service offers Glacier-level pricing with a consumer UX.
 
 ---
 
