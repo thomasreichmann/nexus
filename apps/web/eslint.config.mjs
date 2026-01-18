@@ -13,6 +13,31 @@ const eslintConfig = defineConfig([
         'build/**',
         'next-env.d.ts',
     ]),
+    // Ban direct pino imports in routers - use ctx.log instead
+    {
+        files: ['**/server/trpc/routers/**/*.ts'],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    paths: [
+                        {
+                            name: 'pino',
+                            message:
+                                'Use ctx.log instead of importing pino directly.',
+                        },
+                    ],
+                    patterns: [
+                        {
+                            group: ['**/server/lib/logger*'],
+                            message:
+                                'Use ctx.log instead of importing logger directly.',
+                        },
+                    ],
+                },
+            ],
+        },
+    },
 ]);
 
 export default eslintConfig;

@@ -12,7 +12,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/cn';
 import { dashboardNavigation } from '@/lib/dashboard/navigation';
-import { Archive, LogOut, Menu, Settings, Upload, User } from 'lucide-react';
+import { Archive, LogOut, Menu, Settings, User } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
@@ -67,7 +67,6 @@ export function DashboardHeader() {
                     </SheetContent>
                 </Sheet>
             </div>
-
             <div className="hidden md:block" />
 
             <div className="flex items-center">

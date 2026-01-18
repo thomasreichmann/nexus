@@ -12,7 +12,7 @@
         "env:pull": "vercel env pull apps/web/.env.local"
     },
     "devDependencies": {
-        "prettier": "^3.7.4",
+        "prettier": "^3.8.0",
         "turbo": "^2.7.2"
     },
     "license": "ISC",

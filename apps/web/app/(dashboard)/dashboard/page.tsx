@@ -1,3 +1,5 @@
+'use client';
+
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
@@ -10,56 +12,20 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { FileIcon, ArrowRight, RotateCw, Archive } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-
-const recentUploads = [
-    {
-        name: 'vacation-photos-2024.zip',
-        size: '4.2 GB',
-        date: '2 hours ago',
-        status: 'archived',
-    },
-    {
-        name: 'project-backup.tar.gz',
-        size: '12.8 GB',
-        date: '1 day ago',
-        status: 'archived',
-    },
-    {
-        name: 'raw-footage-jan.mov',
-        size: '28.5 GB',
-        date: '2 days ago',
-        status: 'archived',
-    },
-    {
-        name: 'client-deliverables.zip',
-        size: '1.3 GB',
-        date: '3 days ago',
-        status: 'archived',
-    },
-    {
-        name: 'music-library-backup.zip',
-        size: '8.7 GB',
-        date: '5 days ago',
-        status: 'archived',
-    },
-];
-
-const retrievals = [
-    {
-        name: 'design-assets-2023.zip',
-        size: '2.1 GB',
-        requestedAt: '3 hours ago',
-        readyIn: '~2 hours',
-    },
-    {
-        name: 'old-projects.tar.gz',
-        size: '5.4 GB',
-        requestedAt: '6 hours ago',
-        readyIn: '~5 hours',
-    },
-];
+import { useTRPC } from '@/lib/trpc/client';
+import { useQuery } from '@tanstack/react-query';
 
 export default function DashboardPage() {
+    const trpc = useTRPC();
+
+    const { data: stats } = useQuery(trpc.dashboard.getStats.queryOptions());
+    const { data: recentUploads } = useQuery(
+        trpc.dashboard.getRecentUploads.queryOptions()
+    );
+    const { data: retrievals } = useQuery(
+        trpc.dashboard.getRetrievals.queryOptions()
+    );
+
     return (
         <div className="mx-auto max-w-7xl space-y-8">
             <div>
@@ -78,10 +44,15 @@ export default function DashboardPage() {
                         <FileIcon className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">34.2 GB</div>
-                        <Progress value={34.2} className="mt-3 h-2" />
+                        <div className="text-2xl font-bold">
+                            {stats?.storageUsedGb ?? '-'} GB
+                        </div>
+                        <Progress
+                            value={stats?.storageUsedGb ?? 0}
+                            className="mt-3 h-2"
+                        />
                         <p className="mt-2 text-xs text-muted-foreground">
-                            of 100 GB total
+                            of {stats?.storageTotalGb ?? '-'} GB total
                         </p>
                     </CardContent>
                 </Card>
@@ -93,7 +64,9 @@ export default function DashboardPage() {
                         <Archive className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
                     <CardContent>
-                        <div className="text-2xl font-bold">127</div>
+                        <div className="text-2xl font-bold">
+                            {stats?.filesStored ?? '-'}
+                        </div>
                         <p className="mt-1 text-xs text-muted-foreground">
                             files archived
                         </p>
@@ -115,7 +88,7 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">
-                            {retrievals.length}
+                            {stats?.activeRetrievals ?? '-'}
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
                             in progress
@@ -166,7 +139,7 @@ export default function DashboardPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y">
-                                    {recentUploads.map((file) => (
+                                    {recentUploads?.map((file) => (
                                         <tr key={file.name} className="group">
                                             <td className="py-3">
                                                 <div className="flex items-center gap-3">
@@ -210,12 +183,12 @@ export default function DashboardPage() {
                                 </CardTitle>
                             </div>
                             <Badge variant="secondary" className="text-xs">
-                                {retrievals.length} active
+                                {retrievals?.length ?? 0} active
                             </Badge>
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                        {retrievals.length > 0 ? (
+                        {retrievals && retrievals.length > 0 ? (
                             retrievals.map((file) => (
                                 <div
                                     key={file.name}
