@@ -40,6 +40,7 @@ This folder contains context and instructions that help AI:
 
 - [[changelog|AI Changelog]] - Recent changes (read first for context)
 - [[prompts|Useful Prompts]] - Templates for common tasks
+- [[github-workflow|GitHub Workflow]] - Issue creation, relationships, and management
 
 ## Quick Start for AI
 

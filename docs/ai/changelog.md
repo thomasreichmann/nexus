@@ -1,7 +1,7 @@
 ---
 title: AI Changelog
 created: 2025-12-29
-updated: 2026-01-11
+updated: 2026-01-18
 status: active
 tags:
     - ai
@@ -19,6 +19,49 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ---
 
+## 2026-01-18
+
+### Session: GitHub Workflow Documentation
+
+Extracted GitHub issue management into dedicated documentation files and slimmed down CLAUDE.md.
+
+**Files Created:**
+
+- `docs/ai/github-workflow.md` - AI-specific guide for issue creation, relationships (sub-issues), and management using CLI/GraphQL
+- `docs/guides/github-workflow.md` - Human guide for issue management using GitHub web UI
+
+**Files Modified:**
+
+- `CLAUDE.md` - Slimmed Task Workflow section, now references `docs/ai/github-workflow.md` for details
+- `docs/ai/_index.md` - Added link to github-workflow
+
+**Why:**
+
+Issue creation/management is infrequent, so detailed instructions don't belong in the main CLAUDE.md. Moving to dedicated docs keeps CLAUDE.md lean while providing detailed guidance when needed.
+
+**Key Addition - Issue Relationships:**
+
+Documented how to use GitHub's native sub-issue system via GraphQL API:
+
+```bash
+# Link child issue to parent
+gh api graphql -f query='
+mutation {
+  addSubIssue(input: {
+    issueId: "PARENT_NODE_ID",
+    subIssueId: "CHILD_NODE_ID"
+  }) { issue { number } }
+}'
+```
+
+Use sub-issues when:
+
+- Plan mentions "follow-up ticket"
+- Feature breaks into phases
+- Bug reveals related issues
+
+---
+
 ## 2026-01-11
 
 ### Session: Pricing Model & Frontend Updates (#11)
@@ -33,21 +76,21 @@ Created pricing model based on AWS S3 Glacier Deep Archive costs and competitor 
 
 **Decisions Made:**
 
-| Decision | Choice |
-|----------|--------|
-| Tier structure | 3 fixed tiers (Starter/Pro/Max) + Enterprise |
-| Free tier | No (30-day free trial instead) |
-| Retrieval model | Unlimited (baked into price) |
-| Annual discount | ~17% (2 months free) |
+| Decision        | Choice                                       |
+| --------------- | -------------------------------------------- |
+| Tier structure  | 3 fixed tiers (Starter/Pro/Max) + Enterprise |
+| Free tier       | No (30-day free trial instead)               |
+| Retrieval model | Unlimited (baked into price)                 |
+| Annual discount | ~17% (2 months free)                         |
 
 **Final Pricing:**
 
-| Tier | Storage | Monthly | Per TB | vs Competitors |
-|------|---------|---------|--------|----------------|
-| Starter | 1 TB | $3 | $3.00 | 40% cheaper |
-| Pro | 5 TB | $12 | $2.40 | 52% cheaper |
-| Max | 10 TB | $20 | $2.00 | 60% cheaper |
-| Enterprise | Custom | Contact | - | Usage-based option |
+| Tier       | Storage | Monthly | Per TB | vs Competitors     |
+| ---------- | ------- | ------- | ------ | ------------------ |
+| Starter    | 1 TB    | $3      | $3.00  | 40% cheaper        |
+| Pro        | 5 TB    | $12     | $2.40  | 52% cheaper        |
+| Max        | 10 TB   | $20     | $2.00  | 60% cheaper        |
+| Enterprise | Custom  | Contact | -      | Usage-based option |
 
 **Files Created:**
 
@@ -69,6 +112,53 @@ Created pricing model based on AWS S3 Glacier Deep Archive costs and competitor 
 **Value Proposition:**
 
 Consumer-friendly interface + archival pricing = unique market position. No other service offers Glacier-level pricing with a consumer UX.
+
+---
+
+### Session: Structured Logging with Pino (#8)
+
+Implemented structured logging using Pino with a "wide events" approach - one comprehensive log event per tRPC request.
+
+**Files Created:**
+
+- `apps/web/server/lib/logger.ts` - Base Pino logger with pino-pretty in dev, JSON in prod
+- `apps/web/server/trpc/middleware/logging.ts` - Request logging utilities with timing APIs
+
+**Files Modified:**
+
+- `apps/web/server/trpc/init.ts` - Added logging middleware to all procedures, extended context with `requestId` and `log`
+- `apps/web/eslint.config.mjs` - Added import restriction to ban direct pino imports in routers
+- `apps/web/package.json` - Added pino and pino-pretty dependencies
+
+**Wide Event Structure:**
+
+```typescript
+{
+  requestId: string,    // UUID per request
+  path: string,         // e.g., "auth.me"
+  type: "query" | "mutation",
+  userId?: string,      // If authenticated
+  durationMs: number,
+  timings?: { db?: number, s3?: number, ... },
+  ok: boolean,
+  errorCode?: string,   // UNAUTHORIZED, NOT_FOUND, etc.
+  ...customFields       // Added via ctx.log.setField()
+}
+```
+
+**API Available in Procedures:**
+
+- `ctx.requestId` - UUID for correlation
+- `ctx.log.setField(key, value)` - Add custom fields to event
+- `ctx.log.timed(label, fn)` - Time an async operation
+- `ctx.log.time(label)` / `ctx.log.timeEnd(label)` - Manual timing
+
+**Why:**
+
+- Single comprehensive event per request instead of scattered log statements
+- Correlation IDs for request tracing
+- Section timing for debugging slow operations
+- ESLint rule ensures consistent use of `ctx.log` over direct pino imports
 
 ---
 
