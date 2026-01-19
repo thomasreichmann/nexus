@@ -21,6 +21,51 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2026-01-18
 
+### Session: Detailed Subscriptions Schema Issue (#15)
+
+Added complete specifications to issue #15 for the subscriptions table, following the pattern established in #14 and #17.
+
+**Issue Updated:**
+
+- #15 `subscriptions` table - Full Drizzle schema with `plan_tier` and `subscription_status` enums, Stripe integration fields, storage quota tracking
+
+**Key Schema Decisions:**
+
+- One subscription per user (`user_id` unique constraint)
+- `stripe_subscription_id` nullable (customer exists before subscription during trial)
+- `storage_limit` denormalized for fast quota checks
+- `cancel_at_period_end` tracks pending cancellations
+- Status enum mirrors Stripe statuses exactly
+
+**Labels Changed:**
+
+- #15: `needs-details` → `ready`
+
+---
+
+### Session: Detailed Schema Issues (#14, #17)
+
+Added complete specifications to database schema issues.
+
+**Issues Updated:**
+
+- #14 `files` table - Full Drizzle schema with enums, columns, indexes, foreign keys
+- #17 `retrievals` table - Glacier restore tracking with status/tier enums, timestamps for lifecycle
+
+**Files Modified:**
+
+- `docs/ai/conventions.md` - Documented that authorization is at application layer (tRPC), not database layer. Removed RLS policy references.
+
+**Labels Changed:**
+
+- Both issues: `needs-details` → `ready`
+
+**Clarification:**
+
+We do not use Supabase RLS policies. Authorization is enforced in tRPC procedures since we access the database directly via Drizzle, not through Supabase's Data API.
+
+---
+
 ### Session: GitHub Workflow Documentation
 
 Extracted GitHub issue management into dedicated documentation files and slimmed down CLAUDE.md.
