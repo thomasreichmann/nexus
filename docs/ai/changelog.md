@@ -19,6 +19,45 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ---
 
+## 2026-01-19
+
+### Session: Server Architecture Documentation
+
+Created comprehensive documentation for database-to-server communication patterns.
+
+**New Documentation:**
+
+- `docs/guides/server-architecture.md` — Full guide covering:
+    - Layered pattern (Repository → Service → tRPC)
+    - Folder structure conventions
+    - Repository layer with explicit return types (TypeScript performance)
+    - Domain errors with automatic tRPC mapping
+    - Service layer conventions
+    - tRPC router conventions
+    - When to extract (decision framework)
+
+**Updated Documentation:**
+
+- `docs/ai/conventions.md` — Added quick reference table linking to the full guide
+
+**Issues Updated with Architecture Guidance:**
+
+- #18 `tRPC: File upload with presigned URLs`
+- #19 `tRPC: File listing & management`
+- #20 `tRPC: Glacier retrieval system`
+- #22 `Storage quota enforcement`
+
+**Key Architecture Decisions:**
+
+- Repositories have explicit return types (breaks Drizzle type inference chain for performance)
+- Services throw domain errors (`NotFoundError`, `QuotaExceededError`, etc.)
+- Domain errors define their own tRPC code via constructor parameter
+- Error handler middleware auto-maps domain errors to tRPC errors
+- tRPC procedures are thin — validation + delegation only
+- Adoption is optional — extract layers as complexity grows
+
+---
+
 ## 2026-01-18
 
 ### Session: Detailed Subscriptions Schema Issue (#15)

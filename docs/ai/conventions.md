@@ -360,6 +360,18 @@ pnpm -F web test:e2e:smoke # Smoke tests only (fast)
 pnpm -F web test:e2e       # All E2E tests
 ```
 
+## Server Architecture
+
+See [[../guides/server-architecture|Server Architecture Guide]] for the full layered pattern (Repository → Service → tRPC).
+
+**Quick reference:**
+
+| Layer          | Location                  | Responsibility                          |
+| -------------- | ------------------------- | --------------------------------------- |
+| **Repository** | `server/db/repositories/` | Pure data access, explicit return types |
+| **Service**    | `server/services/`        | Business logic, domain errors           |
+| **tRPC**       | `server/trpc/routers/`    | Input validation, thin delegation       |
+
 ## Database (Drizzle)
 
 ### Schema Changes
@@ -371,15 +383,19 @@ pnpm -F web db:generate
 pnpm -F web db:migrate
 ```
 
-### Non-Schema Changes (RLS, functions)
+### Custom Migrations (functions, triggers)
 
-Generate empty migration, then edit the SQL:
+For things Drizzle can't express (Postgres functions, triggers), generate an empty migration:
 
 ```bash
-pnpm -F web db:custom add-rls-policies
-# Edit server/db/migrations/XXXX_add-rls-policies.sql
+pnpm -F web db:custom add-notify-trigger
+# Edit server/db/migrations/XXXX_add-notify-trigger.sql
 pnpm -F web db:migrate
 ```
+
+### Authorization
+
+Authorization is handled at the **application layer** (tRPC procedures), not the database layer. We do not use Supabase RLS policies since we access the database directly via Drizzle, not through Supabase's Data API.
 
 ### AI Rules
 
