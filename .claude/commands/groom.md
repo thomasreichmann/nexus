@@ -254,9 +254,9 @@ After all drafts are ready, you MUST review each issue individually with the use
 
 1. **Present all drafts** with a summary showing each issue's title and key changes
 
-2. **Ask about each issue individually** using a single AskUserQuestion with multiple questions (one per issue, up to 4 at a time). Each question should have these options:
+2. **Ask about each issue individually** using a single AskUserQuestion with multiple questions (one per issue, up to 4 at a time). Each question should have these options (in this order):
+    - **Approve as AI-drafted** (default): Issue content is good but mark as `ai-drafted` for later human review
     - **Approve as ready**: Issue is fully reviewed and ready for implementation
-    - **Approve as AI-drafted**: Issue content is good but mark as `ai-drafted` for later human review
     - **Request changes**: User provides feedback, you revise the draft
     - **Skip**: Leave issue as `needs-details` for now
 
