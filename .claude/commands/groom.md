@@ -344,7 +344,7 @@ query {
 gh api graphql -f query='
 mutation {
   addBlockedBy(input: {
-    blockedIssueId: "BLOCKED_NODE_ID",
+    issueId: "BLOCKED_NODE_ID",
     blockingIssueId: "BLOCKING_NODE_ID"
   }) {
     issue { number title }
