@@ -129,6 +129,53 @@ mutation {
 }'
 ```
 
+### Blocking Relationships (Dependencies)
+
+For issues that block other issues (but are NOT parent/child), use the native blocking API:
+
+```bash
+# Get node IDs
+gh api graphql -f query='
+query {
+  repository(owner: "OWNER", name: "REPO") {
+    blocked: issue(number: BLOCKED_NUM) { id }
+    blocking: issue(number: BLOCKING_NUM) { id }
+  }
+}'
+
+# Add blocking relationship
+gh api graphql -f query='
+mutation {
+  addBlockedBy(input: {
+    blockedIssueId: "BLOCKED_NODE_ID",
+    blockingIssueId: "BLOCKING_NODE_ID"
+  }) {
+    issue { number }
+    blockingIssue { number }
+  }
+}'
+
+# Remove blocking relationship
+gh api graphql -f query='
+mutation {
+  removeBlockedBy(input: {
+    blockedIssueId: "BLOCKED_NODE_ID",
+    blockingIssueId: "BLOCKING_NODE_ID"
+  }) {
+    issue { number }
+  }
+}'
+```
+
+### When to Use Each Relationship
+
+| Question                              | Answer | Relationship                |
+| ------------------------------------- | ------ | --------------------------- |
+| Is B _part of_ A?                     | Yes    | Sub-issue (B is child of A) |
+| Must B complete _before_ A can start? | Yes    | Blocking (B blocks A)       |
+
+**Example**: "Add files table to schema" blocks "File upload API" - use blocking, not sub-issue.
+
 ## Updating Issues
 
 ### Add Comment

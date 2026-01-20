@@ -1,0 +1,378 @@
+---
+allowed-tools: Bash, Task, AskUserQuestion, Read, Grep, Glob
+description: Groom GitHub issues from needs-details to ready
+argument-hint: [issue-number] (optional)
+---
+
+# Issue Grooming Command
+
+This command helps transform draft issues (labeled `needs-details`) into implementation-ready issues (labeled `ready`).
+
+## Templates Reference
+
+**Draft issues** (`.github/ISSUE_TEMPLATE/draft.yml`):
+
+- Minimal: just a Description field
+- Auto-labeled: `needs-details`
+
+**Ready issues** (`.github/ISSUE_TEMPLATE/task.yml`):
+
+- Description: What needs to be done and why
+- Acceptance Criteria: Testable checkboxes
+- Out of Scope: What this task explicitly does NOT include
+
+## Instructions
+
+### Step 1: Determine Mode
+
+If an issue number was provided as argument `$ARGUMENTS`:
+
+- Skip to Step 3 with that issue number
+
+Otherwise:
+
+1. Fetch issues with `needs-details` label:
+
+    ```bash
+    gh issue list --label needs-details --json number,title,labels,milestone --limit 20
+    ```
+
+2. If no issues found, inform the user and exit.
+
+3. Present mode selection using AskUserQuestion with these options:
+    - **Single**: "I'll pick one issue to work on" - Ask which issue number
+    - **Multiple**: "Let me select specific issues" - Ask for comma-separated issue numbers
+    - **Auto-select**: "You pick the highest priority issues (max 3)" - Claude selects based on labels/milestones
+    - **Preview & Pick**: "Rank all issues by priority, then I'll choose" - Claude analyzes and ranks all issues, shows rankings with reasoning, user picks which to groom
+
+### Step 2: Execute Based on Mode
+
+**For Single mode:**
+
+- Proceed to Step 3 with the selected issue
+
+**For Preview & Pick mode:**
+
+1. Analyze all issues considering:
+    - Labels (priority, type, area)
+    - Milestone assignment
+    - Dependencies on other issues
+    - Complexity vs value
+    - Blocking status (does this unblock other work?)
+
+2. Present a ranked list to the user showing:
+
+    ```
+    PRIORITY RANKING:
+
+    1. #42 - User authentication flow
+       Priority: HIGH | Reason: Blocks #43, #44; milestone: MVP
+
+    2. #38 - File upload validation
+       Priority: HIGH | Reason: Security-critical; no dependencies
+
+    3. #35 - Dashboard layout
+       Priority: MEDIUM | Reason: User-facing; straightforward scope
+
+    ... (show all issues with rankings)
+    ```
+
+3. Ask user which issues to groom using AskUserQuestion with `multiSelect: true`:
+    - Each option should be an issue (e.g., label: "#42 - User authentication", description: "HIGH - Blocks #43, #44")
+    - User can select multiple issues from the ranked list
+    - Show all issues as options, if needed, you can show them in groups (each group as a question) of 5 options each.
+    - Sort the issues options by highest-priority
+
+4. Proceed to Multiple mode with selected issues
+
+**For Multiple/Auto-select mode:**
+
+- Spawn parallel Task agents (subagent_type: "general-purpose") for each issue
+- Each agent runs the **Research & Discovery** phase (see below)
+- Agents return research findings and key decisions - NOT final drafts
+- Main agent presents decisions to user for input
+- THEN drafts are created incorporating user decisions
+
+### Step 3: Groom Issue (per issue)
+
+This is a TWO-PHASE process. Do NOT skip the first phase.
+
+#### Phase 1: Research & Discovery (REQUIRED)
+
+1. **Fetch issue details:**
+
+    ```bash
+    gh issue view <number> --json number,title,body,labels
+    ```
+
+2. **Research codebase context:**
+    - Use Grep and Glob to find related files
+    - Read relevant code to understand the feature area
+    - Look for similar patterns or existing implementations
+    - Identify architectural implications
+
+3. **Identify decisions and alternatives:**
+    - What architectural choices exist?
+    - Are there multiple valid approaches?
+    - What trade-offs should the user consider?
+    - What assumptions are you making that the user should validate?
+    - What scope boundaries are ambiguous?
+
+4. **Present findings to user** using AskUserQuestion:
+    - Show what you learned from the codebase
+    - Present key decisions that need user input
+    - Offer alternatives where they exist
+    - Ask clarifying questions about ambiguous requirements
+
+    Example questions to surface:
+    - "Should this use the existing X pattern or introduce Y?"
+    - "The scope could include A or exclude it - which do you prefer?"
+    - "I found two approaches: [approach 1] vs [approach 2]. Which fits better?"
+    - "This might affect [related feature]. Should we account for that?"
+
+#### Phase 2: Draft & Finalize
+
+Only proceed here AFTER getting user input on key decisions.
+
+1. **Draft improved body** incorporating user decisions:
+
+    ```markdown
+    ## Description
+
+    [Expanded description based on research AND user decisions]
+
+    ## Acceptance Criteria
+
+    - [ ] [Specific, testable criterion reflecting agreed approach]
+    - [ ] [More criteria based on user input]
+
+    ## Out of Scope
+
+    - [Items explicitly excluded based on user decision]
+    - [Scope boundaries the user confirmed]
+    ```
+
+2. **Present draft to user:**
+    - Show the original issue content
+    - Show the proposed new body
+    - Highlight how user decisions were incorporated
+    - Ask for final approval or modifications
+
+3. **If approved, update the issue:**
+    ```bash
+    gh issue edit <number> --body "<new body>"
+    gh issue edit <number> --remove-label needs-details --add-label ready
+    ```
+
+### Step 4: Summary
+
+After all issues are processed, provide a summary:
+
+- Number of issues groomed
+- Key decisions made (for reference)
+- Links to updated issues
+- Any issues that were skipped or need follow-up
+
+## Parallel Agent Prompt Template
+
+**CRITICAL**: Subagents perform RESEARCH ONLY. They do NOT make final decisions or write final drafts.
+
+When spawning Task agents for multiple issues, use this prompt structure:
+
+```
+Research GitHub issue #<number> for the nexus project to prepare for grooming.
+
+Your job is to RESEARCH and IDENTIFY DECISIONS - NOT to write the final issue.
+
+1. Fetch the issue: gh issue view <number> --json number,title,body,labels
+
+2. Research the codebase thoroughly:
+   - Search for related code patterns
+   - Read relevant files
+   - Understand the feature area
+   - Look for existing conventions to follow
+
+3. Identify key decisions and questions:
+   - What architectural choices need to be made?
+   - What are the alternative approaches?
+   - What assumptions need user validation?
+   - What scope boundaries are unclear?
+   - What trade-offs should be considered?
+
+DO NOT write the final issue body. Return your findings in this format:
+
+---
+ISSUE: #<number> - <title>
+
+ORIGINAL BODY:
+<original body>
+
+CODEBASE RESEARCH:
+- [What you found in the codebase]
+- [Relevant patterns and conventions]
+- [Related files and their purposes]
+
+KEY DECISIONS NEEDED:
+1. [Decision 1]: [Option A] vs [Option B]
+   - Option A: [pros/cons]
+   - Option B: [pros/cons]
+   - My lean: [which and why, but USER DECIDES]
+
+2. [Decision 2]: [describe the choice]
+   - [alternatives and trade-offs]
+
+CLARIFYING QUESTIONS:
+- [Question about unclear requirements]
+- [Question about scope boundaries]
+- [Question about user preferences]
+
+ASSUMPTIONS I'M MAKING:
+- [Assumption 1 - user should confirm]
+- [Assumption 2 - user should confirm]
+
+PRELIMINARY THOUGHTS:
+- Acceptance criteria might include: [rough ideas, NOT final]
+- Out of scope might be: [rough ideas, NOT final]
+---
+
+Remember: The user will make the decisions. You provide research and options.
+```
+
+## After Subagents Return
+
+When subagents return their research:
+
+1. **Compile all decisions and questions** from all issues
+2. **Present to user** grouped by issue, using AskUserQuestion for each decision point
+3. **Collect user decisions** before proceeding to draft
+4. **Draft issues** incorporating the decisions
+5. **Proceed to Final Review**
+
+## Final Review (REQUIRED)
+
+After all drafts are ready, you MUST review each issue individually with the user.
+
+1. **Present all drafts** with a summary showing each issue's title and key changes
+
+2. **Ask about each issue individually** using a single AskUserQuestion with multiple questions (one per issue, up to 4 at a time). Each question should have these options:
+    - **Approve as ready**: Issue is fully reviewed and ready for implementation
+    - **Approve as AI-drafted**: Issue content is good but mark as `ai-drafted` for later human review
+    - **Request changes**: User provides feedback, you revise the draft
+    - **Skip**: Leave issue as `needs-details` for now
+
+3. **Apply updates based on responses:**
+    - "Approve as ready": `--remove-label needs-details --add-label ready`
+    - "Approve as AI-drafted": `--remove-label needs-details --add-label ready --add-label ai-drafted`
+    - "Request changes": Revise draft based on feedback, then ask again
+    - "Skip": No changes, remains `needs-details`
+
+4. **Handle "Request changes"** responses:
+    - Show the specific feedback
+    - Revise the draft accordingly
+    - Present the revised version
+    - Ask for approval again (same options)
+
+## Labels Reference
+
+| Label           | Meaning                                               |
+| --------------- | ----------------------------------------------------- |
+| `needs-details` | Draft issue, not ready for implementation             |
+| `ready`         | Fully detailed, ready for implementation              |
+| `ai-drafted`    | Content generated/groomed by AI, pending human review |
+
+Note: `ai-drafted` is used WITH `ready` - the issue is detailed enough to work on, but a human hasn't verified the AI's decisions yet.
+
+## Creating Follow-up Issues
+
+During grooming, you may identify work that should be separate issues (prerequisites, follow-ups, discovered scope). When creating these:
+
+1. **Get user approval** before creating any new issues
+2. **Create as draft** with `needs-details` label
+3. **Set up GitHub relationships** using the GraphQL API (see `docs/ai/github-workflow.md`)
+
+### Linking Sub-Issues
+
+When a new issue is a child/follow-up of the issue being groomed:
+
+```bash
+# Get node IDs for both issues
+gh api graphql -f query='
+query {
+  repository(owner: "OWNER", name: "REPO") {
+    parent: issue(number: PARENT_NUM) { id }
+    child: issue(number: CHILD_NUM) { id }
+  }
+}'
+
+# Link child to parent
+gh api graphql -f query='
+mutation {
+  addSubIssue(input: {
+    issueId: "PARENT_NODE_ID",
+    subIssueId: "CHILD_NODE_ID"
+  }) {
+    issue { number }
+  }
+}'
+```
+
+### When to Use Sub-Issues (Parent/Child)
+
+Use the sub-issue API ONLY for hierarchical breakdown:
+
+| Scenario                      | Relationship                             |
+| ----------------------------- | ---------------------------------------- |
+| Feature split into phases     | Parent = epic, children = phases         |
+| Main task with follow-up work | Parent = main, children = follow-ups     |
+| Bug reveals related issues    | Parent = original, children = discovered |
+
+### Blocked/Blocked-by (Dependencies)
+
+For dependency relationships where one issue must complete before another can start (but they're NOT hierarchically related), use GitHub's native blocking relationship:
+
+```bash
+# Get node IDs for both issues
+gh api graphql -f query='
+query {
+  repository(owner: "OWNER", name: "REPO") {
+    blocked: issue(number: BLOCKED_NUM) { id }
+    blocking: issue(number: BLOCKING_NUM) { id }
+  }
+}'
+
+# Add blocking relationship (BLOCKING_NUM blocks BLOCKED_NUM)
+gh api graphql -f query='
+mutation {
+  addBlockedBy(input: {
+    blockedIssueId: "BLOCKED_NODE_ID",
+    blockingIssueId: "BLOCKING_NODE_ID"
+  }) {
+    issue { number title }
+    blockingIssue { number title }
+  }
+}'
+```
+
+This creates the native "Blocked by" / "Is blocking" relationships visible in GitHub's sidebar UI.
+
+### Relationship Decision Guide
+
+Ask yourself: "Is issue B a _part of_ issue A, or does B just need to _happen before_ A?"
+
+| Answer                 | Relationship      | Action                         |
+| ---------------------- | ----------------- | ------------------------------ |
+| B is part of A         | Parent/Child      | Use `addSubIssue` API          |
+| B must happen before A | Blocks/Blocked-by | Note in body + `blocked` label |
+
+**IMPORTANT**: Don't confuse these. A prerequisite that blocks work is NOT automatically a parent issue.
+
+## Notes
+
+- NEVER skip the Research & Discovery phase
+- ALWAYS surface architectural decisions to the user
+- Subagents research and identify - they don't decide
+- Present alternatives, don't just pick one
+- User decisions should be reflected in the final draft
+- Preserve existing context from the original issue
+- Make acceptance criteria specific and testable based on agreed approach
+- ALWAYS link related issues using GitHub's sub-issue API (see above)
