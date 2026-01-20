@@ -57,12 +57,13 @@ Every issue should have:
 
 Apply two labels - area and type:
 
-| Area       | Description           |
-| ---------- | --------------------- |
-| `frontend` | UI, components, pages |
-| `backend`  | API, database, auth   |
-| `infra`    | AWS, Terraform, CI/CD |
-| `docs`     | Documentation         |
+| Area           | Description                          |
+| -------------- | ------------------------------------ |
+| `frontend`     | UI, components, pages                |
+| `backend`      | API, database, auth                  |
+| `infra`        | AWS, Terraform, CI/CD                |
+| `docs`         | Documentation                        |
+| `architecture` | Foundational patterns/infrastructure |
 
 | Type       | Description          |
 | ---------- | -------------------- |
@@ -70,6 +71,17 @@ Apply two labels - area and type:
 | `bug`      | Something broken     |
 | `chore`    | Maintenance, cleanup |
 | `refactor` | Code improvement     |
+
+## Prerequisites Checklist
+
+Before creating an implementation issue, ask:
+
+1. **What modules does this need?** (e.g., `lib/storage/`, `lib/stripe/`)
+2. **Do those modules exist?** If not, create foundational issues first
+3. **What patterns does this follow?** Check if architecture is documented
+4. **What database tables does this need?** List schema dependencies
+
+If any prerequisite doesn't exist, create it as a separate issue with `architecture` label and add it to "Blocked By".
 
 ## Issue Relationships
 

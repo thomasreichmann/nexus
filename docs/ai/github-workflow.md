@@ -50,14 +50,26 @@ EOF
 
 Combine area + type:
 
-| Area       | Type       |
-| ---------- | ---------- |
-| `frontend` | `feature`  |
-| `backend`  | `bug`      |
-| `infra`    | `chore`    |
-| `docs`     | `refactor` |
+| Area           | Type       |
+| -------------- | ---------- |
+| `frontend`     | `feature`  |
+| `backend`      | `bug`      |
+| `infra`        | `chore`    |
+| `docs`         | `refactor` |
+| `architecture` |            |
 
-Example: `--label "backend,feature"`
+Example: `--label "backend,feature"` or `--label "backend,architecture"`
+
+## Prerequisites Checklist
+
+Before creating an implementation issue, check:
+
+1. **What modules does this need?** (e.g., `lib/storage/`, `lib/stripe/`)
+2. **Do those modules exist?** If not, create foundational issues first
+3. **What patterns does this follow?** Check if architecture is documented
+4. **What database tables does this need?** List schema dependencies
+
+If any prerequisite doesn't exist, create it as a separate issue with `architecture` label and add it to "Blocked By".
 
 ## Issue Relationships
 
