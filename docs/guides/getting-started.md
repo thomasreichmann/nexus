@@ -1,229 +1,204 @@
 ---
 title: Getting Started
 created: 2025-12-29
-updated: 2025-12-29
+updated: 2026-01-23
 status: active
 tags:
     - guide
     - setup
-    - nextjs
-    - supabase
-    - aws
+    - development
+    - environment
 aliases:
     - Development Setup
     - Quick Start
+    - Development Environment
 ---
 
 # Getting Started
 
-Development environment setup guide for the Nexus MVP.
+Development environment setup for contributors to the Nexus project.
+
+## Quick Start
+
+If you have all prerequisites installed and credentials configured:
+
+```bash
+git clone <repo-url>
+cd nexus
+pnpm install
+vercel link && pnpm env:pull
+pnpm -F web db:migrate
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) to verify it's running.
 
 ## Prerequisites
 
-Before you begin, ensure you have:
+### Required Tooling
 
-- Node.js 18+ installed
-- pnpm or npm package manager
-- Git installed
-- Cursor editor installed and configured with Claude
-- GitHub account (for version control)
-- Vercel account (for deployment)
-- Supabase account
-- AWS account (for S3)
-- Stripe account (for payments)
+| Tool       | Version | Installation                                                 |
+| ---------- | ------- | ------------------------------------------------------------ |
+| Node.js    | 22+     | [nodejs.org](https://nodejs.org)                             |
+| pnpm       | 9+      | `corepack enable && corepack prepare pnpm@latest --activate` |
+| Vercel CLI | latest  | `pnpm add -g vercel`                                         |
+| Git        | latest  | [git-scm.com](https://git-scm.com)                           |
 
-## Step 1: Initialize Next.js Project
+> [!tip] Node Version
+> The repo includes `.nvmrc`. If you use nvm/fnm, run `nvm use` or `fnm use` to switch automatically.
 
-```bash
-# Create new Next.js project
-npx create-next-app@latest nexus-mvp \
-  --typescript \
-  --tailwind \
-  --app \
-  --import-alias "@/*"
+### Required Accounts
 
-cd nexus-mvp
+You'll need access to the project's cloud services:
 
-# Initialize git (if not done automatically)
-git init
-git add .
-git commit -m "Initial commit: Next.js setup"
+- **Vercel** — Environment variables and deployment
+- **Supabase** — PostgreSQL database
+- **AWS** — S3 for file storage
+- **Stripe** — Payment integration (test mode)
 
-# Create GitHub repository and push
-gh repo create nexus-mvp --private --source=. --push
-```
+If you don't have credentials yet, reach out to a maintainer on GitHub or Discord to get added to the shared project.
 
-## Step 2: Set Up Supabase
+## Setup Steps
 
-### Create Supabase Project
-
-1. Go to [supabase.com](https://supabase.com)
-2. Create new project: "nexus-mvp"
-3. Save your project URL and anon key
-4. Save your service role key (for server-side)
-
-### Install Supabase Client
+### 1. Clone the Repository
 
 ```bash
-pnpm add @supabase/supabase-js @supabase/auth-helpers-nextjs
+git clone <repo-url>
+cd nexus
 ```
 
-### Create Supabase Clients
-
-```typescript
-// lib/supabase/client.ts (for client components)
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-
-export const createClient = () => createClientComponentClient();
-
-// lib/supabase/server.ts (for server components)
-import { cookies } from 'next/headers';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-
-export const createServerClient = () => {
-    const cookieStore = cookies();
-    return createServerComponentClient({ cookies: () => cookieStore });
-};
-```
-
-## Step 3: Set Up AWS S3
-
-### Create S3 Buckets
-
-1. Log into AWS Console
-2. Navigate to S3
-3. Create bucket: `nexus-storage-prod`
-4. Enable versioning
-5. Set up CORS configuration
-6. Create IAM user with S3 access
-7. Save access key and secret key
-
-### Install AWS SDK
+### 2. Install Dependencies
 
 ```bash
-pnpm add @aws-sdk/client-s3 @aws-sdk/s3-request-presigner
+pnpm install
 ```
 
-## Step 4: Configure Environment Variables
+This installs all workspace dependencies. The monorepo structure:
 
-Create `.env.local` file:
-
-```bash
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-
-# AWS S3
-AWS_ACCESS_KEY_ID=your_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-AWS_REGION=us-east-1
-S3_BUCKET=nexus-storage-prod
-
-# Stripe (get these later)
-NEXT_PUBLIC_STRIPE_PUBLIC_KEY=
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-
-# App
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+nexus/
+├── apps/web/     # Next.js application (main codebase)
+├── packages/     # Shared packages (future)
+├── docs/         # Documentation (Obsidian vault)
+└── infra/        # Terraform infrastructure
 ```
 
-> [!warning] Security
-> Never commit `.env.local` to version control. Ensure it's in `.gitignore`.
+### 3. Configure Environment Variables
 
-## Step 5: Install Core Dependencies
-
-```bash
-# Database & ORM (choose one)
-pnpm add drizzle-orm
-pnpm add -D drizzle-kit
-# OR
-pnpm add prisma @prisma/client
-
-# Forms & Validation
-pnpm add react-hook-form zod @hookform/resolvers
-
-# UI Components
-pnpm add @radix-ui/react-dropdown-menu @radix-ui/react-dialog
-pnpm add @radix-ui/react-select @radix-ui/react-toast
-pnpm add lucide-react
-
-# Utilities
-pnpm add class-variance-authority clsx tailwind-merge
-pnpm add date-fns
-```
-
-## Step 6: Set Up Project Structure
+Environment variables are managed through Vercel:
 
 ```bash
-mkdir -p app/{api,\(auth\),\(dashboard\)}
-mkdir -p components/{ui,features}
-mkdir -p lib/{supabase,s3,utils}
-mkdir -p actions
-mkdir -p types
-```
-
-## Step 7: Deploy to Vercel
-
-1. Go to [vercel.com](https://vercel.com)
-2. Import your GitHub repository
-3. Configure project:
-    - Framework Preset: Next.js
-    - Root Directory: ./
-4. Add environment variables from `.env.local`
-5. Deploy
-
-### Configure Vercel CLI (optional)
-
-```bash
-pnpm add -g vercel
-vercel login
+# Link to the Vercel project (one-time setup)
 vercel link
+
+# Pull environment variables
+pnpm env:pull
 ```
 
-## Quick Reference
+This creates `apps/web/.env.local` with all required variables.
 
-### Useful Commands
+> [!warning] Don't Commit .env.local
+> The `.env.local` file contains secrets and is gitignored. Never commit it.
+
+See [[environment-setup|Environment Setup]] for details on each variable and type-safe access.
+
+### 4. Set Up the Database
+
+Apply any pending migrations to the Supabase database:
 
 ```bash
-# Development
-pnpm dev          # Start dev server
-pnpm build        # Build for production
-pnpm start        # Start production server
-
-# Code Quality
-pnpm lint         # Run ESLint
-pnpm type-check   # TypeScript check
-
-# Deployment
-vercel            # Deploy to Vercel
-vercel --prod     # Deploy to production
+pnpm -F web db:migrate
 ```
 
-### Important Files
+> [!note] Cloud-First Database
+> We use Supabase's cloud PostgreSQL directly—no local database container needed. Your `DATABASE_URL` points to the shared development database.
 
-| File             | Purpose               |
-| ---------------- | --------------------- |
-| `app/layout.tsx` | Root layout           |
-| `app/page.tsx`   | Landing page          |
-| `middleware.ts`  | Auth middleware       |
-| `next.config.js` | Next.js configuration |
-| `.env.local`     | Environment variables |
+See [[database-workflow|Database Workflow]] for schema changes and migration commands.
+
+### 5. Start Development
+
+```bash
+pnpm dev
+```
+
+The app runs at [http://localhost:3000](http://localhost:3000).
+
+## Verify Your Setup
+
+After starting the dev server, verify everything works:
+
+1. **Home page loads** — Visit `http://localhost:3000`
+2. **Auth pages render** — Visit `/sign-in` and `/sign-up`
+3. **No console errors** — Check browser dev tools
+
+Run smoke tests to catch render issues:
+
+```bash
+pnpm -F web test:e2e:smoke
+```
+
+## Common Issues
+
+### "Cannot find module" after clone
+
+Dependencies may be out of sync. Run:
+
+```bash
+pnpm install
+```
+
+### Environment variable errors on startup
+
+The app validates env vars at runtime. If you see validation errors:
+
+1. Ensure you ran `pnpm env:pull`
+2. Check that `apps/web/.env.local` exists and has values
+3. Check if any new variables were recently added (ask a maintainer)
+
+### Database connection errors
+
+1. Verify `DATABASE_URL` in `.env.local` is correct
+2. Check Supabase project status at [supabase.com](https://supabase.com)
+3. Ensure your IP is allowed in Supabase network settings
+
+### Port 3000 already in use
+
+Kill the existing process or use a different port:
+
+```bash
+pnpm dev -- --port 3001
+```
+
+## Project Conventions
+
+Before writing code, familiarize yourself with project conventions:
+
+- **[[../ai/conventions|Code Conventions]]** — Naming, structure, and style rules
+- **README.md** — Commands reference and project overview
+- **[[../ai/changelog|Changelog]]** — Recent changes (update this after significant work)
+
+## GitHub Workflow
+
+All non-trivial work requires a GitHub issue before starting. Commits and PRs must reference their issue.
+
+See [[../ai/github-workflow|GitHub Workflow]] for:
+
+- Issue creation and templates
+- Branch naming conventions
+- Commit message format
+- PR requirements
 
 ## Next Steps
 
-1. Implement authentication flow
-2. Create dashboard layout
-3. Build file upload component
-4. Implement S3 integration
-5. Create file listing page
-6. Add Stripe integration
+Once your environment is running:
 
-See [[nextjs-patterns|Next.js Patterns]] for detailed implementation guidance.
+1. Read [[../ai/conventions|Code Conventions]] to understand project patterns
+2. Check [[../ai/context|Project Context]] for background on the architecture
+3. Browse open issues labeled `good-first-issue` for a starting point
 
 ## Related
 
-- [[nextjs-patterns|Next.js Patterns]]
-- [[tech-stack|Tech Stack]]
-- [[guides/_index|Back to Guides]]
+- [[environment-setup|Environment Setup]] — Detailed env var configuration
+- [[database-workflow|Database Workflow]] — Drizzle ORM and migrations
+- [[server-architecture|Server Architecture]] — tRPC routers and backend patterns
+- [[_index|Back to Guides]]
