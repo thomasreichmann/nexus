@@ -26,10 +26,6 @@ describe('files repository', () => {
         mocks = mockDb.mocks;
     });
 
-    // ─────────────────────────────────────────────────────────────
-    // findFileById
-    // ─────────────────────────────────────────────────────────────
-
     describe('findFileById', () => {
         it('returns file when found', async () => {
             const file = createFileFixture();
@@ -50,10 +46,6 @@ describe('files repository', () => {
         });
     });
 
-    // ─────────────────────────────────────────────────────────────
-    // findUserFile
-    // ─────────────────────────────────────────────────────────────
-
     describe('findUserFile', () => {
         it('returns file when user owns it', async () => {
             const file = createFileFixture();
@@ -73,10 +65,6 @@ describe('files repository', () => {
             expect(result).toBeUndefined();
         });
     });
-
-    // ─────────────────────────────────────────────────────────────
-    // findFilesByUser
-    // ─────────────────────────────────────────────────────────────
 
     describe('findFilesByUser', () => {
         it('returns array of files for user', async () => {
@@ -127,10 +115,6 @@ describe('files repository', () => {
         });
     });
 
-    // ─────────────────────────────────────────────────────────────
-    // sumStorageBytesByUser
-    // ─────────────────────────────────────────────────────────────
-
     describe('sumStorageBytesByUser', () => {
         it('returns sum of file sizes', async () => {
             mocks.where.mockResolvedValue([{ total: 5000000 }]);
@@ -149,10 +133,6 @@ describe('files repository', () => {
         });
     });
 
-    // ─────────────────────────────────────────────────────────────
-    // insertFile
-    // ─────────────────────────────────────────────────────────────
-
     describe('insertFile', () => {
         it('returns inserted file', async () => {
             const newFile = createNewFileFixture();
@@ -166,10 +146,6 @@ describe('files repository', () => {
             expect(mocks.values).toHaveBeenCalledWith(newFile);
         });
     });
-
-    // ─────────────────────────────────────────────────────────────
-    // updateFile
-    // ─────────────────────────────────────────────────────────────
 
     describe('updateFile', () => {
         it('returns updated file', async () => {
@@ -195,10 +171,6 @@ describe('files repository', () => {
             expect(result).toBeUndefined();
         });
     });
-
-    // ─────────────────────────────────────────────────────────────
-    // deleteFile
-    // ─────────────────────────────────────────────────────────────
 
     describe('deleteFile', () => {
         it('returns deleted file', async () => {

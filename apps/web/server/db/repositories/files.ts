@@ -2,24 +2,15 @@ import { eq, and, desc, sql } from 'drizzle-orm';
 import type { DB } from '../index';
 import * as schema from '../schema';
 
-/** File record from the database */
 export type File = typeof schema.files.$inferSelect;
-
-/** Data for inserting a new file */
 export type NewFile = typeof schema.files.$inferInsert;
 
-// ─────────────────────────────────────────────────────────────
-// Queries - use Drizzle's relational query API (db.query.*)
-// ─────────────────────────────────────────────────────────────
-
-/** Find a single file by ID. Returns undefined if not found. */
 export function findFileById(db: DB, id: string): Promise<File | undefined> {
     return db.query.files.findFirst({
         where: eq(schema.files.id, id),
     });
 }
 
-/** Find a file owned by a specific user. */
 export function findUserFile(
     db: DB,
     userId: string,
@@ -33,7 +24,6 @@ export function findUserFile(
     });
 }
 
-/** List files for a user with pagination. */
 export function findFilesByUser(
     db: DB,
     userId: string,
@@ -47,11 +37,6 @@ export function findFilesByUser(
     });
 }
 
-// ─────────────────────────────────────────────────────────────
-// Aggregates - use query builders when relational API isn't enough
-// ─────────────────────────────────────────────────────────────
-
-/** Calculate total storage used by a user in bytes. */
 export async function sumStorageBytesByUser(
     db: DB,
     userId: string
@@ -66,17 +51,11 @@ export async function sumStorageBytesByUser(
     return Number(result?.total ?? 0);
 }
 
-// ─────────────────────────────────────────────────────────────
-// Mutations - always use .returning() with destructuring
-// ─────────────────────────────────────────────────────────────
-
-/** Insert a new file record. */
 export async function insertFile(db: DB, data: NewFile): Promise<File> {
     const [file] = await db.insert(schema.files).values(data).returning();
     return file;
 }
 
-/** Update a file by ID. Returns undefined if file doesn't exist. */
 export async function updateFile(
     db: DB,
     id: string,
@@ -91,7 +70,6 @@ export async function updateFile(
     return file;
 }
 
-/** Delete a file by ID. Returns the deleted row, or undefined if not found. */
 export async function deleteFile(
     db: DB,
     id: string
