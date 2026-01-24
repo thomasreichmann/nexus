@@ -27,15 +27,19 @@ Issues with `ai-drafted` label were groomed by the `/groom` command. They have:
 
 But the AI's decisions haven't been verified by a human yet.
 
+## Arguments
+
+**Issue number:** $ARGUMENTS
+
 ## Instructions
 
 ### Step 1: Fetch Issues
 
-If an issue number was provided as argument `$ARGUMENTS`:
+If an issue number was provided above (not empty):
 
 - Skip to Step 2 with that issue number
 
-Otherwise:
+If no issue number was provided:
 
 1. Fetch issues with `ai-drafted` label:
 
@@ -45,7 +49,7 @@ Otherwise:
 
 2. If no issues found, inform the user and exit.
 
-3. Ask user which issues to audit using AskUserQuestion with `multiSelect: true`
+3. Interview the user to select which issues to audit (allow multiple selections)
 
 ### Step 2: Review Each Issue
 
@@ -76,7 +80,7 @@ For each selected issue:
     - Technical accuracy
     - Completeness
 
-5. **Ask for verdict** using AskUserQuestion with these options (in this order):
+5. **Interview the user for a verdict** with these options (in this order):
     - **Approve**: Remove `ai-drafted` label, issue is ready for implementation
     - **Approve with edits**: Make minor changes, then remove `ai-drafted`
     - **Send back for re-grooming**: Move back to `needs-details`, remove `ready` and `ai-drafted`

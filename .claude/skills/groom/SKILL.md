@@ -30,15 +30,19 @@ This command helps transform draft issues (labeled `needs-details`) into impleme
 - Acceptance Criteria: Testable checkboxes
 - Out of Scope: What this task explicitly does NOT include
 
+## Arguments
+
+**Issue number:** $ARGUMENTS
+
 ## Instructions
 
 ### Step 1: Determine Mode
 
-If an issue number was provided as argument `$ARGUMENTS`:
+If an issue number was provided above (not empty):
 
 - Skip to Step 3 with that issue number
 
-Otherwise:
+If no issue number was provided:
 
 1. Fetch issues with `needs-details` label:
 
@@ -48,7 +52,7 @@ Otherwise:
 
 2. If no issues found, inform the user and exit.
 
-3. Present mode selection using AskUserQuestion with these options:
+3. Interview the user for mode selection with these options:
     - **Single**: "I'll pick one issue to work on" - Ask which issue number
     - **Multiple**: "Let me select specific issues" - Ask for comma-separated issue numbers
     - **Auto-select**: "You pick the highest priority issues (max 3)" - Claude selects based on labels/milestones
@@ -86,7 +90,7 @@ Otherwise:
     ... (show all issues with rankings)
     ```
 
-3. Ask user which issues to groom using AskUserQuestion with `multiSelect: true`:
+3. Interview the user to select which issues to groom (allow multiple selections):
     - Each option should be an issue (e.g., label: "#42 - User authentication", description: "HIGH - Blocks #43, #44")
     - User can select multiple issues from the ranked list
     - Show all issues as options, if needed, you can show them in groups (each group as a question) of 5 options each.
@@ -127,7 +131,7 @@ This is a TWO-PHASE process. Do NOT skip the first phase.
     - What assumptions are you making that the user should validate?
     - What scope boundaries are ambiguous?
 
-4. **Present findings to user** using AskUserQuestion:
+4. **Interview the user** about findings:
     - Show what you learned from the codebase
     - Present key decisions that need user input
     - Offer alternatives where they exist
@@ -187,7 +191,7 @@ After all issues are processed, provide a summary:
 When subagents return their research:
 
 1. **Compile all decisions and questions** from all issues
-2. **Present to user** grouped by issue, using AskUserQuestion for each decision point
+2. **Interview the user** about each decision point, grouped by issue
 3. **Collect user decisions** before proceeding to draft
 4. **Draft issues** incorporating the decisions
 5. **Proceed to Final Review**
@@ -198,7 +202,7 @@ After all drafts are ready, you MUST review each issue individually with the use
 
 1. **Present all drafts** with a summary showing each issue's title and key changes
 
-2. **Ask about each issue individually** using a single AskUserQuestion with multiple questions (one per issue, up to 4 at a time). Each question should have these options (in this order):
+2. **Interview the user about each issue** (up to 4 at a time). Each question should have these options (in this order):
     - **Approve as AI-drafted** (default): Issue content is good but mark as `ai-drafted` for later human review
     - **Approve as ready**: Issue is fully reviewed and ready for implementation
     - **Request changes**: User provides feedback, you revise the draft

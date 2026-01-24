@@ -61,17 +61,21 @@ WORKTREE_ABS_PATH="$(cd "$(git rev-parse --show-toplevel)/.." && pwd)/nexus-work
 
 Then reference `$WORKTREE_ABS_PATH` in all file tool paths.
 
+## Arguments
+
+**Issue number:** $ARGUMENTS
+
 ## Instructions
 
 ### Step 1: Select Issue
 
-If an issue number was provided as argument `$ARGUMENTS`:
+If an issue number was provided above (not empty):
 
 - Verify it has the `ready` label
 - If not, inform the user and suggest running `/groom` first
 - Skip to Step 2 with that issue number
 
-Otherwise:
+If no issue number was provided:
 
 1. Fetch issues with `ready` label (excluding in-progress):
 
@@ -82,7 +86,7 @@ Otherwise:
 
 2. If no issues found, inform the user and exit.
 
-3. Present issue selection using AskUserQuestion:
+3. Interview the user to select an issue:
     - Show available issues with their titles
     - Include milestone info if present
 
@@ -103,7 +107,7 @@ Otherwise:
 
 ### Step 3: Choose Work Mode
 
-Ask user using AskUserQuestion with these options:
+Interview the user to determine work mode. Present these options:
 
 - **Plan only** (Recommended): Research codebase, create implementation plan, get approval before any code changes
 - **Full implementation**: Research, implement, test, commit, and create PR in one flow
@@ -142,7 +146,7 @@ If user selected "Plan only":
     - Testing strategy
     - Potential risks or considerations
 
-2. **Present plan to user** and ask for approval using AskUserQuestion:
+2. **Present plan to user** and interview them for approval:
     - **Approve and implement**: Proceed to implementation
     - **Approve plan only**: Save plan, stop here (user will implement later)
     - **Request changes**: Revise the plan based on feedback
@@ -298,7 +302,7 @@ If user selected "Resume":
 
     If tests fail:
     1. Show the failure output
-    2. Ask user using AskUserQuestion:
+    2. Interview the user:
         - **Fix now**: Attempt to fix the failing tests
         - **Continue anyway**: Proceed (note in PR that tests need review)
         - **Abort**: Stop implementation, keep changes uncommitted
@@ -355,7 +359,7 @@ Before committing, run parallel review agents to catch convention violations and
 
 4. **If issues found:**
 
-    Present issues to user grouped by category, then ask using AskUserQuestion:
+    Present issues to user grouped by category, then interview them:
     - **Fix all**: Auto-fix all identified issues
     - **Fix selected**: Let user pick which to fix
     - **Skip review**: Proceed without fixes (add note to PR)
@@ -431,7 +435,7 @@ Before committing, run parallel review agents to catch convention violations and
 
     Add an entry to `docs/ai/changelog.md` summarizing what changed and why.
 
-2. **Ask about worktree cleanup** using AskUserQuestion:
+2. **Interview the user about worktree cleanup:**
     - **Keep worktree**: Leave for potential follow-up
     - **Remove worktree**: Clean up now
 
