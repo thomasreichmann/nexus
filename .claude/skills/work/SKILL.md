@@ -4,8 +4,7 @@ description: Work on a ready GitHub issue (plan or implement)
 argument-hint: [issue-number] (optional)
 allowed-tools: Bash, Task, AskUserQuestion, Read, Grep, Glob, Edit, Write
 disable-model-invocation: true
-context: fork
-agent: general-purpose
+agent: work-agent
 ---
 
 # Work on Issue Command
@@ -86,9 +85,9 @@ If no issue number was provided:
 
 2. If no issues found, inform the user and exit.
 
-3. Interview the user to select an issue:
-    - Show available issues with their titles
-    - Include milestone info if present
+3. Use AskUserQuestion to let the user select an issue:
+    - Each option should be an issue with its title
+    - Include milestone info in the description if present
 
 ### Step 2: Understand the Issue
 
@@ -107,7 +106,7 @@ If no issue number was provided:
 
 ### Step 3: Choose Work Mode
 
-Interview the user to determine work mode. Present these options:
+Use AskUserQuestion to let the user choose a work mode. Present these options:
 
 - **Plan only** (Recommended): Research codebase, create implementation plan, get approval before any code changes
 - **Full implementation**: Research, implement, test, commit, and create PR in one flow
@@ -146,7 +145,7 @@ If user selected "Plan only":
     - Testing strategy
     - Potential risks or considerations
 
-2. **Present plan to user** and interview them for approval:
+2. **Present plan to user** and use AskUserQuestion for approval:
     - **Approve and implement**: Proceed to implementation
     - **Approve plan only**: Save plan, stop here (user will implement later)
     - **Request changes**: Revise the plan based on feedback
@@ -302,7 +301,7 @@ If user selected "Resume":
 
     If tests fail:
     1. Show the failure output
-    2. Interview the user:
+    2. Use AskUserQuestion to ask how to proceed:
         - **Fix now**: Attempt to fix the failing tests
         - **Continue anyway**: Proceed (note in PR that tests need review)
         - **Abort**: Stop implementation, keep changes uncommitted
@@ -359,7 +358,7 @@ Before committing, run parallel review agents to catch convention violations and
 
 4. **If issues found:**
 
-    Present issues to user grouped by category, then interview them:
+    Present issues to user grouped by category, then use AskUserQuestion:
     - **Fix all**: Auto-fix all identified issues
     - **Fix selected**: Let user pick which to fix
     - **Skip review**: Proceed without fixes (add note to PR)
@@ -435,7 +434,7 @@ Before committing, run parallel review agents to catch convention violations and
 
     Add an entry to `docs/ai/changelog.md` summarizing what changed and why.
 
-2. **Interview the user about worktree cleanup:**
+2. **Use AskUserQuestion to ask about worktree cleanup:**
     - **Keep worktree**: Leave for potential follow-up
     - **Remove worktree**: Clean up now
 

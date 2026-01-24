@@ -4,8 +4,7 @@ description: Review AI-drafted issues for human approval
 argument-hint: [issue-number] (optional)
 allowed-tools: Bash, AskUserQuestion, Read, Grep, Glob
 disable-model-invocation: true
-context: fork
-agent: general-purpose
+agent: audit-agent
 ---
 
 # Issue Audit Command
@@ -49,7 +48,7 @@ If no issue number was provided:
 
 2. If no issues found, inform the user and exit.
 
-3. Interview the user to select which issues to audit (allow multiple selections)
+3. Use AskUserQuestion to let the user select which issues to audit (set multiSelect: true)
 
 ### Step 2: Review Each Issue
 
@@ -80,7 +79,7 @@ For each selected issue:
     - Technical accuracy
     - Completeness
 
-5. **Interview the user for a verdict** with these options (in this order):
+5. **Use AskUserQuestion for a verdict** with these options (in this order):
     - **Approve**: Remove `ai-drafted` label, issue is ready for implementation
     - **Approve with edits**: Make minor changes, then remove `ai-drafted`
     - **Send back for re-grooming**: Move back to `needs-details`, remove `ready` and `ai-drafted`
