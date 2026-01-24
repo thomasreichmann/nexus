@@ -136,6 +136,151 @@ TECHNICAL CONSIDERATIONS:
 ---
 ```
 
+#### Review Agent Prompts
+
+These prompts are used by Step 8.5 (Self-Review) to check code quality before committing.
+
+**Conventions Review Agent Prompt:**
+
+```
+Review changes in this PR against project conventions.
+
+CONVENTIONS TO CHECK (from docs/ai/conventions.md):
+
+Comments:
+- Explain WHY, not WHAT
+- No redundant JSDoc that repeats the function name
+- No section divider comments (lines of dashes/unicode)
+- No obvious comments like "// Set X to Y"
+
+File Structure:
+- Test files co-located with source (*.test.ts next to *.ts)
+- No __tests__ folders
+- Components: PascalCase.tsx, utilities: camelCase.ts
+
+Code Style:
+- Function declarations for components (not const arrows)
+- Explicit return types on exported functions
+
+Naming:
+- Booleans prefixed with is/has/can/should
+- Functions prefixed with verbs
+
+CHANGED FILES:
+{files from git diff --name-only}
+
+DIFF:
+{output from git diff}
+
+Return in this format:
+---
+ISSUES FOUND: [count]
+
+CONVENTION VIOLATIONS:
+1. [File:Line] [Category]: [Description]
+   Fix: [Specific fix]
+
+NO ISSUES IN:
+- [Files that passed]
+---
+```
+
+**Code Quality Review Agent Prompt:**
+
+```
+Review changes for code quality issues.
+
+CHECK FOR:
+
+Over-engineering:
+- Abstractions for things used only once
+- Helper functions that obscure simple logic
+- Premature generalization
+
+Redundancy:
+- Duplicate code that should be extracted
+- Extracted code only used once
+
+Unnecessary Complexity:
+- Complex solutions for simple problems
+- Deep nesting that could be flattened
+
+Scope Creep:
+- Changes unrelated to the issue
+- "While I'm here" improvements
+
+CHANGED FILES:
+{files from git diff --name-only}
+
+DIFF:
+{output from git diff}
+
+ISSUE ACCEPTANCE CRITERIA:
+{from GitHub issue}
+
+Return in this format:
+---
+ISSUES FOUND: [count]
+
+CODE QUALITY ISSUES:
+1. [File:Line] [Category]: [Description]
+   Fix: [Specific fix]
+
+GOOD PATTERNS:
+- [Positive observations]
+---
+```
+
+**Reuse Review Agent Prompt:**
+
+```
+Review changes for code duplication and reuse opportunities.
+
+CHECK FOR:
+
+Duplication in new code:
+- Similar logic repeated within the PR
+- Patterns that could be extracted into shared utilities
+- Copy-pasted code with minor variations
+
+Existing code that could be reused:
+- Search lib/ for utilities that do what the new code does
+- Check if similar patterns exist elsewhere in codebase
+- Look for existing helpers, hooks, or components that fit
+
+New code that could benefit others:
+- Generic utilities that belong in lib/
+- Patterns that other features might need
+- Hooks or helpers that are reusable
+
+CHANGED FILES:
+{files from git diff --name-only}
+
+DIFF:
+{output from git diff}
+
+IMPORTANT: Search the codebase for existing patterns:
+- grep for similar function names
+- check lib/ for existing utilities
+- look at related feature areas
+
+Return in this format:
+---
+ISSUES FOUND: [count]
+
+DUPLICATION/REUSE ISSUES:
+1. [File:Line] [Category]: [Description]
+   Existing code: [path to existing utility if applicable]
+   Fix: [Extract to lib/X, use existing Y, etc.]
+
+REUSE OPPORTUNITIES:
+- [New code that could be promoted to lib/ for reuse]
+
+SEARCHED LOCATIONS:
+- [Paths searched for existing utilities]
+---
+```
+
 ### Step 5A: Plan Only Mode
 
 If user selected "Plan only":
@@ -327,6 +472,42 @@ Go through each acceptance criterion from the issue:
 3. **If any criterion is not met:**
     - Ask user if it should be addressed now
     - Or noted for follow-up
+
+### Step 8.5: Self-Review
+
+Before committing, run parallel review agents to catch convention violations and code quality issues.
+
+1. **Get the diff of all changes:**
+
+    ```bash
+    git diff --name-only    # List changed files
+    git diff                # Full diff for context
+    ```
+
+2. **Spawn 3 review agents in parallel** using Task tool (subagent_type: "general-purpose"):
+    - **Conventions Reviewer**: Check against project conventions
+    - **Code Quality Reviewer**: Check for over-engineering and unnecessary complexity
+    - **Reuse Reviewer**: Check for code duplication and reuse opportunities
+
+    Use the review agent prompts defined in the "Review Agent Prompts" section below.
+
+3. **Collect findings** from all agents
+
+4. **If issues found:**
+
+    Present issues to user grouped by category, then ask using AskUserQuestion:
+    - **Fix all**: Auto-fix all identified issues
+    - **Fix selected**: Let user pick which to fix
+    - **Skip review**: Proceed without fixes (add note to PR)
+
+5. **Apply fixes** for approved issues, then re-run checks:
+
+    ```bash
+    pnpm typecheck
+    pnpm lint
+    ```
+
+6. **If no issues found:** Proceed directly to Step 9
 
 ### Step 9: Commit Changes
 
