@@ -63,6 +63,16 @@ jobs:
             - name: Install dependencies
               run: pnpm install --frozen-lockfile
 
+            - name: Get Playwright version
+              id: playwright-version
+              run: echo "version=$(pnpm -F web exec playwright --version | awk '{print $2}')" >> $GITHUB_OUTPUT
+
+            - name: Cache Playwright browsers
+              uses: actions/cache@v4
+              with:
+                  path: ~/.cache/ms-playwright
+                  key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
             - name: Install Playwright browsers
               run: pnpm -F web exec playwright install --with-deps chromium
 
