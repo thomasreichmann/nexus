@@ -1,5 +1,6 @@
 import { auth } from '@/lib/auth/server';
 import { db } from '@/server/db';
+import { isDomainError } from '@/server/errors';
 import { initTRPC, TRPCError } from '@trpc/server';
 import { headers } from 'next/headers';
 import superjson from 'superjson';
@@ -48,14 +49,35 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, next }) => {
     return result;
 });
 
-// Base procedure with logging
-const loggedProcedure = t.procedure.use(loggingMiddleware);
+// Error handler middleware - catches DomainError and converts to TRPCError
+const errorHandlerMiddleware = t.middleware(async ({ next }) => {
+    const result = await next();
+
+    if (!result.ok) {
+        // Check if the cause is a DomainError
+        const cause = result.error.cause;
+        if (isDomainError(cause)) {
+            throw new TRPCError({
+                code: cause.trpcCode,
+                message: cause.message,
+                cause: cause,
+            });
+        }
+    }
+
+    return result;
+});
+
+// Base procedure with logging and error handling
+const baseProcedure = t.procedure
+    .use(loggingMiddleware)
+    .use(errorHandlerMiddleware);
 
 // Public procedure - anyone can call, session may be null
-export const publicProcedure = loggedProcedure;
+export const publicProcedure = baseProcedure;
 
 // Protected procedure - throws UNAUTHORIZED if not authenticated
-export const protectedProcedure = loggedProcedure.use(({ ctx, next }) => {
+export const protectedProcedure = baseProcedure.use(({ ctx, next }) => {
     if (!ctx.session) {
         throw new TRPCError({ code: 'UNAUTHORIZED' });
     }
