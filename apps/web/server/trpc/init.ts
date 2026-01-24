@@ -50,11 +50,12 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, next }) => {
 });
 
 // Error handler middleware - catches DomainError and converts to TRPCError
+// In tRPC v11, errors thrown in procedures are wrapped in result objects (not thrown).
+// The original error is available via result.error.cause, not try/catch.
 const errorHandlerMiddleware = t.middleware(async ({ next }) => {
     const result = await next();
 
     if (!result.ok) {
-        // Check if the cause is a DomainError
         const cause = result.error.cause;
         if (isDomainError(cause)) {
             throw new TRPCError({
