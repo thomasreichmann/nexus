@@ -1,0 +1,46 @@
+import { vi, type Mock } from 'vitest';
+import type { DB } from '../index';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyMock = Mock<any>;
+
+export function createMockDb() {
+    const findFirst: AnyMock = vi.fn();
+    const findMany: AnyMock = vi.fn();
+    const returning: AnyMock = vi.fn();
+    const where: AnyMock = vi.fn(() => ({ returning }));
+    const set: AnyMock = vi.fn(() => ({ where }));
+    const values: AnyMock = vi.fn(() => ({ returning }));
+    const from: AnyMock = vi.fn(() => ({ where }));
+    const select: AnyMock = vi.fn(() => ({ from }));
+    const insert: AnyMock = vi.fn(() => ({ values }));
+    const update: AnyMock = vi.fn(() => ({ set }));
+    const deleteFn: AnyMock = vi.fn(() => ({ where }));
+
+    const db = {
+        query: {
+            files: { findFirst, findMany },
+        },
+        select,
+        insert,
+        update,
+        delete: deleteFn,
+    } as unknown as DB;
+
+    return {
+        db,
+        mocks: {
+            findFirst,
+            findMany,
+            select,
+            from,
+            where,
+            insert,
+            values,
+            update,
+            set,
+            delete: deleteFn,
+            returning,
+        },
+    };
+}
