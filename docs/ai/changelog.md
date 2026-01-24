@@ -19,6 +19,39 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ---
 
+## 2026-01-24
+
+### Session: Migrate Commands to Skills Format (#58)
+
+Migrated custom slash commands from legacy `.claude/commands/` to the modern `.claude/skills/` format.
+
+**Key Changes:**
+
+| Before                  | After                          |
+| ----------------------- | ------------------------------ |
+| `.claude/commands/*.md` | `.claude/skills/*/SKILL.md`    |
+| Inline agent prompts    | Extracted to `.claude/agents/` |
+| Basic frontmatter       | Full Skills frontmatter        |
+
+**New Features Enabled:**
+
+- `disable-model-invocation: true` - Skills are manual-only (no auto-invocation)
+- `context: fork` - Each skill runs in isolated subagent context
+- Dynamic context injection via `!`command`` syntax
+- Template files for common workflows (PR body, review checklists)
+
+**Extracted Agents:**
+
+- `explore-issue` - Codebase exploration for issue context
+- `conventions-review` - Check against project conventions
+- `code-quality-review` - Check for over-engineering
+- `reuse-review` - Check for duplication/reuse
+- `groom-research` - Research for issue grooming
+
+**Why:** The Skills format provides better organization, isolated execution context, and access to new Claude Code features like dynamic context injection and custom subagents.
+
+---
+
 ## 2026-01-23
 
 ### Session: S3 Bucket Infrastructure Setup (#12)

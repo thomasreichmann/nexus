@@ -1,12 +1,21 @@
 ---
-allowed-tools: Bash, Task, AskUserQuestion, Read, Grep, Glob
+name: groom
 description: Groom GitHub issues from needs-details to ready
 argument-hint: [issue-number] (optional)
+allowed-tools: Bash, Task, AskUserQuestion, Read, Grep, Glob
+disable-model-invocation: true
+context: fork
+agent: general-purpose
 ---
 
 # Issue Grooming Command
 
 This command helps transform draft issues (labeled `needs-details`) into implementation-ready issues (labeled `ready`).
+
+## Dynamic Context
+
+**Current issues needing grooming:**
+!`gh issue list --label needs-details --json number,title --limit 10 2>/dev/null || echo "Could not fetch issues"`
 
 ## Templates Reference
 
@@ -88,7 +97,7 @@ Otherwise:
 **For Multiple/Auto-select mode:**
 
 - Spawn parallel Task agents (subagent_type: "general-purpose") for each issue
-- Each agent runs the **Research & Discovery** phase (see below)
+- Each agent uses the `groom-research` agent to run the **Research & Discovery** phase
 - Agents return research findings and key decisions - NOT final drafts
 - Main agent presents decisions to user for input
 - THEN drafts are created incorporating user decisions
@@ -105,8 +114,8 @@ This is a TWO-PHASE process. Do NOT skip the first phase.
     gh issue view <number> --json number,title,body,labels
     ```
 
-2. **Research codebase context:**
-    - Use Grep and Glob to find related files
+2. **Research codebase context** using the `groom-research` agent:
+    - Find related files using Grep and Glob
     - Read relevant code to understand the feature area
     - Look for similar patterns or existing implementations
     - Identify architectural implications
@@ -172,71 +181,6 @@ After all issues are processed, provide a summary:
 - Key decisions made (for reference)
 - Links to updated issues
 - Any issues that were skipped or need follow-up
-
-## Parallel Agent Prompt Template
-
-**CRITICAL**: Subagents perform RESEARCH ONLY. They do NOT make final decisions or write final drafts.
-
-When spawning Task agents for multiple issues, use this prompt structure:
-
-```
-Research GitHub issue #<number> for the nexus project to prepare for grooming.
-
-Your job is to RESEARCH and IDENTIFY DECISIONS - NOT to write the final issue.
-
-1. Fetch the issue: gh issue view <number> --json number,title,body,labels
-
-2. Research the codebase thoroughly:
-   - Search for related code patterns
-   - Read relevant files
-   - Understand the feature area
-   - Look for existing conventions to follow
-
-3. Identify key decisions and questions:
-   - What architectural choices need to be made?
-   - What are the alternative approaches?
-   - What assumptions need user validation?
-   - What scope boundaries are unclear?
-   - What trade-offs should be considered?
-
-DO NOT write the final issue body. Return your findings in this format:
-
----
-ISSUE: #<number> - <title>
-
-ORIGINAL BODY:
-<original body>
-
-CODEBASE RESEARCH:
-- [What you found in the codebase]
-- [Relevant patterns and conventions]
-- [Related files and their purposes]
-
-KEY DECISIONS NEEDED:
-1. [Decision 1]: [Option A] vs [Option B]
-   - Option A: [pros/cons]
-   - Option B: [pros/cons]
-   - My lean: [which and why, but USER DECIDES]
-
-2. [Decision 2]: [describe the choice]
-   - [alternatives and trade-offs]
-
-CLARIFYING QUESTIONS:
-- [Question about unclear requirements]
-- [Question about scope boundaries]
-- [Question about user preferences]
-
-ASSUMPTIONS I'M MAKING:
-- [Assumption 1 - user should confirm]
-- [Assumption 2 - user should confirm]
-
-PRELIMINARY THOUGHTS:
-- Acceptance criteria might include: [rough ideas, NOT final]
-- Out of scope might be: [rough ideas, NOT final]
----
-
-Remember: The user will make the decisions. You provide research and options.
-```
 
 ## After Subagents Return
 

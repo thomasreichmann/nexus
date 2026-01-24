@@ -1,12 +1,21 @@
 ---
-allowed-tools: Bash, AskUserQuestion, Read, Grep, Glob
+name: audit
 description: Review AI-drafted issues for human approval
 argument-hint: [issue-number] (optional)
+allowed-tools: Bash, AskUserQuestion, Read, Grep, Glob
+disable-model-invocation: true
+context: fork
+agent: general-purpose
 ---
 
 # Issue Audit Command
 
 This command helps review issues labeled `ai-drafted` and either approve them for implementation or request changes.
+
+## Dynamic Context
+
+**Current AI-drafted issues:**
+!`gh issue list --label ai-drafted --json number,title --limit 10 2>/dev/null || echo "Could not fetch issues"`
 
 ## Context
 
@@ -24,7 +33,7 @@ But the AI's decisions haven't been verified by a human yet.
 
 If an issue number was provided as argument `$ARGUMENTS`:
 
-- Skip to Step 3 with that issue number
+- Skip to Step 2 with that issue number
 
 Otherwise:
 
@@ -60,7 +69,14 @@ For each selected issue:
     - Check if acceptance criteria are realistic
     - Verify scope boundaries make sense
 
-4. **Ask for verdict** using AskUserQuestion with these options (in this order):
+4. **Use the review checklist** from `.claude/skills/audit/templates/review-criteria.md`:
+    - Description quality
+    - Acceptance criteria testability
+    - Out of scope clarity
+    - Technical accuracy
+    - Completeness
+
+5. **Ask for verdict** using AskUserQuestion with these options (in this order):
     - **Approve**: Remove `ai-drafted` label, issue is ready for implementation
     - **Approve with edits**: Make minor changes, then remove `ai-drafted`
     - **Send back for re-grooming**: Move back to `needs-details`, remove `ready` and `ai-drafted`
