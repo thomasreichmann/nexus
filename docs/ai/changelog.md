@@ -21,6 +21,27 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2026-01-24
 
+### Session: Domain Errors with tRPC Middleware (#35)
+
+Implemented domain error classes and tRPC middleware for automatic error mapping.
+
+**New Files:**
+
+- `server/errors.ts` - Domain error classes (`NotFoundError`, `ForbiddenError`, `InvalidStateError`, `QuotaExceededError`)
+- `server/errors.test.ts` - Unit tests for error classes
+- `server/trpc/middleware/errorHandler.test.ts` - Integration tests for middleware
+- `server/trpc/routers/files.ts` - Example router demonstrating usage
+
+**Key Pattern:**
+
+Services throw domain errors (e.g., `throw new NotFoundError('File', id)`), and the error handler middleware in `init.ts` catches them and converts to appropriate `TRPCError` codes. This keeps business logic decoupled from the API layer.
+
+**tRPC v11 Note:**
+
+In tRPC v11, errors are wrapped in result objects rather than thrown. The middleware checks `result.error.cause` (not try/catch) to detect DomainErrors.
+
+---
+
 ### Session: CI Pipeline with GitHub Actions (#13)
 
 Added GitHub Actions CI workflow for code quality checks on PRs and pushes to main.
