@@ -2,7 +2,6 @@
 name: reuse-review
 description: Review code changes for duplication and reuse opportunities. Use during self-review to find existing utilities that could be used or new code that should be extracted.
 tools: Read, Grep, Glob
-model: haiku
 ---
 
 # Reuse Review Agent

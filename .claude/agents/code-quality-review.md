@@ -2,7 +2,6 @@
 name: code-quality-review
 description: Review code changes for quality issues like over-engineering, unnecessary complexity, and scope creep. Use during self-review before committing.
 tools: Read, Grep, Glob
-model: haiku
 ---
 
 # Code Quality Review Agent

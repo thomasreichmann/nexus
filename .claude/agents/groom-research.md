@@ -2,7 +2,6 @@
 name: groom-research
 description: Research codebase context for grooming a GitHub issue. Use when preparing to groom an issue from needs-details to ready status.
 tools: Read, Grep, Glob, Bash
-model: haiku
 ---
 
 # Issue Grooming Research Agent
