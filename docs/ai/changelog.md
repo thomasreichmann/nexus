@@ -1,7 +1,7 @@
 ---
 title: AI Changelog
 created: 2025-12-29
-updated: 2026-01-18
+updated: 2026-01-23
 status: active
 tags:
     - ai
@@ -16,6 +16,44 @@ ai_summary: 'Recent AI changes - READ THIS FIRST for context'
 # AI Changelog
 
 Recent changes made by AI assistants. **Read this first** to understand recent context.
+
+---
+
+## 2026-01-23
+
+### Session: S3 Bucket Infrastructure Setup (#12)
+
+Created dev environment AWS infrastructure for file storage.
+
+**Resources Created:**
+
+| Resource   | Name/Value                |
+| ---------- | ------------------------- |
+| S3 Bucket  | `nexus-storage-files-dev` |
+| IAM User   | `nexus-app-dev`           |
+| IAM Policy | `nexus-s3-access-dev`     |
+| Region     | `us-east-1`               |
+
+**Configuration Applied:**
+
+- Public access block (all 4 settings enabled)
+- Lifecycle rules: immediate transition to Glacier Deep Archive + abort incomplete multipart after 7 days
+- CORS: localhost:_, 127.0.0.1:_, \*.vercel.app
+
+**Files Created:**
+
+- `docs/infra/aws-manual-setup.md` - Documents all AWS resources and commands
+
+**Environment Variables to Add:**
+
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `AWS_S3_BUCKET=nexus-storage-files-dev`
+- `AWS_REGION=us-east-1`
+
+**Why us-east-1:**
+
+Glacier Deep Archive is ~$1/TB/month in us-east-1 vs ~$2/TB in sa-east-1. Since Glacier is async (12-48hr restores), latency is irrelevant. Cost savings are significant at scale.
 
 ---
 
