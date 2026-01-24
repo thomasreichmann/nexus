@@ -1,12 +1,24 @@
 ---
-allowed-tools: Bash, Task, AskUserQuestion, Read, Grep, Glob, Edit, Write
+name: work
 description: Work on a ready GitHub issue (plan or implement)
 argument-hint: [issue-number] (optional)
+allowed-tools: Bash, Task, AskUserQuestion, Read, Grep, Glob, Edit, Write
+disable-model-invocation: true
+context: fork
+agent: general-purpose
 ---
 
 # Work on Issue Command
 
 This command helps you work on issues labeled `ready` - either by creating an implementation plan or by fully implementing the solution.
+
+## Dynamic Context
+
+**Current git status:**
+!`git status --short 2>/dev/null || echo "Not in a git repo"`
+
+**Recent changelog entries:**
+!`head -50 docs/ai/changelog.md 2>/dev/null || echo "No changelog found"`
 
 ## Prerequisites
 
@@ -38,8 +50,8 @@ Understanding how different tools handle working directories is critical for wor
 
 **File tools (Read, Edit, Write, Glob, Grep):** CWD resets to the main repo between calls. Always use absolute paths:
 
-- ✅ `/Users/thomas/projects/nexus-worktrees/feat/42-auth/apps/web/src/file.ts`
-- ❌ `./apps/web/src/file.ts`
+- `/Users/thomas/projects/nexus-worktrees/feat/42-auth/apps/web/src/file.ts`
+- NOT `./apps/web/src/file.ts`
 
 **Tip:** Compute and store the absolute worktree path early:
 
@@ -103,13 +115,11 @@ This phase is REQUIRED for both modes.
 
 1. **Read project conventions:**
 
-    ```bash
-    # Read conventions for naming, structure, patterns
-    ```
-
     Use Read tool on `docs/ai/conventions.md`
 
-2. **Explore the codebase** using Task tool with `subagent_type: Explore`:
+2. **Explore the codebase** using the `explore-issue` agent:
+
+    Spawn a Task with `subagent_type: general-purpose` that uses the explore-issue agent to:
     - Find files related to the feature area
     - Understand existing patterns and conventions
     - Identify files that will need changes
@@ -120,41 +130,6 @@ This phase is REQUIRED for both modes.
     - What patterns should be followed?
     - Are there any technical decisions to make?
     - What order should changes be made in?
-
-#### Exploration Subagent Prompt Template
-
-When spawning a Task agent for codebase exploration, use this prompt:
-
-```
-Research the nexus codebase to inform implementation of issue #<number>: <title>
-
-You should:
-1. Find files related to the feature area
-2. Identify existing patterns and conventions
-3. Find similar implementations to follow
-4. List files that will likely need changes
-
-Return findings in this format:
-
----
-FEATURE AREA: <description>
-
-RELATED FILES:
-- <file path>: <purpose>
-
-PATTERNS TO FOLLOW:
-- <pattern>: <where used, example file>
-
-SIMILAR IMPLEMENTATIONS:
-- <file>: <what it does, why relevant>
-
-FILES LIKELY TO CHANGE:
-- <file>: <what changes needed>
-
-TECHNICAL CONSIDERATIONS:
-- <any architectural decisions or trade-offs>
----
-```
 
 ### Step 5A: Plan Only Mode
 
@@ -230,11 +205,7 @@ If user selected "Resume":
 5. **Light-touch research** (do NOT skip entirely):
     - Re-fetch the issue to confirm acceptance criteria are still current
     - Review what's already implemented vs what remains
-    - Check if any relevant code has changed on `main` since work started:
-
-    ```bash
-    git log main --oneline -5    # Recent changes on main
-    ```
+    - Check if any relevant code has changed on `main` since work started
 
 6. Present a summary of what's been done and what remains
 7. Ask user what to focus on next
@@ -374,11 +345,11 @@ Before committing, run parallel review agents to catch convention violations and
     ```
 
 2. **Spawn 3 review agents in parallel** using Task tool (subagent_type: "general-purpose"):
-    - **Conventions Reviewer**: Check against project conventions
-    - **Code Quality Reviewer**: Check for over-engineering and unnecessary complexity
-    - **Reuse Reviewer**: Check for code duplication and reuse opportunities
+    - Use the `conventions-review` agent to check against project conventions
+    - Use the `code-quality-review` agent to check for over-engineering and unnecessary complexity
+    - Use the `reuse-review` agent to check for code duplication and reuse opportunities
 
-    Use the review agent prompts defined in "Appendix: Review Agent Prompts" at the end of this document.
+    Pass each agent the changed files list and diff content.
 
 3. **Collect findings** from all agents
 
@@ -427,7 +398,7 @@ Before committing, run parallel review agents to catch convention violations and
 
 ### Step 10: Create Pull Request
 
-1. **Create PR** using gh CLI:
+1. **Create PR** using the template from `.claude/skills/work/templates/pr-body.md`:
 
     ```bash
     gh pr create --title "<title>" --body "$(cat <<'EOF'
@@ -596,58 +567,6 @@ git worktree remove ../nexus-worktrees/<branch-name>
 git branch -d <branch-name>
 ```
 
-## Handling Main Branch Updates
-
-If `main` has been updated while working in a worktree:
-
-```bash
-# From within the worktree
-git fetch origin main
-git rebase origin/main
-
-# If conflicts occur, resolve them then:
-git rebase --continue
-```
-
-## Worktree Maintenance
-
-- **Maximum recommended:** 3-5 active worktrees to avoid disk space issues
-- **Clean up after PR merge:** Remove worktree and delete local branch
-- **Periodic cleanup:** Run `git worktree prune` to clean stale references
-
-## Quick Reference
-
-**Create worktree:**
-
-```bash
-git worktree add "../nexus-worktrees/$BRANCH" -b "$BRANCH"
-```
-
-**List worktrees:**
-
-```bash
-git worktree list
-```
-
-**Switch to worktree:**
-
-```bash
-cd "../nexus-worktrees/$BRANCH"
-```
-
-**Remove worktree:**
-
-```bash
-git worktree remove "../nexus-worktrees/$BRANCH"
-git branch -d "$BRANCH"
-```
-
-**Clean stale references:**
-
-```bash
-git worktree prune
-```
-
 ## Notes
 
 - ALWAYS read the issue thoroughly before starting
@@ -660,148 +579,3 @@ git worktree prune
 - All implementation happens in the worktree, not the main repo
 - Run `pnpm install` in new worktrees before running commands
 - Multiple `/work` sessions can run in parallel on different issues
-
-## Appendix: Review Agent Prompts
-
-These prompts are used by Step 8.5 (Self-Review) to check code quality before committing.
-
-**Conventions Review Agent Prompt:**
-
-```
-Review changes in this PR against project conventions.
-
-CONVENTIONS TO CHECK (from docs/ai/conventions.md):
-
-Comments:
-- Explain WHY, not WHAT
-- No redundant JSDoc that repeats the function name
-- No section divider comments (lines of dashes/unicode)
-- No obvious comments like "// Set X to Y"
-
-File Structure:
-- Test files co-located with source (*.test.ts next to *.ts)
-- No __tests__ folders
-- Components: PascalCase.tsx, utilities: camelCase.ts
-
-Code Style:
-- Function declarations for components (not const arrows)
-- Explicit return types on exported functions
-
-Naming:
-- Booleans prefixed with is/has/can/should
-- Functions prefixed with verbs
-
-CHANGED FILES:
-{files from git diff --name-only}
-
-DIFF:
-{output from git diff}
-
-Return in this format:
----
-ISSUES FOUND: [count]
-
-CONVENTION VIOLATIONS:
-1. [File:Line] [Category]: [Description]
-   Fix: [Specific fix]
-
-NO ISSUES IN:
-- [Files that passed]
----
-```
-
-**Code Quality Review Agent Prompt:**
-
-```
-Review changes for code quality issues.
-
-CHECK FOR:
-
-Over-engineering:
-- Abstractions for things used only once
-- Helper functions that obscure simple logic
-- Premature generalization
-
-Redundancy:
-- Duplicate code that should be extracted
-- Extracted code only used once
-
-Unnecessary Complexity:
-- Complex solutions for simple problems
-- Deep nesting that could be flattened
-
-Scope Creep:
-- Changes unrelated to the issue
-- "While I'm here" improvements
-
-CHANGED FILES:
-{files from git diff --name-only}
-
-DIFF:
-{output from git diff}
-
-ISSUE ACCEPTANCE CRITERIA:
-{from GitHub issue}
-
-Return in this format:
----
-ISSUES FOUND: [count]
-
-CODE QUALITY ISSUES:
-1. [File:Line] [Category]: [Description]
-   Fix: [Specific fix]
-
-GOOD PATTERNS:
-- [Positive observations]
----
-```
-
-**Reuse Review Agent Prompt:**
-
-```
-Review changes for code duplication and reuse opportunities.
-
-CHECK FOR:
-
-Duplication in new code:
-- Similar logic repeated within the PR
-- Patterns that could be extracted into shared utilities
-- Copy-pasted code with minor variations
-
-Existing code that could be reused:
-- Search lib/ for utilities that do what the new code does
-- Check if similar patterns exist elsewhere in codebase
-- Look for existing helpers, hooks, or components that fit
-
-New code that could benefit others:
-- Generic utilities that belong in lib/
-- Patterns that other features might need
-- Hooks or helpers that are reusable
-
-CHANGED FILES:
-{files from git diff --name-only}
-
-DIFF:
-{output from git diff}
-
-IMPORTANT: Search the codebase for existing patterns:
-- grep for similar function names
-- check lib/ for existing utilities
-- look at related feature areas
-
-Return in this format:
----
-ISSUES FOUND: [count]
-
-DUPLICATION/REUSE ISSUES:
-1. [File:Line] [Category]: [Description]
-   Existing code: [path to existing utility if applicable]
-   Fix: [Extract to lib/X, use existing Y, etc.]
-
-REUSE OPPORTUNITIES:
-- [New code that could be promoted to lib/ for reuse]
-
-SEARCHED LOCATIONS:
-- [Paths searched for existing utilities]
----
-```
