@@ -21,6 +21,34 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2026-01-24
 
+### Session: CI Pipeline with GitHub Actions (#13)
+
+Added GitHub Actions CI workflow for code quality checks on PRs and pushes to main.
+
+**Files Created:**
+
+- `.github/workflows/ci.yml` - CI workflow with two jobs
+
+**Workflow Structure:**
+
+| Job         | Steps                                     |
+| ----------- | ----------------------------------------- |
+| ci          | Lint, Typecheck, Unit tests               |
+| smoke-tests | Playwright smoke tests (runs in parallel) |
+
+**Key Features:**
+
+- Reads Node version from `.nvmrc` (currently Node 24)
+- Uses pnpm caching via `actions/setup-node`
+- Installs only Chromium for smoke tests (faster than all browsers)
+- Keeps existing `pr-check.yml` for issue reference validation
+
+**Post-merge TODO:**
+
+- Enable branch protection rule requiring CI checks to pass
+
+---
+
 ### Session: Migrate Commands to Skills Format (#58)
 
 Migrated custom slash commands from legacy `.claude/commands/` to the modern `.claude/skills/` format.

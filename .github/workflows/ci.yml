@@ -1,0 +1,70 @@
+name: CI
+
+on:
+    pull_request:
+    push:
+        branches: [main]
+
+jobs:
+    ci:
+        name: Lint, Typecheck, Test
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Read Node version
+              id: node-version
+              run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: ${{ steps.node-version.outputs.version }}
+                  cache: 'pnpm'
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Lint
+              run: pnpm lint
+
+            - name: Typecheck
+              run: pnpm typecheck
+
+            - name: Test
+              run: pnpm test
+
+    smoke-tests:
+        name: Smoke Tests
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Read Node version
+              id: node-version
+              run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: ${{ steps.node-version.outputs.version }}
+                  cache: 'pnpm'
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Install Playwright browsers
+              run: pnpm -F web exec playwright install --with-deps chromium
+
+            - name: Run smoke tests
+              run: pnpm -F web test:e2e:smoke
