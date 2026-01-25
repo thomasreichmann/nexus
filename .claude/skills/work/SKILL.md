@@ -82,6 +82,14 @@ Use AskUserQuestion to let the user choose a work mode. Present these options:
 - **Full implementation**: Research, implement, test, commit, and create PR in one flow
 - **Resume**: Continue from an existing branch (ask for branch name)
 
+**For Plan Only or Full Implementation modes**, mark the issue as in-progress immediately to prevent others from picking it up:
+
+```bash
+gh issue edit <number> --add-label in-progress
+```
+
+(Skip this for Resume mode - the issue should already be in-progress)
+
 ### Step 4: Research Phase
 
 This phase is REQUIRED for both modes.
@@ -122,8 +130,7 @@ If user selected "Plan only":
 
 3. **If "Approve plan only":**
     - Optionally add plan as a comment on the issue
-    - Mark issue with `in-progress` label
-    - Exit with summary
+    - Exit with summary (issue already marked `in-progress` in Step 3)
 
 4. **If "Approve and implement":**
     - Continue to Step 6
@@ -202,12 +209,6 @@ If user selected "Resume":
     - Check if it's on remote: `git branch -r | grep "$BRANCH_NAME"`
     - If exists, offer to check it out and rebase: `git checkout "$BRANCH_NAME" && git rebase origin/main`
     - Otherwise ask for an alternative branch name
-
-4. **Mark issue as in progress:**
-
-    ```bash
-    gh issue edit <number> --add-label in-progress
-    ```
 
 ### Step 7: Implementation
 
