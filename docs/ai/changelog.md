@@ -21,6 +21,38 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2026-01-24
 
+### Session: Client-Side Logging with pino/browser (#9)
+
+Implemented client-side logging using `pino/browser` that pipes logs to the dev server terminal.
+
+**New Files:**
+
+- `lib/logger/client.ts` - Client-side pino logger with browser transmit API
+- `lib/logger/index.ts` - Unified export for cleaner imports
+- `app/api/dev-log/route.ts` - Dev-only endpoint to receive client logs
+- `app/api/dev-log/route.test.ts` - Unit tests for the endpoint
+
+**Key Pattern:**
+
+Client logs are sent via POST to `/api/dev-log` in development only. The endpoint uses `logger.child({ source: 'client' })` to prefix logs with `[client]`. Same API as server: `log.info()`, `log.error()`, etc.
+
+**SSR Fix:**
+
+Added `enabled: typeof window !== 'undefined'` to disable the client logger during SSR. Without this, logs would appear twice (raw JSON from SSR + formatted from client hydration).
+
+**Usage:**
+
+```typescript
+import { log } from '@/lib/logger';
+
+log.info('button clicked');
+log.error({ err }, 'failed to load');
+```
+
+**Documentation:** See `docs/guides/logging.md` for full details on the dual-logger architecture.
+
+---
+
 ### Session: Domain Errors with tRPC Middleware (#35)
 
 Implemented domain error classes and tRPC middleware for automatic error mapping.
