@@ -235,83 +235,9 @@ During grooming, you may identify work that should be separate issues (prerequis
 
 1. **Get user approval** before creating any new issues
 2. **Create as draft** with `needs-details` label
-3. **Set up GitHub relationships** using the GraphQL API (see `docs/ai/github-workflow.md`)
+3. **Link related issues** using GitHub's native relationships
 
-### Linking Sub-Issues
-
-When a new issue is a child/follow-up of the issue being groomed:
-
-```bash
-# Get node IDs for both issues
-gh api graphql -f query='
-query {
-  repository(owner: "OWNER", name: "REPO") {
-    parent: issue(number: PARENT_NUM) { id }
-    child: issue(number: CHILD_NUM) { id }
-  }
-}'
-
-# Link child to parent
-gh api graphql -f query='
-mutation {
-  addSubIssue(input: {
-    issueId: "PARENT_NODE_ID",
-    subIssueId: "CHILD_NODE_ID"
-  }) {
-    issue { number }
-  }
-}'
-```
-
-### When to Use Sub-Issues (Parent/Child)
-
-Use the sub-issue API ONLY for hierarchical breakdown:
-
-| Scenario                      | Relationship                             |
-| ----------------------------- | ---------------------------------------- |
-| Feature split into phases     | Parent = epic, children = phases         |
-| Main task with follow-up work | Parent = main, children = follow-ups     |
-| Bug reveals related issues    | Parent = original, children = discovered |
-
-### Blocked/Blocked-by (Dependencies)
-
-For dependency relationships where one issue must complete before another can start (but they're NOT hierarchically related), use GitHub's native blocking relationship:
-
-```bash
-# Get node IDs for both issues
-gh api graphql -f query='
-query {
-  repository(owner: "OWNER", name: "REPO") {
-    blocked: issue(number: BLOCKED_NUM) { id }
-    blocking: issue(number: BLOCKING_NUM) { id }
-  }
-}'
-
-# Add blocking relationship (BLOCKING_NUM blocks BLOCKED_NUM)
-gh api graphql -f query='
-mutation {
-  addBlockedBy(input: {
-    issueId: "BLOCKED_NODE_ID",
-    blockingIssueId: "BLOCKING_NODE_ID"
-  }) {
-    issue { number title }
-    blockingIssue { number title }
-  }
-}'
-```
-
-This creates the native "Blocked by" / "Is blocking" relationships visible in GitHub's sidebar UI.
-
-### Relationship Decision Guide
-
-Ask yourself: "Is issue B a _part of_ issue A, or does B just need to _happen before_ A?"
-
-| Answer                 | Relationship      | Action                         |
-| ---------------------- | ----------------- | ------------------------------ |
-| B is part of A         | Parent/Child      | Use `addSubIssue` API          |
-| B must happen before A | Blocks/Blocked-by | Note in body + `blocked` label |
-
-**IMPORTANT**: Don't confuse these. A prerequisite that blocks work is NOT automatically a parent issue.
+**For issue relationships (sub-issues, blocking):** Read `docs/ai/github-workflow.md` for the GraphQL commands and decision guide on when to use parent/child vs blocking relationships.
 
 ## Notes
 
@@ -322,4 +248,4 @@ Ask yourself: "Is issue B a _part of_ issue A, or does B just need to _happen be
 - User decisions should be reflected in the final draft
 - Preserve existing context from the original issue
 - Make acceptance criteria specific and testable based on agreed approach
-- ALWAYS link related issues using GitHub's sub-issue API (see above)
+- Link related issues using GitHub's relationship APIs (see `docs/ai/github-workflow.md`)
