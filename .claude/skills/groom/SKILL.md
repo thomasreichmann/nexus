@@ -207,7 +207,8 @@ Before presenting drafts to the user, review them for quality and codebase align
     - Review the draft against `.claude/skills/groom/templates/review-criteria.md`
     - Check description clarity, acceptance criteria specificity, scope boundaries
     - Identify ambiguous language or undefined terms
-    - Return list of issues found and suggested fixes
+    - Verify appropriate labels are set (type, area)
+    - Return list of issues found, suggested fixes, and missing labels
 
     **Codebase Alignment Review** (subagent_type: "Explore"):
     - Confirm referenced files/patterns actually exist
@@ -247,6 +248,7 @@ Before presenting drafts to the user, review them for quality and codebase align
 - Discovered complexity that may affect scope
 - Suggested issue relationships (blocked-by, blocks)
 - Related issues that may need updates
+- Missing or suggested labels (type, area)
 
 ## Final Review (REQUIRED)
 

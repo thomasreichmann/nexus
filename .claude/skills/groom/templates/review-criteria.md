@@ -18,6 +18,12 @@ Use this checklist to review drafted issues before presenting to the user.
 - [ ] No conflicts with existing features
 - [ ] Technical terminology matches project conventions
 
+## Labels
+
+- [ ] Type label is set (bug, feature, enhancement, etc.)
+- [ ] Area label is set if applicable (area:auth, area:storage, etc.)
+- [ ] Labels are appropriate for the issue content
+
 ## Completeness
 
 - [ ] Ready for implementation without further clarification
