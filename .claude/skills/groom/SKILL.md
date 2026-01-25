@@ -284,6 +284,24 @@ After all drafts are ready, you MUST review each issue individually with the use
 
 Note: `ai-drafted` is used WITH `ready` - the issue is detailed enough to work on, but a human hasn't verified the AI's decisions yet.
 
+### Priority Labels
+
+Issues should have a priority label for triage and backlog prioritization:
+
+| Label                | Color  | When to Use                             |
+| -------------------- | ------ | --------------------------------------- |
+| `priority: critical` | Red    | Must be addressed immediately           |
+| `priority: high`     | Orange | Important, should be addressed soon     |
+| `priority: medium`   | Yellow | Normal priority                         |
+| `priority: low`      | Green  | Nice to have, address when time permits |
+
+During grooming, suggest an appropriate priority label based on:
+
+- Business impact and user-facing visibility
+- Blocking status (does this unblock other work?)
+- Security or stability implications
+- Milestone deadlines
+
 ## Creating Follow-up Issues
 
 During grooming, you may identify work that should be separate issues (prerequisites, follow-ups, discovered scope). When creating these:

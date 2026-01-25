@@ -31,6 +31,11 @@ Use this checklist to review drafted issues before presenting to the user.
 - [ ] Edge cases have been considered
 - [ ] Dependencies (if any) are identified
 
+## Priority
+
+- [ ] Priority label has been suggested or assigned
+- [ ] Priority level is appropriate given impact and urgency
+
 ## Common Issues to Fix
 
 **Before presenting to user, fix:**
