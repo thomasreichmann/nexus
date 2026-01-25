@@ -16,6 +16,9 @@ This command helps you work on issues labeled `ready` - either by creating an im
 **Current git status:**
 !`git status --short 2>/dev/null || echo "Not in a git repo"`
 
+**Current branch:**
+!`git branch --show-current 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "Unknown"`
+
 **Recent changelog entries:**
 !`head -50 docs/ai/changelog.md 2>/dev/null || echo "No changelog found"`
 
@@ -26,39 +29,6 @@ Issues must have the `ready` label, meaning they've been groomed and have:
 - Clear Description
 - Acceptance Criteria (testable checkboxes)
 - Out of Scope section
-
-## Parallelization with Git Worktrees
-
-This command uses **git worktrees** to enable parallel work on multiple issues. Each issue gets its own working directory with an isolated branch, so multiple `/work` sessions can run simultaneously without conflicts.
-
-**Worktree location:** `../nexus-worktrees/<branch-name>/`
-
-Benefits:
-
-- No branch switching - main repo stays on `main`
-- Multiple issues can be worked on in parallel
-- Each worktree is fully isolated
-- Worktrees share the same `.git` history (no re-cloning)
-- Commits in one worktree are immediately visible in others (shared object store)
-
-## Working Directory Guidelines
-
-Understanding how different tools handle working directories is critical for worktree workflows.
-
-**Bash tool:** CWD persists between calls. After `cd "$WORKTREE_ABS_PATH"`, subsequent Bash commands run in that directory.
-
-**File tools (Read, Edit, Write, Glob, Grep):** CWD resets to the main repo between calls. Always use absolute paths:
-
-- `/Users/thomas/projects/nexus-worktrees/feat/42-auth/apps/web/src/file.ts`
-- NOT `./apps/web/src/file.ts`
-
-**Tip:** Compute and store the absolute worktree path early:
-
-```bash
-WORKTREE_ABS_PATH="$(cd "$(git rev-parse --show-toplevel)/.." && pwd)/nexus-worktrees/$BRANCH_NAME"
-```
-
-Then reference `$WORKTREE_ABS_PATH` in all file tool paths.
 
 ## Arguments
 
@@ -122,7 +92,7 @@ This phase is REQUIRED for both modes.
 
 2. **Explore the codebase** using the `explore-issue` agent:
 
-    Spawn a Task with `subagent_type: general-purpose` that uses the explore-issue agent to:
+    Spawn a Task with `subagent_type: explore-issue` to:
     - Find files related to the feature area
     - Understand existing patterns and conventions
     - Identify files that will need changes
@@ -171,66 +141,53 @@ If user selected "Full implementation":
 
 If user selected "Resume":
 
-1. List existing worktrees to help user choose:
+1. **Check current branch state:**
 
     ```bash
-    git worktree list
-    ```
-
-2. Ask for branch name if not provided
-
-3. Locate the worktree directory:
-
-    ```bash
-    GIT_ROOT="$(git rev-parse --show-toplevel)"
-    WORKTREE_ABS_PATH="$(cd "$GIT_ROOT/.." && pwd)/nexus-worktrees/<branch-name>"
-
-    # Verify worktree exists
-    if [ ! -d "$WORKTREE_ABS_PATH" ]; then
-        echo "Worktree directory not found at $WORKTREE_ABS_PATH"
-        git worktree prune  # Clean stale references
-        # Offer to recreate from remote branch
-    fi
-
-    cd "$WORKTREE_ABS_PATH"
-    ```
-
-    If worktree doesn't exist, offer to create it from the existing remote branch.
-
-4. Review current state:
-
-    ```bash
-    git status                  # Uncommitted changes
-    git log --oneline -5        # Recent commits
-    git diff main..HEAD         # All changes since main
-    ```
-
-5. **Light-touch research** (do NOT skip entirely):
-    - Re-fetch the issue to confirm acceptance criteria are still current
-    - Review what's already implemented vs what remains
-    - Check if any relevant code has changed on `main` since work started
-
-6. Present a summary of what's been done and what remains
-7. Ask user what to focus on next
-8. Continue to Step 7 (Implementation) - skip full research but stay informed
-
-### Step 6: Setup Worktree
-
-1. **Ensure main repo is clean** (worktree creation requires no conflicts):
-
-    ```bash
+    git branch --show-current || echo "Detached HEAD"
+    git log --oneline -5
     git status
     ```
 
-    If there are uncommitted changes in main repo, ask user how to proceed.
+2. **If on a feature branch already:**
+    - Ask if this is the branch to continue working on
+    - If yes, skip to step 4 (light-touch research)
+    - If no, ask for the correct branch name
 
-2. **Ensure worktrees directory exists:**
+3. **If detached HEAD or wrong branch:**
+    - List local branches: `git branch -a | head -20`
+    - Ask user which branch to check out
+    - Check out the branch: `git checkout <branch-name>`
+
+4. **Light-touch research** (do NOT skip entirely):
+    - Re-fetch the issue to confirm acceptance criteria are still current
+    - Review what's already implemented vs what remains
+    - Check if any relevant code has changed on `main` since work started:
+        ```bash
+        git fetch origin main
+        git log HEAD..origin/main --oneline | head -10
+        ```
+
+5. Present a summary of what's been done and what remains
+6. Ask user what to focus on next
+7. Continue to Step 7 (Implementation) - skip full research but stay informed
+
+### Step 6: Setup Branch
+
+1. **Check current git state:**
 
     ```bash
-    mkdir -p ../nexus-worktrees
+    git status
+    git branch --show-current || echo "Detached HEAD"
     ```
 
-3. **Create feature branch in a new worktree:**
+2. **Fetch latest from origin:**
+
+    ```bash
+    git fetch origin main
+    ```
+
+3. **Create feature branch from latest origin/main:**
 
     Branch naming convention: `<type>/<issue-number>-<short-description>`
     - Types: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`
@@ -238,41 +195,15 @@ If user selected "Resume":
 
     ```bash
     BRANCH_NAME="<type>/<issue-number>-<short-description>"
-    GIT_ROOT="$(git rev-parse --show-toplevel)"
-    WORKTREE_ABS_PATH="$(cd "$GIT_ROOT/.." && pwd)/nexus-worktrees/$BRANCH_NAME"
-
-    # Check if worktree already exists
-    if git worktree list | grep -q "$BRANCH_NAME"; then
-        echo "Worktree for $BRANCH_NAME already exists"
-        # Offer to resume instead
-    else
-        git worktree add "$WORKTREE_ABS_PATH" -b "$BRANCH_NAME"
-    fi
+    git checkout -b "$BRANCH_NAME" origin/main
     ```
 
-    If worktree creation fails (branch exists or path conflict):
-    - Show the error to the user
-    - If branch exists on remote, offer to check it out: `git worktree add "$WORKTREE_ABS_PATH" "$BRANCH_NAME"`
+    If branch creation fails (branch already exists):
+    - Check if it's on remote: `git branch -r | grep "$BRANCH_NAME"`
+    - If exists, offer to check it out and rebase: `git checkout "$BRANCH_NAME" && git rebase origin/main`
     - Otherwise ask for an alternative branch name
 
-4. **Change to the worktree directory:**
-
-    ```bash
-    cd "$WORKTREE_ABS_PATH"
-    ```
-
-    After this, Bash commands run in the worktree. But file tools (Read, Edit, Write, Glob, Grep) need absolute paths - see "Working Directory Guidelines" above.
-
-5. **Install dependencies and copy environment:**
-
-    ```bash
-    pnpm install
-
-    # Copy env files (they're gitignored, won't exist in new worktree)
-    cp "$GIT_ROOT/apps/web/.env.local" "$WORKTREE_ABS_PATH/apps/web/.env.local" 2>/dev/null || echo "No .env.local to copy"
-    ```
-
-6. **Mark issue as in progress:**
+4. **Mark issue as in progress:**
 
     ```bash
     gh issue edit <number> --add-label in-progress
@@ -428,34 +359,16 @@ Before committing, run parallel review agents to catch convention violations and
     gh issue edit <number> --remove-label in-progress
     ```
 
-### Step 11: Finalize and Summary
+### Step 11: Summary
 
-1. **Update changelog** for significant changes:
+Provide a summary including:
 
-    Add an entry to `docs/ai/changelog.md` summarizing what changed and why.
-
-2. **Use AskUserQuestion to ask about worktree cleanup:**
-    - **Keep worktree**: Leave for potential follow-up
-    - **Remove worktree**: Clean up now
-
-    If removing:
-
-    ```bash
-    GIT_ROOT="$(git rev-parse --show-toplevel)"
-    MAIN_REPO="$(cd "$GIT_ROOT/.." && pwd)/nexus"
-    cd "$MAIN_REPO"
-    git worktree remove "$WORKTREE_ABS_PATH"
-    git branch -d "$BRANCH_NAME"  # Safe delete (checks if merged)
-    ```
-
-3. **Provide a summary** including:
-    - Issue worked on (number and title)
-    - Branch name
-    - Worktree path (if kept)
-    - PR link
-    - Key changes made
-    - Files modified
-    - Any follow-up items identified
+- Issue worked on (number and title)
+- Branch name
+- PR link
+- Key changes made
+- Files modified
+- Any follow-up items identified
 
 ## Handling Edge Cases
 
@@ -500,75 +413,15 @@ If implementation reveals work beyond the issue scope:
     - **Include anyway**: Expand scope (update issue if needed)
     - **Ignore**: Stay strictly within original scope
 
-### Worktree Issues
+### Branch Already Exists
 
-If worktree creation or management fails:
+If the feature branch already exists:
 
-1. **Branch already checked out elsewhere:**
-
-    ```bash
-    git worktree list  # Find where it's checked out
-    ```
-
-    Ask user to either remove the other worktree or use Resume mode.
-
-2. **Stale worktree references:**
-
-    ```bash
-    git worktree prune  # Clean up stale entries
-    ```
-
-3. **Worktree directory already exists:**
-    - Check if it's a valid worktree for this branch
-    - If so, offer to resume instead
-    - If not, ask user if it's safe to remove
-
-4. **Stale dependencies in worktree:**
-
-    If commands fail with module resolution errors after resuming:
-
-    ```bash
-    rm -rf node_modules && pnpm install
-    ```
-
-    Or if turbo cache is stale:
-
-    ```bash
-    pnpm turbo clean
-    ```
-
-5. **Branch exists but worktree doesn't:**
-
-    ```bash
-    # Branch exists on remote but no local worktree
-    git worktree add "$WORKTREE_ABS_PATH" "<branch-name>"
-    ```
-
-6. **Missing environment files:**
-
-    ```bash
-    # Copy from main repo
-    GIT_ROOT="$(git rev-parse --show-toplevel)"
-    cp "$GIT_ROOT/apps/web/.env.local" "$WORKTREE_ABS_PATH/apps/web/.env.local"
-    ```
-
-## Managing Worktrees
-
-Useful commands for worktree management (can be run from main repo):
-
-```bash
-git worktree list              # List all worktrees
-git worktree remove <path>     # Remove a worktree (keeps branch)
-git worktree prune             # Clean up stale worktree references
-git branch -d <branch>         # Delete branch after worktree removed
-```
-
-To clean up after PR is merged:
-
-```bash
-git worktree remove ../nexus-worktrees/<branch-name>
-git branch -d <branch-name>
-```
+1. Check if it's a local or remote branch
+2. Ask user:
+    - **Resume work**: Check out the existing branch
+    - **Rebase and continue**: Check out and rebase onto latest `origin/main`
+    - **Use different name**: Create a new branch with a different name
 
 ## Notes
 
@@ -579,6 +432,3 @@ git branch -d <branch-name>
 - Keep commits focused and atomic
 - Reference the issue number in commits and PR
 - Don't skip the planning phase unless resuming existing work
-- All implementation happens in the worktree, not the main repo
-- Run `pnpm install` in new worktrees before running commands
-- Multiple `/work` sessions can run in parallel on different issues

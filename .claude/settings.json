@@ -1,6 +1,6 @@
 {
     "permissions": {
-        "additionalDirectories": ["../nexus-worktrees/"],
+        "additionalDirectories": [],
         "allow": [
             "mcp__notion__notion-search",
             "mcp__notion__notion-fetch",
@@ -29,7 +29,6 @@
             "Bash(git -C:*)",
             "Bash(git add:*)",
             "Bash(git commit:*)",
-            "Bash(git worktree:*)",
             "Bash(grep:*)",
             "Bash(ls:*)",
             "Bash(pnpm -F web add:*)",
