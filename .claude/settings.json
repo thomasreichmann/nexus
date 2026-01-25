@@ -1,5 +1,66 @@
 {
     "permissions": {
-        "additionalDirectories": ["../nexus-worktrees/"]
+        "additionalDirectories": ["../nexus-worktrees/"],
+        "allow": [
+            "mcp__notion__notion-search",
+            "mcp__notion__notion-fetch",
+            "mcp__plugin_context7_context7__get-library-docs",
+            "mcp__plugin_context7_context7__resolve-library-id",
+            "mcp__plugin_context7_context7__query-docs",
+            "WebSearch",
+            "WebFetch",
+            "Bash(aws s3api get-bucket-encryption:*)",
+            "Bash(aws s3api get-bucket-versioning:*)",
+            "Bash(aws sts get-caller-identity:*)",
+            "Bash(cat:*)",
+            "Bash(find:*)",
+            "Bash(gh api --help:*)",
+            "Bash(gh api graphql:*)",
+            "Bash(gh issue --help:*)",
+            "Bash(gh issue comment:*)",
+            "Bash(gh issue develop --help:*)",
+            "Bash(gh issue edit:*)",
+            "Bash(gh issue list:*)",
+            "Bash(gh issue view:*)",
+            "Bash(gh label create:*)",
+            "Bash(gh label list:*)",
+            "Bash(gh pr checks:*)",
+            "Bash(gh pr view:*)",
+            "Bash(git -C:*)",
+            "Bash(git add:*)",
+            "Bash(git commit:*)",
+            "Bash(git worktree:*)",
+            "Bash(grep:*)",
+            "Bash(ls:*)",
+            "Bash(pnpm -F web add:*)",
+            "Bash(pnpm -F web test:e2e)",
+            "Bash(pnpm -F web test:e2e:smoke)",
+            "Bash(pnpm -F web test:run:*)",
+            "Bash(pnpm -F web typecheck:*)",
+            "Bash(pnpm build:*)",
+            "Bash(pnpm dlx:*)",
+            "Bash(pnpm eslint:*)",
+            "Bash(pnpm lint:*)",
+            "Bash(pnpm test:*)",
+            "Bash(pnpm typecheck:*)",
+            "Bash(tree:*)",
+            "Bash(turbo typecheck:*)",
+            "Bash(wc:*)",
+            "Bash(xargs basename:*)",
+            "Bash(xargs cat:*)"
+        ]
+    },
+    "hooks": {
+        "PostToolUse": [
+            {
+                "matcher": "Edit|Write",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "jq -r '.tool_input.file_path' | xargs -I {} npx prettier --write --ignore-unknown {}"
+                    }
+                ]
+            }
+        ]
     }
 }
