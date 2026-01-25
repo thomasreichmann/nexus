@@ -127,6 +127,15 @@ Alternatively, from any issue:
 | `ready`         | Fully specified, ready for implementation       |
 | `blocked`       | Waiting on external dependency                  |
 
+### Priority Labels
+
+| Label                | Meaning                                 |
+| -------------------- | --------------------------------------- |
+| `priority: critical` | Must be addressed immediately           |
+| `priority: high`     | Important, should be addressed soon     |
+| `priority: medium`   | Normal priority                         |
+| `priority: low`      | Nice to have, address when time permits |
+
 ### Workflow
 
 1. **New issue** - Add `needs-details` or `needs-triage` if unclear
