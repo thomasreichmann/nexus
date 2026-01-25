@@ -36,6 +36,10 @@ Implemented client-side logging using `pino/browser` that pipes logs to the dev 
 
 Client logs are sent via POST to `/api/dev-log` in development only. The endpoint uses `logger.child({ source: 'client' })` to prefix logs with `[client]`. Same API as server: `log.info()`, `log.error()`, etc.
 
+**SSR Fix:**
+
+Added `enabled: typeof window !== 'undefined'` to disable the client logger during SSR. Without this, logs would appear twice (raw JSON from SSR + formatted from client hydration).
+
 **Usage:**
 
 ```typescript
@@ -44,6 +48,8 @@ import { log } from '@/lib/logger';
 log.info('button clicked');
 log.error({ err }, 'failed to load');
 ```
+
+**Documentation:** See `docs/guides/logging.md` for full details on the dual-logger architecture.
 
 ---
 

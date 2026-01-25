@@ -22,4 +22,5 @@ export const log = pino({
         },
     },
     level: process.env.NODE_ENV === 'development' ? 'debug' : 'warn',
+    enabled: typeof window !== 'undefined',
 });

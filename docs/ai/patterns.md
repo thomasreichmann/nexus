@@ -1,8 +1,8 @@
 ---
 title: Code Patterns
 created: 2025-12-29
-updated: 2025-12-29
-status: draft
+updated: 2026-01-25
+status: active
 tags:
     - ai
     - patterns
@@ -10,33 +10,43 @@ tags:
 aliases:
     - Implementation Patterns
     - Code Examples
-ai_summary: 'Code patterns will be defined as the project develops'
+ai_summary: 'Established code patterns for the Nexus project'
 ---
 
 # Code Patterns
 
 Implementation patterns for the Nexus project.
 
-> [!note] Patterns Not Yet Defined
-> The app structure and implementation patterns are not finalized yet. This document will be updated as patterns emerge during development.
+## Logging
 
-## Current Status
+Dual-logger architecture with pino for server and client.
 
-The project is in MVP planning phase. Code patterns will be established as we:
+### Server
 
-1. Set up the initial Next.js project structure
-2. Implement the first features
-3. Identify patterns that work well
+```typescript
+import { logger } from '@/server/lib/logger';
 
-## How Patterns Will Be Added
+logger.info({ userId }, 'User logged in');
+logger.error({ err }, 'Database query failed');
+```
 
-As development progresses, this document will include:
+### Client
 
-- Patterns that prove useful and consistent
-- Examples extracted from actual working code
-- Rationale for why each pattern was chosen
+```typescript
+import { log } from '@/lib/logger';
 
-## For Now
+log.info('Button clicked');
+log.error({ err }, 'Failed to fetch data');
+```
+
+**Key details:**
+- Client logger is disabled during SSR (`enabled: typeof window !== 'undefined'`)
+- Dev only: client logs transmit to `/api/dev-log` and appear in terminal with `[client]` prefix
+- Same pino API on both sides
+
+See [[../guides/logging|Logging Guide]] for full documentation.
+
+## General Guidelines
 
 When generating code:
 

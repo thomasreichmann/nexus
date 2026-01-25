@@ -18,6 +18,7 @@ Technical documentation, setup guides, and implementation patterns for the Nexus
 
 - [[getting-started|Getting Started]] - Development environment setup
 - [[nextjs-patterns|Next.js Patterns]] - Implementation patterns and best practices
+- [[logging|Logging]] - Server and client-side logging with pino
 
 ## Dataview
 
