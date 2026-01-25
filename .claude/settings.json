@@ -62,5 +62,9 @@
                 ]
             }
         ]
+    },
+    "attribution": {
+        "commit": "",
+        "pr": ""
     }
 }

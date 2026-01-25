@@ -105,8 +105,6 @@ docs/
 
 ## Git Commits
 
-- No "Co-Authored-By" lines or AI attribution in commits
-- No "Generated with Claude Code" footers
 - Keep commit messages concise and conventional
 
 ## Task Workflow
