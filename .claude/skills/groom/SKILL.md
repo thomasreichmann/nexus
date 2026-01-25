@@ -193,7 +193,60 @@ When subagents return their research:
 2. **Use AskUserQuestion** for each decision point, grouped by issue
 3. **Collect user decisions** before proceeding to draft
 4. **Draft issues** incorporating the decisions
-5. **Proceed to Final Review**
+5. **Proceed to Self-Review**
+
+## Self-Review (REQUIRED)
+
+Before presenting drafts to the user, review them for quality and codebase alignment using parallel subagents.
+
+### For Each Draft:
+
+1. **Spawn three review agents in parallel:**
+
+    **Issue Quality Review** (subagent_type: "general-purpose"):
+    - Review the draft against `.claude/skills/groom/templates/review-criteria.md`
+    - Check description clarity, acceptance criteria specificity, scope boundaries
+    - Identify ambiguous language or undefined terms
+    - Return list of issues found and suggested fixes
+
+    **Codebase Alignment Review** (subagent_type: "Explore"):
+    - Confirm referenced files/patterns actually exist
+    - Check that the approach matches codebase conventions
+    - Identify any conflicts with existing features
+    - Return list of alignment issues and concerns
+
+    **Related Issues Review** (subagent_type: "general-purpose"):
+    - Fetch open issues: `gh issue list --state open --json number,title,body,labels --limit 50`
+    - Identify issues that should be updated as a result of this draft:
+        - Issues that block or are blocked by this one
+        - Issues that reference the same files/features
+        - Issues that overlap in scope (potential duplicates or related work)
+    - Return list of suggested relationship updates (blocked-by, blocks, references)
+
+2. **Collect results from all three agents**
+
+3. **Process findings:**
+    - Fix obvious issues (unclear wording, missing criteria, non-existent references)
+    - Note concerns to raise with user during Final Review
+
+4. **Proceed to Final Review** with any flagged concerns
+
+### What to Fix vs. Flag
+
+**Fix directly:**
+
+- Vague or untestable acceptance criteria
+- Missing out of scope items
+- Ambiguous language
+- References to non-existent files/patterns
+
+**Flag for user discussion:**
+
+- Potential conflicts with existing features
+- Architectural trade-offs
+- Discovered complexity that may affect scope
+- Suggested issue relationships (blocked-by, blocks)
+- Related issues that may need updates
 
 ## Final Review (REQUIRED)
 
