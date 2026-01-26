@@ -34,12 +34,15 @@ export async function get(
     key: string,
     options?: GetPresignOptions
 ): Promise<string> {
+    // Sanitize filename for Content-Disposition header (escape backslashes and quotes)
+    const disposition = options?.filename
+        ? `attachment; filename="${options.filename.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+        : undefined;
+
     const command = new GetObjectCommand({
         Bucket: bucket,
         Key: key,
-        ResponseContentDisposition: options?.filename
-            ? `attachment; filename="${options.filename}"`
-            : undefined,
+        ResponseContentDisposition: disposition,
     });
     return getSignedUrl(client, command, {
         expiresIn: options?.expiresIn ?? 3600,
