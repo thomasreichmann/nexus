@@ -2,9 +2,9 @@ import pino from 'pino';
 
 export const isDev = process.env.NODE_ENV === 'development';
 
-export type ErrorVerbosity = 'minimal' | 'standard' | 'verbose' | 'full';
+export type ErrorVerbosity = 'minimal' | 'standard' | 'full';
 
-export const errorVerbosity: ErrorVerbosity = isDev ? 'verbose' : 'standard';
+export const errorVerbosity: ErrorVerbosity = isDev ? 'full' : 'standard';
 
 const transport = isDev
     ? {

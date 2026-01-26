@@ -49,11 +49,8 @@ function formatErrorCause(
         formatted.message = cause.message;
     }
 
-    if (errorVerbosity === 'verbose' || errorVerbosity === 'full') {
-        formatted.stack = cause.stack;
-    }
-
     if (errorVerbosity === 'full') {
+        formatted.stack = cause.stack;
         formatted.cause = formatErrorCause(cause, depth + 1);
     }
 
@@ -67,11 +64,8 @@ export function formatError(error: TRPCError): FormattedError {
         formatted.message = error.message;
     }
 
-    if (errorVerbosity === 'verbose' || errorVerbosity === 'full') {
-        formatted.stack = error.stack;
-    }
-
     if (errorVerbosity === 'full') {
+        formatted.stack = error.stack;
         formatted.cause = formatErrorCause(error, 0);
     }
 

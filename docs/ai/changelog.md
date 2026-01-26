@@ -37,8 +37,7 @@ Added configurable error verbosity levels to structured logging, allowing differ
 | ---------- | ------------------------------------ | ----------- |
 | `minimal`  | code only                            | -           |
 | `standard` | code + message                       | Production  |
-| `verbose`  | code + message + stack               | Development |
-| `full`     | code + message + stack + cause chain | -           |
+| `full`     | code + message + stack + cause chain | Development |
 
 **Key Pattern:**
 
