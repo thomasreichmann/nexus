@@ -19,6 +19,40 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ---
 
+## 2026-01-26
+
+### Session: Source Map Stack Traces (#71)
+
+Added source map transformation for error stack traces in development, making logs show original TypeScript source locations instead of bundled file paths.
+
+**Files Modified:**
+
+- `server/lib/logger.ts` - Added `transformStackTrace()`, `parseStackFrame()`, `formatStackFrame()`, enabled Node.js source map support via `setSourceMapsSupport()`
+- `server/trpc/middleware/logging.ts` - Updated `formatError()` and `formatErrorCause()` to apply stack trace transformation
+- `server/lib/logger.test.ts` - Unit tests for stack frame parsing/formatting
+
+**Key Pattern:**
+
+```typescript
+import { transformStackTrace } from '@/server/lib/logger';
+
+// In formatError:
+if (errorVerbosity === 'full') {
+    formatted.stack = transformStackTrace(error.stack);
+}
+```
+
+The `transformStackTrace()` function:
+
+1. Parses each stack frame line using regex
+2. Looks up source maps via Node.js `findSourceMap()` API
+3. Maps bundled locations back to original source locations
+4. Falls back to original line if no source map found
+
+**Note:** Only active in development mode (`isDev`). Production stack traces are unchanged.
+
+---
+
 ## 2026-01-25
 
 ### Session: Configurable Error Verbosity (#30)

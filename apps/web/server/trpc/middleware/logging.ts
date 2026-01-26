@@ -1,4 +1,9 @@
-import { errorVerbosity, isDev, logger } from '@/server/lib/logger';
+import {
+    errorVerbosity,
+    isDev,
+    logger,
+    transformStackTrace,
+} from '@/server/lib/logger';
 import type { TRPCError } from '@trpc/server';
 
 export interface RequestLogger {
@@ -50,7 +55,7 @@ function formatErrorCause(
     }
 
     if (errorVerbosity === 'full') {
-        formatted.stack = cause.stack;
+        formatted.stack = transformStackTrace(cause.stack);
         formatted.cause = formatErrorCause(cause, depth + 1);
     }
 
@@ -65,7 +70,7 @@ export function formatError(error: TRPCError): FormattedError {
     }
 
     if (errorVerbosity === 'full') {
-        formatted.stack = error.stack;
+        formatted.stack = transformStackTrace(error.stack);
         formatted.cause = formatErrorCause(error, 0);
     }
 
