@@ -32,7 +32,7 @@ pnpm -F web add <package>      # Add dependency to web app
 pnpm -F web add -D <package>   # Add dev dependency
 ```
 
-**After modifying pages or components:** Run `pnpm -F web test:e2e:smoke` to catch render errors.
+**REQUIRED - After modifying pages or components:** You MUST run `pnpm -F web test:e2e:smoke` to catch render errors before committing. Smoke tests run post-merge in CI, so local verification is critical.
 
 ## Environment Setup
 
