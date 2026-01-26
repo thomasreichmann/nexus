@@ -19,6 +19,41 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ---
 
+## 2026-01-25
+
+### Session: Configurable Error Verbosity (#30)
+
+Added configurable error verbosity levels to structured logging, allowing different levels of error detail based on environment.
+
+**Files Modified:**
+
+- `server/lib/logger.ts` - Added `ErrorVerbosity` type and `errorVerbosity` config, exported `isDev`
+- `server/trpc/middleware/logging.ts` - Added `FormattedError` interface and `formatError()` function, updated `WideEvent` and `emitEvent`
+- `server/trpc/init.ts` - Updated to pass full `TRPCError` to `emitEvent`
+
+**Verbosity Levels:**
+
+| Level      | Fields                               | Default     |
+| ---------- | ------------------------------------ | ----------- |
+| `minimal`  | code only                            | -           |
+| `standard` | code + message                       | Production  |
+| `full`     | code + message + stack + cause chain | Development |
+
+**Key Pattern:**
+
+```typescript
+import { errorVerbosity, formatError } from '@/server/lib/logger';
+
+// In emitEvent:
+if (error) {
+    event.error = formatError(error);
+}
+```
+
+The `formatError()` function formats a `TRPCError` based on the current verbosity level. For `full` verbosity, it recursively formats the cause chain (with depth limit of 5).
+
+---
+
 ## 2026-01-24
 
 ### Session: Client-Side Logging with pino/browser (#9)

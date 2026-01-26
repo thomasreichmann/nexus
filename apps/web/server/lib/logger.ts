@@ -1,6 +1,10 @@
 import pino from 'pino';
 
-const isDev = process.env.NODE_ENV === 'development';
+export const isDev = process.env.NODE_ENV === 'development';
+
+export type ErrorVerbosity = 'minimal' | 'standard' | 'full';
+
+export const errorVerbosity: ErrorVerbosity = isDev ? 'full' : 'standard';
 
 const transport = isDev
     ? {
