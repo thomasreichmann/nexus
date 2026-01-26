@@ -1,5 +1,8 @@
 import pino from 'pino';
 
+// Install source-mapped stack traces in development
+import './logger/patches/install';
+
 export const isDev = process.env.NODE_ENV === 'development';
 
 export type ErrorVerbosity = 'minimal' | 'standard' | 'full';
