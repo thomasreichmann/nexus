@@ -1,7 +1,7 @@
 ---
 title: AI Changelog
 created: 2025-12-29
-updated: 2026-01-23
+updated: 2026-01-26
 status: active
 tags:
     - ai
@@ -16,6 +16,48 @@ ai_summary: 'Recent AI changes - READ THIS FIRST for context'
 # AI Changelog
 
 Recent changes made by AI assistants. **Read this first** to understand recent context.
+
+---
+
+## 2026-01-26
+
+### Session: Source-Mapped Stack Traces (#71)
+
+Added source-mapped stack traces for development to show TypeScript file paths instead of Turbopack bundled paths. This addresses a known Next.js/Turbopack limitation where `Error.prepareStackTrace` doesn't apply source maps.
+
+**New Files:**
+
+- `server/lib/logger/config.ts` - Stack trace configuration with env var support
+- `server/lib/logger/index.ts` - Barrel exports for external use
+- `server/lib/logger/source.ts` - Log origin capture utility
+- `server/lib/logger/patches/mapping.ts` - Source map resolution using `node:module`
+- `server/lib/logger/patches/frames.ts` - Frame classification (`project`/`vendor`/`internal`) and collapsing
+- `server/lib/logger/patches/highlight.ts` - Regex-based TypeScript syntax highlighting
+- `server/lib/logger/patches/codeframe.ts` - Code context display with line markers
+- `server/lib/logger/patches/hyperlink.ts` - Terminal hyperlinks (currently disabled, placeholder for future)
+- `server/lib/logger/patches/format.ts` - Stack trace formatting, composes above modules
+- `server/lib/logger/patches/install.ts` - `Error.prepareStackTrace` override (dev-only)
+- `server/lib/logger/patches/utils.ts` - Shared `safeGet` utility
+
+**Files Modified:**
+
+- `server/lib/logger.ts` - Added import for stack trace patch installer
+
+**Configuration (all optional, with defaults):**
+
+| Env Var                        | Default | Description                            |
+| ------------------------------ | ------- | -------------------------------------- |
+| `STACKTRACE_CODEFRAME_CONTEXT` | 2       | Lines of context around error location |
+| `STACKTRACE_MAX_PROJECT`       | 10      | Max project frames before collapsing   |
+| `STACKTRACE_SHOW_VENDOR`       | 0       | Set to "1" to show vendor frames       |
+| `STACKTRACE_COLOR`             | auto    | "0" to disable, "1" to force colors    |
+
+**Features:**
+
+- Source map resolution with caching for Turbopack chunks
+- Code frame display with syntax highlighting at error location
+- Frame collapsing (hides node internals, collapses vendor frames)
+- Log origin capture utility for adding source location to log entries
 
 ---
 
