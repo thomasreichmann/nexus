@@ -26,7 +26,13 @@ function parseIntEnv(key: string, defaultValue: number): number {
     const value = process.env[key];
     if (!value) return defaultValue;
     const parsed = parseInt(value, 10);
-    return isNaN(parsed) ? defaultValue : parsed;
+    if (isNaN(parsed)) {
+        console.warn(
+            `[stacktrace] Invalid value for ${key}: "${value}" (expected integer, using default: ${defaultValue})`
+        );
+        return defaultValue;
+    }
+    return parsed;
 }
 
 export function loadConfig(): StackTraceConfig {

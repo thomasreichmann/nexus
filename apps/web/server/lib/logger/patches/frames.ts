@@ -1,6 +1,23 @@
 import path from 'node:path';
 import { safeGet } from './utils';
 
+// Path patterns for frame classification
+const PATH_PATTERNS = {
+    NODE_BUILTIN_PREFIX: 'node:',
+    NODE_MODULES: `${path.sep}node_modules${path.sep}`,
+    NEXT_DIR: `${path.sep}.next${path.sep}`,
+    CHUNKS_DIR: `${path.sep}chunks${path.sep}`,
+    NODE_INTERNAL: `${path.sep}node${path.sep}internal${path.sep}`,
+    INTERNAL: `${path.sep}internal${path.sep}`,
+} as const;
+
+/**
+ * CallSite with isAsync method typed.
+ * Node.js types include isAsync() as required, but V8 may not always provide it,
+ * so we use optional chaining when calling it.
+ */
+export type ExtendedCallSite = NodeJS.CallSite;
+
 export type FrameKind = 'project' | 'vendor' | 'internal';
 
 export interface FrameInfo {
@@ -33,7 +50,7 @@ export function classifyFile(
     if (!file) return 'internal';
 
     // Node built-in modules
-    if (file.startsWith('node:')) {
+    if (file.startsWith(PATH_PATTERNS.NODE_BUILTIN_PREFIX)) {
         return 'internal';
     }
 
@@ -41,22 +58,22 @@ export function classifyFile(
 
     // Internal Node paths
     if (
-        abs.includes(`${path.sep}node${path.sep}internal${path.sep}`) ||
-        abs.includes(`${path.sep}internal${path.sep}`)
+        abs.includes(PATH_PATTERNS.NODE_INTERNAL) ||
+        abs.includes(PATH_PATTERNS.INTERNAL)
     ) {
         return 'internal';
     }
 
     // .next internals (server runtime, not chunks)
-    if (abs.includes(`${path.sep}.next${path.sep}`)) {
+    if (abs.includes(PATH_PATTERNS.NEXT_DIR)) {
         // Chunks that have been source-mapped back are project files
-        if (!abs.includes(`${path.sep}chunks${path.sep}`)) {
+        if (!abs.includes(PATH_PATTERNS.CHUNKS_DIR)) {
             return 'internal';
         }
     }
 
     // node_modules = vendor
-    if (abs.includes(`${path.sep}node_modules${path.sep}`)) {
+    if (abs.includes(PATH_PATTERNS.NODE_MODULES)) {
         return 'vendor';
     }
 
@@ -69,7 +86,7 @@ export function classifyFile(
 }
 
 export function extractFrameInfo(
-    callSite: NodeJS.CallSite,
+    callSite: ExtendedCallSite,
     projectRoot: string
 ): FrameInfo {
     const file = safeGet(
@@ -82,10 +99,7 @@ export function extractFrameInfo(
         () => callSite.getFunctionName?.() ?? callSite.getMethodName?.(),
         null
     );
-    const isAsync = safeGet(
-        () => (callSite as { isAsync?: () => boolean }).isAsync?.() ?? false,
-        false
-    );
+    const isAsync = safeGet(() => callSite.isAsync() ?? false, false);
 
     return {
         file,

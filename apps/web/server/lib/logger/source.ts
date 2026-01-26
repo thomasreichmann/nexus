@@ -1,6 +1,10 @@
 import path from 'node:path';
 import { getConfig, toRelativePath } from './config';
-import { classifyFile, type FrameKind } from './patches/frames';
+import {
+    classifyFile,
+    type ExtendedCallSite,
+    type FrameKind,
+} from './patches/frames';
 import { mapCallSites } from './patches/mapping';
 import { safeGet } from './patches/utils';
 
@@ -80,7 +84,8 @@ export function captureLogOrigin(
         // Map frames through source maps
         const mappedFrames = mapCallSites(relevantFrames, config.projectRoot);
 
-        for (const cs of mappedFrames) {
+        for (const rawCs of mappedFrames) {
+            const cs = rawCs as ExtendedCallSite;
             const file = safeGet(
                 () => cs.getFileName?.() ?? cs.getScriptNameOrSourceURL?.(),
                 null
@@ -106,10 +111,7 @@ export function captureLogOrigin(
                 () => cs.getFunctionName?.() ?? cs.getMethodName?.(),
                 null
             );
-            const isAsync = safeGet(
-                () => (cs as { isAsync?: () => boolean }).isAsync?.() ?? false,
-                false
-            );
+            const isAsync = safeGet(() => cs.isAsync() ?? false, false);
 
             return {
                 absPath: abs,

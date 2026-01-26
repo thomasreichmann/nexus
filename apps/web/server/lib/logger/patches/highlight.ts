@@ -1,5 +1,8 @@
 // Regex-based TypeScript syntax highlighting for terminal output.
 // Pure functions - no shiki dependency for simpler maintenance.
+//
+// Note: Uses regex lookbehind assertions which require Node.js 10+.
+// This is fine since Next.js requires Node 18+.
 
 export interface ColorFunctions {
     dim: (s: string) => string;

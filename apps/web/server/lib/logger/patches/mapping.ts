@@ -159,8 +159,11 @@ function findSourceMap(file: string | null): NodeSourceMap | null {
 
     // Try Node.js built-in first
     const builtinResult = findSourceMapCjs(abs);
+    // findSourceMap returns SourceMap which has compatible interface with NodeSourceMap
     let sourceMap: NodeSourceMap | null =
-        (builtinResult as unknown as NodeSourceMap) ?? null;
+        builtinResult && typeof builtinResult.findEntry === 'function'
+            ? (builtinResult as NodeSourceMap)
+            : null;
 
     // Fall back to manual loading
     if (!sourceMap) {

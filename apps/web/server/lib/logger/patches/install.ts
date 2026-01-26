@@ -5,6 +5,22 @@ import { formatStackTrace } from './format';
 const globalKey = Symbol.for('nexus.stacktraceMapperInstalled');
 const g = globalThis as typeof globalThis & { [globalKey]?: boolean };
 
+/**
+ * Generate a basic stack trace using V8's default format.
+ * Used as fallback when our custom formatting fails.
+ */
+function defaultStackTrace(error: Error, frames: NodeJS.CallSite[]): string {
+    const lines = [`${error.name}: ${error.message}`];
+    for (const frame of frames) {
+        const file = frame.getFileName?.() ?? '<anonymous>';
+        const line = frame.getLineNumber?.() ?? 0;
+        const column = frame.getColumnNumber?.() ?? 0;
+        const fn = frame.getFunctionName?.() ?? '<anonymous>';
+        lines.push(`    at ${fn} (${file}:${line}:${column})`);
+    }
+    return lines.join('\n');
+}
+
 export function installStackTraceMapper(): void {
     const config = getConfig();
 
@@ -20,14 +36,19 @@ export function installStackTraceMapper(): void {
     g[globalKey] = true;
 
     Error.prepareStackTrace = (error, structuredStackTrace) => {
+        const frames = Array.isArray(structuredStackTrace)
+            ? structuredStackTrace
+            : [];
         try {
-            const frames = Array.isArray(structuredStackTrace)
-                ? structuredStackTrace
-                : [];
             return formatStackTrace(error, frames, config);
-        } catch {
-            // Fallback to simple format if formatting fails
-            return `${error.name}: ${error.message}`;
+        } catch (formatError) {
+            // Log the formatting error for debugging
+            console.warn(
+                '[stacktrace] Formatting failed, using fallback:',
+                formatError
+            );
+            // Fallback to basic V8-style format that preserves stack info
+            return defaultStackTrace(error, frames);
         }
     };
 }
