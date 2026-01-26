@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, boolean } from 'drizzle-orm/pg-core';
+import { timestamps } from './helpers';
 
 // BetterAuth tables
 
@@ -8,16 +9,14 @@ export const user = pgTable('user', {
     email: text('email').notNull().unique(),
     emailVerified: boolean('email_verified').notNull().default(false),
     image: text('image'),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    ...timestamps(),
 });
 
 export const session = pgTable('session', {
     id: text('id').primaryKey(),
     expiresAt: timestamp('expires_at').notNull(),
     token: text('token').notNull().unique(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    ...timestamps(),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
     userId: text('user_id')
@@ -39,8 +38,7 @@ export const account = pgTable('account', {
     refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
     scope: text('scope'),
     password: text('password'),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    ...timestamps(),
 });
 
 export const verification = pgTable('verification', {
@@ -48,6 +46,5 @@ export const verification = pgTable('verification', {
     identifier: text('identifier').notNull(),
     value: text('value').notNull(),
     expiresAt: timestamp('expires_at').notNull(),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    ...timestamps(),
 });
