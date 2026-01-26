@@ -238,7 +238,7 @@ If user selected "Resume":
         - **Continue anyway**: Proceed (note in PR that tests need review)
         - **Abort**: Stop implementation, keep changes uncommitted
 
-4. **For UI changes**, run smoke tests:
+4. **REQUIRED - For UI changes**, you MUST run smoke tests before committing. Smoke tests run post-merge in CI, so local verification is critical:
 
     ```bash
     pnpm -F web test:e2e:smoke
