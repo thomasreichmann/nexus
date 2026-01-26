@@ -21,6 +21,43 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2026-01-26
 
+### Session: S3 Storage Module (#32)
+
+Created foundational S3 storage module at `lib/storage/` for file operations. Establishes the "structured namespace export" pattern for the codebase.
+
+**New Files:**
+
+- `lib/storage/types.ts` - `RestoreTier`, `RestoreStatus`, `PutPresignOptions`, `GetPresignOptions`
+- `lib/storage/client.ts` - S3Client singleton using env vars
+- `lib/storage/presigned.ts` - `put()` and `get()` for presigned URLs
+- `lib/storage/glacier.ts` - `restore()` and `checkStatus()` for Glacier operations
+- `lib/storage/objects.ts` - `remove()` for object deletion
+- `lib/storage/index.ts` - Structured `s3` namespace export
+
+**Documentation:**
+
+- `docs/guides/storage.md` - Full API reference and usage guide
+- `docs/ai/conventions.md` - Added "structured namespace exports" pattern
+
+**Dependencies Added:**
+
+- `@aws-sdk/client-s3`
+- `@aws-sdk/s3-request-presigner`
+
+**API:**
+
+```typescript
+import { s3 } from '@/lib/storage';
+
+await s3.presigned.put(key, { contentType: 'image/png' });
+await s3.presigned.get(key, { filename: 'download.png' });
+await s3.glacier.restore(key, 'standard');
+await s3.glacier.checkStatus(key);
+await s3.objects.remove(key);
+```
+
+---
+
 ### Session: Source-Mapped Stack Traces (#71)
 
 Added source-mapped stack traces for development to show TypeScript file paths instead of Turbopack bundled paths. This addresses a known Next.js/Turbopack limitation where `Error.prepareStackTrace` doesn't apply source maps.
