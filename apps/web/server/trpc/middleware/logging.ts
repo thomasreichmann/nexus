@@ -1,4 +1,5 @@
-import { logger } from '@/server/lib/logger';
+import { errorVerbosity, isDev, logger } from '@/server/lib/logger';
+import type { TRPCError } from '@trpc/server';
 
 export interface RequestLogger {
     setField: (key: string, value: unknown) => void;
@@ -12,6 +13,13 @@ export interface LoggingContext {
     log: RequestLogger;
 }
 
+export interface FormattedError {
+    code: string;
+    message?: string;
+    stack?: string;
+    cause?: FormattedError;
+}
+
 interface WideEvent {
     requestId: string;
     path: string;
@@ -20,8 +28,54 @@ interface WideEvent {
     durationMs: number;
     timings?: Record<string, number>;
     ok: boolean;
-    errorCode?: string;
+    error?: FormattedError;
     [key: string]: unknown;
+}
+
+const MAX_CAUSE_DEPTH = 5;
+
+function formatErrorCause(
+    error: Error,
+    depth: number
+): FormattedError | undefined {
+    if (depth >= MAX_CAUSE_DEPTH) return undefined;
+
+    const cause = error.cause;
+    if (!(cause instanceof Error)) return undefined;
+
+    const formatted: FormattedError = { code: cause.name };
+
+    if (errorVerbosity !== 'minimal') {
+        formatted.message = cause.message;
+    }
+
+    if (errorVerbosity === 'verbose' || errorVerbosity === 'full') {
+        formatted.stack = cause.stack;
+    }
+
+    if (errorVerbosity === 'full') {
+        formatted.cause = formatErrorCause(cause, depth + 1);
+    }
+
+    return formatted;
+}
+
+export function formatError(error: TRPCError): FormattedError {
+    const formatted: FormattedError = { code: error.code };
+
+    if (errorVerbosity !== 'minimal') {
+        formatted.message = error.message;
+    }
+
+    if (errorVerbosity === 'verbose' || errorVerbosity === 'full') {
+        formatted.stack = error.stack;
+    }
+
+    if (errorVerbosity === 'full') {
+        formatted.cause = formatErrorCause(error, 0);
+    }
+
+    return formatted;
 }
 
 function createRequestLogger(): {
@@ -33,7 +87,6 @@ function createRequestLogger(): {
     const customFields: Record<string, unknown> = {};
     const timings: Record<string, number> = {};
     const activeTimers: Map<string, number> = new Map();
-    const isDev = process.env.NODE_ENV === 'development';
 
     return {
         logger: {
@@ -91,7 +144,7 @@ export function logRequest<
 }): {
     requestId: string;
     log: RequestLogger;
-    emitEvent: (ok: boolean, errorCode?: string) => void;
+    emitEvent: (ok: boolean, error?: TRPCError) => void;
 } {
     const { ctx, path, type } = opts;
     const requestId = crypto.randomUUID();
@@ -106,7 +159,7 @@ export function logRequest<
     return {
         requestId,
         log,
-        emitEvent(ok: boolean, errorCode?: string) {
+        emitEvent(ok: boolean, error?: TRPCError) {
             finalize(requestId);
 
             const durationMs = Math.round(performance.now() - startTime);
@@ -131,8 +184,8 @@ export function logRequest<
                 event.timings = timings;
             }
 
-            if (errorCode) {
-                event.errorCode = errorCode;
+            if (error) {
+                event.error = formatError(error);
             }
 
             if (ok) {

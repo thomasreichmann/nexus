@@ -43,7 +43,7 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, next }) => {
     if (result.ok) {
         emitEvent(true);
     } else {
-        emitEvent(false, result.error.code);
+        emitEvent(false, result.error);
     }
 
     return result;
