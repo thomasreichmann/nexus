@@ -34,7 +34,7 @@ Added source-mapped stack traces for development to show TypeScript file paths i
 - `server/lib/logger/patches/frames.ts` - Frame classification (`project`/`vendor`/`internal`) and collapsing
 - `server/lib/logger/patches/highlight.ts` - Regex-based TypeScript syntax highlighting
 - `server/lib/logger/patches/codeframe.ts` - Code context display with line markers
-- `server/lib/logger/patches/hyperlink.ts` - Terminal hyperlinks using OSC 8
+- `server/lib/logger/patches/hyperlink.ts` - Terminal hyperlinks (currently disabled, placeholder for future)
 - `server/lib/logger/patches/format.ts` - Stack trace formatting, composes above modules
 - `server/lib/logger/patches/install.ts` - `Error.prepareStackTrace` override (dev-only)
 - `server/lib/logger/patches/utils.ts` - Shared `safeGet` utility
@@ -57,7 +57,6 @@ Added source-mapped stack traces for development to show TypeScript file paths i
 - Source map resolution with caching for Turbopack chunks
 - Code frame display with syntax highlighting at error location
 - Frame collapsing (hides node internals, collapses vendor frames)
-- Clickable terminal hyperlinks for file paths
 - Log origin capture utility for adding source location to log entries
 
 ---
