@@ -4,6 +4,7 @@ import {
     text,
     timestamp,
     bigint,
+    integer,
     index,
 } from 'drizzle-orm/pg-core';
 import { user } from './auth';
@@ -48,4 +49,22 @@ export const files = pgTable(
         index('files_status_idx').on(table.status),
         index('files_storage_tier_idx').on(table.storageTier),
     ]
+);
+
+export const storageUsage = pgTable(
+    'storage_usage',
+    {
+        id: text('id').primaryKey(),
+        userId: text('user_id')
+            .notNull()
+            .unique()
+            .references(() => user.id, { onDelete: 'cascade' }),
+        usedBytes: bigint('used_bytes', { mode: 'number' })
+            .notNull()
+            .default(0),
+        fileCount: integer('file_count').notNull().default(0),
+        createdAt: timestamp('created_at').notNull().defaultNow(),
+        updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    },
+    (table) => [index('storage_usage_user_id_idx').on(table.userId)]
 );
