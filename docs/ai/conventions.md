@@ -49,7 +49,28 @@ Use `apps/web/lib/` for **shared primitives** and **integration glue** used acro
 **Promotion rule (to avoid duplication + file explosion)**
 
 - If a helper is used once, keep it **local** to the feature/component.
-- Promote into `lib/<domain>/...` when it’s reused (or clearly reusable), and keep a single canonical implementation there.
+- Promote into `lib/<domain>/...` when it's reused (or clearly reusable), and keep a single canonical implementation there.
+
+**Structured namespace exports (for multi-operation modules)**
+
+When a domain module has multiple related operations, export them via a structured namespace object. This provides discoverability via autocomplete and groups related functionality.
+
+```typescript
+// lib/storage/index.ts
+import * as presigned from './presigned';
+import * as glacier from './glacier';
+import * as objects from './objects';
+
+export const s3 = {
+    presigned,
+    glacier,
+    objects,
+} as const;
+
+// Usage: s3.presigned.put(), s3.glacier.restore(), s3.objects.remove()
+```
+
+See `lib/storage/` as the canonical example of this pattern.
 
 ## Component Naming
 
