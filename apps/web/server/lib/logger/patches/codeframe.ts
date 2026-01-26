@@ -1,6 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { type ColorFunctions, highlightLine } from './highlight';
+import { evictOldEntries } from './utils';
+
+// Cache file contents to avoid repeated disk reads for same files
+const fileContentCache = new Map<string, string>();
+const MAX_FILE_CACHE = 50;
 
 export interface CodeLine {
     lineNumber: number;
@@ -23,10 +28,16 @@ export function buildCodeFrame(
     const abs = path.isAbsolute(file) ? file : path.resolve(file);
 
     let contents: string;
-    try {
-        contents = fs.readFileSync(abs, 'utf8');
-    } catch {
-        return null;
+    if (fileContentCache.has(abs)) {
+        contents = fileContentCache.get(abs)!;
+    } else {
+        try {
+            contents = fs.readFileSync(abs, 'utf8');
+            fileContentCache.set(abs, contents);
+            evictOldEntries(fileContentCache, MAX_FILE_CACHE);
+        } catch {
+            return null;
+        }
     }
 
     const allLines = contents.split(/\r?\n/);

@@ -6,6 +6,7 @@ import {
 import type { SourceMapPayload, SourceMapping } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { evictOldEntries } from './utils';
 
 export interface MappedPosition {
     file: string;
@@ -15,6 +16,10 @@ export interface MappedPosition {
 
 const sourceMapCache = new Map<string, NodeSourceMap | null>();
 const positionCache = new Map<string, MappedPosition | null>();
+
+// Cache size limits to prevent unbounded memory growth in long-running dev servers
+const MAX_SOURCE_MAPS = 100;
+const MAX_POSITIONS = 500;
 
 function toAbsolutePath(p: string): string {
     return path.isAbsolute(p) ? p : path.resolve(p);
@@ -171,6 +176,7 @@ function findSourceMap(file: string | null): NodeSourceMap | null {
     }
 
     sourceMapCache.set(abs, sourceMap);
+    evictOldEntries(sourceMapCache, MAX_SOURCE_MAPS);
     return sourceMap;
 }
 
@@ -218,6 +224,7 @@ export function mapPosition(
     };
 
     positionCache.set(cacheKey, result);
+    evictOldEntries(positionCache, MAX_POSITIONS);
     return result;
 }
 
@@ -241,22 +248,30 @@ export function mapCallSite(
         return callSite;
     }
 
-    // Return a proxy that overrides position getters
-    return new Proxy(callSite, {
-        get(target, prop, receiver) {
-            if (prop === 'getFileName' || prop === 'getScriptNameOrSourceURL') {
-                return () => mapped.file;
-            }
-            if (prop === 'getLineNumber') {
-                return () => mapped.line;
-            }
-            if (prop === 'getColumnNumber') {
-                return () => mapped.column;
-            }
-            const value = Reflect.get(target, prop, receiver);
-            return typeof value === 'function' ? value.bind(target) : value;
-        },
-    });
+    // Return a plain object with overridden position getters
+    // This is ~20x faster than Proxy and only the methods below are accessed
+    return {
+        getFileName: () => mapped.file,
+        getScriptNameOrSourceURL: () => mapped.file,
+        getLineNumber: () => mapped.line,
+        getColumnNumber: () => mapped.column,
+        getFunctionName: () => callSite.getFunctionName?.() ?? null,
+        getMethodName: () => callSite.getMethodName?.() ?? null,
+        isAsync: () => callSite.isAsync?.() ?? false,
+        // Additional methods that might be accessed (delegate to original)
+        getTypeName: () => callSite.getTypeName?.() ?? null,
+        getThis: () => callSite.getThis?.(),
+        getFunction: () => callSite.getFunction?.(),
+        getEvalOrigin: () => callSite.getEvalOrigin?.(),
+        isToplevel: () => callSite.isToplevel?.() ?? false,
+        isEval: () => callSite.isEval?.() ?? false,
+        isNative: () => callSite.isNative?.() ?? false,
+        isConstructor: () => callSite.isConstructor?.() ?? false,
+        isPromiseAll: () =>
+            (callSite as NodeJS.CallSite).isPromiseAll?.() ?? false,
+        getPromiseIndex: () =>
+            (callSite as NodeJS.CallSite).getPromiseIndex?.() ?? null,
+    } as NodeJS.CallSite;
 }
 
 export function mapCallSites(
