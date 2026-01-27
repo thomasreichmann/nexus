@@ -60,6 +60,22 @@ Combine area + type:
 
 Example: `--label "backend,feature"` or `--label "backend,architecture"`
 
+### Status Labels (Required)
+
+Every issue MUST have exactly one status label:
+
+| Status          | When to Use                                           |
+| --------------- | ----------------------------------------------------- |
+| `needs-details` | Issue is a draft or missing acceptance criteria       |
+| `ready`         | Issue is fully specified and ready for implementation |
+
+**An issue without a status label is invalid.** When creating issues:
+
+- Use `needs-details` for drafts, incomplete specs, or when scope needs refinement
+- Use `ready` only when all acceptance criteria are clear and actionable
+
+Example: `--label "backend,feature,needs-details"`
+
 ## Prerequisites Checklist
 
 Before creating an implementation issue, check:
