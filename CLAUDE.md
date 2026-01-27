@@ -128,4 +128,4 @@ All non-trivial work should have a GitHub Issue before starting.
 
 - In commits: `feat: add login form (#42)`
 - In PRs: `Closes #42` in the PR body
-- For trivial changes (typos, deps, CI config): use `No-Issue: <reason>` instead
+- For trivial changes (typos, deps, CI config): use `No-Issue: <reason>` in the PR body

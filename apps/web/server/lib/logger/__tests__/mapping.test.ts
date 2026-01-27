@@ -3,6 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+// Break up the sourceMappingURL directive so Vite doesn't try to parse these test strings
+const SOURCEMAP_URL = '//# source' + 'MappingURL=';
+const SOURCEMAP_URL_LEGACY = '//@ source' + 'MappingURL=';
+
 // We need to test the internal functions, so we'll test through mapPosition
 // which exercises the full pipeline
 describe('source map mapping', () => {
@@ -83,7 +87,7 @@ describe('source map mapping', () => {
             });
             const base64 = Buffer.from(sourceMapJson).toString('base64');
             const code = `console.log("test");
-//# sourceMappingURL=data:application/json;base64,${base64}`;
+${SOURCEMAP_URL}data:application/json;base64,${base64}`;
 
             fs.writeFileSync(testFile, code);
 
@@ -103,7 +107,7 @@ describe('source map mapping', () => {
             });
             const encoded = encodeURIComponent(sourceMapJson);
             const code = `console.log("test");
-//# sourceMappingURL=data:application/json,${encoded}`;
+${SOURCEMAP_URL}data:application/json,${encoded}`;
 
             fs.writeFileSync(testFile, code);
 
@@ -130,7 +134,7 @@ describe('source map mapping', () => {
             fs.writeFileSync(
                 jsFile,
                 `console.log("compiled");
-//# sourceMappingURL=external.js.map`
+${SOURCEMAP_URL}external.js.map`
             );
 
             // Verify the map file exists
@@ -157,7 +161,7 @@ describe('source map mapping', () => {
             fs.writeFileSync(
                 jsFile,
                 `console.log("compiled");
-//# sourceMappingURL=${mapFile}`
+${SOURCEMAP_URL}${mapFile}`
             );
 
             // Verify absolute path is in the file
@@ -184,7 +188,7 @@ describe('source map mapping', () => {
             fs.writeFileSync(
                 jsFile,
                 `console.log("compiled");
-//# sourceMappingURL=${encodedName}`
+${SOURCEMAP_URL}${encodedName}`
             );
 
             const content = fs.readFileSync(jsFile, 'utf8');
@@ -198,9 +202,9 @@ describe('source map mapping', () => {
 
             // Some minifiers leave multiple sourceMappingURL comments
             const code = `console.log("test");
-//# sourceMappingURL=old.js.map
+${SOURCEMAP_URL}old.js.map
 console.log("more");
-//# sourceMappingURL=final.js.map`;
+${SOURCEMAP_URL}final.js.map`;
 
             fs.writeFileSync(jsFile, code);
 
@@ -223,11 +227,11 @@ console.log("more");
             // Legacy syntax uses @, modern uses #
             const regex = /\/\/[#@]\s*sourceMappingURL=([^\s]+)/g;
 
-            expect('//# sourceMappingURL=test.map').toMatch(regex);
+            expect(SOURCEMAP_URL + 'test.map').toMatch(regex);
 
             // Reset lastIndex for new test
             regex.lastIndex = 0;
-            expect('//@ sourceMappingURL=test.map').toMatch(regex);
+            expect(SOURCEMAP_URL_LEGACY + 'test.map').toMatch(regex);
         });
     });
 
