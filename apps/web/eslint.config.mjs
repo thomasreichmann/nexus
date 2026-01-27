@@ -38,6 +38,48 @@ const eslintConfig = defineConfig([
             ],
         },
     },
+    // Enforce service import pattern - import from specific service files, not barrel
+    {
+        files: ['**/*.ts', '**/*.tsx'],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    paths: [
+                        {
+                            name: '@/server/services',
+                            message:
+                                'Import from specific service file: @/server/services/files, not @/server/services',
+                        },
+                    ],
+                    patterns: [
+                        {
+                            group: [
+                                '@/server/services/index',
+                                '**/server/services/index',
+                            ],
+                            message:
+                                'Import from specific service file: @/server/services/files, not @/server/services/index',
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+    // Ban barrel re-exports in services - each service should export its own namespace
+    {
+        files: ['**/server/services/**/*.ts'],
+        rules: {
+            'no-restricted-syntax': [
+                'error',
+                {
+                    selector: 'ExportAllDeclaration',
+                    message:
+                        'Barrel re-exports are banned in services. Export a namespace object instead: export const myService = { ... } as const',
+                },
+            ],
+        },
+    },
 ]);
 
 export default eslintConfig;
