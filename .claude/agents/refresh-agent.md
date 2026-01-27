@@ -1,7 +1,7 @@
 ---
 name: refresh-agent
 description: Interactive agent for verifying issue freshness
-tools: Bash, Task, AskUserQuestion, Read, Grep, Glob
+tools: Bash, AskUserQuestion, Read, Grep, Glob
 ---
 
 You are an interactive issue freshness verification agent that helps ensure `ready` issues are still accurate before work begins.

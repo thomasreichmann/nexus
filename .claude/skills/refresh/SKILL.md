@@ -2,7 +2,7 @@
 name: refresh
 description: Verify whether a groomed issue is still accurate
 argument-hint: [issue-number] (optional)
-allowed-tools: Bash, Task, AskUserQuestion, Read, Grep, Glob
+allowed-tools: Bash, AskUserQuestion, Read, Grep, Glob
 disable-model-invocation: true
 agent: refresh-agent
 ---
@@ -88,12 +88,11 @@ This phase gathers information about the issue and compares it to the current co
 
 5. **Compare issue expectations vs codebase reality:**
 
-    Spawn a Task agent (subagent_type: "Explore") to isolate exploration and keep main context focused on analysis:
-    - Verify referenced files still exist at the expected paths
-    - Check if APIs/patterns mentioned in the issue still apply
-    - Look for changes that might have happened since the issue was created
-    - Find if any prerequisites mentioned have been implemented
-    - Identify any new patterns or conventions that should be considered
+    Use Glob, Grep, and Read tools to verify:
+    - Referenced files still exist at the expected paths
+    - APIs/patterns mentioned in the issue still apply
+    - Any prerequisites mentioned have been implemented
+    - Any new patterns or conventions that should be considered
 
 ### Step 3: Analysis Phase
 
@@ -183,35 +182,21 @@ No updates needed.
 
 Use AskUserQuestion with these options:
 
-**If updates are recommended:**
-
-- **Apply updates**: Edit the issue with proposed changes
-- **Apply with modifications**: Let me review and adjust the changes first
-- **Skip updates**: Keep the issue as-is (maybe it's fine for now)
+- **Apply updates**: Edit the issue with proposed changes (only if updates recommended)
 - **Mark for re-grooming**: Send back to `needs-details` for more significant rework
-
-**If no staleness detected:**
-
-- **Confirm freshness**: Add a comment noting the issue was verified as current
-- **Mark for re-grooming**: I see issues the analysis missed, send back for rework
-- **Skip**: No action needed
+- **Skip**: No changes needed
 
 ### Step 6: Apply Updates (if approved)
 
-**If "Apply updates" or "Apply with modifications":**
+**If "Apply updates":**
 
-1. **For "Apply with modifications":**
-    - Present the proposed new body
-    - Let user make edits via AskUserQuestion or direct feedback
-    - Incorporate changes
-
-2. **Update the issue body:**
+1. Update the issue body:
 
     ```bash
     gh issue edit <number> --body "<updated body>"
     ```
 
-3. **Add a comment documenting what was refreshed:**
+2. Add a comment documenting what was refreshed:
 
     ```bash
     gh issue comment <number> --body "$(cat <<'EOF'
@@ -238,14 +223,6 @@ Use AskUserQuestion with these options:
 
     ```bash
     gh issue comment <number> --body "Sent back for re-grooming: [reason from user or analysis]"
-    ```
-
-**If "Confirm freshness":**
-
-1. Add a comment:
-
-    ```bash
-    gh issue comment <number> --body "Issue verified as fresh and accurate as of [date]. No updates needed."
     ```
 
 ### Step 7: Summary
