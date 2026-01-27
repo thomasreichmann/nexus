@@ -190,25 +190,10 @@ Use AskUserQuestion with these options:
 
 **If "Apply updates":**
 
-1. Update the issue body:
+- Update the issue body:
 
     ```bash
     gh issue edit <number> --body "<updated body>"
-    ```
-
-2. Add a comment documenting what was refreshed:
-
-    ```bash
-    gh issue comment <number> --body "$(cat <<'EOF'
-    ## Issue Refreshed
-
-    This issue was reviewed for freshness. Changes made:
-
-    - [List changes]
-
-    Verified against codebase state as of [date].
-    EOF
-    )"
     ```
 
 **If "Mark for re-grooming":**
