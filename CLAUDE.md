@@ -90,7 +90,6 @@ The `docs/` folder is an Obsidian vault with all project documentation:
 ```
 docs/
 ├── ai/                  # AI context - start here
-│   ├── changelog.md     # Recent changes - read first
 │   ├── context.md       # Project background & data model
 │   ├── conventions.md   # Naming, structure, code style
 │   └── github-workflow.md # Issue creation & relationships
@@ -99,9 +98,13 @@ docs/
 └── planning/            # Roadmap & MVP scope
 ```
 
-**Before writing code:** Read `docs/ai/conventions.md` for naming conventions and component structure guidelines.
+### Required Reading
 
-**After making changes:** Update `docs/ai/changelog.md` with what changed and why.
+| When                             | You MUST read                                               |
+| -------------------------------- | ----------------------------------------------------------- |
+| Before writing any code          | `docs/ai/conventions.md` - naming, structure, code style    |
+| Before working on storage/S3     | `docs/guides/storage.md` - S3 module API                    |
+| When unfamiliar with the project | `docs/ai/context.md` - data model, architecture, tech stack |
 
 ## Git Commits
 
@@ -117,10 +120,12 @@ All non-trivial work should have a GitHub Issue before starting.
 2. If no issue exists, propose creating one (get user approval first)
 3. Read the issue to understand scope and acceptance criteria
 
+### Creating Issues
+
+**Before creating any GitHub issue, you MUST read `docs/ai/github-workflow.md`.**
+
 ### Referencing Issues
 
 - In commits: `feat: add login form (#42)`
 - In PRs: `Closes #42` in the PR body
 - For trivial changes (typos, deps, CI config): use `No-Issue: <reason>` instead
-
-**For issue creation, relationships, and management:** See `docs/ai/github-workflow.md`
