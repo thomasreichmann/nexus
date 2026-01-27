@@ -21,6 +21,35 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2026-01-26
 
+### Session: Auto-updating timestamps (#78)
+
+Added `timestamps()` helper to schema that auto-updates `updatedAt` on every Drizzle update using `$onUpdate()`. Previously, `updatedAt` only had `defaultNow()` which sets the initial value but doesn't auto-update.
+
+**New Files:**
+
+- `server/db/schema/helpers.ts` - `timestamps()` helper with `createdAt` and `updatedAt`
+- `server/db/schema/schema.test.ts` - Unit test verifying all `updatedAt` columns have `$onUpdate()`
+
+**Files Modified:**
+
+- `server/db/schema/auth.ts` - Refactored 4 tables to use `...timestamps()`
+- `server/db/schema/storage.ts` - Refactored 2 tables to use `...timestamps()`
+- `server/db/schema/index.ts` - Re-exports helpers
+- `docs/ai/conventions.md` - Added "Timestamp Columns" section
+
+**Usage:**
+
+```typescript
+import { timestamps } from './helpers';
+
+export const myTable = pgTable('my_table', {
+    id: text('id').primaryKey(),
+    ...timestamps(),
+});
+```
+
+---
+
 ### Session: S3 Storage Module (#32)
 
 Created foundational S3 storage module at `lib/storage/` for file operations. Establishes the "structured namespace export" pattern for the codebase.

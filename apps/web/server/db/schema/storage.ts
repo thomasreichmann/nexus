@@ -8,6 +8,7 @@ import {
     index,
 } from 'drizzle-orm/pg-core';
 import { user } from './auth';
+import { timestamps } from './helpers';
 
 // Nexus domain tables
 
@@ -39,8 +40,7 @@ export const files = pgTable(
             .notNull()
             .default('glacier'),
         status: fileStatusEnum('status').notNull().default('uploading'),
-        createdAt: timestamp('created_at').notNull().defaultNow(),
-        updatedAt: timestamp('updated_at').notNull().defaultNow(),
+        ...timestamps(),
         lastAccessedAt: timestamp('last_accessed_at'),
         deletedAt: timestamp('deleted_at'),
     },
@@ -63,8 +63,7 @@ export const storageUsage = pgTable(
             .notNull()
             .default(0),
         fileCount: integer('file_count').notNull().default(0),
-        createdAt: timestamp('created_at').notNull().defaultNow(),
-        updatedAt: timestamp('updated_at').notNull().defaultNow(),
+        ...timestamps(),
     },
     (table) => [index('storage_usage_user_id_idx').on(table.userId)]
 );

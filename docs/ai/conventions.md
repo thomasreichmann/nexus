@@ -418,6 +418,29 @@ pnpm -F web db:migrate
 
 Authorization is handled at the **application layer** (tRPC procedures), not the database layer. We do not use Supabase RLS policies since we access the database directly via Drizzle, not through Supabase's Data API.
 
+### Timestamp Columns
+
+All tables with timestamp columns must use the `timestamps()` helper from `server/db/schema/helpers.ts`:
+
+```typescript
+import { timestamps } from './helpers';
+
+export const myTable = pgTable('my_table', {
+    id: text('id').primaryKey(),
+    // ... other columns
+    ...timestamps(),
+});
+```
+
+This provides:
+
+- `createdAt` - Set once on insert via database default
+- `updatedAt` - Auto-updates on every Drizzle update via `$onUpdate()`
+
+**Why this matters:** Without `$onUpdate()`, `updatedAt` only gets set on insert. Application code would have to manually set it on every update, which is error-prone.
+
+A unit test in `server/db/schema/schema.test.ts` verifies all `updatedAt` columns have `$onUpdate()` configured, catching regressions when new tables are added.
+
 ### AI Rules
 
 1. **Always use drizzle-kit** - Never manually create migration files
