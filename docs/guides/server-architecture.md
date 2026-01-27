@@ -43,13 +43,11 @@ apps/web/server/
 │   ├── schema.ts             # Table definitions
 │   └── repositories/         # Data access layer
 │       ├── files.ts
-│       ├── users.ts
-│       └── index.ts          # Re-exports
+│       └── users.ts
 ├── errors.ts                  # Domain errors
-├── services/                  # Business logic layer
-│   ├── files.ts
-│   ├── storage.ts
-│   └── index.ts              # Re-exports
+├── services/                  # Business logic layer (no index.ts!)
+│   ├── files.ts              # Exports: fileService
+│   └── storage.ts            # Exports: storageService
 └── trpc/
     ├── init.ts               # tRPC setup + error middleware
     ├── router.ts             # Router composition
@@ -57,6 +55,8 @@ apps/web/server/
         ├── files.ts
         └── ...
 ```
+
+> **No barrel exports in services/** — Each service file exports its own namespace object. Import directly from the service file: `import { fileService } from '@/server/services/files'`. This prevents accidentally bundling all services when you only need one.
 
 ## Layer Responsibilities
 
@@ -297,17 +297,18 @@ export const protectedProcedure = t.procedure
 
 ## Service Layer
 
-Services contain business logic and throw domain errors. Return types are inferred (repos have explicit types, breaking the inference chain).
+Services contain business logic and throw domain errors. Each service file exports a **namespace object** (not individual functions) to provide a clean API and prevent barrel export issues.
 
 ### Conventions
 
-| Convention          | Rule                                                          |
-| ------------------- | ------------------------------------------------------------- |
-| **First parameter** | Always `db: DB` — same as repositories                        |
-| **Return types**    | Inferred — repos have explicit types, chain is broken there   |
-| **Errors**          | Throw domain errors (`NotFoundError`, etc), never `TRPCError` |
-| **Side effects**    | Coordinate with `lib/` modules (S3, email, etc)               |
-| **Naming**          | `<action><Noun>` — describes the business operation           |
+| Convention          | Rule                                                            |
+| ------------------- | --------------------------------------------------------------- |
+| **Export pattern**  | Namespace object: `export const fileService = { ... } as const` |
+| **First parameter** | Always `db: DB` — same as repositories                          |
+| **Return types**    | Inferred — repos have explicit types, chain is broken there     |
+| **Errors**          | Throw domain errors (`NotFoundError`, etc), never `TRPCError`   |
+| **Side effects**    | Coordinate with `lib/` modules (S3, email, etc)                 |
+| **Naming**          | `<action><Noun>` — describes the business operation             |
 
 ### Example
 
@@ -315,73 +316,74 @@ Services contain business logic and throw domain errors. Return types are inferr
 // server/services/files.ts
 import type { DB } from '@/server/db';
 import * as fileRepo from '@/server/db/repositories/files';
-import {
-    NotFoundError,
-    QuotaExceededError,
-    InvalidStateError,
-} from '@/server/errors';
-import { initiateGlacierRestore, generatePresignedUrl } from '@/lib/storage';
+import { NotFoundError, QuotaExceededError } from '@/server/errors';
+import { s3 } from '@/lib/storage';
 
 const MAX_STORAGE_BYTES = 10 * 1024 * 1024 * 1024; // 10GB
 
-export async function uploadFile(
+// Functions are private (not exported individually)
+async function initiateUpload(
     db: DB,
     userId: string,
     input: { name: string; sizeBytes: number; mimeType?: string }
 ) {
-    // Business rule: check storage quota
     const currentUsage = await fileRepo.sumStorageBytesByUser(db, userId);
     if (currentUsage + input.sizeBytes > MAX_STORAGE_BYTES) {
         throw new QuotaExceededError('Storage quota exceeded');
     }
 
-    // Generate S3 key and presigned URL
-    const s3Key = `${userId}/${crypto.randomUUID()}/${input.name}`;
-    const uploadUrl = await generatePresignedUrl(s3Key, 'PUT');
+    const fileId = crypto.randomUUID();
+    const s3Key = `${userId}/${fileId}/${input.name}`;
+    const uploadUrl = await s3.presigned.put(s3Key);
 
-    // Create file record
-    const file = await fileRepo.insertFile(db, {
+    await fileRepo.insertFile(db, {
+        id: fileId,
         userId,
         name: input.name,
-        sizeBytes: input.sizeBytes,
-        mimeType: input.mimeType,
+        size: input.sizeBytes,
+        mimeType: input.mimeType ?? null,
         s3Key,
-        storageTier: 'standard',
+        status: 'uploading',
     });
 
-    return { file, uploadUrl };
+    return { fileId, uploadUrl };
 }
 
-export async function requestRetrieval(db: DB, userId: string, fileId: string) {
+async function confirmUpload(db: DB, userId: string, fileId: string) {
     const file = await fileRepo.findUserFile(db, userId, fileId);
     if (!file) {
         throw new NotFoundError('File', fileId);
     }
 
-    if (file.retrievalStatus === 'pending') {
-        throw new InvalidStateError('Retrieval already in progress');
-    }
-
-    // Orchestrate: S3 restore + DB update
-    await initiateGlacierRestore(file.s3Key);
     const updated = await fileRepo.updateFile(db, fileId, {
-        retrievalStatus: 'pending',
+        status: 'available',
     });
 
-    return updated;
+    return { file: updated };
 }
 
-export async function deleteUserFile(db: DB, userId: string, fileId: string) {
-    const file = await fileRepo.findUserFile(db, userId, fileId);
-    if (!file) {
-        throw new NotFoundError('File', fileId);
-    }
+// Export as namespace object — this is the public API
+export const fileService = {
+    initiateUpload,
+    confirmUpload,
+} as const;
+```
 
-    await fileRepo.deleteFile(db, fileId);
-    // Queue S3 deletion separately (not blocking)
+### Anti-patterns
 
-    return file;
-}
+```typescript
+// ❌ BAD: Individual exports allow wrong import patterns
+export async function initiateUpload(...) { }
+export async function confirmUpload(...) { }
+
+// ❌ BAD: Barrel file aggregates all services
+// server/services/index.ts
+export * as fileService from './files';
+export * as userService from './users';  // Now importing fileService also loads userService!
+
+// ✅ GOOD: Namespace object in each service file
+export const fileService = { initiateUpload, confirmUpload } as const;
+// Import: import { fileService } from '@/server/services/files';
 ```
 
 ---
@@ -406,7 +408,7 @@ tRPC procedures are thin — they validate input, delegate to services/repos, an
 // server/trpc/routers/files.ts
 import { z } from 'zod';
 import { protectedProcedure, router } from '../init';
-import * as fileService from '@/server/services/files';
+import { fileService } from '@/server/services/files'; // Named import from specific file
 import * as fileRepo from '@/server/db/repositories/files';
 
 export const filesRouter = router({
@@ -420,26 +422,20 @@ export const filesRouter = router({
             })
         )
         .mutation(({ ctx, input }) => {
-            return fileService.uploadFile(ctx.db, ctx.session.user.id, input);
-        }),
-
-    requestRetrieval: protectedProcedure
-        .input(z.object({ id: z.string().uuid() }))
-        .mutation(({ ctx, input }) => {
-            return fileService.requestRetrieval(
+            return fileService.initiateUpload(
                 ctx.db,
                 ctx.session.user.id,
-                input.id
+                input
             );
         }),
 
-    delete: protectedProcedure
-        .input(z.object({ id: z.string().uuid() }))
+    confirmUpload: protectedProcedure
+        .input(z.object({ fileId: z.string().uuid() }))
         .mutation(({ ctx, input }) => {
-            return fileService.deleteUserFile(
+            return fileService.confirmUpload(
                 ctx.db,
                 ctx.session.user.id,
-                input.id
+                input.fileId
             );
         }),
 
@@ -456,18 +452,6 @@ export const filesRouter = router({
         .query(({ ctx, input }) => {
             return fileRepo.findFilesByUser(ctx.db, ctx.session.user.id, input);
         }),
-
-    // Very simple operations can stay inline
-    stats: protectedProcedure.query(async ({ ctx }) => {
-        const totalBytes = await fileRepo.sumStorageBytesByUser(
-            ctx.db,
-            ctx.session.user.id
-        );
-        return {
-            storageBytes: totalBytes,
-            storageGb: Number(totalBytes) / 1024 ** 3,
-        };
-    }),
 });
 ```
 
