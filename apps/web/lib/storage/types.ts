@@ -7,7 +7,7 @@
  * - standard: 12-48 hours
  * - bulk: 48 hours (cheapest)
  *
- * For Glacier Flexible Retrieval (future):
+ * For Glacier Flexible Retrieval:
  * - expedited: 1-5 minutes (most expensive)
  * - standard: 3-5 hours
  * - bulk: 5-12 hours

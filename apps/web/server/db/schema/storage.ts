@@ -92,12 +92,12 @@ export const retrievals = pgTable(
             .references(() => user.id, { onDelete: 'cascade' }),
         status: retrievalStatusEnum('status').notNull().default('pending'),
         tier: retrievalTierEnum('tier').notNull().default('standard'),
-        ...timestamps(),
         initiatedAt: timestamp('initiated_at'), // When AWS restore was started
         readyAt: timestamp('ready_at'), // When file became available
         expiresAt: timestamp('expires_at'), // When temporary restore expires
         failedAt: timestamp('failed_at'), // When failure occurred
         errorMessage: text('error_message'), // AWS error details if failed
+        ...timestamps(),
     },
     (table) => [
         index('retrievals_file_id_idx').on(table.fileId),
