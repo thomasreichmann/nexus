@@ -285,13 +285,6 @@ You can:
 - Check if issues exist with: gh issue list --limit 20
 ```
 
-### Issue Has Recent Activity
-
-If the issue was updated recently (within the past week or so):
-
-- Note this to the user before proceeding
-- Still allow refresh (user may have specific concerns)
-
 ### Blockers Still Open
 
 If the issue references blockers that are still open:
@@ -299,18 +292,6 @@ If the issue references blockers that are still open:
 - Include this prominently in findings
 - Note that some criteria may not be verifiable until blockers close
 - Suggest waiting or working on blockers first
-
-### Issue Already Closed
-
-If the selected issue has been closed:
-
-```
-Issue #X has already been closed (state: closed).
-
-Would you like to:
-1. Choose a different issue
-2. Reopen this issue for review
-```
 
 ## Notes
 
