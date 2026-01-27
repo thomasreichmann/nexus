@@ -19,6 +19,40 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ---
 
+## 2026-01-27
+
+### Session: Testing utilities for tRPC and S3 (#80)
+
+Added test utilities for unit testing backend features that depend on tRPC protected procedures, S3 storage operations, and database records.
+
+**New Files:**
+
+- `server/trpc/test-utils.ts` - `createMockContext()` for testing tRPC procedures with mock authenticated sessions
+- `lib/storage/testing.ts` - `createPresignedMocks()` and `mockS3` for mocking S3 operations
+
+**Files Modified:**
+
+- `server/db/repositories/fixtures.ts` - Added `createUserFixture()` and `createStorageUsageFixture()`
+
+**Usage:**
+
+```typescript
+// Testing tRPC procedures
+import { createMockContext } from '@/server/trpc/test-utils';
+
+const { ctx, mocks } = createMockContext(); // authenticated by default
+const { ctx: unauthCtx } = createMockContext({ authenticated: false });
+
+// Testing S3 operations
+import { createPresignedMocks, mockS3 } from '@/lib/storage/testing';
+
+vi.mock('@/lib/storage', () => ({
+    s3: createPresignedMocks(),
+}));
+```
+
+---
+
 ## 2026-01-26
 
 ### Session: Auto-updating timestamps (#78)
