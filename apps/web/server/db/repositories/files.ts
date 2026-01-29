@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, notInArray, inArray } from 'drizzle-orm';
 import type { DB } from '../index';
 import * as schema from '../schema';
 
@@ -24,13 +24,45 @@ export function findUserFile(
     });
 }
 
+export function findUserFiles(
+    db: DB,
+    userId: string,
+    fileIds: string[]
+): Promise<File[]> {
+    if (fileIds.length === 0) return Promise.resolve([]);
+    return db.query.files.findMany({
+        where: and(
+            inArray(schema.files.id, fileIds),
+            eq(schema.files.userId, userId)
+        ),
+    });
+}
+
+interface FindFilesByUserOptions {
+    limit: number;
+    offset: number;
+    includeHidden?: boolean;
+}
+
 export function findFilesByUser(
     db: DB,
     userId: string,
-    opts: { limit: number; offset: number } = { limit: 50, offset: 0 }
+    opts: FindFilesByUserOptions = { limit: 50, offset: 0 }
 ): Promise<File[]> {
+    const hiddenStatuses: (typeof schema.files.status.enumValues)[number][] = [
+        'uploading',
+        'deleted',
+    ];
+
+    const whereClause = opts.includeHidden
+        ? eq(schema.files.userId, userId)
+        : and(
+              eq(schema.files.userId, userId),
+              notInArray(schema.files.status, hiddenStatuses)
+          );
+
     return db.query.files.findMany({
-        where: eq(schema.files.userId, userId),
+        where: whereClause,
         orderBy: desc(schema.files.createdAt),
         limit: opts.limit,
         offset: opts.offset,
@@ -80,4 +112,38 @@ export async function deleteFile(
         .returning();
 
     return file;
+}
+
+export async function softDeleteFile(
+    db: DB,
+    fileId: string
+): Promise<File | undefined> {
+    const [file] = await db
+        .update(schema.files)
+        .set({
+            status: 'deleted',
+            deletedAt: new Date(),
+        })
+        .where(eq(schema.files.id, fileId))
+        .returning();
+
+    return file;
+}
+
+export async function softDeleteFiles(
+    db: DB,
+    fileIds: string[]
+): Promise<number> {
+    if (fileIds.length === 0) return 0;
+
+    const result = await db
+        .update(schema.files)
+        .set({
+            status: 'deleted',
+            deletedAt: new Date(),
+        })
+        .where(inArray(schema.files.id, fileIds))
+        .returning({ id: schema.files.id });
+
+    return result.length;
 }

@@ -9,11 +9,14 @@ import {
 import {
     findFileById,
     findUserFile,
+    findUserFiles,
     findFilesByUser,
     sumStorageBytesByUser,
     insertFile,
     updateFile,
     deleteFile,
+    softDeleteFile,
+    softDeleteFiles,
 } from './files';
 
 describe('files repository', () => {
@@ -66,6 +69,43 @@ describe('files repository', () => {
         });
     });
 
+    describe('findUserFiles', () => {
+        it('returns files matching ids owned by user', async () => {
+            const files = [
+                createFileFixture({ id: 'file1' }),
+                createFileFixture({ id: 'file2' }),
+            ];
+            mocks.findMany.mockResolvedValue(files);
+
+            const result = await findUserFiles(db, TEST_USER_ID, [
+                'file1',
+                'file2',
+            ]);
+
+            expect(result).toEqual(files);
+            expect(mocks.findMany).toHaveBeenCalledOnce();
+        });
+
+        it('returns empty array when given empty ids', async () => {
+            const result = await findUserFiles(db, TEST_USER_ID, []);
+
+            expect(result).toEqual([]);
+            expect(mocks.findMany).not.toHaveBeenCalled();
+        });
+
+        it('returns only files that exist and are owned by user', async () => {
+            const files = [createFileFixture({ id: 'file1' })];
+            mocks.findMany.mockResolvedValue(files);
+
+            const result = await findUserFiles(db, TEST_USER_ID, [
+                'file1',
+                'file2',
+            ]);
+
+            expect(result).toHaveLength(1);
+        });
+    });
+
     describe('findFilesByUser', () => {
         it('returns array of files for user', async () => {
             const files = [
@@ -112,6 +152,19 @@ describe('files repository', () => {
             const result = await findFilesByUser(db, TEST_USER_ID);
 
             expect(result).toEqual([]);
+        });
+
+        it('respects includeHidden option', async () => {
+            mocks.findMany.mockResolvedValue([]);
+
+            await findFilesByUser(db, TEST_USER_ID, {
+                limit: 50,
+                offset: 0,
+                includeHidden: true,
+            });
+
+            // When includeHidden is true, the where clause should only filter by userId
+            expect(mocks.findMany).toHaveBeenCalledOnce();
         });
     });
 
@@ -189,6 +242,70 @@ describe('files repository', () => {
             const result = await deleteFile(db, 'nonexistent');
 
             expect(result).toBeUndefined();
+        });
+    });
+
+    describe('softDeleteFile', () => {
+        it('returns soft-deleted file with status and deletedAt', async () => {
+            const deletedFile = createFileFixture({
+                status: 'deleted',
+                deletedAt: new Date(),
+            });
+            mocks.returning.mockResolvedValue([deletedFile]);
+
+            const result = await softDeleteFile(db, TEST_FILE_ID);
+
+            expect(result).toEqual(deletedFile);
+            expect(mocks.update).toHaveBeenCalledOnce();
+            expect(mocks.set).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    status: 'deleted',
+                    deletedAt: expect.any(Date),
+                })
+            );
+        });
+
+        it('returns undefined when file not found', async () => {
+            mocks.returning.mockResolvedValue([]);
+
+            const result = await softDeleteFile(db, 'nonexistent');
+
+            expect(result).toBeUndefined();
+        });
+    });
+
+    describe('softDeleteFiles', () => {
+        it('returns count of soft-deleted files', async () => {
+            mocks.returning.mockResolvedValue([
+                { id: 'file1' },
+                { id: 'file2' },
+            ]);
+
+            const result = await softDeleteFiles(db, ['file1', 'file2']);
+
+            expect(result).toBe(2);
+            expect(mocks.update).toHaveBeenCalledOnce();
+            expect(mocks.set).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    status: 'deleted',
+                    deletedAt: expect.any(Date),
+                })
+            );
+        });
+
+        it('returns 0 when given empty array', async () => {
+            const result = await softDeleteFiles(db, []);
+
+            expect(result).toBe(0);
+            expect(mocks.update).not.toHaveBeenCalled();
+        });
+
+        it('returns 0 when no files match', async () => {
+            mocks.returning.mockResolvedValue([]);
+
+            const result = await softDeleteFiles(db, ['nonexistent']);
+
+            expect(result).toBe(0);
         });
     });
 });

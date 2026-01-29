@@ -84,7 +84,55 @@ async function confirmUpload(
     return { file: updated };
 }
 
+async function deleteUserFile(
+    db: DB,
+    userId: string,
+    fileId: string
+): Promise<File> {
+    const file = await fileRepo.findUserFile(db, userId, fileId);
+    if (!file) {
+        throw new NotFoundError('File', fileId);
+    }
+
+    const deleted = await fileRepo.softDeleteFile(db, fileId);
+    if (!deleted) {
+        throw new NotFoundError('File', fileId);
+    }
+
+    return deleted;
+}
+
+async function deleteUserFiles(
+    db: DB,
+    userId: string,
+    fileIds: string[]
+): Promise<File[]> {
+    if (fileIds.length === 0) return [];
+
+    // Verify ownership of all files first
+    const files = await fileRepo.findUserFiles(db, userId, fileIds);
+    const foundIds = new Set(files.map((f) => f.id));
+
+    // Find which IDs the user doesn't own or don't exist
+    const missingIds = fileIds.filter((id) => !foundIds.has(id));
+    if (missingIds.length > 0) {
+        throw new NotFoundError('File', missingIds[0]);
+    }
+
+    // Soft delete all files
+    await fileRepo.softDeleteFiles(db, fileIds);
+
+    // Return the deleted files with updated status
+    return files.map((f) => ({
+        ...f,
+        status: 'deleted' as const,
+        deletedAt: new Date(),
+    }));
+}
+
 export const fileService = {
     initiateUpload,
     confirmUpload,
+    deleteUserFile,
+    deleteUserFiles,
 } as const;
