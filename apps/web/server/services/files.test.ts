@@ -158,100 +158,107 @@ describe('files service', () => {
     });
 
     describe('deleteUserFile', () => {
-        it('returns soft-deleted file on success', async () => {
-            const file = createFileFixture({ status: 'available' });
-            const deletedFile = createFileFixture({
-                status: 'deleted',
-                deletedAt: new Date(),
+        describe('single file', () => {
+            it('returns soft-deleted file on success', async () => {
+                const deletedFile = createFileFixture({
+                    status: 'deleted',
+                    deletedAt: new Date(),
+                });
+
+                mocks.returning.mockResolvedValue([deletedFile]);
+
+                const result = await fileService.deleteUserFile(
+                    db,
+                    TEST_USER_ID,
+                    deletedFile.id
+                );
+
+                expect(result.status).toBe('deleted');
+                expect(mocks.update).toHaveBeenCalledOnce();
+                expect(mocks.set).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        status: 'deleted',
+                        deletedAt: expect.any(Date),
+                    })
+                );
             });
 
-            mocks.findFirst.mockResolvedValue(file);
-            mocks.returning.mockResolvedValue([deletedFile]);
+            it('throws NotFoundError when file does not exist', async () => {
+                mocks.returning.mockResolvedValue([]);
 
-            const result = await fileService.deleteUserFile(
-                db,
-                TEST_USER_ID,
-                file.id
-            );
+                await expect(
+                    fileService.deleteUserFile(
+                        db,
+                        TEST_USER_ID,
+                        'nonexistent-id'
+                    )
+                ).rejects.toThrow(NotFoundError);
+            });
 
-            expect(result.status).toBe('deleted');
-            expect(mocks.update).toHaveBeenCalledOnce();
-            expect(mocks.set).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    status: 'deleted',
-                    deletedAt: expect.any(Date),
-                })
-            );
+            it('throws NotFoundError when user does not own file', async () => {
+                mocks.returning.mockResolvedValue([]);
+
+                await expect(
+                    fileService.deleteUserFile(db, 'other-user', 'some-file-id')
+                ).rejects.toThrow(NotFoundError);
+            });
         });
 
-        it('throws NotFoundError when file does not exist', async () => {
-            mocks.findFirst.mockResolvedValue(undefined);
+        describe('multiple files', () => {
+            it('returns soft-deleted files on success', async () => {
+                const deletedFiles = [
+                    createFileFixture({ id: 'file1', status: 'deleted' }),
+                    createFileFixture({ id: 'file2', status: 'deleted' }),
+                ];
+                mocks.returning.mockResolvedValue(deletedFiles);
 
-            await expect(
-                fileService.deleteUserFile(db, TEST_USER_ID, 'nonexistent-id')
-            ).rejects.toThrow(NotFoundError);
-        });
+                const result = await fileService.deleteUserFile(
+                    db,
+                    TEST_USER_ID,
+                    ['file1', 'file2']
+                );
 
-        it('throws NotFoundError when user does not own file', async () => {
-            mocks.findFirst.mockResolvedValue(undefined);
+                expect(result).toHaveLength(2);
+                expect(result[0].status).toBe('deleted');
+                expect(result[1].status).toBe('deleted');
+                expect(mocks.update).toHaveBeenCalledOnce();
+            });
 
-            await expect(
-                fileService.deleteUserFile(db, 'other-user', 'some-file-id')
-            ).rejects.toThrow(NotFoundError);
-        });
-    });
+            it('returns empty array when given empty ids', async () => {
+                const result = await fileService.deleteUserFile(
+                    db,
+                    TEST_USER_ID,
+                    []
+                );
 
-    describe('deleteUserFiles', () => {
-        it('returns soft-deleted files on success', async () => {
-            const deletedFiles = [
-                createFileFixture({ id: 'file1', status: 'deleted' }),
-                createFileFixture({ id: 'file2', status: 'deleted' }),
-            ];
-            mocks.returning.mockResolvedValue(deletedFiles);
+                expect(result).toEqual([]);
+                expect(mocks.update).not.toHaveBeenCalled();
+            });
 
-            const result = await fileService.deleteUserFiles(db, TEST_USER_ID, [
-                'file1',
-                'file2',
-            ]);
+            it('throws NotFoundError when any file is not owned by user', async () => {
+                // Only file1 is deleted (file2 not owned by user)
+                const deletedFiles = [
+                    createFileFixture({ id: 'file1', status: 'deleted' }),
+                ];
+                mocks.returning.mockResolvedValue(deletedFiles);
 
-            expect(result).toHaveLength(2);
-            expect(result[0].status).toBe('deleted');
-            expect(result[1].status).toBe('deleted');
-            expect(mocks.update).toHaveBeenCalledOnce();
-        });
+                await expect(
+                    fileService.deleteUserFile(db, TEST_USER_ID, [
+                        'file1',
+                        'file2',
+                    ])
+                ).rejects.toThrow(NotFoundError);
+            });
 
-        it('returns empty array when given empty ids', async () => {
-            const result = await fileService.deleteUserFiles(
-                db,
-                TEST_USER_ID,
-                []
-            );
+            it('throws NotFoundError when any file does not exist', async () => {
+                mocks.returning.mockResolvedValue([]);
 
-            expect(result).toEqual([]);
-            expect(mocks.update).not.toHaveBeenCalled();
-        });
-
-        it('throws NotFoundError when any file is not owned by user', async () => {
-            // Only file1 is deleted (file2 not owned by user)
-            const deletedFiles = [
-                createFileFixture({ id: 'file1', status: 'deleted' }),
-            ];
-            mocks.returning.mockResolvedValue(deletedFiles);
-
-            await expect(
-                fileService.deleteUserFiles(db, TEST_USER_ID, [
-                    'file1',
-                    'file2',
-                ])
-            ).rejects.toThrow(NotFoundError);
-        });
-
-        it('throws NotFoundError when any file does not exist', async () => {
-            mocks.returning.mockResolvedValue([]);
-
-            await expect(
-                fileService.deleteUserFiles(db, TEST_USER_ID, ['nonexistent'])
-            ).rejects.toThrow(NotFoundError);
+                await expect(
+                    fileService.deleteUserFile(db, TEST_USER_ID, [
+                        'nonexistent',
+                    ])
+                ).rejects.toThrow(NotFoundError);
+            });
         });
     });
 });

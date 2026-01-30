@@ -67,7 +67,7 @@ export const filesRouter = router({
     deleteMany: protectedProcedure
         .input(z.object({ ids: z.array(z.string().uuid()).max(100) }))
         .mutation(({ ctx, input }) => {
-            return fileService.deleteUserFiles(
+            return fileService.deleteUserFile(
                 ctx.db,
                 ctx.session.user.id,
                 input.ids

@@ -86,34 +86,24 @@ async function confirmUpload(
     return { file: updated };
 }
 
-async function deleteUserFile(
-    db: DB,
-    userId: string,
-    fileId: string
-): Promise<File> {
-    const file = await fileRepo.findUserFile(db, userId, fileId);
-    if (!file) {
-        throw new NotFoundError('File', fileId);
-    }
-
-    const deleted = await fileRepo.softDeleteFile(db, fileId);
-    if (!deleted) {
-        throw new NotFoundError('File', fileId);
-    }
-
-    return deleted;
-}
-
-async function deleteUserFiles(
+// Overload signatures
+function deleteUserFile(db: DB, userId: string, fileId: string): Promise<File>;
+function deleteUserFile(
     db: DB,
     userId: string,
     fileIds: string[]
-): Promise<File[]> {
+): Promise<File[]>;
+async function deleteUserFile(
+    db: DB,
+    userId: string,
+    fileIdOrIds: string | string[]
+): Promise<File | File[]> {
+    const fileIds = Array.isArray(fileIdOrIds) ? fileIdOrIds : [fileIdOrIds];
     if (fileIds.length === 0) return [];
 
-    return db.transaction(async (tx) => {
+    const deleted = await db.transaction(async (tx) => {
         // Single atomic query: ownership check baked into WHERE clause
-        const deleted = await tx
+        const result = await tx
             .update(schema.files)
             .set({
                 status: 'deleted',
@@ -128,19 +118,20 @@ async function deleteUserFiles(
             .returning();
 
         // If count doesn't match, some files were missing or not owned
-        if (deleted.length !== fileIds.length) {
-            const deletedIds = new Set(deleted.map((f) => f.id));
+        if (result.length !== fileIds.length) {
+            const deletedIds = new Set(result.map((f) => f.id));
             const missingId = fileIds.find((id) => !deletedIds.has(id));
             throw new NotFoundError('File', missingId!);
         }
 
-        return deleted;
+        return result;
     });
+
+    return Array.isArray(fileIdOrIds) ? deleted : deleted[0];
 }
 
 export const fileService = {
     initiateUpload,
     confirmUpload,
     deleteUserFile,
-    deleteUserFiles,
 } as const;
