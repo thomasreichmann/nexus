@@ -11,6 +11,7 @@ import {
     findUserFile,
     findUserFiles,
     findFilesByUser,
+    countFilesByUser,
     sumStorageBytesByUser,
     insertFile,
     updateFile,
@@ -166,6 +167,32 @@ describe('files repository', () => {
 
             // When includeHidden is true, the where clause should only filter by userId
             expect(mocks.findMany).toHaveBeenCalledOnce();
+        });
+    });
+
+    describe('countFilesByUser', () => {
+        it('returns count of files for user', async () => {
+            mocks.where.mockResolvedValue([{ count: 42 }]);
+
+            const result = await countFilesByUser(db, TEST_USER_ID);
+
+            expect(result).toBe(42);
+        });
+
+        it('returns 0 when user has no files', async () => {
+            mocks.where.mockResolvedValue([{ count: 0 }]);
+
+            const result = await countFilesByUser(db, TEST_USER_ID);
+
+            expect(result).toBe(0);
+        });
+
+        it('respects includeHidden option', async () => {
+            mocks.where.mockResolvedValue([{ count: 10 }]);
+
+            await countFilesByUser(db, TEST_USER_ID, { includeHidden: true });
+
+            expect(mocks.where).toHaveBeenCalledOnce();
         });
     });
 

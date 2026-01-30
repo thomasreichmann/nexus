@@ -44,29 +44,44 @@ interface FindFilesByUserOptions {
     includeHidden?: boolean;
 }
 
-export function findFilesByUser(
-    db: DB,
-    userId: string,
-    opts: FindFilesByUserOptions = { limit: 50, offset: 0 }
-): Promise<File[]> {
-    const hiddenStatuses: (typeof schema.files.status.enumValues)[number][] = [
-        'uploading',
-        'deleted',
-    ];
+const hiddenStatuses: (typeof schema.files.status.enumValues)[number][] = [
+    'uploading',
+    'deleted',
+];
 
-    const whereClause = opts.includeHidden
+function buildUserFilesWhereClause(userId: string, includeHidden: boolean) {
+    return includeHidden
         ? eq(schema.files.userId, userId)
         : and(
               eq(schema.files.userId, userId),
               notInArray(schema.files.status, hiddenStatuses)
           );
+}
 
+export function findFilesByUser(
+    db: DB,
+    userId: string,
+    opts: FindFilesByUserOptions = { limit: 50, offset: 0 }
+): Promise<File[]> {
     return db.query.files.findMany({
-        where: whereClause,
+        where: buildUserFilesWhereClause(userId, opts.includeHidden ?? false),
         orderBy: desc(schema.files.createdAt),
         limit: opts.limit,
         offset: opts.offset,
     });
+}
+
+export async function countFilesByUser(
+    db: DB,
+    userId: string,
+    opts: { includeHidden?: boolean } = {}
+): Promise<number> {
+    const [result] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(schema.files)
+        .where(buildUserFilesWhereClause(userId, opts.includeHidden ?? false));
+
+    return result?.count ?? 0;
 }
 
 export async function sumStorageBytesByUser(

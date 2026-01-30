@@ -14,12 +14,27 @@ export const filesRouter = router({
                 })
                 .optional()
         )
-        .query(({ ctx, input }) => {
-            return fileRepo.findFilesByUser(ctx.db, ctx.session.user.id, {
-                limit: input?.limit ?? 50,
-                offset: input?.offset ?? 0,
-                includeHidden: input?.includeHidden ?? false,
-            });
+        .query(async ({ ctx, input }) => {
+            const limit = input?.limit ?? 50;
+            const offset = input?.offset ?? 0;
+            const includeHidden = input?.includeHidden ?? false;
+
+            const [files, total] = await Promise.all([
+                fileRepo.findFilesByUser(ctx.db, ctx.session.user.id, {
+                    limit,
+                    offset,
+                    includeHidden,
+                }),
+                fileRepo.countFilesByUser(ctx.db, ctx.session.user.id, {
+                    includeHidden,
+                }),
+            ]);
+
+            return {
+                files,
+                total,
+                hasMore: offset + files.length < total,
+            };
         }),
 
     get: protectedProcedure
