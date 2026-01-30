@@ -203,15 +203,10 @@ describe('files service', () => {
 
     describe('deleteUserFiles', () => {
         it('returns soft-deleted files on success', async () => {
-            const files = [
-                createFileFixture({ id: 'file1' }),
-                createFileFixture({ id: 'file2' }),
-            ];
             const deletedFiles = [
                 createFileFixture({ id: 'file1', status: 'deleted' }),
                 createFileFixture({ id: 'file2', status: 'deleted' }),
             ];
-            mocks.findMany.mockResolvedValue(files);
             mocks.returning.mockResolvedValue(deletedFiles);
 
             const result = await fileService.deleteUserFiles(db, TEST_USER_ID, [
@@ -222,6 +217,7 @@ describe('files service', () => {
             expect(result).toHaveLength(2);
             expect(result[0].status).toBe('deleted');
             expect(result[1].status).toBe('deleted');
+            expect(mocks.update).toHaveBeenCalledOnce();
         });
 
         it('returns empty array when given empty ids', async () => {
@@ -232,13 +228,15 @@ describe('files service', () => {
             );
 
             expect(result).toEqual([]);
-            expect(mocks.findMany).not.toHaveBeenCalled();
+            expect(mocks.update).not.toHaveBeenCalled();
         });
 
         it('throws NotFoundError when any file is not owned by user', async () => {
-            // User only owns file1, not file2
-            const files = [createFileFixture({ id: 'file1' })];
-            mocks.findMany.mockResolvedValue(files);
+            // Only file1 is deleted (file2 not owned by user)
+            const deletedFiles = [
+                createFileFixture({ id: 'file1', status: 'deleted' }),
+            ];
+            mocks.returning.mockResolvedValue(deletedFiles);
 
             await expect(
                 fileService.deleteUserFiles(db, TEST_USER_ID, [
@@ -249,7 +247,7 @@ describe('files service', () => {
         });
 
         it('throws NotFoundError when any file does not exist', async () => {
-            mocks.findMany.mockResolvedValue([]);
+            mocks.returning.mockResolvedValue([]);
 
             await expect(
                 fileService.deleteUserFiles(db, TEST_USER_ID, ['nonexistent'])

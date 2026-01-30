@@ -1,4 +1,6 @@
+import { and, eq, inArray } from 'drizzle-orm';
 import type { DB } from '@/server/db';
+import * as schema from '@/server/db/schema';
 import type { File } from '@/server/db/repositories/files';
 import * as fileRepo from '@/server/db/repositories/files';
 import { NotFoundError, QuotaExceededError } from '@/server/errors';
@@ -109,18 +111,31 @@ async function deleteUserFiles(
 ): Promise<File[]> {
     if (fileIds.length === 0) return [];
 
-    // Verify ownership of all files first
-    const files = await fileRepo.findUserFiles(db, userId, fileIds);
-    const foundIds = new Set(files.map((f) => f.id));
+    return db.transaction(async (tx) => {
+        // Single atomic query: ownership check baked into WHERE clause
+        const deleted = await tx
+            .update(schema.files)
+            .set({
+                status: 'deleted',
+                deletedAt: new Date(),
+            })
+            .where(
+                and(
+                    inArray(schema.files.id, fileIds),
+                    eq(schema.files.userId, userId)
+                )
+            )
+            .returning();
 
-    // Find which IDs the user doesn't own or don't exist
-    const missingIds = fileIds.filter((id) => !foundIds.has(id));
-    if (missingIds.length > 0) {
-        throw new NotFoundError('File', missingIds[0]);
-    }
+        // If count doesn't match, some files were missing or not owned
+        if (deleted.length !== fileIds.length) {
+            const deletedIds = new Set(deleted.map((f) => f.id));
+            const missingId = fileIds.find((id) => !deletedIds.has(id));
+            throw new NotFoundError('File', missingId!);
+        }
 
-    // Soft delete all files and return the actual deleted records
-    return fileRepo.softDeleteFiles(db, fileIds);
+        return deleted;
+    });
 }
 
 export const fileService = {

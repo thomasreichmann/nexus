@@ -25,6 +25,8 @@ export function createMockDb() {
         insert,
         update,
         delete: deleteFn,
+        // Transaction passes itself as tx, callback can use same mock methods
+        transaction: vi.fn((callback) => callback(db)),
     } as unknown as DB;
 
     return {
