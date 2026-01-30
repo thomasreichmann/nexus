@@ -133,17 +133,15 @@ export async function softDeleteFile(
 export async function softDeleteFiles(
     db: DB,
     fileIds: string[]
-): Promise<number> {
-    if (fileIds.length === 0) return 0;
+): Promise<File[]> {
+    if (fileIds.length === 0) return [];
 
-    const result = await db
+    return db
         .update(schema.files)
         .set({
             status: 'deleted',
             deletedAt: new Date(),
         })
         .where(inArray(schema.files.id, fileIds))
-        .returning({ id: schema.files.id });
-
-    return result.length;
+        .returning();
 }

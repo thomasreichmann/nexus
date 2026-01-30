@@ -119,15 +119,8 @@ async function deleteUserFiles(
         throw new NotFoundError('File', missingIds[0]);
     }
 
-    // Soft delete all files
-    await fileRepo.softDeleteFiles(db, fileIds);
-
-    // Return the deleted files with updated status
-    return files.map((f) => ({
-        ...f,
-        status: 'deleted' as const,
-        deletedAt: new Date(),
-    }));
+    // Soft delete all files and return the actual deleted records
+    return fileRepo.softDeleteFiles(db, fileIds);
 }
 
 export const fileService = {

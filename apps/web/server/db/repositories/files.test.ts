@@ -275,15 +275,16 @@ describe('files repository', () => {
     });
 
     describe('softDeleteFiles', () => {
-        it('returns count of soft-deleted files', async () => {
-            mocks.returning.mockResolvedValue([
-                { id: 'file1' },
-                { id: 'file2' },
-            ]);
+        it('returns soft-deleted files', async () => {
+            const deletedFiles = [
+                createFileFixture({ id: 'file1', status: 'deleted' }),
+                createFileFixture({ id: 'file2', status: 'deleted' }),
+            ];
+            mocks.returning.mockResolvedValue(deletedFiles);
 
             const result = await softDeleteFiles(db, ['file1', 'file2']);
 
-            expect(result).toBe(2);
+            expect(result).toEqual(deletedFiles);
             expect(mocks.update).toHaveBeenCalledOnce();
             expect(mocks.set).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -293,19 +294,19 @@ describe('files repository', () => {
             );
         });
 
-        it('returns 0 when given empty array', async () => {
+        it('returns empty array when given empty array', async () => {
             const result = await softDeleteFiles(db, []);
 
-            expect(result).toBe(0);
+            expect(result).toEqual([]);
             expect(mocks.update).not.toHaveBeenCalled();
         });
 
-        it('returns 0 when no files match', async () => {
+        it('returns empty array when no files match', async () => {
             mocks.returning.mockResolvedValue([]);
 
             const result = await softDeleteFiles(db, ['nonexistent']);
 
-            expect(result).toBe(0);
+            expect(result).toEqual([]);
         });
     });
 });

@@ -207,11 +207,12 @@ describe('files service', () => {
                 createFileFixture({ id: 'file1' }),
                 createFileFixture({ id: 'file2' }),
             ];
+            const deletedFiles = [
+                createFileFixture({ id: 'file1', status: 'deleted' }),
+                createFileFixture({ id: 'file2', status: 'deleted' }),
+            ];
             mocks.findMany.mockResolvedValue(files);
-            mocks.returning.mockResolvedValue([
-                { id: 'file1' },
-                { id: 'file2' },
-            ]);
+            mocks.returning.mockResolvedValue(deletedFiles);
 
             const result = await fileService.deleteUserFiles(db, TEST_USER_ID, [
                 'file1',
