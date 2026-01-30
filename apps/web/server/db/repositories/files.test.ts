@@ -17,6 +17,7 @@ import {
     deleteFile,
     softDeleteFile,
     softDeleteFiles,
+    softDeleteUserFiles,
 } from './files';
 
 describe('files repository', () => {
@@ -305,6 +306,47 @@ describe('files repository', () => {
             mocks.returning.mockResolvedValue([]);
 
             const result = await softDeleteFiles(db, ['nonexistent']);
+
+            expect(result).toEqual([]);
+        });
+    });
+
+    describe('softDeleteUserFiles', () => {
+        it('returns soft-deleted files for user', async () => {
+            const deletedFiles = [
+                createFileFixture({ id: 'file1', status: 'deleted' }),
+                createFileFixture({ id: 'file2', status: 'deleted' }),
+            ];
+            mocks.returning.mockResolvedValue(deletedFiles);
+
+            const result = await softDeleteUserFiles(db, TEST_USER_ID, [
+                'file1',
+                'file2',
+            ]);
+
+            expect(result).toEqual(deletedFiles);
+            expect(mocks.update).toHaveBeenCalledOnce();
+            expect(mocks.set).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    status: 'deleted',
+                    deletedAt: expect.any(Date),
+                })
+            );
+        });
+
+        it('returns empty array when given empty array', async () => {
+            const result = await softDeleteUserFiles(db, TEST_USER_ID, []);
+
+            expect(result).toEqual([]);
+            expect(mocks.update).not.toHaveBeenCalled();
+        });
+
+        it('returns empty array when no files match user', async () => {
+            mocks.returning.mockResolvedValue([]);
+
+            const result = await softDeleteUserFiles(db, TEST_USER_ID, [
+                'nonexistent',
+            ]);
 
             expect(result).toEqual([]);
         });

@@ -1,5 +1,5 @@
-import { eq, and, desc, sql, notInArray, inArray } from 'drizzle-orm';
-import type { DB } from '../index';
+import { eq, and, desc, sql, notInArray, inArray, ne } from 'drizzle-orm';
+import type { DB, DBOrTransaction } from '../index';
 import * as schema from '../schema';
 
 export type File = typeof schema.files.$inferSelect;
@@ -143,5 +143,28 @@ export async function softDeleteFiles(
             deletedAt: new Date(),
         })
         .where(inArray(schema.files.id, fileIds))
+        .returning();
+}
+
+export async function softDeleteUserFiles(
+    db: DBOrTransaction,
+    userId: string,
+    fileIds: string[]
+): Promise<File[]> {
+    if (fileIds.length === 0) return [];
+
+    return db
+        .update(schema.files)
+        .set({
+            status: 'deleted',
+            deletedAt: new Date(),
+        })
+        .where(
+            and(
+                inArray(schema.files.id, fileIds),
+                eq(schema.files.userId, userId),
+                ne(schema.files.status, 'deleted')
+            )
+        )
         .returning();
 }

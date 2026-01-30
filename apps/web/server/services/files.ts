@@ -1,6 +1,4 @@
-import { and, eq, inArray, ne } from 'drizzle-orm';
 import type { DB } from '@/server/db';
-import * as schema from '@/server/db/schema';
 import type { File } from '@/server/db/repositories/files';
 import * as fileRepo from '@/server/db/repositories/files';
 import { NotFoundError, QuotaExceededError } from '@/server/errors';
@@ -102,21 +100,7 @@ async function deleteUserFile(
     if (fileIds.length === 0) return [];
 
     const deleted = await db.transaction(async (tx) => {
-        // Single atomic query: ownership check baked into WHERE clause
-        const result = await tx
-            .update(schema.files)
-            .set({
-                status: 'deleted',
-                deletedAt: new Date(),
-            })
-            .where(
-                and(
-                    inArray(schema.files.id, fileIds),
-                    eq(schema.files.userId, userId),
-                    ne(schema.files.status, 'deleted')
-                )
-            )
-            .returning();
+        const result = await fileRepo.softDeleteUserFiles(tx, userId, fileIds);
 
         // If count doesn't match, some files were missing or not owned
         if (result.length !== fileIds.length) {
