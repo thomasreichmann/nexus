@@ -202,6 +202,19 @@ describe('files service', () => {
                     fileService.deleteUserFile(db, 'other-user', 'some-file-id')
                 ).rejects.toThrow(NotFoundError);
             });
+
+            it('throws NotFoundError when file is already deleted', async () => {
+                // WHERE clause excludes status='deleted', so update returns 0 rows
+                mocks.returning.mockResolvedValue([]);
+
+                await expect(
+                    fileService.deleteUserFile(
+                        db,
+                        TEST_USER_ID,
+                        'already-deleted-id'
+                    )
+                ).rejects.toThrow(NotFoundError);
+            });
         });
 
         describe('multiple files', () => {

@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import type { DB } from '@/server/db';
 import * as schema from '@/server/db/schema';
 import type { File } from '@/server/db/repositories/files';
@@ -112,7 +112,8 @@ async function deleteUserFile(
             .where(
                 and(
                     inArray(schema.files.id, fileIds),
-                    eq(schema.files.userId, userId)
+                    eq(schema.files.userId, userId),
+                    ne(schema.files.status, 'deleted')
                 )
             )
             .returning();
