@@ -1,5 +1,5 @@
-import { eq, and, desc, sql } from 'drizzle-orm';
-import type { DB } from '../index';
+import { eq, and, desc, sql, notInArray, inArray, ne } from 'drizzle-orm';
+import type { DB, DBOrTransaction } from '../index';
 import * as schema from '../schema';
 
 export type File = typeof schema.files.$inferSelect;
@@ -24,17 +24,64 @@ export function findUserFile(
     });
 }
 
+export function findUserFiles(
+    db: DB,
+    userId: string,
+    fileIds: string[]
+): Promise<File[]> {
+    if (fileIds.length === 0) return Promise.resolve([]);
+    return db.query.files.findMany({
+        where: and(
+            inArray(schema.files.id, fileIds),
+            eq(schema.files.userId, userId)
+        ),
+    });
+}
+
+interface FindFilesByUserOptions {
+    limit: number;
+    offset: number;
+    includeHidden?: boolean;
+}
+
+const hiddenStatuses: (typeof schema.files.status.enumValues)[number][] = [
+    'uploading',
+    'deleted',
+];
+
+function buildUserFilesWhereClause(userId: string, includeHidden: boolean) {
+    return includeHidden
+        ? eq(schema.files.userId, userId)
+        : and(
+              eq(schema.files.userId, userId),
+              notInArray(schema.files.status, hiddenStatuses)
+          );
+}
+
 export function findFilesByUser(
     db: DB,
     userId: string,
-    opts: { limit: number; offset: number } = { limit: 50, offset: 0 }
+    opts: FindFilesByUserOptions = { limit: 50, offset: 0 }
 ): Promise<File[]> {
     return db.query.files.findMany({
-        where: eq(schema.files.userId, userId),
+        where: buildUserFilesWhereClause(userId, opts.includeHidden ?? false),
         orderBy: desc(schema.files.createdAt),
         limit: opts.limit,
         offset: opts.offset,
     });
+}
+
+export async function countFilesByUser(
+    db: DB,
+    userId: string,
+    opts: { includeHidden?: boolean } = {}
+): Promise<number> {
+    const [result] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(schema.files)
+        .where(buildUserFilesWhereClause(userId, opts.includeHidden ?? false));
+
+    return result?.count ?? 0;
 }
 
 export async function sumStorageBytesByUser(
@@ -80,4 +127,59 @@ export async function deleteFile(
         .returning();
 
     return file;
+}
+
+export async function softDeleteFile(
+    db: DB,
+    fileId: string
+): Promise<File | undefined> {
+    const [file] = await db
+        .update(schema.files)
+        .set({
+            status: 'deleted',
+            deletedAt: new Date(),
+        })
+        .where(eq(schema.files.id, fileId))
+        .returning();
+
+    return file;
+}
+
+export async function softDeleteFiles(
+    db: DB,
+    fileIds: string[]
+): Promise<File[]> {
+    if (fileIds.length === 0) return [];
+
+    return db
+        .update(schema.files)
+        .set({
+            status: 'deleted',
+            deletedAt: new Date(),
+        })
+        .where(inArray(schema.files.id, fileIds))
+        .returning();
+}
+
+export async function softDeleteUserFiles(
+    db: DBOrTransaction,
+    userId: string,
+    fileIds: string[]
+): Promise<File[]> {
+    if (fileIds.length === 0) return [];
+
+    return db
+        .update(schema.files)
+        .set({
+            status: 'deleted',
+            deletedAt: new Date(),
+        })
+        .where(
+            and(
+                inArray(schema.files.id, fileIds),
+                eq(schema.files.userId, userId),
+                ne(schema.files.status, 'deleted')
+            )
+        )
+        .returning();
 }

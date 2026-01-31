@@ -84,7 +84,39 @@ async function confirmUpload(
     return { file: updated };
 }
 
+// Overload signatures
+function deleteUserFile(db: DB, userId: string, fileId: string): Promise<File>;
+function deleteUserFile(
+    db: DB,
+    userId: string,
+    fileIds: string[]
+): Promise<File[]>;
+async function deleteUserFile(
+    db: DB,
+    userId: string,
+    fileIdOrIds: string | string[]
+): Promise<File | File[]> {
+    const fileIds = Array.isArray(fileIdOrIds) ? fileIdOrIds : [fileIdOrIds];
+    if (fileIds.length === 0) return [];
+
+    const deleted = await db.transaction(async (tx) => {
+        const result = await fileRepo.softDeleteUserFiles(tx, userId, fileIds);
+
+        // If count doesn't match, some files were missing or not owned
+        if (result.length !== fileIds.length) {
+            const deletedIds = new Set(result.map((f) => f.id));
+            const missingId = fileIds.find((id) => !deletedIds.has(id));
+            throw new NotFoundError('File', missingId!);
+        }
+
+        return result;
+    });
+
+    return Array.isArray(fileIdOrIds) ? deleted : deleted[0];
+}
+
 export const fileService = {
     initiateUpload,
     confirmUpload,
+    deleteUserFile,
 } as const;
