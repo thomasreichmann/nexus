@@ -12,11 +12,13 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { FileIcon, ArrowRight, RotateCw, Archive } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { useSession } from '@/lib/auth/client';
 import { useTRPC } from '@/lib/trpc/client';
 import { useQuery } from '@tanstack/react-query';
 
 export default function DashboardPage() {
     const trpc = useTRPC();
+    const { data: session } = useSession();
 
     const { data: stats } = useQuery(trpc.dashboard.getStats.queryOptions());
     const { data: recentUploads } = useQuery(
@@ -29,7 +31,10 @@ export default function DashboardPage() {
     return (
         <div className="mx-auto max-w-7xl space-y-8">
             <div>
-                <h1 className="text-2xl font-bold">Dashboard</h1>
+                <h1 className="text-2xl font-bold">
+                    Welcome back
+                    {session?.user?.name ? `, ${session.user.name}` : ''}
+                </h1>
                 <p className="text-muted-foreground">
                     Overview of your storage and recent activity
                 </p>
