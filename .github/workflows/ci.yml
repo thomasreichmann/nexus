@@ -30,8 +30,8 @@ jobs:
             - name: Install dependencies
               run: pnpm install --frozen-lockfile
 
-            - name: Build packages
-              run: pnpm build
+            - name: Build trpc-devtools
+              run: pnpm -F trpc-devtools build
 
             - name: Lint
               run: pnpm lint
