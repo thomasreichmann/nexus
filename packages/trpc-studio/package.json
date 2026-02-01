@@ -1,0 +1,51 @@
+{
+    "name": "@nexus/trpc-studio",
+    "version": "0.1.0",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        },
+        "./styles.css": "./dist/styles.css"
+    },
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "dev": "vite build --watch",
+        "build": "vite build && tsc --emitDeclarationOnly",
+        "typecheck": "tsc --noEmit",
+        "lint": "eslint src/",
+        "prepublishOnly": "pnpm build"
+    },
+    "peerDependencies": {
+        "@trpc/server": "^11.0.0",
+        "next": "^14.0.0 || ^15.0.0 || ^16.0.0",
+        "react": "^18.0.0 || ^19.0.0",
+        "react-dom": "^18.0.0 || ^19.0.0",
+        "zod": "^4.0.0"
+    },
+    "optionalDependencies": {
+        "better-auth": "^1.0.0"
+    },
+    "devDependencies": {
+        "@tailwindcss/vite": "^4.0.0",
+        "@trpc/server": "^11.0.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "@vitejs/plugin-react": "^4.4.1",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0",
+        "tailwindcss": "^4.0.0",
+        "typescript": "^5.8.3",
+        "vite": "^6.1.0",
+        "zod": "^4.2.0"
+    },
+    "dependencies": {
+        "clsx": "^2.1.1",
+        "tailwind-merge": "^3.0.2"
+    }
+}
