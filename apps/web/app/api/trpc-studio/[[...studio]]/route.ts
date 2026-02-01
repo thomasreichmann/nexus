@@ -1,4 +1,4 @@
-import { createTRPCStudio } from '@nexus/trpc-studio';
+import { createTRPCStudio } from '@nexus/trpc-studio/server';
 import { appRouter } from '@/server/trpc/router';
 
 const handler = createTRPCStudio({

@@ -9,6 +9,10 @@
             "import": "./dist/index.js",
             "types": "./dist/index.d.ts"
         },
+        "./server": {
+            "import": "./dist/server.js",
+            "types": "./dist/server.d.ts"
+        },
         "./styles.css": "./dist/styles.css"
     },
     "files": [
@@ -16,7 +20,9 @@
     ],
     "scripts": {
         "dev": "vite build --watch",
-        "build": "vite build && tsc --emitDeclarationOnly",
+        "build": "pnpm build:standalone && pnpm build:lib",
+        "build:lib": "vite build && tsc --emitDeclarationOnly",
+        "build:standalone": "vite build --config vite.standalone.config.ts",
         "typecheck": "tsc --noEmit",
         "lint": "eslint src/",
         "prepublishOnly": "pnpm build"
