@@ -39,40 +39,45 @@ function extractJsonSchema(validator: unknown): JSONSchema | null {
 }
 
 /**
+ * tRPC v11 procedure definition structure
+ */
+interface ProcedureDef {
+    type?: 'query' | 'mutation' | 'subscription';
+    inputs?: unknown[];
+    output?: unknown;
+    meta?: Record<string, unknown>;
+}
+
+/**
+ * tRPC v11 procedure (callable with _def)
+ */
+interface TRPCProcedure {
+    _def?: ProcedureDef;
+}
+
+/**
+ * tRPC v11 router definition structure
+ */
+interface RouterDef {
+    procedures?: Record<string, TRPCProcedure>;
+    record?: Record<string, unknown>;
+}
+
+/**
  * Extract procedure type from tRPC procedure definition
  */
-function getProcedureType(procedure: unknown): ProcedureType | null {
-    if (
-        typeof procedure !== 'object' ||
-        procedure === null ||
-        !('_def' in procedure)
-    ) {
-        return null;
-    }
-
-    const def = (procedure as { _def: { type?: string } })._def;
-
-    if (def.type === 'query') return 'query';
-    if (def.type === 'mutation') return 'mutation';
-    if (def.type === 'subscription') return 'subscription';
-
+function getProcedureType(procedureDef: ProcedureDef): ProcedureType | null {
+    if (procedureDef.type === 'query') return 'query';
+    if (procedureDef.type === 'mutation') return 'mutation';
+    if (procedureDef.type === 'subscription') return 'subscription';
     return null;
 }
 
 /**
- * Extract input schema from procedure
+ * Extract input schema from procedure definition
  */
-function extractInputSchema(procedure: unknown): JSONSchema | null {
-    if (
-        typeof procedure !== 'object' ||
-        procedure === null ||
-        !('_def' in procedure)
-    ) {
-        return null;
-    }
-
-    const def = (procedure as { _def: { inputs?: unknown[] } })._def;
-    const inputs = def.inputs;
+function extractInputSchema(procedureDef: ProcedureDef): JSONSchema | null {
+    const inputs = procedureDef.inputs;
 
     if (!Array.isArray(inputs) || inputs.length === 0) {
         return null;
@@ -85,44 +90,24 @@ function extractInputSchema(procedure: unknown): JSONSchema | null {
 }
 
 /**
- * Extract output schema from procedure if defined
+ * Extract output schema from procedure definition if defined
  */
-function extractOutputSchema(procedure: unknown): JSONSchema | null {
-    if (
-        typeof procedure !== 'object' ||
-        procedure === null ||
-        !('_def' in procedure)
-    ) {
+function extractOutputSchema(procedureDef: ProcedureDef): JSONSchema | null {
+    if (!procedureDef.output) {
         return null;
     }
 
-    const def = (procedure as { _def: { output?: unknown } })._def;
-
-    if (!def.output) {
-        return null;
-    }
-
-    return extractJsonSchema(def.output);
+    return extractJsonSchema(procedureDef.output);
 }
 
 /**
- * Extract metadata from procedure
+ * Extract metadata from procedure definition
  */
-function extractMeta(procedure: unknown): {
+function extractMeta(procedureDef: ProcedureDef): {
     description?: string;
     tags?: string[];
 } {
-    if (
-        typeof procedure !== 'object' ||
-        procedure === null ||
-        !('_def' in procedure)
-    ) {
-        return {};
-    }
-
-    const def = (procedure as { _def: { meta?: Record<string, unknown> } })
-        ._def;
-    const meta = def.meta;
+    const meta = procedureDef.meta;
 
     if (!meta || typeof meta !== 'object') {
         return {};
@@ -144,71 +129,56 @@ function extractMeta(procedure: unknown): {
 }
 
 /**
- * Check if a value is a router (has nested procedures)
- */
-function isRouter(value: unknown): boolean {
-    if (typeof value !== 'object' || value === null || !('_def' in value)) {
-        return false;
-    }
-
-    const def = (value as { _def: { router?: boolean } })._def;
-    return def.router === true;
-}
-
-/**
- * Recursively walk a router and extract all procedure schemas
- */
-function walkRouter(router: unknown, prefix: string = ''): ProcedureSchema[] {
-    const procedures: ProcedureSchema[] = [];
-
-    if (typeof router !== 'object' || router === null || !('_def' in router)) {
-        return procedures;
-    }
-
-    const def = (router as { _def: { procedures?: Record<string, unknown> } })
-        ._def;
-    const procs = def.procedures;
-
-    if (!procs || typeof procs !== 'object') {
-        return procedures;
-    }
-
-    for (const [key, value] of Object.entries(procs)) {
-        const path = prefix ? `${prefix}.${key}` : key;
-
-        if (isRouter(value)) {
-            // Recursively process nested routers
-            procedures.push(...walkRouter(value, path));
-        } else {
-            // It's a procedure
-            const type = getProcedureType(value);
-
-            if (type) {
-                const inputSchema = extractInputSchema(value);
-                const outputSchema = extractOutputSchema(value);
-                const meta = extractMeta(value);
-
-                procedures.push({
-                    path,
-                    type,
-                    inputSchema,
-                    outputSchema,
-                    ...meta,
-                });
-            }
-        }
-    }
-
-    return procedures;
-}
-
-/**
- * Introspect a tRPC router and extract schemas for all procedures
+ * Introspect a tRPC v11 router and extract schemas for all procedures
+ *
+ * tRPC v11 stores procedures in a flat map at router._def.procedures
+ * with dot-notated keys (e.g., "files.list", "auth.me")
  */
 export function introspectRouter<TRouter extends AnyRouter>(
     router: TRouter
 ): RouterSchema {
-    const procedures = walkRouter(router);
+    const procedures: ProcedureSchema[] = [];
+
+    // Access the router definition
+    const routerDef = (router as unknown as { _def?: RouterDef })._def;
+
+    if (!routerDef?.procedures) {
+        return {
+            procedures,
+            version: 1,
+            generatedAt: new Date().toISOString(),
+        };
+    }
+
+    // Iterate over all procedures (they're stored flat with dot notation)
+    for (const [path, procedure] of Object.entries(routerDef.procedures)) {
+        const procDef = procedure?._def;
+
+        if (!procDef) {
+            continue;
+        }
+
+        const type = getProcedureType(procDef);
+
+        if (!type) {
+            continue;
+        }
+
+        const inputSchema = extractInputSchema(procDef);
+        const outputSchema = extractOutputSchema(procDef);
+        const meta = extractMeta(procDef);
+
+        procedures.push({
+            path,
+            type,
+            inputSchema,
+            outputSchema,
+            ...meta,
+        });
+    }
+
+    // Sort procedures alphabetically by path
+    procedures.sort((a, b) => a.path.localeCompare(b.path));
 
     return {
         procedures,

@@ -26,6 +26,9 @@ importers:
       '@base-ui/react':
         specifier: ^1.0.0
         version: 1.0.0(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      '@nexus/trpc-studio':
+        specifier: workspace:*
+        version: link:../../packages/trpc-studio
       '@tanstack/react-form':
         specifier: ^1.27.7
         version: 1.27.7(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
