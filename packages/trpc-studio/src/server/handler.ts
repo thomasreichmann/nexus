@@ -150,8 +150,15 @@ export function createTRPCStudio<TRouter extends AnyRouter>(
 
         // Determine base path from request URL
         const requestUrl = new URL(request.url);
-        const basePath =
-            config.basePath ?? requestUrl.pathname.replace(`/${path}`, '');
+        let basePath = config.basePath ?? requestUrl.pathname;
+
+        // Remove trailing path segment if present
+        if (path) {
+            basePath = basePath.replace(new RegExp(`/${path}$`), '');
+        }
+
+        // Ensure basePath doesn't have trailing slash
+        basePath = basePath.replace(/\/$/, '');
 
         // Route: /schema - return the introspected schema as JSON
         if (path === 'schema') {
