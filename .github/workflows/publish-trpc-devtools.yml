@@ -36,5 +36,3 @@ jobs:
             - name: Publish to npm
               run: npm publish --provenance --access public
               working-directory: packages/trpc-studio
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
