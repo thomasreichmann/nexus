@@ -11,7 +11,7 @@ test.describe('Dashboard Pages', () => {
 
         // Verify key elements are present
         await expect(
-            page.getByRole('heading', { name: 'Dashboard', exact: true })
+            page.getByRole('heading', { name: /welcome back/i })
         ).toBeVisible();
         await expect(page.getByText('Recent Uploads')).toBeVisible();
 
