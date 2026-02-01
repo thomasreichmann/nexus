@@ -1,5 +1,5 @@
 {
-    "name": "@nexus/trpc-studio",
+    "name": "trpc-devtools",
     "version": "0.1.0",
     "type": "module",
     "main": "./dist/index.js",

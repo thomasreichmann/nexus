@@ -1,7 +1,7 @@
 'use client';
 
-import { TRPCStudio } from '@nexus/trpc-studio';
-import '@nexus/trpc-studio/styles.css';
+import { TRPCStudio } from 'trpc-devtools';
+import 'trpc-devtools/styles.css';
 
 export default function StudioPage() {
     return (

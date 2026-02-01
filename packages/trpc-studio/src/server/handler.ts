@@ -51,7 +51,7 @@ function getStudioHtml(config: {
  * @example
  * ```typescript
  * // app/api/trpc-studio/[[...studio]]/route.ts
- * import { createTRPCStudio } from '@nexus/trpc-studio';
+ * import { createTRPCStudio } from 'trpc-devtools';
  * import { appRouter } from '@/server/routers';
  *
  * const handler = createTRPCStudio({

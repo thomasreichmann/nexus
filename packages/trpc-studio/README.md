@@ -1,4 +1,4 @@
-# @nexus/trpc-studio
+# trpc-devtools
 
 A modern developer tooling solution for tRPC APIs. More than just a Swagger UI - a full-fledged dev toolkit for tRPC developers.
 
@@ -22,7 +22,7 @@ A modern developer tooling solution for tRPC APIs. More than just a Swagger UI -
 ## Installation
 
 ```bash
-pnpm add @nexus/trpc-studio
+pnpm add trpc-devtools
 ```
 
 ## Usage
@@ -31,7 +31,7 @@ pnpm add @nexus/trpc-studio
 
 ```typescript
 // app/api/trpc-studio/[[...studio]]/route.ts
-import { createTRPCStudio } from '@nexus/trpc-studio/server';
+import { createTRPCStudio } from 'trpc-devtools/server';
 import { appRouter } from '@/server/routers';
 
 const handler = createTRPCStudio({
@@ -48,8 +48,8 @@ Then visit `/api/trpc-studio` to view the full studio UI.
 
 ```tsx
 // app/dev/studio/page.tsx
-import { TRPCStudio } from '@nexus/trpc-studio';
-import '@nexus/trpc-studio/styles.css';
+import { TRPCStudio } from 'trpc-devtools';
+import 'trpc-devtools/styles.css';
 
 export default function StudioPage() {
     return (
@@ -64,11 +64,11 @@ export default function StudioPage() {
 
 ```typescript
 // Server-side (Node.js only)
-import { createTRPCStudio, introspectRouter } from '@nexus/trpc-studio/server';
+import { createTRPCStudio, introspectRouter } from 'trpc-devtools/server';
 
 // Client-side (React components)
-import { TRPCStudio } from '@nexus/trpc-studio';
-import '@nexus/trpc-studio/styles.css';
+import { TRPCStudio } from 'trpc-devtools';
+import 'trpc-devtools/styles.css';
 ```
 
 ### `createTRPCStudio(config)`
@@ -138,7 +138,7 @@ interface TRPCStudioProps {
 Introspect a router and extract procedure schemas.
 
 ```typescript
-import { introspectRouter } from '@nexus/trpc-studio/server';
+import { introspectRouter } from 'trpc-devtools/server';
 
 const schema = introspectRouter(appRouter);
 // Returns: { procedures: [...], version: 1, generatedAt: '...' }
@@ -165,13 +165,13 @@ The studio uses CSS custom properties for theming. Override in your CSS:
 
 ```bash
 # Watch mode
-pnpm -F @nexus/trpc-studio dev
+pnpm -F trpc-devtools dev
 
 # Build
-pnpm -F @nexus/trpc-studio build
+pnpm -F trpc-devtools build
 
 # Typecheck
-pnpm -F @nexus/trpc-studio typecheck
+pnpm -F trpc-devtools typecheck
 ```
 
 ## License
