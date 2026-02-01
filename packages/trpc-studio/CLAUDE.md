@@ -86,6 +86,14 @@ Test in the Nexus app:
 - Route handler: `http://localhost:3000/api/trpc-studio`
 - Component: `http://localhost:3000/dev/studio`
 
+## GitHub Issues
+
+All issues for this package MUST use the `trpc-devtools` label:
+
+```bash
+gh issue create --label "trpc-devtools,frontend,feature" --title "..."
+```
+
 ## Documentation
 
 - Package guide: `docs/guides/trpc-devtools.md`

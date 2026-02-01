@@ -48,7 +48,16 @@ EOF
 
 ### Labels
 
-Combine area + type:
+Combine project + area + type:
+
+**Project Labels (Optional)**
+
+| Label           | Scope                                         |
+| --------------- | --------------------------------------------- |
+| `trpc-devtools` | Work on the trpc-devtools npm package         |
+| _(no label)_    | Nexus core (default, no project label needed) |
+
+**Area Labels**
 
 | Area           | Type       |
 | -------------- | ---------- |
@@ -58,7 +67,7 @@ Combine area + type:
 | `docs`         | `refactor` |
 | `architecture` |            |
 
-Example: `--label "backend,feature"` or `--label "backend,architecture"`
+Example: `--label "backend,feature"` or `--label "trpc-devtools,frontend,bug"`
 
 ### Status Labels (Required)
 
