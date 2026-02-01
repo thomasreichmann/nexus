@@ -27,7 +27,7 @@
         "LICENSE"
     ],
     "scripts": {
-        "dev": "vite build --watch",
+        "dev": "pnpm build:standalone && vite build --watch",
         "build": "pnpm build:standalone && pnpm build:lib",
         "build:lib": "vite build && tsc --emitDeclarationOnly",
         "build:standalone": "vite build --config vite.standalone.config.ts",
@@ -65,6 +65,7 @@
         "zod": "^4.2.0"
     },
     "dependencies": {
+        "@emotion/is-prop-valid": "^1.4.0",
         "clsx": "^2.1.1",
         "framer-motion": "^12.29.2",
         "lucide-react": "^0.562.0",
