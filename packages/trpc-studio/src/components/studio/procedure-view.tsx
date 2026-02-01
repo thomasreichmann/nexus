@@ -108,20 +108,34 @@ export function ProcedureView({
                 </code>
             </div>
 
-            {procedure.description && (
-                <p className="text-sm text-muted-foreground">
-                    {procedure.description}
-                </p>
-            )}
-
-            {procedure.tags && procedure.tags.length > 0 && (
-                <div className="flex gap-1">
-                    {procedure.tags.map((tag) => (
-                        <Badge key={tag} variant="outline" className="text-xs">
-                            {tag}
-                        </Badge>
-                    ))}
-                </div>
+            {/* Optional metadata - animate as single container */}
+            {(procedure.description ||
+                (procedure.tags && procedure.tags.length > 0)) && (
+                <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    transition={{ duration: 0.2, ease: 'easeOut', delay: 0.1 }}
+                    className="space-y-2 overflow-hidden"
+                >
+                    {procedure.description && (
+                        <p className="text-sm text-muted-foreground">
+                            {procedure.description}
+                        </p>
+                    )}
+                    {procedure.tags && procedure.tags.length > 0 && (
+                        <div className="flex gap-1">
+                            {procedure.tags.map((tag) => (
+                                <Badge
+                                    key={tag}
+                                    variant="outline"
+                                    className="text-xs"
+                                >
+                                    {tag}
+                                </Badge>
+                            ))}
+                        </div>
+                    )}
+                </motion.div>
             )}
 
             {/* Main content grid */}
@@ -169,9 +183,6 @@ export function ProcedureViewSkeleton() {
                 <Skeleton className="h-5 w-8 rounded" />
                 <Skeleton className="h-6 w-48" />
             </div>
-
-            {/* Description skeleton */}
-            <Skeleton className="h-4 w-72" />
 
             {/* Main content grid */}
             <div className="flex-1 grid grid-cols-2 gap-4 min-h-0">
