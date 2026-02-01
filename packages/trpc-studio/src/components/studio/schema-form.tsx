@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
+import { Spinner } from '@/components/ui/spinner';
 import type { JSONSchema } from '@/server/types';
 
 interface SchemaFormProps {
@@ -13,6 +14,118 @@ interface SchemaFormProps {
     isLoading?: boolean;
     procedureType: 'query' | 'mutation' | 'subscription';
 }
+
+/**
+ * Render a form from a JSON Schema
+ * For MVP, we use a JSON textarea - more sophisticated form generation comes later
+ */
+export function SchemaForm({
+    schema,
+    value,
+    onChange,
+    onSubmit,
+    isLoading,
+    procedureType,
+}: SchemaFormProps) {
+    const [showSchema, setShowSchema] = React.useState(true);
+    const hasInput = schema !== null;
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        // Cmd/Ctrl + Enter to submit
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            e.preventDefault();
+            onSubmit();
+        }
+    };
+
+    const validateJson = (val: string): boolean => {
+        if (!val.trim()) return true;
+        try {
+            JSON.parse(val);
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    const isValid = validateJson(value);
+
+    return (
+        <div className="space-y-4">
+            {/* Schema display */}
+            {schema && (
+                <div className="space-y-2">
+                    <button
+                        type="button"
+                        onClick={() => setShowSchema(!showSchema)}
+                        className="flex items-center gap-1 text-sm font-medium text-foreground hover:text-foreground/80"
+                    >
+                        <span
+                            className={`text-xs transition-transform ${showSchema ? 'rotate-90' : ''}`}
+                        >
+                            ▶
+                        </span>
+                        Input Schema
+                    </button>
+                    {showSchema && (
+                        <div className="font-mono text-xs bg-muted/50 rounded-md p-3 border border-border overflow-auto max-h-[200px]">
+                            <SchemaTree schema={schema} defs={schema.$defs} />
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Input textarea */}
+            <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-foreground">
+                    Input JSON
+                </label>
+            </div>
+
+            {hasInput ? (
+                <div className="space-y-2">
+                    <Textarea
+                        value={value}
+                        onChange={(e) => onChange(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder='{"key": "value"}'
+                        className={`font-mono text-sm min-h-[120px] ${
+                            !isValid ? 'border-destructive' : ''
+                        }`}
+                        disabled={isLoading}
+                    />
+                    {!isValid && (
+                        <p className="text-xs text-destructive">Invalid JSON</p>
+                    )}
+                </div>
+            ) : (
+                <div className="text-sm text-muted-foreground py-4 text-center border border-dashed border-border rounded-md">
+                    No input required
+                </div>
+            )}
+
+            <div className="flex items-center gap-2">
+                <Button
+                    onClick={onSubmit}
+                    disabled={isLoading || !isValid}
+                    className="flex-1"
+                >
+                    {isLoading ? (
+                        <>
+                            <Spinner size="sm" className="mr-2" />
+                            Executing...
+                        </>
+                    ) : (
+                        `Execute ${procedureType === 'query' ? 'Query' : 'Mutation'}`
+                    )}
+                </Button>
+                <span className="text-xs text-muted-foreground">⌘ + Enter</span>
+            </div>
+        </div>
+    );
+}
+
+// Helper functions - defined after main export (hoisting allows this)
 
 /**
  * Render a simplified view of a JSON Schema type
@@ -117,115 +230,5 @@ function SchemaTree({
         <span className="text-green-400" style={{ marginLeft: indent }}>
             {getTypeString(schema)}
         </span>
-    );
-}
-
-/**
- * Render a form from a JSON Schema
- * For MVP, we use a JSON textarea - more sophisticated form generation comes later
- */
-export function SchemaForm({
-    schema,
-    value,
-    onChange,
-    onSubmit,
-    isLoading,
-    procedureType,
-}: SchemaFormProps) {
-    const [showSchema, setShowSchema] = React.useState(true);
-    const hasInput = schema !== null;
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        // Cmd/Ctrl + Enter to submit
-        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-            e.preventDefault();
-            onSubmit();
-        }
-    };
-
-    const validateJson = (val: string): boolean => {
-        if (!val.trim()) return true;
-        try {
-            JSON.parse(val);
-            return true;
-        } catch {
-            return false;
-        }
-    };
-
-    const isValid = validateJson(value);
-
-    return (
-        <div className="space-y-4">
-            {/* Schema display */}
-            {schema && (
-                <div className="space-y-2">
-                    <button
-                        type="button"
-                        onClick={() => setShowSchema(!showSchema)}
-                        className="flex items-center gap-1 text-sm font-medium text-foreground hover:text-foreground/80"
-                    >
-                        <span
-                            className={`text-xs transition-transform ${showSchema ? 'rotate-90' : ''}`}
-                        >
-                            ▶
-                        </span>
-                        Input Schema
-                    </button>
-                    {showSchema && (
-                        <div className="font-mono text-xs bg-muted/50 rounded-md p-3 border border-border overflow-auto max-h-[200px]">
-                            <SchemaTree schema={schema} defs={schema.$defs} />
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Input textarea */}
-            <div className="flex items-center justify-between">
-                <label className="text-sm font-medium text-foreground">
-                    Input JSON
-                </label>
-            </div>
-
-            {hasInput ? (
-                <div className="space-y-2">
-                    <Textarea
-                        value={value}
-                        onChange={(e) => onChange(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        placeholder='{"key": "value"}'
-                        className={`font-mono text-sm min-h-[120px] ${
-                            !isValid ? 'border-destructive' : ''
-                        }`}
-                        disabled={isLoading}
-                    />
-                    {!isValid && (
-                        <p className="text-xs text-destructive">Invalid JSON</p>
-                    )}
-                </div>
-            ) : (
-                <div className="text-sm text-muted-foreground py-4 text-center border border-dashed border-border rounded-md">
-                    No input required
-                </div>
-            )}
-
-            <div className="flex items-center gap-2">
-                <Button
-                    onClick={onSubmit}
-                    disabled={isLoading || !isValid}
-                    className="flex-1"
-                >
-                    {isLoading ? (
-                        <>
-                            <span className="animate-spin mr-2">⏳</span>
-                            Executing...
-                        </>
-                    ) : (
-                        `Execute ${procedureType === 'query' ? 'Query' : 'Mutation'}`
-                    )}
-                </Button>
-                <span className="text-xs text-muted-foreground">⌘ + Enter</span>
-            </div>
-        </div>
     );
 }
