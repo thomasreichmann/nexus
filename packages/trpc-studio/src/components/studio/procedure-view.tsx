@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { motion } from 'framer-motion';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SchemaForm } from './schema-form';
@@ -89,7 +90,13 @@ export function ProcedureView({
     };
 
     return (
-        <div className="flex flex-col h-full gap-4 p-4">
+        <motion.div
+            key={procedure.path}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="flex flex-col h-full gap-4 p-4"
+        >
             {/* Procedure header */}
             <div className="flex items-center gap-3">
                 <Badge variant={procedure.type} className="text-xs">
@@ -109,11 +116,7 @@ export function ProcedureView({
             {procedure.tags && procedure.tags.length > 0 && (
                 <div className="flex gap-1">
                     {procedure.tags.map((tag) => (
-                        <Badge
-                            key={tag}
-                            variant="outline"
-                            className="text-xs"
-                        >
+                        <Badge key={tag} variant="outline" className="text-xs">
                             {tag}
                         </Badge>
                     ))}
@@ -153,6 +156,6 @@ export function ProcedureView({
                     </CardContent>
                 </Card>
             </div>
-        </div>
+        </motion.div>
     );
 }

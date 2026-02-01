@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import type { ProcedureSchema } from '@/server/types';
 
 interface ProcedureListProps {
@@ -48,7 +49,6 @@ export function ProcedureList({
                     placeholder="Search procedures..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="h-8"
                 />
             </div>
 
@@ -73,7 +73,7 @@ export function ProcedureList({
                                             key={proc.path}
                                             onClick={() => onSelect(proc.path)}
                                             className={cn(
-                                                'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors',
+                                                'w-full flex items-center gap-2 px-2 min-h-11 rounded-md text-sm text-left transition-colors',
                                                 selectedPath === proc.path
                                                     ? 'bg-accent text-accent-foreground'
                                                     : 'text-foreground hover:bg-accent/50'
@@ -104,6 +104,48 @@ export function ProcedureList({
                     )}
                 </div>
             </ScrollArea>
+        </div>
+    );
+}
+
+export function ProcedureListSkeleton() {
+    return (
+        <div className="flex flex-col h-full">
+            <div className="p-3 border-b border-border">
+                <Skeleton className="h-11 w-full" />
+            </div>
+            <div className="p-2 space-y-4">
+                {/* First group */}
+                <div>
+                    <Skeleton className="h-3 w-16 mb-2 ml-2" />
+                    <div className="space-y-0.5">
+                        {[1, 2, 3].map((i) => (
+                            <div
+                                key={i}
+                                className="flex items-center gap-2 px-2 min-h-11"
+                            >
+                                <Skeleton className="h-4 w-5 rounded" />
+                                <Skeleton className="h-3 flex-1" />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                {/* Second group */}
+                <div>
+                    <Skeleton className="h-3 w-20 mb-2 ml-2" />
+                    <div className="space-y-0.5">
+                        {[1, 2].map((i) => (
+                            <div
+                                key={i}
+                                className="flex items-center gap-2 px-2 min-h-11"
+                            >
+                                <Skeleton className="h-4 w-5 rounded" />
+                                <Skeleton className="h-3 flex-1" />
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

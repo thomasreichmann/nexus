@@ -2,7 +2,9 @@
 
 import * as React from 'react';
 import { cn } from '@/lib/utils';
-import { ProcedureList } from './procedure-list';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
+import { ProcedureList, ProcedureListSkeleton } from './procedure-list';
 import { ProcedureView } from './procedure-view';
 import type { RouterSchema, ProcedureSchema } from '@/server/types';
 
@@ -69,9 +71,7 @@ export function TRPCStudio({
                     <p className="text-destructive font-semibold">
                         Error loading schema
                     </p>
-                    <p className="text-sm text-muted-foreground">
-                        {error}
-                    </p>
+                    <p className="text-sm text-muted-foreground">{error}</p>
                 </div>
             </div>
         );
@@ -81,13 +81,27 @@ export function TRPCStudio({
         return (
             <div
                 className={cn(
-                    'trpc-studio flex items-center justify-center h-screen bg-background',
+                    'trpc-studio flex h-screen bg-background text-foreground',
                     className
                 )}
             >
-                <div className="flex items-center gap-2 text-muted-foreground">
-                    <span className="animate-spin">⏳</span>
-                    Loading schema...
+                {/* Sidebar skeleton */}
+                <div className="w-64 border-r border-border flex flex-col">
+                    <div className="p-4 border-b border-border">
+                        <h1 className="text-lg font-semibold">tRPC Studio</h1>
+                        <Skeleton className="h-3 w-20 mt-1" />
+                    </div>
+                    <div className="flex-1 overflow-hidden">
+                        <ProcedureListSkeleton />
+                    </div>
+                </div>
+
+                {/* Main content loading */}
+                <div className="flex-1 flex items-center justify-center">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                        <Spinner size="sm" />
+                        Loading schema...
+                    </div>
                 </div>
             </div>
         );
