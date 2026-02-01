@@ -11,28 +11,45 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { GoogleIcon } from '@/components/icons/google-icon';
 import { OAuthDivider } from '@/components/auth/oauth-divider';
+import { signUp } from '@/lib/auth/client';
 import { Loader2 } from 'lucide-react';
 
 export function SignUpForm() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+    const [name, setName] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState<string | null>(null);
 
     async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
+        setError(null);
         setIsLoading(true);
-        // Simulate API call
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const result = await signUp.email({
+            name,
+            email,
+            password,
+        });
+
         setIsLoading(false);
+
+        if (result.error) {
+            setError(result.error.message ?? 'Failed to create account');
+            return;
+        }
+
         router.push('/dashboard');
     }
 
     async function onGoogleSignUp() {
         setIsGoogleLoading(true);
-        // Simulate OAuth flow
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Google OAuth not configured yet - requires Google Cloud setup
+        await new Promise((resolve) => setTimeout(resolve, 500));
         setIsGoogleLoading(false);
-        router.push('/dashboard');
+        setError('Google sign-up is not yet available');
     }
 
     return (
@@ -54,6 +71,11 @@ export function SignUpForm() {
             <OAuthDivider />
 
             <form onSubmit={onSubmit} className="space-y-4">
+                {error && (
+                    <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                        {error}
+                    </div>
+                )}
                 <div className="space-y-2">
                     <Label htmlFor="name">Name</Label>
                     <Input
@@ -62,6 +84,8 @@ export function SignUpForm() {
                         placeholder="Your name"
                         required
                         disabled={isLoading}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
                     />
                 </div>
                 <div className="space-y-2">
@@ -72,6 +96,8 @@ export function SignUpForm() {
                         placeholder="you@example.com"
                         required
                         disabled={isLoading}
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
                     />
                 </div>
                 <div className="space-y-2">
@@ -82,6 +108,8 @@ export function SignUpForm() {
                         placeholder="Create a password"
                         required
                         disabled={isLoading}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
                     />
                 </div>
                 <Button
