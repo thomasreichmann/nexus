@@ -52,6 +52,7 @@ export function TRPCStudio({
         }
 
         fetchSchema();
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run on mount, not when selectedPath changes
     }, [schemaUrl]);
 
     const selectedProcedure = React.useMemo<ProcedureSchema | null>(() => {
