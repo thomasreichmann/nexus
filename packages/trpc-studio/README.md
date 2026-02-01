@@ -31,7 +31,7 @@ pnpm add @nexus/trpc-studio
 
 ```typescript
 // app/api/trpc-studio/[[...studio]]/route.ts
-import { createTRPCStudio } from '@nexus/trpc-studio';
+import { createTRPCStudio } from '@nexus/trpc-studio/server';
 import { appRouter } from '@/server/routers';
 
 const handler = createTRPCStudio({
@@ -42,7 +42,7 @@ const handler = createTRPCStudio({
 export { handler as GET, handler as POST };
 ```
 
-Then visit `/api/trpc-studio` to view the studio.
+Then visit `/api/trpc-studio` to view the full studio UI.
 
 ### Option 2: Component Library (Full Control)
 
@@ -59,6 +59,17 @@ export default function StudioPage() {
 ```
 
 ## API Reference
+
+### Imports
+
+```typescript
+// Server-side (Node.js only)
+import { createTRPCStudio, introspectRouter } from '@nexus/trpc-studio/server';
+
+// Client-side (React components)
+import { TRPCStudio } from '@nexus/trpc-studio';
+import '@nexus/trpc-studio/styles.css';
+```
 
 ### `createTRPCStudio(config)`
 
@@ -91,7 +102,7 @@ interface TRPCStudioProps {
 Introspect a router and extract procedure schemas.
 
 ```typescript
-import { introspectRouter } from '@nexus/trpc-studio';
+import { introspectRouter } from '@nexus/trpc-studio/server';
 
 const schema = introspectRouter(appRouter);
 // Returns: { procedures: [...], version: 1, generatedAt: '...' }
