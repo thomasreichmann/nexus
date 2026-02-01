@@ -3,9 +3,8 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Spinner } from '@/components/ui/spinner';
 import { ProcedureList, ProcedureListSkeleton } from './procedure-list';
-import { ProcedureView } from './procedure-view';
+import { ProcedureView, ProcedureViewSkeleton } from './procedure-view';
 import type { RouterSchema, ProcedureSchema } from '@/server/types';
 
 export interface TRPCStudioProps {
@@ -97,12 +96,9 @@ export function TRPCStudio({
                     </div>
                 </div>
 
-                {/* Main content loading */}
-                <div className="flex-1 flex items-center justify-center">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                        <Spinner size="sm" />
-                        Loading schema...
-                    </div>
+                {/* Main content skeleton */}
+                <div className="flex-1 overflow-hidden">
+                    <ProcedureViewSkeleton />
                 </div>
             </div>
         );
