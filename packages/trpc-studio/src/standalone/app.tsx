@@ -7,6 +7,7 @@ declare global {
         __TRPC_STUDIO_CONFIG__?: {
             schemaUrl: string;
             trpcUrl: string;
+            headers?: Record<string, string>;
         };
     }
 }
@@ -24,7 +25,13 @@ function App() {
         );
     }
 
-    return <TRPCStudio schemaUrl={config.schemaUrl} trpcUrl={config.trpcUrl} />;
+    return (
+        <TRPCStudio
+            schemaUrl={config.schemaUrl}
+            trpcUrl={config.trpcUrl}
+            headers={config.headers}
+        />
+    );
 }
 
 const container = document.getElementById('root');

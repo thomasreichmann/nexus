@@ -19,7 +19,11 @@ function getSchema<TRouter extends AnyRouter>(router: TRouter): RouterSchema {
 /**
  * Generate full HTML with inlined React app bundle
  */
-function getStudioHtml(config: { schemaUrl: string; trpcUrl: string }): string {
+function getStudioHtml(config: {
+    schemaUrl: string;
+    trpcUrl: string;
+    headers?: Record<string, string>;
+}): string {
     const js = getStandaloneJs();
     const css = getStandaloneCss();
 
@@ -61,12 +65,20 @@ function getStudioHtml(config: { schemaUrl: string; trpcUrl: string }): string {
 export function createTRPCStudio<TRouter extends AnyRouter>(
     config: TRPCStudioConfig<TRouter>
 ) {
-    const { router, url } = config;
+    const { router, url, auth } = config;
 
     return async function handler(
         request: NextRequest,
         context: { params: Promise<{ studio?: string[] }> }
     ): Promise<Response> {
+        // Check authorization if configured
+        if (auth?.isAuthorized) {
+            const authorized = await auth.isAuthorized(request);
+            if (!authorized) {
+                return new Response('Unauthorized', { status: 401 });
+            }
+        }
+
         const params = await context.params;
         const path = params.studio?.join('/') ?? '';
 
@@ -97,6 +109,7 @@ export function createTRPCStudio<TRouter extends AnyRouter>(
             const html = getStudioHtml({
                 schemaUrl: `${basePath}/schema`,
                 trpcUrl: url,
+                headers: auth?.headers,
             });
 
             return new Response(html, {

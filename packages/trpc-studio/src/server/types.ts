@@ -58,17 +58,28 @@ export interface RouterSchema {
 /**
  * Authentication configuration options
  */
-export type AuthConfig =
-    | {
-          /** Use BetterAuth session from cookies */
-          provider: 'better-auth';
-      }
-    | {
-          /** Use custom headers for authentication */
-          type: 'headers';
-          headers: Record<string, string>;
-      }
-    | undefined;
+export interface AuthConfig {
+    /**
+     * Custom headers to include in tRPC requests from the studio.
+     * Useful for API key authentication or custom auth schemes.
+     * Note: Cookies are sent automatically via credentials: 'include'.
+     */
+    headers?: Record<string, string>;
+
+    /**
+     * Optional authorization check. Return true to allow access, false to deny.
+     * Receives the incoming request for session/cookie validation.
+     *
+     * @example
+     * ```typescript
+     * isAuthorized: async (req) => {
+     *     const session = await auth.api.getSession({ headers: req.headers });
+     *     return session?.user?.role === 'admin';
+     * }
+     * ```
+     */
+    isAuthorized?: (request: Request) => boolean | Promise<boolean>;
+}
 
 /**
  * Configuration for createTRPCStudio

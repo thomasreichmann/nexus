@@ -82,6 +82,42 @@ interface TRPCStudioConfig {
     auth?: AuthConfig; // Optional auth configuration
     basePath?: string; // Optional base path override
 }
+
+interface AuthConfig {
+    headers?: Record<string, string>; // Headers for tRPC requests
+    isAuthorized?: (req: Request) => boolean | Promise<boolean>;
+}
+```
+
+#### Authentication Examples
+
+**Restrict access to admins (BetterAuth):**
+
+```typescript
+const handler = createTRPCStudio({
+    router: appRouter,
+    url: '/api/trpc',
+    auth: {
+        isAuthorized: async (req) => {
+            const session = await auth.api.getSession({ headers: req.headers });
+            return session?.user?.role === 'admin';
+        },
+    },
+});
+```
+
+**API key authentication:**
+
+```typescript
+const handler = createTRPCStudio({
+    router: appRouter,
+    url: '/api/trpc',
+    auth: {
+        headers: {
+            'X-API-Key': process.env.INTERNAL_API_KEY!,
+        },
+    },
+});
 ```
 
 ### `<TRPCStudio />`
