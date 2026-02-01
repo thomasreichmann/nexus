@@ -10,28 +10,43 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { GoogleIcon } from '@/components/icons/google-icon';
 import { OAuthDivider } from '@/components/auth/oauth-divider';
+import { signIn } from '@/lib/auth/client';
 import { Loader2 } from 'lucide-react';
 
 export function SignInForm() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState<string | null>(null);
 
     async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
+        setError(null);
         setIsLoading(true);
-        // Simulate API call
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        const result = await signIn.email({
+            email,
+            password,
+        });
+
         setIsLoading(false);
+
+        if (result.error) {
+            setError(result.error.message ?? 'Invalid email or password');
+            return;
+        }
+
         router.push('/dashboard');
     }
 
     async function onGoogleSignIn() {
         setIsGoogleLoading(true);
-        // Simulate OAuth flow
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Google OAuth not configured yet - requires Google Cloud setup
+        await new Promise((resolve) => setTimeout(resolve, 500));
         setIsGoogleLoading(false);
-        router.push('/dashboard');
+        setError('Google sign-in is not yet available');
     }
 
     return (
@@ -53,6 +68,11 @@ export function SignInForm() {
             <OAuthDivider />
 
             <form onSubmit={onSubmit} className="space-y-4">
+                {error && (
+                    <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                        {error}
+                    </div>
+                )}
                 <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
                     <Input
@@ -61,6 +81,8 @@ export function SignInForm() {
                         placeholder="you@example.com"
                         required
                         disabled={isLoading}
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
                     />
                 </div>
                 <div className="space-y-2">
@@ -79,6 +101,8 @@ export function SignInForm() {
                         placeholder="Your password"
                         required
                         disabled={isLoading}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
                     />
                 </div>
                 <Button

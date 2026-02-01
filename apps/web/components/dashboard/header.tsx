@@ -10,16 +10,24 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { signOut, useSession } from '@/lib/auth/client';
 import { cn } from '@/lib/cn';
 import { dashboardNavigation } from '@/lib/dashboard/navigation';
 import { Archive, LogOut, Menu, Settings, User } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 export function DashboardHeader() {
     const pathname = usePathname();
+    const router = useRouter();
+    const { data: session } = useSession();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+    async function handleSignOut() {
+        await signOut();
+        router.push('/');
+    }
 
     return (
         <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-border bg-background px-4 md:px-6">
@@ -88,9 +96,11 @@ export function DashboardHeader() {
                     <DropdownMenuPositioner align="end">
                         <DropdownMenuContent className="w-56">
                             <div className="px-2 py-1.5">
-                                <p className="text-sm font-medium">John Doe</p>
+                                <p className="text-sm font-medium">
+                                    {session?.user?.name ?? 'User'}
+                                </p>
                                 <p className="text-xs text-muted-foreground">
-                                    john@example.com
+                                    {session?.user?.email ?? ''}
                                 </p>
                             </div>
                             <DropdownMenuSeparator />
@@ -101,7 +111,7 @@ export function DashboardHeader() {
                                 Settings
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem render={<Link href="/" />}>
+                            <DropdownMenuItem onClick={handleSignOut}>
                                 <LogOut className="mr-2 h-4 w-4" />
                                 Sign out
                             </DropdownMenuItem>
