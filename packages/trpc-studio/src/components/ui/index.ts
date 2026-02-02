@@ -13,3 +13,4 @@ export { Badge, type BadgeProps } from './badge';
 export { ScrollArea } from './scroll-area';
 export { Skeleton } from './skeleton';
 export { Spinner, type SpinnerProps } from './spinner';
+export { ResizablePanels } from './resizable-panels';
