@@ -3,6 +3,7 @@ import type { TRPCRequest, TRPCResponse } from './request';
 const STORAGE_KEY = 'trpc-studio-history';
 const PANEL_SIZES_KEY = 'trpc-studio-panel-sizes';
 const SUPERJSON_KEY = 'trpc-studio-superjson';
+const COLLAPSED_GROUPS_KEY = 'trpc-studio-collapsed-groups';
 const MAX_HISTORY_ITEMS = 50;
 
 export interface HistoryItem {
@@ -177,6 +178,43 @@ export function saveSuperJSONPreference(
             : {};
         prefs[trpcUrl] = usesSuperJSON;
         localStorage.setItem(SUPERJSON_KEY, JSON.stringify(prefs));
+    } catch {
+        // Storage might be full or disabled
+    }
+}
+
+// Collapsed groups storage
+
+/**
+ * Load collapsed group names from localStorage
+ */
+export function loadCollapsedGroups(): string[] {
+    if (typeof window === 'undefined') return [];
+
+    try {
+        const stored = localStorage.getItem(COLLAPSED_GROUPS_KEY);
+        if (!stored) return [];
+
+        const parsed = JSON.parse(stored);
+        if (!Array.isArray(parsed)) return [];
+
+        // Validate all items are strings
+        return parsed.filter(
+            (item): item is string => typeof item === 'string'
+        );
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Save collapsed group names to localStorage
+ */
+export function saveCollapsedGroups(groups: string[]): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+        localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify(groups));
     } catch {
         // Storage might be full or disabled
     }
