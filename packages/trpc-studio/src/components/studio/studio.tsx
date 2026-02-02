@@ -1,11 +1,11 @@
 'use client';
 
-import * as React from 'react';
-import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
+import type { ProcedureSchema, RouterSchema } from '@/server/types';
+import * as React from 'react';
 import { ProcedureList, ProcedureListSkeleton } from './procedure-list';
 import { ProcedureView, ProcedureViewSkeleton } from './procedure-view';
-import type { RouterSchema, ProcedureSchema } from '@/server/types';
 
 export interface TRPCStudioProps {
     /** URL to fetch the schema from */

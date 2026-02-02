@@ -1,9 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import { Textarea } from '@/components/ui/textarea';
+import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { JsonEditor } from '@/components/ui/json-editor';
 import { Spinner } from '@/components/ui/spinner';
+import { generateSample, parseJsonWithPosition } from '@/lib/sample-generator';
 import type { JSONSchema } from '@/server/types';
 
 interface SchemaFormProps {
@@ -15,10 +17,6 @@ interface SchemaFormProps {
     procedureType: 'query' | 'mutation' | 'subscription';
 }
 
-/**
- * Render a form from a JSON Schema
- * For MVP, we use a JSON textarea - more sophisticated form generation comes later
- */
 export function SchemaForm({
     schema,
     value,
@@ -38,21 +36,21 @@ export function SchemaForm({
         }
     };
 
-    const validateJson = (val: string): boolean => {
-        if (!val.trim()) return true;
-        try {
-            JSON.parse(val);
-            return true;
-        } catch {
-            return false;
+    const parseResult = parseJsonWithPosition(value);
+    const isValid = parseResult.ok;
+    const errorMessage = !parseResult.ok ? parseResult.error : null;
+
+    const handleGenerateSample = () => {
+        if (!schema) return;
+
+        const sample = generateSample(schema, schema.$defs);
+        if (sample !== undefined) {
+            onChange(JSON.stringify(sample, null, 2));
         }
     };
 
-    const isValid = validateJson(value);
-
     return (
         <div className="space-y-4">
-            {/* Schema display */}
             {schema && (
                 <div className="space-y-2">
                     <button
@@ -75,28 +73,42 @@ export function SchemaForm({
                 </div>
             )}
 
-            {/* Input textarea */}
             <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-foreground">
                     Input JSON
                 </label>
+                {hasInput && (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleGenerateSample}
+                        className="h-7 text-xs gap-1"
+                    >
+                        <Sparkles className="h-3 w-3" />
+                        Generate Sample
+                    </Button>
+                )}
             </div>
 
             {hasInput ? (
                 <div className="space-y-2">
-                    <Textarea
+                    <JsonEditor
                         value={value}
-                        onChange={(e) => onChange(e.target.value)}
+                        onChange={onChange}
                         onKeyDown={handleKeyDown}
                         placeholder='{"key": "value"}'
-                        className={`font-mono text-sm min-h-[120px] ${
-                            !isValid ? 'border-destructive' : ''
-                        }`}
+                        hasError={!isValid}
                         disabled={isLoading}
                     />
-                    {!isValid && (
-                        <p className="text-xs text-destructive">Invalid JSON</p>
+                    {errorMessage && (
+                        <p className="text-xs text-destructive">
+                            {errorMessage}
+                        </p>
                     )}
+                    <p className="text-xs text-muted-foreground">
+                        Cmd+Shift+F to format
+                    </p>
                 </div>
             ) : (
                 <div className="text-sm text-muted-foreground py-4 text-center border border-dashed border-border rounded-md">
@@ -127,12 +139,8 @@ export function SchemaForm({
 
 // Helper functions - defined after main export (hoisting allows this)
 
-/**
- * Render a simplified view of a JSON Schema type
- */
 function getTypeString(schema: JSONSchema): string {
     if (schema.$ref) {
-        // Extract type name from $ref like "#/$defs/MyType"
         const refName = schema.$ref.split('/').pop();
         return refName || 'ref';
     }
@@ -167,9 +175,6 @@ function getTypeString(schema: JSONSchema): string {
     return schema.type || 'unknown';
 }
 
-/**
- * Render schema properties as a tree
- */
 function SchemaTree({
     schema,
     defs,
