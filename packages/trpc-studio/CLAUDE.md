@@ -40,23 +40,24 @@ The workflow builds, tests, and publishes automatically using npm OIDC (no token
 
 ## Key Files
 
-| File                        | Purpose                                      |
-| --------------------------- | -------------------------------------------- |
-| `src/server/handler.ts`     | Next.js route handler (serves standalone UI) |
-| `src/server/introspect.ts`  | Router → JSON Schema extraction              |
-| `src/components/studio/`    | Main UI components                           |
-| `src/standalone/app.tsx`    | Bundled React app (inlined in handler)       |
-| `vite.standalone.config.ts` | Builds the standalone app                    |
-| `vite.config.ts`            | Builds the library exports                   |
+| File                                   | Purpose                                      |
+| -------------------------------------- | -------------------------------------------- |
+| `src/server/handler.ts`                | Next.js route handler (serves standalone UI) |
+| `src/server/introspect.ts`             | Router → JSON Schema extraction              |
+| `src/components/studio/`               | Main UI components                           |
+| `src/standalone/app.tsx`               | Bundled React app (inlined in handler)       |
+| `tsup.standalone.config.ts`            | Builds the standalone app (esbuild)          |
+| `tsup.lib.config.ts`                   | Builds the library exports (esbuild)         |
+| `build/embed-assets-esbuild-plugin.ts` | Inlines standalone assets into server.js     |
 
 ## Build Architecture
 
-Two-stage build:
+Uses tsup (esbuild) + Tailwind CLI. Two-stage build:
 
-1. **Standalone** → Bundles React app into `dist/standalone/app.{js,css}`
-2. **Library** → Builds exports into `dist/index.js`, `dist/server.js`
+1. **Standalone** → Tailwind CLI compiles CSS, tsup bundles React app into `dist/standalone/app.{js,css}`
+2. **Library** → tsup builds exports into `dist/index.js`, `dist/server.js` with embedded standalone assets
 
-The standalone bundle gets inlined into HTML by the route handler.
+The standalone bundle gets inlined into HTML by the route handler via `embed-assets-esbuild-plugin`.
 
 ## Patterns
 

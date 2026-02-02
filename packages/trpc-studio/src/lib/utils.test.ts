@@ -7,8 +7,12 @@ describe('cn', () => {
     });
 
     it('handles conditional classes', () => {
-        expect(cn('foo', false && 'bar', 'baz')).toBe('foo baz');
-        expect(cn('foo', true && 'bar', 'baz')).toBe('foo bar baz');
+        const shouldInclude = false;
+        const shouldAlsoInclude = true;
+        expect(cn('foo', shouldInclude && 'bar', 'baz')).toBe('foo baz');
+        expect(cn('foo', shouldAlsoInclude && 'bar', 'baz')).toBe(
+            'foo bar baz'
+        );
     });
 
     it('deduplicates tailwind classes', () => {
