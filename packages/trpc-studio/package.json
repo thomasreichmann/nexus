@@ -28,14 +28,14 @@
     ],
     "scripts": {
         "dev": "pnpm build:standalone && concurrently \"tailwindcss -i src/styles/globals.css -o dist/styles.css --watch\" \"tsup --config tsup.lib.config.ts --watch\"",
-        "build": "pnpm build:clean && pnpm build:standalone && pnpm build:lib",
+        "build": "pnpm build:standalone && pnpm build:lib",
         "build:clean": "rm -rf dist",
         "build:standalone": "mkdir -p dist/standalone && tailwindcss -i src/styles/globals.css -o dist/standalone/app.css --minify && tsup --config tsup.standalone.config.ts",
         "build:lib": "tailwindcss -i src/styles/globals.css -o dist/styles.css --minify && tsup --config tsup.lib.config.ts",
         "test": "vitest",
         "typecheck": "tsc --noEmit",
         "lint": "eslint src/",
-        "prepublishOnly": "pnpm build"
+        "prepublishOnly": "pnpm build:clean && pnpm build"
     },
     "peerDependencies": {
         "@trpc/server": "^11.0.0",
