@@ -79,12 +79,25 @@ export async function executeRequest(
         const usedSuperJSON = detectSuperJSON(rawResponse?.result?.data);
 
         if (rawResponse.error) {
+            // tRPC v11 may wrap error in json property
+            const errorData = rawResponse.error.json ?? rawResponse.error;
+
+            // Extract message - could be at different paths depending on tRPC version/adapter
+            const message =
+                errorData.message ||
+                rawResponse.error.message ||
+                'Unknown error';
+
+            // Extract code and data
+            const code = errorData.data?.code ?? errorData.code;
+            const data = errorData.data;
+
             return {
                 ok: false,
                 error: {
-                    message: rawResponse.error.message || 'Unknown error',
-                    code: rawResponse.error.data?.code,
-                    data: rawResponse.error.data,
+                    message,
+                    code,
+                    data,
                 },
                 rawResponse,
                 usedSuperJSON,
