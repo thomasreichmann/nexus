@@ -1,6 +1,7 @@
 import type { TRPCRequest, TRPCResponse } from './request';
 
 const STORAGE_KEY = 'trpc-studio-history';
+const PANEL_SIZES_KEY = 'trpc-studio-panel-sizes';
 const MAX_HISTORY_ITEMS = 50;
 
 export interface HistoryItem {
@@ -93,5 +94,49 @@ export function deleteHistoryItem(id: string): void {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
     } catch {
         // Ignore errors
+    }
+}
+
+// Panel sizes storage
+
+export interface PanelSizes {
+    horizontal: number; // percentage for first panel (0-100)
+    vertical: number;
+}
+
+const DEFAULT_PANEL_SIZES: PanelSizes = { horizontal: 50, vertical: 50 };
+
+export function loadPanelSizes(): PanelSizes {
+    if (typeof window === 'undefined') return DEFAULT_PANEL_SIZES;
+
+    try {
+        const stored = localStorage.getItem(PANEL_SIZES_KEY);
+        if (!stored) return DEFAULT_PANEL_SIZES;
+
+        const parsed = JSON.parse(stored);
+        if (
+            typeof parsed.horizontal !== 'number' ||
+            typeof parsed.vertical !== 'number'
+        ) {
+            return DEFAULT_PANEL_SIZES;
+        }
+
+        // Validate ranges
+        return {
+            horizontal: Math.max(10, Math.min(90, parsed.horizontal)),
+            vertical: Math.max(10, Math.min(90, parsed.vertical)),
+        };
+    } catch {
+        return DEFAULT_PANEL_SIZES;
+    }
+}
+
+export function savePanelSizes(sizes: PanelSizes): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+        localStorage.setItem(PANEL_SIZES_KEY, JSON.stringify(sizes));
+    } catch {
+        // Storage might be full or disabled
     }
 }
