@@ -26,6 +26,11 @@ export interface TRPCResponse {
 export interface RequestOptions {
     trpcUrl: string;
     headers?: Record<string, string>;
+    /**
+     * If true, wrap input in SuperJSON format { json: input }
+     * Required when the tRPC server uses superjson transformer
+     */
+    useSuperJSON?: boolean;
 }
 
 /**
@@ -47,8 +52,12 @@ export async function executeRequest(
 
         if (request.type === 'query') {
             // Queries use GET with input as query param
+            // Wrap in SuperJSON format if the server uses superjson transformer
             if (request.input !== undefined) {
-                url.searchParams.set('input', JSON.stringify(request.input));
+                const queryInput = options.useSuperJSON
+                    ? { json: request.input }
+                    : request.input;
+                url.searchParams.set('input', JSON.stringify(queryInput));
             }
 
             response = await fetch(url.toString(), {
@@ -61,6 +70,11 @@ export async function executeRequest(
             });
         } else {
             // Mutations use POST with input in body
+            // Wrap in SuperJSON format if the server uses superjson transformer
+            const bodyInput = options.useSuperJSON
+                ? { json: request.input ?? {} }
+                : (request.input ?? {});
+
             response = await fetch(url.toString(), {
                 method: 'POST',
                 headers: {
@@ -68,7 +82,7 @@ export async function executeRequest(
                     ...options.headers,
                 },
                 credentials: 'include',
-                body: JSON.stringify(request.input ?? {}),
+                body: JSON.stringify(bodyInput),
             });
         }
 

@@ -2,6 +2,7 @@ import type { TRPCRequest, TRPCResponse } from './request';
 
 const STORAGE_KEY = 'trpc-studio-history';
 const PANEL_SIZES_KEY = 'trpc-studio-panel-sizes';
+const SUPERJSON_KEY = 'trpc-studio-superjson';
 const MAX_HISTORY_ITEMS = 50;
 
 export interface HistoryItem {
@@ -136,6 +137,46 @@ export function savePanelSizes(sizes: PanelSizes): void {
 
     try {
         localStorage.setItem(PANEL_SIZES_KEY, JSON.stringify(sizes));
+    } catch {
+        // Storage might be full or disabled
+    }
+}
+
+// SuperJSON preference storage
+
+/**
+ * Load SuperJSON preference for a given tRPC URL
+ */
+export function loadSuperJSONPreference(trpcUrl: string): boolean | null {
+    if (typeof window === 'undefined') return null;
+
+    try {
+        const stored = localStorage.getItem(SUPERJSON_KEY);
+        if (!stored) return null;
+
+        const prefs = JSON.parse(stored) as Record<string, boolean>;
+        return prefs[trpcUrl] ?? null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Save SuperJSON preference for a given tRPC URL
+ */
+export function saveSuperJSONPreference(
+    trpcUrl: string,
+    usesSuperJSON: boolean
+): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+        const stored = localStorage.getItem(SUPERJSON_KEY);
+        const prefs = stored
+            ? (JSON.parse(stored) as Record<string, boolean>)
+            : {};
+        prefs[trpcUrl] = usesSuperJSON;
+        localStorage.setItem(SUPERJSON_KEY, JSON.stringify(prefs));
     } catch {
         // Storage might be full or disabled
     }

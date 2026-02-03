@@ -9,7 +9,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SchemaForm } from './schema-form';
 import { ResponseViewer } from './response-viewer';
 import { executeRequest, type TRPCResponse } from '@/lib/request';
-import { saveToHistory } from '@/lib/storage';
+import {
+    saveToHistory,
+    loadSuperJSONPreference,
+    saveSuperJSONPreference,
+} from '@/lib/storage';
 import type { ProcedureSchema } from '@/server/types';
 
 interface ProcedureViewProps {
@@ -26,6 +30,12 @@ export function ProcedureView({
     const [input, setInput] = React.useState('');
     const [isLoading, setIsLoading] = React.useState(false);
     const [response, setResponse] = React.useState<TRPCResponse | null>(null);
+
+    // Track SuperJSON preference - load from storage on mount
+    const [useSuperJSON, setUseSuperJSON] = React.useState<boolean>(() => {
+        // Default to stored preference, or false if unknown
+        return loadSuperJSONPreference(trpcUrl) ?? false;
+    });
 
     // Reset state when procedure changes
     React.useEffect(() => {
@@ -63,7 +73,7 @@ export function ProcedureView({
                 }
             }
 
-            const result = await executeRequest(
+            let result = await executeRequest(
                 {
                     path: procedure.path,
                     type: procedure.type,
@@ -72,10 +82,47 @@ export function ProcedureView({
                 {
                     trpcUrl,
                     headers,
+                    useSuperJSON,
                 }
             );
 
+            // Auto-detect SuperJSON: if request failed and we weren't using SuperJSON,
+            // check if error looks like a SuperJSON parsing issue and retry
+            if (
+                !result.ok &&
+                !useSuperJSON &&
+                looksLikeSuperJSONError(result.error?.message)
+            ) {
+                result = await executeRequest(
+                    {
+                        path: procedure.path,
+                        type: procedure.type,
+                        input: parsedInput,
+                    },
+                    {
+                        trpcUrl,
+                        headers,
+                        useSuperJSON: true,
+                    }
+                );
+
+                // If retry succeeded or gave a different error, update preference
+                if (
+                    result.ok ||
+                    !looksLikeSuperJSONError(result.error?.message)
+                ) {
+                    setUseSuperJSON(true);
+                    saveSuperJSONPreference(trpcUrl, true);
+                }
+            }
+
             setResponse(result);
+
+            // Update SuperJSON preference if response indicates it's being used
+            if (result.usedSuperJSON !== useSuperJSON) {
+                setUseSuperJSON(result.usedSuperJSON);
+                saveSuperJSONPreference(trpcUrl, result.usedSuperJSON);
+            }
 
             // Save to history
             saveToHistory(
@@ -225,5 +272,20 @@ export function ProcedureViewSkeleton() {
                 }
             />
         </div>
+    );
+}
+
+/**
+ * Check if an error message looks like a SuperJSON parsing issue.
+ * When a server uses SuperJSON but receives plain JSON, it typically fails
+ * with "expected object, received undefined" because it looks for { json: ... }
+ */
+function looksLikeSuperJSONError(message: string | undefined): boolean {
+    if (!message) return false;
+
+    // Common error patterns when SuperJSON input is expected but plain JSON is sent
+    return (
+        message.includes('expected object, received undefined') ||
+        message.includes('Invalid input: expected object')
     );
 }
