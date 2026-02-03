@@ -381,6 +381,18 @@ pnpm -F web test:e2e:smoke # Smoke tests only (fast)
 pnpm -F web test:e2e       # All E2E tests
 ```
 
+## Dev Log Access
+
+Server logs are written to `apps/web/.dev.log` in NDJSON format. The file is truncated on each `pnpm dev` start.
+
+**Common patterns:**
+
+```bash
+tail -50 apps/web/.dev.log | jq .          # Recent logs
+grep '"level":50' apps/web/.dev.log        # Find errors
+grep 'trpc' apps/web/.dev.log | jq .       # Filter by content
+```
+
 ## Server Architecture
 
 See [[../guides/server-architecture|Server Architecture Guide]] for the full layered pattern (Repository → Service → tRPC).

@@ -50,6 +50,34 @@ import { env } from '@/lib/env';
 const bucket = env.S3_BUCKET; // Validated at runtime
 ```
 
+## Dev Logs
+
+In development, server logs are written to `apps/web/.dev.log` in NDJSON format. The file is truncated on each dev server start.
+
+**Commands for AI agents:**
+
+```bash
+tail -50 apps/web/.dev.log | jq .         # Recent logs, formatted
+tail -f apps/web/.dev.log                  # Follow live
+grep '"level":50' apps/web/.dev.log | jq . # Find errors
+grep '"source":"client"' apps/web/.dev.log | jq . # Client logs only
+```
+
+**Log format fields:**
+
+- `level`: 10=trace, 20=debug, 30=info, 40=warn, 50=error
+- `time`: Unix timestamp (ms)
+- `msg`: Log message
+- `source`: "client" for browser logs
+- Request logs: `requestId`, `path`, `type`, `durationMs`, `userId`
+
+**When to check logs:**
+
+- After code changes to verify behavior
+- Debugging tRPC failures
+- Viewing client-side errors
+- Tracing request timing
+
 ## Database (Drizzle)
 
 Commands run from `apps/web/` or use `-F web` filter:
