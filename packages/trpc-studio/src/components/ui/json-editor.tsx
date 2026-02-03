@@ -4,6 +4,7 @@ import * as React from 'react';
 import Editor from 'react-simple-code-editor';
 import { Highlight, themes } from 'prism-react-renderer';
 import { cn } from '@/lib/utils';
+import { getPrismColorClass } from '@/lib/prism-colors';
 
 interface JsonEditorProps {
     value: string;
@@ -77,7 +78,7 @@ export function JsonEditor({
                             <span key={lineIndex}>
                                 {line.map((token, tokenIndex) => {
                                     const props = getTokenProps({ token });
-                                    const colorClass = getColorClass(
+                                    const colorClass = getPrismColorClass(
                                         token.types
                                     );
                                     return (
@@ -149,14 +150,4 @@ export function JsonEditor({
             </div>
         </div>
     );
-}
-
-function getColorClass(types: string[]): string {
-    // Map prism token types to our color scheme matching ResponseViewer
-    if (types.includes('property')) return 'text-cyan-400'; // Keys
-    if (types.includes('string')) return 'text-green-400'; // Strings
-    if (types.includes('number')) return 'text-blue-400'; // Numbers
-    if (types.includes('boolean')) return 'text-purple-400'; // Booleans
-    if (types.includes('null')) return 'text-orange-400'; // Null
-    return ''; // Punctuation inherits text color
 }

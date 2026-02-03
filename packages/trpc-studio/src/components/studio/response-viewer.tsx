@@ -6,6 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { TRPCResponse } from '@/lib/request';
+import { AnsiText } from '@/components/ui/ansi-text';
+import { HighlightedStackTrace } from '@/components/ui/highlighted-stack-trace';
+import { hasAnsi } from '@/lib/ansi';
 
 interface ResponseViewerProps {
     response: TRPCResponse | null;
@@ -78,10 +81,21 @@ export function ResponseViewer({ response }: ResponseViewerProps) {
                         <JsonViewer data={displayData} />
                     ) : (
                         <div className="space-y-2">
-                            <div className="text-destructive font-semibold whitespace-pre-wrap">
-                                {response.error?.message
-                                    ? stripAnsi(response.error.message)
-                                    : 'Unknown error'}
+                            <div
+                                className={`font-semibold whitespace-pre-wrap ${
+                                    response.error?.message &&
+                                    hasAnsi(response.error.message)
+                                        ? ''
+                                        : 'text-destructive'
+                                }`}
+                            >
+                                {response.error?.message ? (
+                                    <HighlightedStackTrace
+                                        message={response.error.message}
+                                    />
+                                ) : (
+                                    'Unknown error'
+                                )}
                             </div>
                             {response.error?.code ? (
                                 <div className="text-muted-foreground">
@@ -97,12 +111,6 @@ export function ResponseViewer({ response }: ResponseViewerProps) {
             </ScrollArea>
         </motion.div>
     );
-}
-
-// Strip ANSI escape codes from strings (terminal color codes)
-function stripAnsi(str: string): string {
-    // eslint-disable-next-line no-control-regex
-    return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
 // Helper component - defined after main export (hoisting allows this)
@@ -126,7 +134,15 @@ function JsonViewer({ data, level = 0 }: { data: unknown; level?: number }) {
     }
 
     if (typeof data === 'string') {
-        return <span className="text-green-400">"{stripAnsi(data)}"</span>;
+        // Don't apply green color to strings with ANSI codes - let the ANSI colors show
+        if (hasAnsi(data)) {
+            return (
+                <span>
+                    "<AnsiText>{data}</AnsiText>"
+                </span>
+            );
+        }
+        return <span className="text-green-400">"{data}"</span>;
     }
 
     if (Array.isArray(data)) {

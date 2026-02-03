@@ -65,3 +65,68 @@
     @apply bg-background text-foreground;
     font-family: ui-sans-serif, system-ui, sans-serif;
 }
+
+/* ANSI color classes - scoped under .trpc-studio for specificity */
+.trpc-studio .ansi-black-fg {
+    color: #1f2937;
+}
+.trpc-studio .ansi-red-fg {
+    color: #ef4444;
+}
+.trpc-studio .ansi-green-fg {
+    color: #22c55e;
+}
+.trpc-studio .ansi-yellow-fg {
+    color: #facc15;
+}
+.trpc-studio .ansi-blue-fg {
+    color: #3b82f6;
+}
+.trpc-studio .ansi-magenta-fg {
+    color: #a855f7;
+}
+.trpc-studio .ansi-cyan-fg {
+    color: #22d3ee;
+}
+.trpc-studio .ansi-white-fg {
+    color: #f3f4f6;
+}
+
+.trpc-studio .ansi-bright-black-fg {
+    color: #6b7280;
+}
+.trpc-studio .ansi-bright-red-fg {
+    color: #f87171;
+}
+.trpc-studio .ansi-bright-green-fg {
+    color: #4ade80;
+}
+.trpc-studio .ansi-bright-yellow-fg {
+    color: #fde047;
+}
+.trpc-studio .ansi-bright-blue-fg {
+    color: #60a5fa;
+}
+.trpc-studio .ansi-bright-magenta-fg {
+    color: #c084fc;
+}
+.trpc-studio .ansi-bright-cyan-fg {
+    color: #67e8f9;
+}
+.trpc-studio .ansi-bright-white-fg {
+    color: #ffffff;
+}
+
+/* ANSI formatting - scoped under .trpc-studio for specificity */
+.trpc-studio .ansi-bold {
+    font-weight: bold;
+}
+.trpc-studio .ansi-faint {
+    opacity: 0.6;
+}
+.trpc-studio .ansi-italic {
+    font-style: italic;
+}
+.trpc-studio .ansi-underline {
+    text-decoration: underline;
+}
