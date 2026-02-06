@@ -210,7 +210,7 @@ Before presenting drafts to the user, review them for quality and codebase align
     - Verify appropriate labels are set (type, area)
     - Return list of issues found, suggested fixes, and missing labels
 
-    **Codebase Alignment Review** (subagent_type: "Explore"):
+    **Codebase Alignment Review** (subagent_type: "general-purpose"):
     - Confirm referenced files/patterns actually exist
     - Check that the approach matches codebase conventions
     - Identify any conflicts with existing features
