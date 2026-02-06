@@ -6,8 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { TRPCResponse } from '@/lib/request';
-import { AnsiText } from '@/components/ui/ansi-text';
 import { HighlightedStackTrace } from '@/components/ui/highlighted-stack-trace';
+import { CollapsibleJsonViewer } from '@/components/ui/collapsible-json-viewer';
 import { hasAnsi } from '@/lib/ansi';
 
 interface ResponseViewerProps {
@@ -75,120 +75,46 @@ export function ResponseViewer({ response }: ResponseViewerProps) {
                 </div>
             </div>
 
-            <ScrollArea className="flex-1">
-                <pre className="p-4 text-sm font-mono whitespace-pre-wrap">
-                    {response.ok ? (
-                        <JsonViewer data={displayData} />
-                    ) : (
-                        <div className="space-y-2">
-                            <div
-                                className={`font-semibold whitespace-pre-wrap ${
-                                    response.error?.message &&
-                                    hasAnsi(response.error.message)
-                                        ? ''
-                                        : 'text-destructive'
-                                }`}
-                            >
-                                {response.error?.message ? (
-                                    <HighlightedStackTrace
-                                        message={response.error.message}
-                                    />
-                                ) : (
-                                    'Unknown error'
-                                )}
-                            </div>
-                            {response.error?.code ? (
-                                <div className="text-muted-foreground">
-                                    Code: {response.error.code}
-                                </div>
-                            ) : null}
-                            {response.error?.data != null ? (
-                                <JsonViewer data={response.error.data} />
-                            ) : null}
+            {response.ok ? (
+                <CollapsibleJsonViewer data={displayData} className="flex-1" />
+            ) : (
+                <ScrollArea className="flex-1">
+                    <div className="p-4 space-y-4">
+                        <div
+                            className={`font-semibold whitespace-pre-wrap font-mono text-sm ${
+                                response.error?.message &&
+                                hasAnsi(response.error.message)
+                                    ? ''
+                                    : 'text-destructive'
+                            }`}
+                        >
+                            {response.error?.message ? (
+                                <HighlightedStackTrace
+                                    message={response.error.message}
+                                />
+                            ) : (
+                                'Unknown error'
+                            )}
                         </div>
-                    )}
-                </pre>
-            </ScrollArea>
+                        {response.error?.code ? (
+                            <div className="text-muted-foreground text-sm">
+                                Code: {response.error.code}
+                            </div>
+                        ) : null}
+                        {response.error?.data != null ? (
+                            <div className="border-t border-border pt-4">
+                                <div className="text-xs text-muted-foreground mb-2">
+                                    Error Data
+                                </div>
+                                <CollapsibleJsonViewer
+                                    data={response.error.data}
+                                    className="border border-border rounded-md"
+                                />
+                            </div>
+                        ) : null}
+                    </div>
+                </ScrollArea>
+            )}
         </motion.div>
     );
-}
-
-// Helper component - defined after main export (hoisting allows this)
-function JsonViewer({ data, level = 0 }: { data: unknown; level?: number }) {
-    const indent = '  '.repeat(level);
-
-    if (data === null) {
-        return <span className="text-orange-400">null</span>;
-    }
-
-    if (data === undefined) {
-        return <span className="text-gray-400">undefined</span>;
-    }
-
-    if (typeof data === 'boolean') {
-        return <span className="text-purple-400">{data.toString()}</span>;
-    }
-
-    if (typeof data === 'number') {
-        return <span className="text-blue-400">{data}</span>;
-    }
-
-    if (typeof data === 'string') {
-        // Don't apply green color to strings with ANSI codes - let the ANSI colors show
-        if (hasAnsi(data)) {
-            return (
-                <span>
-                    "<AnsiText>{data}</AnsiText>"
-                </span>
-            );
-        }
-        return <span className="text-green-400">"{data}"</span>;
-    }
-
-    if (Array.isArray(data)) {
-        if (data.length === 0) {
-            return <span>[]</span>;
-        }
-
-        return (
-            <span>
-                [
-                {data.map((item, i) => (
-                    <React.Fragment key={i}>
-                        {'\n'}
-                        {indent} <JsonViewer data={item} level={level + 1} />
-                        {i < data.length - 1 && ','}
-                    </React.Fragment>
-                ))}
-                {'\n'}
-                {indent}]
-            </span>
-        );
-    }
-
-    if (typeof data === 'object') {
-        const entries = Object.entries(data);
-        if (entries.length === 0) {
-            return <span>{'{}'}</span>;
-        }
-
-        return (
-            <span>
-                {'{'}
-                {entries.map(([key, value], i) => (
-                    <React.Fragment key={key}>
-                        {'\n'}
-                        {indent} <span className="text-cyan-400">"{key}"</span>:{' '}
-                        <JsonViewer data={value} level={level + 1} />
-                        {i < entries.length - 1 && ','}
-                    </React.Fragment>
-                ))}
-                {'\n'}
-                {indent}
-                {'}'}
-            </span>
-        );
-    }
-
-    return <span>{String(data)}</span>;
 }
