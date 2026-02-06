@@ -21,6 +21,7 @@ pnpm dev          # Start dev server (Turbopack)
 pnpm build        # Build all workspaces
 pnpm lint         # Run ESLint
 pnpm test         # Run tests
+pnpm check        # Run lint + build + test (via Turborepo)
 pnpm typecheck    # TypeScript check
 pnpm env:pull     # Pull env vars from Vercel
 ```
@@ -32,7 +33,9 @@ pnpm -F web add <package>      # Add dependency to web app
 pnpm -F web add -D <package>   # Add dev dependency
 ```
 
-**REQUIRED - After modifying pages or components:** You MUST run `pnpm -F web test:e2e:smoke` to catch render errors before committing. Smoke tests run post-merge in CI, so local verification is critical.
+**REQUIRED - Before committing any changes:** You MUST run `pnpm check` to verify lint, build, and tests pass across all packages. This catches type errors, lint violations, and test failures before they reach CI.
+
+**REQUIRED - After modifying pages or components:** You MUST also run `pnpm -F web test:e2e:smoke` to catch render errors. Smoke tests run post-merge in CI, so local verification is critical.
 
 ## Environment Setup
 

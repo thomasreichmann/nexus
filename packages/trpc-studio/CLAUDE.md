@@ -15,10 +15,10 @@ pnpm -F trpc-devtools typecheck  # TypeScript check
 
 ## Before Committing
 
-Always run build and tests:
+Always run `pnpm check` from the monorepo root to verify lint, build, and tests pass across all packages:
 
 ```bash
-pnpm -F trpc-devtools build && pnpm -F trpc-devtools test -- --run
+pnpm check
 ```
 
 ## Publishing
