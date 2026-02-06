@@ -292,12 +292,10 @@ export function ProcedureList({
 
                                                     return (
                                                         <button
-                                                            ref={(el) =>
-                                                                setItemRef(
-                                                                    proc.path,
-                                                                    el
-                                                                )
-                                                            }
+                                                            id={getItemId({
+                                                                type: 'procedure',
+                                                                path: proc.path,
+                                                            })}
                                                             key={proc.path}
                                                             role="treeitem"
                                                             aria-selected={
