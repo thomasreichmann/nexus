@@ -29,7 +29,7 @@ interface JsonNodeContext {
     matchingPaths: Set<string>;
     currentMatchIndex: number;
     matchPaths: string[];
-    lineCounter: React.MutableRefObject<number>;
+    lineNumbers: Map<string, number>;
 }
 
 const JsonContext = React.createContext<JsonNodeContext | null>(null);
@@ -86,9 +86,7 @@ export function CollapsibleJsonViewer({
     React.useEffect(() => {
         if (debouncedSearch && matchingPaths.size > 0) {
             // Save pre-search state if not already saved
-            if (preSearchExpanded === null) {
-                setPreSearchExpanded(new Set(expandedPaths));
-            }
+            setPreSearchExpanded((prev) => prev ?? new Set(expandedPaths));
             // Expand all ancestor paths of matches
             const toExpand = new Set<string>();
             matchingPaths.forEach((path) => {
@@ -99,14 +97,18 @@ export function CollapsibleJsonViewer({
                     toExpand.add(current);
                 }
             });
-            setExpandedPaths((prev) => new Set([...prev, ...toExpand]));
+            setExpandedPaths((prev) => {
+                const allExpanded = [...toExpand].every((p) => prev.has(p));
+                if (allExpanded) return prev;
+                return new Set([...prev, ...toExpand]);
+            });
             setCurrentMatchIndex(0);
         } else if (!debouncedSearch && preSearchExpanded !== null) {
             // Restore pre-search state
             setExpandedPaths(preSearchExpanded);
             setPreSearchExpanded(null);
         }
-    }, [debouncedSearch, matchingPaths, preSearchExpanded]);
+    }, [debouncedSearch, matchingPaths, preSearchExpanded, expandedPaths]);
 
     // Handle escape key to clear search
     React.useEffect(() => {
@@ -159,8 +161,10 @@ export function CollapsibleJsonViewer({
         }
     }, [hoveredPath]);
 
-    const lineCounter = React.useRef(0);
-    lineCounter.current = 0;
+    const lineNumbers = React.useMemo(
+        () => computeLineNumbers(data, expandedPaths),
+        [data, expandedPaths]
+    );
 
     const contextValue: JsonNodeContext = {
         searchTerm: debouncedSearch,
@@ -171,7 +175,7 @@ export function CollapsibleJsonViewer({
         matchingPaths,
         currentMatchIndex,
         matchPaths,
-        lineCounter,
+        lineNumbers,
     };
 
     return (
@@ -286,7 +290,7 @@ function JsonNode({
 }: JsonNodeProps) {
     const ctx = useJsonContext();
     const indent = '  '.repeat(level);
-    const lineNum = ++ctx.lineCounter.current;
+    const lineNum = ctx.lineNumbers.get(path) ?? 0;
 
     const isMatch = ctx.matchingPaths.has(path);
     const isCurrentMatch = ctx.matchPaths[ctx.currentMatchIndex] === path;
@@ -493,7 +497,7 @@ function JsonNode({
                                 />
                             ))}
                             <Line
-                                num={++ctx.lineCounter.current}
+                                num={ctx.lineNumbers.get(`${path}#close`) ?? 0}
                                 indent={indent}
                                 isLast={isLast}
                             >
@@ -579,7 +583,7 @@ function JsonNode({
                                 />
                             ))}
                             <Line
-                                num={++ctx.lineCounter.current}
+                                num={ctx.lineNumbers.get(`${path}#close`) ?? 0}
                                 indent={indent}
                                 isLast={isLast}
                             >
@@ -642,6 +646,45 @@ function Line({ num, indent, keyName, isLast, children }: LineProps) {
 }
 
 // Helper functions
+
+function computeLineNumbers(
+    data: unknown,
+    expandedPaths: Set<string>
+): Map<string, number> {
+    const lineMap = new Map<string, number>();
+    let line = 0;
+
+    function traverse(d: unknown, path: string) {
+        line++;
+        lineMap.set(path, line);
+
+        if (Array.isArray(d) && d.length > 0) {
+            const isExpanded = expandedPaths.has(path) || path === '';
+            if (isExpanded) {
+                d.forEach((item, i) => {
+                    traverse(item, path ? `${path}[${i}]` : `[${i}]`);
+                });
+                line++;
+                lineMap.set(`${path}#close`, line);
+            }
+        } else if (d && typeof d === 'object') {
+            const entries = Object.entries(d);
+            if (entries.length > 0) {
+                const isExpanded = expandedPaths.has(path) || path === '';
+                if (isExpanded) {
+                    entries.forEach(([key, value]) => {
+                        traverse(value, path ? `${path}.${key}` : key);
+                    });
+                    line++;
+                    lineMap.set(`${path}#close`, line);
+                }
+            }
+        }
+    }
+
+    traverse(data, '');
+    return lineMap;
+}
 
 function collectPaths(
     data: unknown,
