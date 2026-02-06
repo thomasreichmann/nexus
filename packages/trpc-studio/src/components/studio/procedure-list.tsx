@@ -30,7 +30,6 @@ export function ProcedureList({
 
     const searchInputRef = React.useRef<HTMLInputElement>(null);
     const listContainerRef = React.useRef<HTMLDivElement>(null);
-    const itemRefs = React.useRef<Map<string, HTMLButtonElement>>(new Map());
 
     // Group procedures by their first path segment (router name)
     const grouped = React.useMemo(() => {
@@ -95,19 +94,31 @@ export function ProcedureList({
         });
     }, []);
 
-    // Focus management
+    // Generate stable ID for an item
+    const getItemId = React.useCallback(
+        (
+            item:
+                | { type: 'group'; name: string }
+                | { type: 'procedure'; path: string }
+        ) => {
+            return item.type === 'group'
+                ? `proc-group-${item.name}`
+                : `proc-item-${item.path.replace(/\./g, '-')}`;
+        },
+        []
+    );
+
+    // Focus management using DOM IDs for reliability
     const focusItem = React.useCallback(
         (index: number) => {
             if (index < 0 || index >= focusableItems.length) return;
 
             setFocusedIndex(index);
             const item = focusableItems[index];
-            const key =
-                item.type === 'group' ? `group-${item.name}` : item.path;
-            const element = itemRefs.current.get(key);
-            element?.focus();
+            const element = document.getElementById(getItemId(item));
+            (element as HTMLButtonElement | null)?.focus();
         },
-        [focusableItems]
+        [focusableItems, getItemId]
     );
 
     const handleKeyDown = React.useCallback(
@@ -187,18 +198,6 @@ export function ProcedureList({
             document.removeEventListener('keydown', handleGlobalKeyDown);
     }, []);
 
-    // Register item ref
-    const setItemRef = React.useCallback(
-        (key: string, element: HTMLButtonElement | null) => {
-            if (element) {
-                itemRefs.current.set(key, element);
-            } else {
-                itemRefs.current.delete(key);
-            }
-        },
-        []
-    );
-
     return (
         <div
             className="flex flex-col h-full"
@@ -218,7 +217,7 @@ export function ProcedureList({
                 <div className="p-2" role="tree" aria-label="Procedure list">
                     {Object.entries(grouped).map(([group, procs]) => {
                         const isCollapsed = collapsedGroups.has(group);
-                        const groupId = `group-${group}`;
+                        const groupButtonId = `proc-group-${group}`;
                         const contentId = `group-content-${group}`;
                         const focusIndex =
                             focusIndexMap.get(`group-${group}`) ?? -1;
@@ -229,15 +228,14 @@ export function ProcedureList({
                                 className="mb-2"
                                 role="group"
                                 aria-labelledby={
-                                    group !== '_root' ? groupId : undefined
+                                    group !== '_root'
+                                        ? groupButtonId
+                                        : undefined
                                 }
                             >
                                 {group !== '_root' && (
                                     <button
-                                        ref={(el) =>
-                                            setItemRef(`group-${group}`, el)
-                                        }
-                                        id={groupId}
+                                        id={groupButtonId}
                                         onClick={() => toggleGroup(group)}
                                         onFocus={() =>
                                             setFocusedIndex(focusIndex)
