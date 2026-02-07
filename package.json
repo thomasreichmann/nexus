@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "private": true,
     "scripts": {
-        "dev": "turbo watch build --filter='@nexus/web^...' & turbo dev --filter=@nexus/web",
+        "dev": "turbo dev --filter=@nexus/web --output-logs=new-only --log-prefix=none",
         "build": "turbo build",
         "lint": "turbo lint",
         "test": "turbo test",
