@@ -34,6 +34,38 @@ interface WideEvent {
 
 const MAX_CAUSE_DEPTH = 5;
 
+interface ZodLikeIssue {
+    path: PropertyKey[];
+    message: string;
+}
+
+/** Duck-type check for ZodError (avoids cross-module instanceof issues). */
+export function isZodError(
+    error: unknown
+): error is Error & { issues: ZodLikeIssue[] } {
+    return (
+        error instanceof Error &&
+        'issues' in error &&
+        Array.isArray((error as { issues: unknown }).issues)
+    );
+}
+
+/** Format ZodError issues into a compact summary message. */
+export function formatZodMessage(issues: ZodLikeIssue[]): string {
+    const lines = issues.map((issue) => {
+        const path = issue.path.length > 0 ? issue.path.join('.') : '(root)';
+        return `  - ${path}: ${issue.message}`;
+    });
+    return `Zod validation failed (${issues.length} issue${issues.length !== 1 ? 's' : ''})\n${lines.join('\n')}`;
+}
+
+/** Strip code frames from a stack trace, keeping only the first line and `at ...` lines. */
+export function trimStackTrace(stack: string | undefined): string | undefined {
+    if (!stack) return undefined;
+    const lines = stack.split('\n');
+    return lines.filter((line) => /^\S|^\s+at /.test(line)).join('\n');
+}
+
 function formatErrorCause(
     error: Error,
     depth: number
@@ -65,8 +97,19 @@ export function formatError(error: TRPCError): FormattedError {
     }
 
     if (errorVerbosity === 'full') {
-        formatted.stack = error.stack;
-        formatted.cause = formatErrorCause(error, 0);
+        if (isZodError(error.cause)) {
+            // ZodError: compact issues inline, suppress redundant cause
+            formatted.message = formatZodMessage(error.cause.issues);
+            // Input validation (BAD_REQUEST): stack adds no value — the
+            // procedure path is already in the log line. Internal validation
+            // (any other code): keep a trimmed stack for debugging.
+            if (error.code !== 'BAD_REQUEST') {
+                formatted.stack = trimStackTrace(error.stack);
+            }
+        } else {
+            formatted.stack = error.stack;
+            formatted.cause = formatErrorCause(error, 0);
+        }
     }
 
     return formatted;
