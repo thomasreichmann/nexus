@@ -8,10 +8,11 @@ export function createMockDb() {
     const findFirst: AnyMock = vi.fn();
     const findMany: AnyMock = vi.fn();
     const returning: AnyMock = vi.fn();
-    const where: AnyMock = vi.fn(() => ({ returning }));
+    const groupBy: AnyMock = vi.fn();
+    const where: AnyMock = vi.fn(() => ({ returning, groupBy }));
     const set: AnyMock = vi.fn(() => ({ where }));
     const values: AnyMock = vi.fn(() => ({ returning }));
-    const from: AnyMock = vi.fn(() => ({ where }));
+    const from: AnyMock = vi.fn(() => ({ where, groupBy }));
     const select: AnyMock = vi.fn(() => ({ from }));
     const insert: AnyMock = vi.fn(() => ({ values }));
     const update: AnyMock = vi.fn(() => ({ set }));
@@ -20,6 +21,7 @@ export function createMockDb() {
     const db = {
         query: {
             files: { findFirst, findMany },
+            backgroundJobs: { findFirst, findMany },
         },
         select,
         insert,
@@ -43,6 +45,7 @@ export function createMockDb() {
             set,
             delete: deleteFn,
             returning,
+            groupBy,
         },
     };
 }
