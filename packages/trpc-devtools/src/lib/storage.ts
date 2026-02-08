@@ -1,9 +1,9 @@
 import type { TRPCRequest, TRPCResponse } from './request';
 
-const STORAGE_KEY = 'trpc-studio-history';
-const PANEL_SIZES_KEY = 'trpc-studio-panel-sizes';
-const SUPERJSON_KEY = 'trpc-studio-superjson';
-const COLLAPSED_GROUPS_KEY = 'trpc-studio-collapsed-groups';
+const STORAGE_KEY = 'trpc-devtools-history';
+const PANEL_SIZES_KEY = 'trpc-devtools-panel-sizes';
+const SUPERJSON_KEY = 'trpc-devtools-superjson';
+const COLLAPSED_GROUPS_KEY = 'trpc-devtools-collapsed-groups';
 const MAX_HISTORY_ITEMS = 50;
 
 export interface HistoryItem {

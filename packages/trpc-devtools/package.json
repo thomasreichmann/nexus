@@ -1,13 +1,13 @@
 {
     "name": "trpc-devtools",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "license": "MIT",
     "repository": {
         "type": "git",
         "url": "https://github.com/thomasreichmann/nexus.git",
-        "directory": "packages/trpc-studio"
+        "directory": "packages/trpc-devtools"
     },
-    "homepage": "https://github.com/thomasreichmann/nexus/tree/main/packages/trpc-studio#readme",
+    "homepage": "https://github.com/thomasreichmann/nexus/tree/main/packages/trpc-devtools#readme",
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",

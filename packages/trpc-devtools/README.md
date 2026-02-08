@@ -30,11 +30,11 @@ pnpm add trpc-devtools
 ### Option 1: Route Handler (Zero-Config)
 
 ```typescript
-// app/api/trpc-studio/[[...studio]]/route.ts
-import { createTRPCStudio } from 'trpc-devtools/server';
+// app/api/trpc-devtools/[[...devtools]]/route.ts
+import { createTRPCDevtools } from 'trpc-devtools/server';
 import { appRouter } from '@/server/routers';
 
-const handler = createTRPCStudio({
+const handler = createTRPCDevtools({
     router: appRouter,
     url: '/api/trpc',
 });
@@ -42,17 +42,20 @@ const handler = createTRPCStudio({
 export { handler as GET, handler as POST };
 ```
 
-Then visit `/api/trpc-studio` to view the full studio UI.
+Then visit `/api/trpc-devtools` to view the full devtools UI.
 
 ### Option 2: Component Library (Full Control)
 
 ```tsx
 // app/dev/studio/page.tsx
-import { TRPCStudio } from 'trpc-devtools';
+import { TRPCDevtools } from 'trpc-devtools';
 
 export default function StudioPage() {
     return (
-        <TRPCStudio schemaUrl="/api/trpc-studio/schema" trpcUrl="/api/trpc" />
+        <TRPCDevtools
+            schemaUrl="/api/trpc-devtools/schema"
+            trpcUrl="/api/trpc"
+        />
     );
 }
 ```
@@ -65,18 +68,18 @@ export default function StudioPage() {
 
 ```typescript
 // Server-side (Node.js only)
-import { createTRPCStudio, introspectRouter } from 'trpc-devtools/server';
+import { createTRPCDevtools, introspectRouter } from 'trpc-devtools/server';
 
 // Client-side (React components)
-import { TRPCStudio } from 'trpc-devtools';
+import { TRPCDevtools } from 'trpc-devtools';
 ```
 
-### `createTRPCStudio(config)`
+### `createTRPCDevtools(config)`
 
-Creates a Next.js route handler for the studio.
+Creates a Next.js route handler for the devtools.
 
 ```typescript
-interface TRPCStudioConfig {
+interface TRPCDevtoolsConfig {
     router: AnyRouter; // Your tRPC router
     url: string; // URL of your tRPC endpoint
     auth?: AuthConfig; // Optional auth configuration
@@ -94,7 +97,7 @@ interface AuthConfig {
 **Restrict access to admins (BetterAuth):**
 
 ```typescript
-const handler = createTRPCStudio({
+const handler = createTRPCDevtools({
     router: appRouter,
     url: '/api/trpc',
     auth: {
@@ -109,7 +112,7 @@ const handler = createTRPCStudio({
 **API key authentication:**
 
 ```typescript
-const handler = createTRPCStudio({
+const handler = createTRPCDevtools({
     router: appRouter,
     url: '/api/trpc',
     auth: {
@@ -120,12 +123,12 @@ const handler = createTRPCStudio({
 });
 ```
 
-### `<TRPCStudio />`
+### `<TRPCDevtools />`
 
-React component for the studio UI.
+React component for the devtools UI.
 
 ```typescript
-interface TRPCStudioProps {
+interface TRPCDevtoolsProps {
     schemaUrl: string; // URL to fetch the schema
     trpcUrl: string; // URL of the tRPC endpoint
     headers?: Record<string, string>; // Custom headers

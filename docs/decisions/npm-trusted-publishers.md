@@ -95,7 +95,7 @@ Added to package.json:
     "repository": {
         "type": "git",
         "url": "https://github.com/thomasreichmann/nexus.git",
-        "directory": "packages/trpc-studio"
+        "directory": "packages/trpc-devtools"
     }
 }
 ```
@@ -169,7 +169,7 @@ jobs:
               run: pnpm -F trpc-devtools test -- --run
             - name: Publish to npm
               run: npm publish --provenance --access public
-              working-directory: packages/trpc-studio
+              working-directory: packages/trpc-devtools
 ```
 
 ### package.json Requirements
@@ -179,9 +179,9 @@ jobs:
     "repository": {
         "type": "git",
         "url": "https://github.com/thomasreichmann/nexus.git",
-        "directory": "packages/trpc-studio"
+        "directory": "packages/trpc-devtools"
     },
-    "homepage": "https://github.com/thomasreichmann/nexus/tree/main/packages/trpc-studio#readme"
+    "homepage": "https://github.com/thomasreichmann/nexus/tree/main/packages/trpc-devtools#readme"
 }
 ```
 

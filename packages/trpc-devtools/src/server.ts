@@ -1,8 +1,8 @@
 // Server exports (Node.js only)
-export { createTRPCStudio } from './server/handler';
+export { createTRPCDevtools } from './server/handler';
 export { introspectRouter } from './server/introspect';
 export type {
-    TRPCStudioConfig,
+    TRPCDevtoolsConfig,
     RouterSchema,
     ProcedureSchema,
     ProcedureType,

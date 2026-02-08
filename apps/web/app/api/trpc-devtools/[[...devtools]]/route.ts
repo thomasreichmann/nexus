@@ -1,7 +1,7 @@
-import { createTRPCStudio } from 'trpc-devtools/server';
+import { createTRPCDevtools } from 'trpc-devtools/server';
 import { appRouter } from '@/server/trpc/router';
 
-const handler = createTRPCStudio({
+const handler = createTRPCDevtools({
     router: appRouter,
     url: '/api/trpc',
 });

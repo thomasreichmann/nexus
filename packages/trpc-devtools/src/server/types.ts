@@ -60,7 +60,7 @@ export interface RouterSchema {
  */
 export interface AuthConfig {
     /**
-     * Custom headers to include in tRPC requests from the studio.
+     * Custom headers to include in tRPC requests from the devtools.
      * Useful for API key authentication or custom auth schemes.
      * Note: Cookies are sent automatically via credentials: 'include'.
      */
@@ -82,15 +82,15 @@ export interface AuthConfig {
 }
 
 /**
- * Configuration for createTRPCStudio
+ * Configuration for createTRPCDevtools
  */
-export interface TRPCStudioConfig<TRouter extends AnyRouter> {
+export interface TRPCDevtoolsConfig<TRouter extends AnyRouter> {
     /** The tRPC router to introspect */
     router: TRouter;
     /** URL of the tRPC endpoint */
     url: string;
     /** Authentication configuration */
     auth?: AuthConfig;
-    /** Base path for studio assets (defaults to request path) */
+    /** Base path for devtools assets (defaults to request path) */
     basePath?: string;
 }

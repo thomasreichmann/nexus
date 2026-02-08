@@ -2,7 +2,7 @@
 import './styles/globals.css';
 
 // Client exports
-export { TRPCStudio, type TRPCStudioProps } from './components/studio';
+export { TRPCDevtools, type TRPCDevtoolsProps } from './components/devtools';
 
 // Re-export UI components for customization
 export {

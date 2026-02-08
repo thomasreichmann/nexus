@@ -44,7 +44,7 @@ The workflow builds, tests, and publishes automatically using npm OIDC (no token
 | -------------------------------------- | -------------------------------------------- |
 | `src/server/handler.ts`                | Next.js route handler (serves standalone UI) |
 | `src/server/introspect.ts`             | Router → JSON Schema extraction              |
-| `src/components/studio/`               | Main UI components                           |
+| `src/components/devtools/`             | Main UI components                           |
 | `src/standalone/app.tsx`               | Bundled React app (inlined in handler)       |
 | `tsup.standalone.config.ts`            | Builds the standalone app (esbuild)          |
 | `tsup.lib.config.ts`                   | Builds the library exports (esbuild)         |
@@ -71,7 +71,7 @@ Use tRPC v11 internals:
 
 ### CSS Scoping
 
-All styles are scoped under `.trpc-studio` class. Use CSS variables for theming.
+All styles are scoped under `.trpc-devtools` class. Use CSS variables for theming.
 
 ### Auth
 
@@ -84,7 +84,7 @@ Two mechanisms:
 
 Test in the Nexus app:
 
-- Route handler: `http://localhost:3000/api/trpc-studio`
+- Route handler: `http://localhost:3000/api/trpc-devtools`
 - Component: `http://localhost:3000/dev/studio`
 
 ## GitHub Issues
@@ -98,5 +98,5 @@ gh issue create --label "trpc-devtools,frontend,feature" --title "..."
 ## Documentation
 
 - Package guide: `docs/guides/trpc-devtools.md`
-- Planning doc: `docs/planning/trpc-studio.md`
+- Planning doc: `docs/planning/trpc-devtools.md`
 - Publishing setup: `docs/decisions/npm-trusted-publishers.md`

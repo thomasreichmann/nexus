@@ -3,8 +3,8 @@
 > Maintainer and contributor documentation for the `trpc-devtools` npm package.
 
 **npm:** https://www.npmjs.com/package/trpc-devtools
-**Source:** `packages/trpc-studio/`
-**Planning doc:** [[../planning/trpc-studio|trpc-studio planning]]
+**Source:** `packages/trpc-devtools/`
+**Planning doc:** [[../planning/trpc-devtools|trpc-devtools planning]]
 
 ## Overview
 
@@ -56,14 +56,14 @@ pnpm -F trpc-devtools typecheck
 The package is linked via pnpm workspaces. Changes reflect immediately:
 
 ```typescript
-// apps/web/app/api/trpc-studio/[[...studio]]/route.ts
-import { createTRPCStudio } from 'trpc-devtools/server';
+// apps/web/app/api/trpc-devtools/[[...devtools]]/route.ts
+import { createTRPCDevtools } from 'trpc-devtools/server';
 
 // apps/web/app/dev/studio/page.tsx
-import { TRPCStudio } from 'trpc-devtools';
+import { TRPCDevtools } from 'trpc-devtools';
 ```
 
-Visit `http://localhost:3000/api/trpc-studio` to test the route handler.
+Visit `http://localhost:3000/api/trpc-devtools` to test the route handler.
 Visit `http://localhost:3000/dev/studio` to test the component library.
 
 ## Publishing
@@ -72,7 +72,7 @@ Publishing is fully automated via GitHub Actions using npm's OIDC trusted publis
 
 ### To Release a New Version
 
-1. **Update version** in `packages/trpc-studio/package.json`
+1. **Update version** in `packages/trpc-devtools/package.json`
 2. **Commit and push** the change
 3. **Create and push a tag:**
 
@@ -109,7 +109,7 @@ If the workflow fails, check:
 ### Package Structure
 
 ```
-packages/trpc-studio/
+packages/trpc-devtools/
 ├── src/
 │   ├── index.ts              # Client entrypoint (React components)
 │   ├── server.ts             # Server entrypoint (Node.js only)
@@ -122,7 +122,7 @@ packages/trpc-studio/
 │   │   └── types.ts          # Shared type definitions
 │   │
 │   ├── components/
-│   │   ├── studio/           # Main studio components
+│   │   ├── devtools/         # Main devtools components
 │   │   └── ui/               # shadcn-based UI components
 │   │
 │   ├── lib/
@@ -191,7 +191,7 @@ Two auth mechanisms:
 2. **isAuthorized callback** - Server-side access control
 
 ```typescript
-createTRPCStudio({
+createTRPCDevtools({
     router: appRouter,
     url: '/api/trpc',
     auth: {
@@ -206,10 +206,10 @@ createTRPCStudio({
 
 ### CSS Scoping
 
-All Tailwind classes use the `.trpc-studio` scope to prevent conflicts with consumer apps. CSS variables allow theming:
+All Tailwind classes use the `.trpc-devtools` scope to prevent conflicts with consumer apps. CSS variables allow theming:
 
 ```css
-.trpc-studio {
+.trpc-devtools {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     /* ... */
@@ -236,19 +236,19 @@ pnpm -F trpc-devtools test -- src/server/introspect.test.ts
 
 ## Decisions
 
-| Decision                     | Rationale                                  |
-| ---------------------------- | ------------------------------------------ |
-| **tRPC v11 only**            | Clean implementation, no legacy baggage    |
-| **Zod v4 only**              | Native `z.toJSONSchema()` support          |
-| **Next.js only (v1)**        | Most common tRPC setup                     |
-| **Vite for bundling**        | Better CSS handling for Tailwind           |
-| **No Tailwind prefix**       | Using `.trpc-studio` scope wrapper instead |
-| **Direct browser requests**  | No proxy through studio backend            |
-| **localStorage for history** | Simple, no server state needed             |
+| Decision                     | Rationale                                    |
+| ---------------------------- | -------------------------------------------- |
+| **tRPC v11 only**            | Clean implementation, no legacy baggage      |
+| **Zod v4 only**              | Native `z.toJSONSchema()` support            |
+| **Next.js only (v1)**        | Most common tRPC setup                       |
+| **Vite for bundling**        | Better CSS handling for Tailwind             |
+| **No Tailwind prefix**       | Using `.trpc-devtools` scope wrapper instead |
+| **Direct browser requests**  | No proxy through studio backend              |
+| **localStorage for history** | Simple, no server state needed               |
 
 ## Roadmap
 
-See [[../planning/trpc-studio#Feature Roadmap|planning doc roadmap]] for full details.
+See [[../planning/trpc-devtools#Feature Roadmap|planning doc roadmap]] for full details.
 
 **Completed (Phase 1):**
 
@@ -280,5 +280,5 @@ See [[../planning/trpc-studio#Feature Roadmap|planning doc roadmap]] for full de
 - [npm package](https://www.npmjs.com/package/trpc-devtools)
 - [Zod JSON Schema docs](https://zod.dev/json-schema)
 - [tRPC v11 docs](https://trpc.io/docs)
-- [[../planning/trpc-studio|Planning document]]
+- [[../planning/trpc-devtools|Planning document]]
 - [[../decisions/npm-trusted-publishers|npm trusted publishers decision]]

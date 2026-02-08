@@ -1,4 +1,4 @@
-# @nexus/trpc-studio
+# trpc-devtools
 
 > A modern developer tooling solution for tRPC APIs. More than just a Swagger UI - a full-fledged dev toolkit for tRPC developers.
 
@@ -18,9 +18,9 @@ Build the definitive developer experience for tRPC APIs. Start with an API explo
 
 | Aspect   | Decision                                |
 | -------- | --------------------------------------- |
-| Name     | `@nexus/trpc-studio`                    |
+| Name     | `trpc-devtools`                         |
 | Scope    | npm public registry                     |
-| Location | `packages/trpc-studio/`                 |
+| Location | `packages/trpc-devtools/`               |
 | Vision   | Full dev tooling, not just API explorer |
 
 ### Technical Stack
@@ -40,11 +40,11 @@ Build the definitive developer experience for tRPC APIs. Start with an API explo
 
 ```typescript
 // Option 1: Route handler (zero-config)
-// app/api/trpc-studio/[[...studio]]/route.ts
-import { createTRPCStudio } from '@nexus/trpc-studio';
+// app/api/trpc-devtools/[[...devtools]]/route.ts
+import { createTRPCDevtools } from 'trpc-devtools/server';
 import { appRouter } from '@/server/routers';
 
-const handler = createTRPCStudio({
+const handler = createTRPCDevtools({
     router: appRouter,
     url: '/api/trpc',
 });
@@ -55,12 +55,14 @@ export { handler as GET, handler as POST };
 ```tsx
 // Option 2: Component library (full control)
 // app/dev/studio/page.tsx
-import { TRPCStudio } from '@nexus/trpc-studio';
-import '@nexus/trpc-studio/styles.css';
+import { TRPCDevtools } from 'trpc-devtools';
 
 export default function StudioPage() {
     return (
-        <TRPCStudio schemaUrl="/api/trpc-studio/schema" trpcUrl="/api/trpc" />
+        <TRPCDevtools
+            schemaUrl="/api/trpc-devtools/schema"
+            trpcUrl="/api/trpc"
+        />
     );
 }
 ```
@@ -90,7 +92,7 @@ export default function StudioPage() {
 **v1 Focus: BetterAuth integration + custom headers fallback**
 
 ```typescript
-createTRPCStudio({
+createTRPCDevtools({
     router: appRouter,
     url: '/api/trpc',
     auth: {
@@ -100,7 +102,7 @@ createTRPCStudio({
 });
 
 // Or custom headers
-createTRPCStudio({
+createTRPCDevtools({
     router: appRouter,
     url: '/api/trpc',
     auth: {
@@ -122,7 +124,7 @@ createTRPCStudio({
 ## Package Structure
 
 ```
-packages/trpc-studio/
+packages/trpc-devtools/
 ├── src/
 │   ├── index.ts                    # Single entrypoint, tree-shakeable
 │   │
@@ -140,8 +142,8 @@ packages/trpc-studio/
 │   │   │   ├── select.tsx
 │   │   │   └── ...
 │   │   │
-│   │   ├── studio/                 # Studio-specific components
-│   │   │   ├── studio.tsx          # Main studio component
+│   │   ├── devtools/               # Devtools components
+│   │   │   ├── devtools.tsx        # Main devtools component
 │   │   │   ├── procedure-list.tsx  # Sidebar procedure tree
 │   │   │   ├── procedure-view.tsx  # Individual procedure panel
 │   │   │   ├── schema-form.tsx     # JSON Schema → form renderer
@@ -213,7 +215,7 @@ export default defineConfig({
 
 ```json
 {
-    "name": "@nexus/trpc-studio",
+    "name": "trpc-devtools",
     "version": "0.1.0",
     "type": "module",
     "main": "./dist/index.js",
@@ -281,12 +283,12 @@ export default {
 Develop the package while testing in the Nexus app:
 
 ```bash
-# packages/trpc-studio is linked automatically via pnpm workspaces
+# packages/trpc-devtools is linked automatically via pnpm workspaces
 
 # In apps/web, import directly:
-import { TRPCStudio } from '@nexus/trpc-studio';
+import { TRPCDevtools } from 'trpc-devtools';
 
-# Changes to packages/trpc-studio reflect immediately (Vite HMR)
+# Changes to packages/trpc-devtools reflect immediately (Vite HMR)
 ```
 
 ### Scripts

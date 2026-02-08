@@ -2,7 +2,7 @@ import type { AnyRouter } from '@trpc/server';
 import type { NextRequest } from 'next/server';
 import { introspectRouter } from './introspect';
 import { getStandaloneJs, getStandaloneCss } from './assets';
-import type { TRPCStudioConfig, RouterSchema } from './types';
+import type { TRPCDevtoolsConfig, RouterSchema } from './types';
 
 // Cache the introspected schema to avoid re-processing on every request
 const schemaCache = new WeakMap<AnyRouter, RouterSchema>();
@@ -19,7 +19,7 @@ function getSchema<TRouter extends AnyRouter>(router: TRouter): RouterSchema {
 /**
  * Generate full HTML with inlined React app bundle
  */
-function getStudioHtml(config: {
+function getDevtoolsHtml(config: {
     schemaUrl: string;
     trpcUrl: string;
     headers?: Record<string, string>;
@@ -32,13 +32,13 @@ function getStudioHtml(config: {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>tRPC Studio</title>
+    <title>tRPC Devtools</title>
     <style>${css}</style>
 </head>
 <body>
     <div id="root"></div>
     <script>
-        window.__TRPC_STUDIO_CONFIG__ = ${JSON.stringify(config)};
+        window.__TRPC_DEVTOOLS_CONFIG__ = ${JSON.stringify(config)};
     </script>
     <script type="module">${js}</script>
 </body>
@@ -46,15 +46,15 @@ function getStudioHtml(config: {
 }
 
 /**
- * Create a Next.js route handler for tRPC Studio
+ * Create a Next.js route handler for tRPC Devtools
  *
  * @example
  * ```typescript
- * // app/api/trpc-studio/[[...studio]]/route.ts
- * import { createTRPCStudio } from 'trpc-devtools';
+ * // app/api/trpc-devtools/[[...devtools]]/route.ts
+ * import { createTRPCDevtools } from 'trpc-devtools';
  * import { appRouter } from '@/server/routers';
  *
- * const handler = createTRPCStudio({
+ * const handler = createTRPCDevtools({
  *     router: appRouter,
  *     url: '/api/trpc',
  * });
@@ -62,14 +62,14 @@ function getStudioHtml(config: {
  * export { handler as GET, handler as POST };
  * ```
  */
-export function createTRPCStudio<TRouter extends AnyRouter>(
-    config: TRPCStudioConfig<TRouter>
+export function createTRPCDevtools<TRouter extends AnyRouter>(
+    config: TRPCDevtoolsConfig<TRouter>
 ) {
     const { router, url, auth } = config;
 
     return async function handler(
         request: NextRequest,
-        context: { params: Promise<{ studio?: string[] }> }
+        context: { params: Promise<{ devtools?: string[] }> }
     ): Promise<Response> {
         // Check authorization if configured
         if (auth?.isAuthorized) {
@@ -80,7 +80,7 @@ export function createTRPCStudio<TRouter extends AnyRouter>(
         }
 
         const params = await context.params;
-        const path = params.studio?.join('/') ?? '';
+        const path = params.devtools?.join('/') ?? '';
 
         // Determine base path from request URL
         const requestUrl = new URL(request.url);
@@ -104,9 +104,9 @@ export function createTRPCStudio<TRouter extends AnyRouter>(
             });
         }
 
-        // Route: / or empty - serve the studio UI
+        // Route: / or empty - serve the devtools UI
         if (path === '' || path === '/') {
-            const html = getStudioHtml({
+            const html = getDevtoolsHtml({
                 schemaUrl: `${basePath}/schema`,
                 trpcUrl: url,
                 headers: auth?.headers,

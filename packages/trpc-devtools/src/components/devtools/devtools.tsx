@@ -7,7 +7,7 @@ import * as React from 'react';
 import { ProcedureList, ProcedureListSkeleton } from './procedure-list';
 import { ProcedureView, ProcedureViewSkeleton } from './procedure-view';
 
-export interface TRPCStudioProps {
+export interface TRPCDevtoolsProps {
     /** URL to fetch the schema from */
     schemaUrl: string;
     /** URL of the tRPC endpoint */
@@ -18,12 +18,12 @@ export interface TRPCStudioProps {
     className?: string;
 }
 
-export function TRPCStudio({
+export function TRPCDevtools({
     schemaUrl,
     trpcUrl,
     headers,
     className,
-}: TRPCStudioProps) {
+}: TRPCDevtoolsProps) {
     const [schema, setSchema] = React.useState<RouterSchema | null>(null);
     const [error, setError] = React.useState<string | null>(null);
     const [selectedPath, setSelectedPath] = React.useState<string | null>(null);
@@ -63,7 +63,7 @@ export function TRPCStudio({
         return (
             <div
                 className={cn(
-                    'trpc-studio flex items-center justify-center h-screen bg-background',
+                    'trpc-devtools flex items-center justify-center h-screen bg-background',
                     className
                 )}
             >
@@ -81,14 +81,14 @@ export function TRPCStudio({
         return (
             <div
                 className={cn(
-                    'trpc-studio flex h-screen bg-background text-foreground',
+                    'trpc-devtools flex h-screen bg-background text-foreground',
                     className
                 )}
             >
                 {/* Sidebar skeleton */}
                 <div className="w-64 border-r border-border flex flex-col">
                     <div className="p-4 border-b border-border">
-                        <h1 className="text-lg font-semibold">tRPC Studio</h1>
+                        <h1 className="text-lg font-semibold">tRPC Devtools</h1>
                         <Skeleton className="h-3 w-20 mt-1" />
                     </div>
                     <div className="flex-1 overflow-hidden">
@@ -107,14 +107,14 @@ export function TRPCStudio({
     return (
         <div
             className={cn(
-                'trpc-studio flex h-screen bg-background text-foreground',
+                'trpc-devtools flex h-screen bg-background text-foreground',
                 className
             )}
         >
             {/* Sidebar */}
             <div className="w-64 border-r border-border flex flex-col">
                 <div className="p-4 border-b border-border">
-                    <h1 className="text-lg font-semibold">tRPC Studio</h1>
+                    <h1 className="text-lg font-semibold">tRPC Devtools</h1>
                     <p className="text-xs text-muted-foreground">
                         {schema.procedures.length} procedures
                     </p>

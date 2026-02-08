@@ -1,4 +1,4 @@
-export { TRPCStudio, type TRPCStudioProps } from './studio';
+export { TRPCDevtools, type TRPCDevtoolsProps } from './devtools';
 export { ProcedureList } from './procedure-list';
 export { ProcedureView } from './procedure-view';
 export { SchemaForm } from './schema-form';

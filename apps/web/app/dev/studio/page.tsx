@@ -1,9 +1,12 @@
 'use client';
 
-import { TRPCStudio } from 'trpc-devtools';
+import { TRPCDevtools } from 'trpc-devtools';
 
 export default function StudioPage() {
     return (
-        <TRPCStudio schemaUrl="/api/trpc-studio/schema" trpcUrl="/api/trpc" />
+        <TRPCDevtools
+            schemaUrl="/api/trpc-devtools/schema"
+            trpcUrl="/api/trpc"
+        />
     );
 }
