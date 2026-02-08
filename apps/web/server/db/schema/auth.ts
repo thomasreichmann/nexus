@@ -1,5 +1,7 @@
-import { pgTable, text, timestamp, boolean } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, text, timestamp, boolean } from 'drizzle-orm/pg-core';
 import { timestamps } from './helpers';
+
+export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
 
 // BetterAuth tables
 
@@ -9,6 +11,7 @@ export const user = pgTable('user', {
     email: text('email').notNull().unique(),
     emailVerified: boolean('email_verified').notNull().default(false),
     image: text('image'),
+    role: userRoleEnum('role').notNull().default('user'),
     ...timestamps(),
 });
 
