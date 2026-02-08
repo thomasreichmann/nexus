@@ -2,8 +2,6 @@
 
 import { useEffect } from 'react';
 import { useTheme } from 'next-themes';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
     Card,
     CardContent,
@@ -11,9 +9,9 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { ThemeToggle } from '@/components/theme-toggle';
 import data from './data.json';
+import { getSamplers } from './samplers';
 
 interface PreviewOption {
     label: string;
@@ -30,6 +28,7 @@ interface PreviewData {
     description: string;
     mode: 'light' | 'dark' | 'system';
     options: PreviewOption[];
+    samplers?: string[];
 }
 
 const previewData = data as PreviewData;
@@ -134,6 +133,8 @@ function toSemanticVars(vars: Record<string, string>): Record<string, string> {
 }
 
 function OptionCard({ option }: { option: PreviewOption }) {
+    const samplers = getSamplers(previewData.samplers);
+
     return (
         <div
             style={toSemanticVars(option.cssVariables)}
@@ -145,71 +146,9 @@ function OptionCard({ option }: { option: PreviewOption }) {
                     {option.description}
                 </p>
             </div>
-            <DesignSampler />
-        </div>
-    );
-}
-
-function DesignSampler() {
-    return (
-        <div className="space-y-4">
-            {/* Color swatches */}
-            <div className="flex gap-2">
-                <div className="h-10 w-10 rounded-md bg-destructive" />
-                <div className="h-10 w-10 rounded-md bg-primary" />
-                <div className="h-10 w-10 rounded-md bg-secondary" />
-                <div className="h-10 w-10 rounded-md bg-muted" />
-                <div className="h-10 w-10 rounded-md bg-accent" />
-            </div>
-
-            {/* Buttons */}
-            <div className="flex flex-wrap gap-2">
-                <Button variant="destructive" size="sm">
-                    Destructive
-                </Button>
-                <Button size="sm">Primary</Button>
-                <Button variant="secondary" size="sm">
-                    Secondary
-                </Button>
-                <Button variant="outline" size="sm">
-                    Outline
-                </Button>
-                <Button variant="ghost" size="sm">
-                    Ghost
-                </Button>
-            </div>
-
-            {/* Badges */}
-            <div className="flex flex-wrap gap-2">
-                <Badge variant="destructive">Destructive</Badge>
-                <Badge>Default</Badge>
-                <Badge variant="secondary">Secondary</Badge>
-                <Badge variant="outline">Outline</Badge>
-            </div>
-
-            {/* Text colors */}
-            <div className="space-y-1 text-sm">
-                <p className="text-destructive">
-                    Destructive text — error messages and warnings
-                </p>
-                <p className="text-foreground">
-                    Foreground text — primary content
-                </p>
-                <p className="text-muted-foreground">
-                    Muted text — secondary content
-                </p>
-            </div>
-
-            {/* Card + Input */}
-            <Card>
-                <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">Sample Card</CardTitle>
-                    <CardDescription>Nested component preview</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <Input placeholder="Input field" />
-                </CardContent>
-            </Card>
+            {samplers.map((sampler) => (
+                <sampler.component key={sampler.name} />
+            ))}
         </div>
     );
 }

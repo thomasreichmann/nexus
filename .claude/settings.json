@@ -28,7 +28,17 @@
             "Bash(gh pr view:*)",
             "Bash(git -C:*)",
             "Bash(git add:*)",
+            "Bash(git branch:*)",
+            "Bash(git checkout:*)",
             "Bash(git commit:*)",
+            "Bash(git diff:*)",
+            "Bash(git fetch:*)",
+            "Bash(git log:*)",
+            "Bash(git push:*)",
+            "Bash(git rev-parse:*)",
+            "Bash(git show:*)",
+            "Bash(git stash:*)",
+            "Bash(git status:*)",
             "Bash(grep:*)",
             "Bash(ls:*)",
             "Bash(pnpm -F web add:*)",
@@ -51,6 +61,17 @@
         ]
     },
     "hooks": {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": ".claude/hooks/block-push-main.sh"
+                    }
+                ]
+            }
+        ],
         "PostToolUse": [
             {
                 "matcher": "Edit|Write",

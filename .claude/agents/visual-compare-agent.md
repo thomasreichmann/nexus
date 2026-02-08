@@ -68,6 +68,7 @@ The preview page automatically remaps `--color-*` keys to their semantic equival
     "title": "Dark Mode Destructive Color",
     "description": "Comparing --destructive options for .dark selector",
     "mode": "dark",
+    "samplers": ["colors", "buttons", "text"],
     "options": [
         {
             "label": "Subtle",
@@ -82,6 +83,7 @@ The preview page automatically remaps `--color-*` keys to their semantic equival
 
 - Set `mode` to force the correct theme for the comparison
 - Include the color value in the description so the user can see what they're choosing
+- Set `samplers` to only render relevant sampler sections. Available: `colors`, `buttons`, `badges`, `text`, `composed`. Omit or leave empty to render all samplers
 
 ### Step 5: Return Structured Summary
 
@@ -120,7 +122,8 @@ Reset data.json to its empty default state:
     "title": "",
     "description": "",
     "mode": "system",
-    "options": []
+    "options": [],
+    "samplers": []
 }
 ```
 
