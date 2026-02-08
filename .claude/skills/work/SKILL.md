@@ -253,7 +253,23 @@ If user selected "Resume":
 
     If migrations fail, show the error and ask user how to proceed.
 
-6. **If implementation reveals issues:**
+6. **For CSS variable or design token changes**, invoke `visual-compare-agent` to visually compare options:
+
+    ```
+    Task tool call:
+      subagent_type: visual-compare-agent
+      prompt: |
+        Compare CSS variable options:
+        - variable: <variable name>
+        - file: <path to CSS file>
+        - mode: <light | dark | both>
+        - context: <what the variable is used for>
+        - autonomous: true
+    ```
+
+    Use `autonomous: true` when the change is part of a larger implementation and the agent should pick the best option. Use `autonomous: false` when the user should review and choose.
+
+7. **If implementation reveals issues:**
     - Scope creep: Note it, stay focused on acceptance criteria
     - Blockers: Ask user how to proceed
     - New issues discovered: Offer to create follow-up issues

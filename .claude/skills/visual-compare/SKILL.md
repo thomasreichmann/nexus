@@ -34,3 +34,21 @@ Resume the same agent using the Task tool's `resume` parameter:
 - **prompt:** `User chose: <selected option label>. Apply the value to the target CSS file, clean up data.json, and return a final summary.`
 
 Report the final summary back to the user.
+
+## Autonomous Mode (programmatic use)
+
+When another agent invokes visual-compare-agent with `autonomous: true`, the entire flow collapses into a single Task invocation — no user interaction or resume needed.
+
+```
+Task tool call:
+  subagent_type: visual-compare-agent
+  prompt: |
+    Compare CSS variable options:
+    - variable: --destructive
+    - file: apps/web/app/globals.css
+    - mode: dark
+    - context: error states and destructive action buttons
+    - autonomous: true
+```
+
+The agent generates options, picks the best fit, applies it, cleans up data.json, and returns a `CHOSEN: / APPLIED:` summary. See the agent definition for full details on selection criteria and return format.
