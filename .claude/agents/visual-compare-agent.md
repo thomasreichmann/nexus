@@ -112,26 +112,14 @@ Before generating comparison options, ensure an appropriate sampler exists to sh
 
 Read `apps/web/app/dev/preview/samplers/index.ts` to get the current `allSamplers` array. Note the registered sampler names and their component files.
 
-Also use Glob to list all `.tsx` files in `apps/web/app/dev/preview/samplers/` to verify the directory state matches the barrel export.
-
 #### 2. Infer the token category
 
 Determine what token category the target CSS variable belongs to by analyzing:
 
-- **The variable name itself** — e.g., `--border` → borders/outlines, `--chart-1` → chart colors, `--sidebar-primary` → sidebar, `--ring` → focus rings, `--radius` → border radius
+- **The variable name itself** — e.g., `--border` suggests borders/outlines, `--chart-*` suggests charts, `--sidebar-*` suggests sidebar, `--ring` suggests focus rings, `--radius` suggests border radius
 - **Its CSS context** — read the variable's location in `globals.css` to see what other variables are nearby and what `@theme inline` maps it to (e.g., `--color-ring` indicates a color token)
 
-Common category mappings:
-
-| Variable pattern                                                                                    | Category       | Sampler focus                                                        |
-| --------------------------------------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------- |
-| `--primary`, `--secondary`, `--accent`, `--muted`, `--destructive` and their `-foreground` variants | Surface colors | Color swatches, text on backgrounds                                  |
-| `--background`, `--foreground`, `--card`, `--popover`                                               | Surface colors | Same as above (already covered by existing `colors`/`text` samplers) |
-| `--border`, `--input`                                                                               | Borders/inputs | Elements with visible borders and input fields                       |
-| `--ring`                                                                                            | Focus rings    | Focused interactive elements showing ring styles                     |
-| `--chart-1` through `--chart-5`                                                                     | Charts         | Color bars or visual blocks representing data series                 |
-| `--sidebar-*`                                                                                       | Sidebar        | Sidebar-like layout with nav items                                   |
-| `--radius`                                                                                          | Border radius  | Elements at various sizes showing corner rounding                    |
+Compare the inferred category against the existing samplers discovered in step 1.
 
 #### 3. Check if a matching sampler exists
 
@@ -154,16 +142,16 @@ If no existing sampler adequately covers the target variable's category:
 Example of a minimal sampler:
 
 ```tsx
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+
 export function FocusRings() {
     return (
         <div className="flex gap-3">
-            <button className="rounded-md border px-3 py-1.5 text-sm ring-2 ring-ring ring-offset-2 ring-offset-background">
+            <Button className="ring-2 ring-ring ring-offset-2 ring-offset-background">
                 Ring preview
-            </button>
-            <input
-                className="rounded-md border px-3 py-1.5 text-sm focus:ring-2 focus:ring-ring"
-                placeholder="Focus me"
-            />
+            </Button>
+            <Input placeholder="Focus me" />
         </div>
     );
 }
