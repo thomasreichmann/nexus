@@ -26,11 +26,19 @@ if (isDev && !g[globalKey]) {
     }
 }
 
+// Custom transport wraps pino-pretty with a customPrettifier that expands
+// escaped newlines in "message" fields (e.g. Zod validation summaries).
+// It's a .mjs file so pino's worker thread can load it via native ESM.
+const PRETTY_TRANSPORT = path.join(
+    process.cwd(),
+    'server/lib/logger/transports/pretty.mjs'
+);
+
 const transport = isDev
     ? pino.transport({
           targets: [
               {
-                  target: 'pino-pretty',
+                  target: PRETTY_TRANSPORT,
                   options: { colorize: true, singleLine: true },
                   level: 'debug',
               },
