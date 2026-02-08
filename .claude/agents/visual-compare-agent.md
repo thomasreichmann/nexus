@@ -48,6 +48,7 @@ The agent generates options, evaluates them against project design conventions, 
 **Interactive mode:**
 
 ```
+SAMPLER: <created | existing> — <sampler name> — <file path if created>
 OPTIONS:
 1. <label> — <css value> — <brief description>
 ...
@@ -59,6 +60,7 @@ PREVIEW: http://localhost:3000/dev/preview
 **Autonomous mode:**
 
 ```
+SAMPLER: <created | existing> — <sampler name> — <file path if created>
 CHOSEN: <label> — <css value> — <rationale>
 APPLIED: <file path> | <variable name> | <old value> → <new value>
 ```
@@ -101,6 +103,80 @@ Parse the user's request to identify:
 3. **Check for related variables:**
 
     Look for foreground/background counterparts (e.g., `--destructive-foreground`) that may need adjustment for contrast.
+
+### Step 2.5: Sampler Discovery & Generation
+
+Before generating comparison options, ensure an appropriate sampler exists to showcase the target variable's visual effect.
+
+#### 1. Discover existing samplers
+
+Read `apps/web/app/dev/preview/samplers/index.ts` to get the current `allSamplers` array. Note the registered sampler names and their component files.
+
+Also use Glob to list all `.tsx` files in `apps/web/app/dev/preview/samplers/` to verify the directory state matches the barrel export.
+
+#### 2. Infer the token category
+
+Determine what token category the target CSS variable belongs to by analyzing:
+
+- **The variable name itself** — e.g., `--border` → borders/outlines, `--chart-1` → chart colors, `--sidebar-primary` → sidebar, `--ring` → focus rings, `--radius` → border radius
+- **Its CSS context** — read the variable's location in `globals.css` to see what other variables are nearby and what `@theme inline` maps it to (e.g., `--color-ring` indicates a color token)
+
+Common category mappings:
+
+| Variable pattern                                                                                    | Category       | Sampler focus                                                        |
+| --------------------------------------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------- |
+| `--primary`, `--secondary`, `--accent`, `--muted`, `--destructive` and their `-foreground` variants | Surface colors | Color swatches, text on backgrounds                                  |
+| `--background`, `--foreground`, `--card`, `--popover`                                               | Surface colors | Same as above (already covered by existing `colors`/`text` samplers) |
+| `--border`, `--input`                                                                               | Borders/inputs | Elements with visible borders and input fields                       |
+| `--ring`                                                                                            | Focus rings    | Focused interactive elements showing ring styles                     |
+| `--chart-1` through `--chart-5`                                                                     | Charts         | Color bars or visual blocks representing data series                 |
+| `--sidebar-*`                                                                                       | Sidebar        | Sidebar-like layout with nav items                                   |
+| `--radius`                                                                                          | Border radius  | Elements at various sizes showing corner rounding                    |
+
+#### 3. Check if a matching sampler exists
+
+Compare the inferred category to the existing samplers. If an existing sampler already showcases the target variable's visual effect adequately, use it — do not create a duplicate.
+
+For example, if the target is `--destructive` and the `colors` and `buttons` samplers already render `bg-destructive` and destructive button variants, no new sampler is needed.
+
+#### 4. Generate a new sampler (if needed)
+
+If no existing sampler adequately covers the target variable's category:
+
+**a. Create the component file** in `apps/web/app/dev/preview/samplers/`:
+
+- Use PascalCase filename (e.g., `FocusRings.tsx`, `ChartColors.tsx`, `BorderStyles.tsx`)
+- Follow existing sampler patterns — function declaration, no props, uses Tailwind utility classes
+- Import UI components from `@/components/ui/` when they help showcase the token (e.g., `Input` for border tokens)
+- For pure color tokens, simple divs with utility classes are sufficient (like `ColorSwatches`)
+- The component should render a compact preview that clearly demonstrates the visual effect of the target token category
+
+Example of a minimal sampler:
+
+```tsx
+export function FocusRings() {
+    return (
+        <div className="flex gap-3">
+            <button className="rounded-md border px-3 py-1.5 text-sm ring-2 ring-ring ring-offset-2 ring-offset-background">
+                Ring preview
+            </button>
+            <input
+                className="rounded-md border px-3 py-1.5 text-sm focus:ring-2 focus:ring-ring"
+                placeholder="Focus me"
+            />
+        </div>
+    );
+}
+```
+
+**b. Register the sampler** in `apps/web/app/dev/preview/samplers/index.ts`:
+
+- Add an import for the new component
+- Add an entry to the `allSamplers` array with a lowercase `name` (e.g., `'focus'`, `'charts'`, `'borders'`, `'sidebar'`, `'radius'`)
+
+**c. File write order matters for HMR:** Write the component file first, then update `index.ts`. This ensures the import target exists before the barrel references it.
+
+**d. Idempotency:** If you previously generated a sampler for this category (in a prior invocation), it will already be in the registry. Do not regenerate it.
 
 ### Step 3: Generate 4 Options
 
@@ -145,7 +221,7 @@ The preview page automatically remaps `--color-*` keys to their semantic equival
 
 - Set `mode` to force the correct theme for the comparison
 - Include the color value in the description so the user can see what they're choosing
-- Set `samplers` to only render relevant sampler sections. Available: `colors`, `buttons`, `badges`, `text`, `composed`. Omit or leave empty to render all samplers
+- Set `samplers` to only render relevant sampler sections. Read `apps/web/app/dev/preview/samplers/index.ts` to discover available sampler names (the `name` field in `allSamplers`). Include any sampler you generated in Step 2.5. Omit or leave empty to render all samplers
 
 ### Step 5: Return Results
 
@@ -154,6 +230,7 @@ The preview page automatically remaps `--color-*` keys to their semantic equival
 Return a summary with this exact format so the main thread can parse it:
 
 ```
+SAMPLER: <created | existing> — <sampler name> — <file path if created>
 OPTIONS:
 1. <label> — <css value> — <brief description>
 2. <label> — <css value> — <brief description>
@@ -176,6 +253,7 @@ Do NOT ask the user to pick. Just return the summary and stop.
 6. Return using the autonomous format:
 
 ```
+SAMPLER: <created | existing> — <sampler name> — <file path if created>
 CHOSEN: <label> — <css value> — <rationale for selection>
 APPLIED: <file path> | <variable name> | <old value> → <new value>
 ```
@@ -195,7 +273,7 @@ When resumed, you will receive which option the user chose. Then:
 
 ### Step 7: Clean Up
 
-Reset data.json to its empty default state:
+Reset data.json to its empty default state. **Do NOT remove sampler component files or their registry entries in `index.ts`** — generated samplers are permanent additions to the codebase, not temporary comparison artifacts.
 
 ```json
 {
