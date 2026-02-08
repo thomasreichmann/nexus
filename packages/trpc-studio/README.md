@@ -49,7 +49,6 @@ Then visit `/api/trpc-studio` to view the full studio UI.
 ```tsx
 // app/dev/studio/page.tsx
 import { TRPCStudio } from 'trpc-devtools';
-import 'trpc-devtools/styles.css';
 
 export default function StudioPage() {
     return (
@@ -57,6 +56,8 @@ export default function StudioPage() {
     );
 }
 ```
+
+> **Note:** CSS is automatically injected at runtime — no separate CSS import needed.
 
 ## API Reference
 
@@ -68,7 +69,6 @@ import { createTRPCStudio, introspectRouter } from 'trpc-devtools/server';
 
 // Client-side (React components)
 import { TRPCStudio } from 'trpc-devtools';
-import 'trpc-devtools/styles.css';
 ```
 
 ### `createTRPCStudio(config)`
