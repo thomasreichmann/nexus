@@ -78,7 +78,11 @@ export function formatStackTrace(
     // Format each frame or marker
     for (const item of collapsed) {
         if (isCollapsedMarker(item)) {
-            lines.push(formatCollapsedMarker(item.count, item.kind, colors));
+            if (config.showMarkers) {
+                lines.push(
+                    formatCollapsedMarker(item.count, item.kind, colors)
+                );
+            }
         } else {
             lines.push(
                 formatFrameLine(

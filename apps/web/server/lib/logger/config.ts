@@ -11,6 +11,8 @@ export interface StackTraceConfig {
     maxProjectFrames: number;
     /** Whether to show vendor/node_modules frames */
     showVendor: boolean;
+    /** Whether to show collapsed frame markers ("… x frames hidden …") */
+    showMarkers: boolean;
     /** Lines of code context to show around error location */
     codeFrameContext: number;
 }
@@ -42,6 +44,7 @@ export function loadConfig(): StackTraceConfig {
         colorEnabled: detectColorSupport(),
         maxProjectFrames: parseIntEnv('STACKTRACE_MAX_PROJECT', 10),
         showVendor: process.env.STACKTRACE_SHOW_VENDOR === '1',
+        showMarkers: process.env.STACKTRACE_SHOW_MARKERS === '1',
         codeFrameContext: parseIntEnv('STACKTRACE_CODEFRAME_CONTEXT', 2),
     };
 }
