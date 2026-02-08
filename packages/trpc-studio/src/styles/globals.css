@@ -49,7 +49,7 @@
     --color-accent: hsl(217 33% 17%);
     --color-accent-foreground: hsl(210 40% 98%);
 
-    --color-destructive: hsl(0 63% 31%);
+    --color-destructive: oklch(0.704 0.191 22.216);
     --color-destructive-foreground: hsl(210 40% 98%);
 
     --color-border: hsl(217 33% 17%);

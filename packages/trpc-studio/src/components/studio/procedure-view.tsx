@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SchemaForm } from './schema-form';
 import { ResponseViewer } from './response-viewer';
 import { executeRequest, type TRPCResponse } from '@/lib/request';
+import { parseZodError } from '@/lib/zod-error';
 import {
     saveToHistory,
     loadSuperJSONPreference,
@@ -42,6 +43,10 @@ export function ProcedureView({
         setInput('');
         setResponse(null);
     }, [procedure.path]);
+
+    const validationErrors = response?.error
+        ? parseZodError(response.error)
+        : null;
 
     const handleSubmit = async () => {
         if (procedure.type === 'subscription') {
@@ -204,6 +209,7 @@ export function ProcedureView({
                                 onSubmit={handleSubmit}
                                 isLoading={isLoading}
                                 procedureType={procedure.type}
+                                validationErrors={validationErrors}
                             />
                         </CardContent>
                     </Card>
@@ -216,7 +222,10 @@ export function ProcedureView({
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="flex-1 p-0 overflow-hidden">
-                            <ResponseViewer response={response} />
+                            <ResponseViewer
+                                response={response}
+                                zodIssues={validationErrors}
+                            />
                         </CardContent>
                     </Card>
                 }

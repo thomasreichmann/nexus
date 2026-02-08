@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { JsonEditor } from '@/components/ui/json-editor';
 import { Spinner } from '@/components/ui/spinner';
 import { generateSample, parseJsonWithPosition } from '@/lib/sample-generator';
+import { formatIssuePath, type ZodIssue } from '@/lib/zod-error';
 import type { JSONSchema } from '@/server/types';
 
 interface SchemaFormProps {
@@ -15,6 +16,7 @@ interface SchemaFormProps {
     onSubmit: () => void;
     isLoading?: boolean;
     procedureType: 'query' | 'mutation' | 'subscription';
+    validationErrors?: ZodIssue[] | null;
 }
 
 export function SchemaForm({
@@ -24,6 +26,7 @@ export function SchemaForm({
     onSubmit,
     isLoading,
     procedureType,
+    validationErrors,
 }: SchemaFormProps) {
     const [showSchema, setShowSchema] = React.useState(true);
     const hasInput = schema !== null;
@@ -106,6 +109,9 @@ export function SchemaForm({
                             {errorMessage}
                         </p>
                     )}
+                    {validationErrors && validationErrors.length > 0 && (
+                        <ValidationErrorBanner errors={validationErrors} />
+                    )}
                     <p className="text-xs text-muted-foreground">
                         Cmd+Shift+F to format
                     </p>
@@ -137,7 +143,28 @@ export function SchemaForm({
     );
 }
 
-// Helper functions - defined after main export (hoisting allows this)
+// Helper components and functions - defined after main export (hoisting allows this)
+
+function ValidationErrorBanner({ errors }: { errors: ZodIssue[] }) {
+    return (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 space-y-1">
+            <p className="text-xs font-medium text-destructive">
+                {errors.length} validation{' '}
+                {errors.length === 1 ? 'error' : 'errors'}
+            </p>
+            <ul className="text-xs text-muted-foreground space-y-0.5">
+                {errors.map((error, i) => (
+                    <li key={i}>
+                        <code className="font-mono text-foreground">
+                            {formatIssuePath(error.path)}
+                        </code>{' '}
+                        — {error.message}
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
 
 function getTypeString(schema: JSONSchema): string {
     if (schema.$ref) {
