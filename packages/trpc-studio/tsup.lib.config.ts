@@ -1,23 +1,6 @@
 import { defineConfig } from 'tsup';
-import type { Plugin } from 'esbuild';
 import { embedAssetsPlugin } from './build/embed-assets-esbuild-plugin';
-
-// Plugin to ignore CSS imports (handled by Tailwind CLI)
-function ignoreCssPlugin(): Plugin {
-    return {
-        name: 'ignore-css',
-        setup(build) {
-            build.onResolve({ filter: /\.css$/ }, () => ({
-                path: 'ignored',
-                namespace: 'ignore-css',
-            }));
-            build.onLoad({ filter: /.*/, namespace: 'ignore-css' }, () => ({
-                contents: '',
-                loader: 'js',
-            }));
-        },
-    };
-}
+import { embedCssPlugin } from './build/embed-css-esbuild-plugin';
 
 export default defineConfig({
     entry: { index: 'src/index.ts', server: 'src/server.ts' },
@@ -28,7 +11,7 @@ export default defineConfig({
     treeshake: true,
     minify: false,
     dts: true,
-    esbuildPlugins: [ignoreCssPlugin(), embedAssetsPlugin()],
+    esbuildPlugins: [embedCssPlugin(), embedAssetsPlugin()],
     esbuildOptions(options) {
         options.jsx = 'automatic';
         options.alias = { '@': './src' };
