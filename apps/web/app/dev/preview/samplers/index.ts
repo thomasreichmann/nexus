@@ -4,6 +4,7 @@ import { BadgeVariants } from './BadgeVariants';
 import { ButtonVariants } from './ButtonVariants';
 import { ColorSwatches } from './ColorSwatches';
 import { ComposedComponents } from './ComposedComponents';
+import { FocusRings } from './FocusRings';
 import { TextColors } from './TextColors';
 
 interface SamplerEntry {
@@ -16,6 +17,7 @@ export const allSamplers: SamplerEntry[] = [
     { name: 'buttons', component: ButtonVariants },
     { name: 'badges', component: BadgeVariants },
     { name: 'text', component: TextColors },
+    { name: 'focus-rings', component: FocusRings },
     { name: 'composed', component: ComposedComponents },
 ];
 

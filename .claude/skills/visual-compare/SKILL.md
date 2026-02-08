@@ -14,9 +14,10 @@ Two-phase workflow. AskUserQuestion does not work reliably in subprocess agents,
 Use the Task tool to spawn the comparison agent:
 
 - **subagent_type:** `visual-compare-agent`
-- **prompt:** `$ARGUMENTS`
+- **max_turns:** `20`
+- **prompt:** `$ARGUMENTS\n\nRemember: complete Step 3 (Sampler Check) before generating options.`
 
-The agent will research the target CSS variable, generate 4 options, write them to the preview page (`data.json`), and return a structured summary with the option labels and descriptions.
+The agent will check the sampler registry (generating a new sampler if the target token isn't covered), then generate 4 options, write them to the preview page (`data.json`), and return a structured summary with the option labels and descriptions.
 
 ## Phase 2: User Picks (main thread)
 
@@ -42,6 +43,7 @@ When another agent invokes visual-compare-agent with `autonomous: true`, the ent
 ```
 Task tool call:
   subagent_type: visual-compare-agent
+  max_turns: 20
   prompt: |
     Compare CSS variable options:
     - variable: --destructive
@@ -49,6 +51,8 @@ Task tool call:
     - mode: dark
     - context: error states and destructive action buttons
     - autonomous: true
+
+    Remember: complete Step 3 (Sampler Check) before generating options.
 ```
 
-The agent generates options, picks the best fit, applies it, cleans up data.json, and returns a `CHOSEN: / APPLIED:` summary. See the agent definition for full details on selection criteria and return format.
+The agent generates options, picks the best fit, applies it, cleans up data.json, and returns a `SAMPLER: / CHOSEN: / APPLIED:` summary. See the agent definition for full details on selection criteria and return format.

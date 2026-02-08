@@ -258,6 +258,7 @@ If user selected "Resume":
     ```
     Task tool call:
       subagent_type: visual-compare-agent
+      max_turns: 20
       prompt: |
         Compare CSS variable options:
         - variable: <variable name>
@@ -265,6 +266,8 @@ If user selected "Resume":
         - mode: <light | dark | both>
         - context: <what the variable is used for>
         - autonomous: true
+
+        Remember: complete Step 3 (Sampler Check) before generating options.
     ```
 
     Use `autonomous: true` when the change is part of a larger implementation and the agent should pick the best option. Use `autonomous: false` when the user should review and choose.
