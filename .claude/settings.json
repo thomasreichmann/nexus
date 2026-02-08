@@ -29,6 +29,7 @@
             "Bash(git -C:*)",
             "Bash(git add:*)",
             "Bash(git commit:*)",
+            "Bash(git push:*)",
             "Bash(grep:*)",
             "Bash(ls:*)",
             "Bash(pnpm -F web add:*)",
@@ -51,6 +52,17 @@
         ]
     },
     "hooks": {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": ".claude/hooks/block-push-main.sh"
+                    }
+                ]
+            }
+        ],
         "PostToolUse": [
             {
                 "matcher": "Edit|Write",
