@@ -107,10 +107,15 @@ pnpm -F web db:custom <name>    # Generate empty migration for RLS/functions
 
 ```
 nexus/
-├── apps/web/              # Next.js application
-│   ├── server/db/         # Drizzle schema & migrations
-│   └── lib/env/           # Type-safe env validation
-├── infra/terraform/       # AWS infrastructure (S3, IAM)
+├── apps/
+│   ├── web/               # Next.js application (Vercel)
+│   │   ├── server/        # tRPC routers, services
+│   │   └── lib/           # Shared utilities (env, jobs, storage)
+│   └── worker/            # Lambda SQS worker (AWS)
+├── packages/
+│   ├── db/                # Shared Drizzle schema, repos, types
+│   └── trpc-devtools/     # tRPC developer tools (npm package)
+├── infra/terraform/       # AWS infrastructure (S3, SQS, Lambda, IAM)
 └── docs/                  # Obsidian documentation vault
 ```
 
@@ -135,6 +140,7 @@ docs/
 | -------------------------------- | ----------------------------------------------------------- |
 | Before writing any code          | `docs/ai/conventions.md` - naming, structure, code style    |
 | Before working on storage/S3     | `docs/guides/storage.md` - S3 module API                    |
+| Before working on Lambda/worker  | `docs/guides/lambda-development.md` - worker conventions    |
 | When unfamiliar with the project | `docs/ai/context.md` - data model, architecture, tech stack |
 
 ## Git Commits
