@@ -99,10 +99,9 @@ If no issue number was provided:
 
 **For Multiple/Auto-select mode:**
 
-- Spawn parallel Task agents (subagent_type: "general-purpose") for each issue
-- Each agent uses the `groom-research` agent to run the **Research & Discovery** phase
-- Agents return research findings and key decisions - NOT final drafts
-- Main agent presents decisions to user for input
+- Spawn one Task per issue using `subagent_type: "groom-research"` — make all Task calls in the **same message** so they run concurrently. Do NOT use `run_in_background`.
+- Each agent returns research findings and key decisions — NOT final drafts
+- After all Tasks return, compile decisions and present them to the user
 - THEN drafts are created incorporating user decisions
 
 ### Step 3: Groom Issue (per issue)
@@ -117,11 +116,7 @@ This is a TWO-PHASE process. Do NOT skip the first phase.
     gh issue view <number> --json number,title,body,labels
     ```
 
-2. **Research codebase context** using the `groom-research` agent:
-    - Find related files using Grep and Glob
-    - Read relevant code to understand the feature area
-    - Look for similar patterns or existing implementations
-    - Identify architectural implications
+2. **Research codebase context** by spawning a Task with `subagent_type: "groom-research"` (do NOT use `run_in_background`). Pass it the issue number and details. The agent will return structured research findings.
 
 3. **Identify decisions and alternatives:**
     - What architectural choices exist?
@@ -201,7 +196,7 @@ Before presenting drafts to the user, review them for quality and codebase align
 
 ### For Each Draft:
 
-1. **Spawn three review agents in parallel:**
+1. **Spawn three review agents in the same message** (do NOT use `run_in_background` — make all three Task calls in one message so they run concurrently and return results directly):
 
     **Issue Quality Review** (subagent_type: "general-purpose"):
     - Review the draft against `.claude/skills/groom/templates/review-criteria.md`
@@ -224,7 +219,7 @@ Before presenting drafts to the user, review them for quality and codebase align
         - Issues that overlap in scope (potential duplicates or related work)
     - Return list of suggested relationship updates (blocked-by, blocks, references)
 
-2. **Collect results from all three agents**
+2. **Collect results from all three agents** (each Task's return value contains the agent's final structured output directly)
 
 3. **Process findings:**
     - Fix obvious issues (unclear wording, missing criteria, non-existent references)
