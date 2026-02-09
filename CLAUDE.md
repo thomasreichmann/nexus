@@ -139,8 +139,6 @@ docs/
 | When                             | You MUST read                                               |
 | -------------------------------- | ----------------------------------------------------------- |
 | Before writing any code          | `docs/ai/conventions.md` - naming, structure, code style    |
-| Before working on storage/S3     | `docs/guides/storage.md` - S3 module API                    |
-| Before working on Lambda/worker  | `docs/guides/lambda-development.md` - worker conventions    |
 | When unfamiliar with the project | `docs/ai/context.md` - data model, architecture, tech stack |
 
 ## Git Commits
