@@ -1,9 +1,12 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import postgres, { type Options } from 'postgres';
 import * as schema from './schema';
 
-export function createDb(url: string) {
-    const client = postgres(url);
+export function createDb(
+    url: string,
+    options?: Options<Record<string, never>>
+) {
+    const client = postgres(url, options);
     return drizzle(client, { schema });
 }
 

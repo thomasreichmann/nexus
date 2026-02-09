@@ -91,3 +91,14 @@ export async function updateJob(
 
     return job;
 }
+
+export async function markJobProcessing(db: DB, id: string): Promise<void> {
+    await db
+        .update(schema.backgroundJobs)
+        .set({
+            status: 'processing',
+            attempts: sql`${schema.backgroundJobs.attempts} + 1`,
+            startedAt: new Date(),
+        })
+        .where(eq(schema.backgroundJobs.id, id));
+}

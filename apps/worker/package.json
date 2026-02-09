@@ -1,0 +1,28 @@
+{
+    "name": "@nexus/worker",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "tsup",
+        "lint": "eslint .",
+        "test": "vitest",
+        "test:run": "vitest run",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@nexus/db": "workspace:*",
+        "drizzle-orm": "^0.45.1",
+        "postgres": "^3.4.7"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.28.0",
+        "@types/aws-lambda": "^8.10.149",
+        "@types/node": "^20",
+        "eslint": "^9.28.0",
+        "tsup": "^8.5.0",
+        "typescript": "^5",
+        "typescript-eslint": "^8.36.0",
+        "vitest": "^4.0.16"
+    }
+}
