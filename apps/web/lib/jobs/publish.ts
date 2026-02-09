@@ -1,8 +1,12 @@
 import { SendMessageCommand } from '@aws-sdk/client-sqs';
 import { client, queueUrl } from './client';
-import type { JobInput, SqsMessageBody } from './types';
-import { insertJob, type Job } from '@/server/db/repositories/jobs';
-import type { DB } from '@/server/db';
+import {
+    insertJob,
+    type DB,
+    type Job,
+    type JobInput,
+    type SqsMessageBody,
+} from '@nexus/db';
 
 /**
  * Publish a background job: inserts a DB record and sends an SQS message.

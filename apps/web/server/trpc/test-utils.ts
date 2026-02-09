@@ -1,6 +1,5 @@
 import type { RequestLogger, LoggingContext } from './middleware/logging';
-import { createMockDb } from '../db/repositories/mocks';
-import { createUserFixture, type User } from '../db/repositories/fixtures';
+import { createMockDb, createUserFixture, type User } from '@nexus/db';
 import type { Context, LoggedContext } from './init';
 
 /**
