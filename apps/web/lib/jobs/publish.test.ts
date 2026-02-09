@@ -1,9 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { createMockDb } from '@/server/db/repositories/mocks';
-import {
-    createJobFixture,
-    TEST_USER_ID,
-} from '@/server/db/repositories/fixtures';
+import { createMockDb, createJobFixture, TEST_USER_ID } from '@nexus/db';
 import { publish } from './publish';
 
 vi.mock('./client', () => ({

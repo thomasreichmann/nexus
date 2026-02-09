@@ -83,24 +83,26 @@ grep '"source":"client"' apps/web/.dev.log | jq . # Client logs only
 
 ## Database (Drizzle)
 
-Commands run from `apps/web/` or use `-F web` filter:
+Schema, repositories, and migrations live in `packages/db/` (`@nexus/db`).
+
+Commands run from monorepo root using `-F db` filter:
 
 ```bash
-pnpm -F web db:generate         # Generate migration from schema changes
-pnpm -F web db:migrate          # Apply pending migrations
-pnpm -F web db:studio           # Open Drizzle Studio
-pnpm -F web db:custom <name>    # Generate empty migration for RLS/functions
+pnpm -F db db:generate         # Generate migration from schema changes
+pnpm -F db db:migrate          # Apply pending migrations
+pnpm -F db db:studio           # Open Drizzle Studio
+pnpm -F db db:custom <name>    # Generate empty migration for RLS/functions
 ```
 
 **Workflow:**
 
-- Schema changes → edit `server/db/schema.ts` → `db:generate` → `db:migrate`
+- Schema changes → edit `packages/db/src/schema/` → `db:generate` → `db:migrate`
 - RLS/functions → `db:custom <name>` → edit SQL file → `db:migrate`
 
 **Rules:**
 
 - Always use drizzle-kit commands (never manually create migration files)
-- Never edit `server/db/migrations/meta/` journal
+- Never edit `packages/db/src/migrations/meta/` journal
 - Flag destructive changes (dropping columns/tables) before running
 
 ## Repository Structure

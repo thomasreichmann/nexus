@@ -16,4 +16,9 @@ import { publish } from './publish';
 export const jobs = { publish } as const;
 
 // Re-export types for convenience
-export type { JobType, JobInput, JobPayloadMap, SqsMessageBody } from './types';
+export type {
+    JobType,
+    JobInput,
+    JobPayloadMap,
+    SqsMessageBody,
+} from '@nexus/db';

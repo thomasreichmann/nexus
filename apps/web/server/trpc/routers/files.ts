@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import * as fileRepo from '@/server/db/repositories/files';
+import * as fileRepo from '@nexus/db';
 import { fileService } from '@/server/services/files';
 import { protectedProcedure, router } from '../init';
 

@@ -1,6 +1,5 @@
-import type { DB } from '@/server/db';
-import type { File } from '@/server/db/repositories/files';
-import * as fileRepo from '@/server/db/repositories/files';
+import type { DB, File } from '@nexus/db';
+import * as fileRepo from '@nexus/db';
 import { NotFoundError, QuotaExceededError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
 

@@ -1,19 +1,5 @@
-/**
- * Glacier restore tier values - determines retrieval speed and cost
- * These are also used to define the database enum in server/db/schema/storage.ts
- *
- * For Deep Archive (MVP default):
- * - expedited: Not available for Deep Archive
- * - standard: 12-48 hours
- * - bulk: 48 hours (cheapest)
- *
- * For Glacier Flexible Retrieval:
- * - expedited: 1-5 minutes (most expensive)
- * - standard: 3-5 hours
- * - bulk: 5-12 hours
- */
-export const RESTORE_TIERS = ['standard', 'bulk', 'expedited'] as const;
-export type RestoreTier = (typeof RESTORE_TIERS)[number];
+// Re-export from canonical source in @nexus/db
+export { RESTORE_TIERS, type RestoreTier } from '@nexus/db';
 
 export interface RestoreStatus {
     status: 'not-started' | 'in-progress' | 'completed';

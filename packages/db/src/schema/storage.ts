@@ -9,7 +9,22 @@ import {
 } from 'drizzle-orm/pg-core';
 import { user } from './auth';
 import { timestamps } from './helpers';
-import { RESTORE_TIERS } from '@/lib/storage/types';
+
+/**
+ * Glacier restore tier values - determines retrieval speed and cost
+ *
+ * For Deep Archive (MVP default):
+ * - expedited: Not available for Deep Archive
+ * - standard: 12-48 hours
+ * - bulk: 48 hours (cheapest)
+ *
+ * For Glacier Flexible Retrieval:
+ * - expedited: 1-5 minutes (most expensive)
+ * - standard: 3-5 hours
+ * - bulk: 5-12 hours
+ */
+export const RESTORE_TIERS = ['standard', 'bulk', 'expedited'] as const;
+export type RestoreTier = (typeof RESTORE_TIERS)[number];
 
 // Nexus domain tables
 
