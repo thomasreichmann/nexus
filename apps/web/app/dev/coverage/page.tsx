@@ -70,12 +70,7 @@ function getColors(pct: number) {
 /*  Animated counter hook                                              */
 /* ------------------------------------------------------------------ */
 
-function useCounter(
-    target: number,
-    ms: number,
-    delay: number,
-    go: boolean,
-) {
+function useCounter(target: number, ms: number, delay: number, go: boolean) {
     const [val, setVal] = useState(0);
 
     useEffect(() => {
@@ -86,10 +81,7 @@ function useCounter(
         let raf: number;
         const t0 = performance.now() + delay;
         function tick() {
-            const p = Math.min(
-                Math.max((performance.now() - t0) / ms, 0),
-                1,
-            );
+            const p = Math.min(Math.max((performance.now() - t0) / ms, 0), 1);
             setVal(target * (1 - (1 - p) ** 3));
             if (p < 1) raf = requestAnimationFrame(tick);
         }
@@ -132,11 +124,7 @@ function RingGauge({
     return (
         <div className="flex flex-col items-center">
             <div className="relative">
-                <svg
-                    width={VIEW}
-                    height={VIEW}
-                    viewBox={`0 0 ${VIEW} ${VIEW}`}
-                >
+                <svg width={VIEW} height={VIEW} viewBox={`0 0 ${VIEW} ${VIEW}`}>
                     <circle
                         cx={MID}
                         cy={MID}
@@ -244,9 +232,7 @@ function WorkspaceCard({
     if (ws.error) {
         return (
             <div className="rounded-xl border border-border bg-card/50 px-5 py-4">
-                <span className="font-mono text-sm font-medium">
-                    {ws.name}
-                </span>
+                <span className="font-mono text-sm font-medium">{ws.name}</span>
                 <span className="ml-3 text-xs text-muted-foreground">
                     no data
                 </span>
@@ -319,9 +305,7 @@ export default function CoveragePage() {
             })
             .then(setData)
             .catch((e: unknown) =>
-                setError(
-                    e instanceof Error ? e.message : 'Unknown error',
-                ),
+                setError(e instanceof Error ? e.message : 'Unknown error')
             );
     }, []);
 
@@ -359,9 +343,7 @@ export default function CoveragePage() {
             <Shell>
                 <div className="flex flex-1 items-center justify-center text-center">
                     <div>
-                        <p className="font-medium">
-                            No coverage data found
-                        </p>
+                        <p className="font-medium">No coverage data found</p>
                         <p className="mt-1 text-sm text-muted-foreground">
                             Run{' '}
                             <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
@@ -377,9 +359,9 @@ export default function CoveragePage() {
 
     return (
         <Shell>
-            <div className="mx-auto w-full max-w-5xl px-8 py-16">
+            <div className="mx-auto w-full max-w-5xl px-8 py-10">
                 {/* Header */}
-                <header className="mb-14">
+                <header className="mb-10">
                     <p className="font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-muted-foreground">
                         Coverage
                     </p>
@@ -389,8 +371,8 @@ export default function CoveragePage() {
                 </header>
 
                 {/* Total gauges */}
-                <section className="mb-14">
-                    <div className="grid grid-cols-2 gap-10 sm:grid-cols-4">
+                <section className="mb-10">
+                    <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
                         {METRICS.map((m, i) => (
                             <RingGauge
                                 key={m}
