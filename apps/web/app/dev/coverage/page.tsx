@@ -74,10 +74,7 @@ function useCounter(target: number, ms: number, delay: number, go: boolean) {
     const [val, setVal] = useState(0);
 
     useEffect(() => {
-        if (!go) {
-            setVal(0);
-            return;
-        }
+        if (!go) return;
         let raf: number;
         const t0 = performance.now() + delay;
         function tick() {

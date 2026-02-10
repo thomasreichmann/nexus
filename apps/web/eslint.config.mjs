@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
         'out/**',
         'build/**',
         'next-env.d.ts',
+        // Generated coverage output
+        'coverage/**',
     ]),
     // Ban direct pino imports in routers - use ctx.log instead
     {
