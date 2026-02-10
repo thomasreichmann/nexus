@@ -6,7 +6,14 @@ export default defineConfig({
         environment: 'node',
         coverage: {
             provider: 'v8',
-            reporter: ['text', 'html'],
+            reporter: ['text', 'html', 'json-summary'],
+            exclude: [
+                '**/fixtures*',
+                '**/mocks*',
+                '**/test-utils*',
+                '**/testing*',
+                '**/vitest.setup*',
+            ],
         },
     },
     resolve: {
