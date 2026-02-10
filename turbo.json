@@ -4,7 +4,6 @@
     "tasks": {
         "build": {
             "dependsOn": ["^build"],
-            "inputs": ["src/**", "package.json", "tsconfig.json", "build/**"],
             "outputs": [".next/**", "dist/**"]
         },
         "dev": {
@@ -14,6 +13,9 @@
         },
         "lint": {},
         "test": {},
+        "test:coverage": {
+            "outputs": ["coverage/**"]
+        },
         "test:e2e": {
             "cache": false
         },

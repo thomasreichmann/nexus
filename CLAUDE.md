@@ -22,6 +22,7 @@ pnpm build        # Build all workspaces
 pnpm lint         # Run ESLint
 pnpm test         # Run tests
 pnpm check        # Run lint + build + test (via Turborepo)
+pnpm test:coverage # Generate test coverage reports
 pnpm typecheck    # TypeScript check
 pnpm env:pull     # Pull env vars from Vercel
 ```

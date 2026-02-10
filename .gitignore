@@ -23,8 +23,10 @@ dist/
 # OS
 .DS_Store
 
-# Testing
-coverage/
+# Testing - coverage output at workspace roots only
+/coverage/
+apps/*/coverage/
+packages/*/coverage/
 playwright-report/
 
 # Terraform
