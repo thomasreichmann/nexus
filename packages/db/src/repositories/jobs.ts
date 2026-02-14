@@ -16,6 +16,15 @@ interface FindJobsResult {
     total: number;
 }
 
+export async function findJobById(
+    db: DB,
+    id: string
+): Promise<Job | undefined> {
+    return db.query.backgroundJobs.findFirst({
+        where: eq(schema.backgroundJobs.id, id),
+    });
+}
+
 export async function findJobs(
     db: DB,
     opts: FindJobsOptions = { limit: 50, offset: 0 }

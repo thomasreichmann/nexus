@@ -90,3 +90,12 @@ export const protectedProcedure = baseProcedure.use(({ ctx, next }) => {
         },
     });
 });
+
+// Admin procedure - throws FORBIDDEN if user is not an admin
+export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+    if (ctx.session.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+
+    return next({ ctx });
+});
