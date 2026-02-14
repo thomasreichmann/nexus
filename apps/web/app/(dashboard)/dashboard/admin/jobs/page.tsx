@@ -66,7 +66,7 @@ export default function AdminJobsPage() {
                 </p>
             </div>
 
-            {data?.counts && <StatusCounts counts={data.counts} />}
+            <StatusCounts counts={data?.counts} />
 
             <div className="flex items-center gap-2">
                 {STATUS_FILTERS.map((filter) => (
@@ -199,24 +199,24 @@ export default function AdminJobsPage() {
     );
 }
 
-function StatusCounts({ counts }: { counts: Record<JobStatus, number> }) {
+function StatusCounts({ counts }: { counts?: Record<JobStatus, number> }) {
     const items = [
         {
             label: 'Pending',
-            value: counts.pending,
+            key: 'pending' as const,
             color: 'text-muted-foreground',
         },
         {
             label: 'Processing',
-            value: counts.processing,
+            key: 'processing' as const,
             color: 'text-blue-600',
         },
         {
             label: 'Completed',
-            value: counts.completed,
+            key: 'completed' as const,
             color: 'text-green-600',
         },
-        { label: 'Failed', value: counts.failed, color: 'text-red-600' },
+        { label: 'Failed', key: 'failed' as const, color: 'text-red-600' },
     ];
 
     return (
@@ -228,7 +228,7 @@ function StatusCounts({ counts }: { counts: Record<JobStatus, number> }) {
                             {item.label}
                         </p>
                         <p className={cn('text-2xl font-bold', item.color)}>
-                            {item.value}
+                            {counts ? counts[item.key] : '—'}
                         </p>
                     </CardContent>
                 </Card>
