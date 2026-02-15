@@ -21,6 +21,7 @@ Technical documentation, setup guides, and implementation patterns for the Nexus
 - [[logging|Logging]] - Server and client-side logging with pino
 - [[lambda-development|Lambda Development]] - Lambda worker conventions and SQS job processing
 - [[background-jobs|Background Jobs Runbook]] - AWS resource ARNs, deployment, and operations
+- [[webhooks|Webhook Handling]] - Webhook handler architecture, idempotency, and testing patterns
 
 ## Dataview
 
