@@ -275,15 +275,17 @@ Nexus uses a layered error handling strategy:
 
 A global error link intercepts all tRPC errors and shows toasts automatically. Components can override this behavior.
 
-**Error code mapping:**
+**Error message strategy:**
 
-| tRPC Code               | User Message                           |
-| ----------------------- | -------------------------------------- |
-| `UNAUTHORIZED`          | Please sign in to continue             |
-| `FORBIDDEN`             | You do not have permission             |
-| `NOT_FOUND`             | The requested resource was not found   |
-| `TOO_MANY_REQUESTS`     | Too many requests. Please slow down    |
-| `INTERNAL_SERVER_ERROR` | Something went wrong. Please try again |
+The error link uses the server's `err.message` by default — domain errors (`NotFoundError`, `ForbiddenError`, etc.) already set user-facing messages. Only `INTERNAL_SERVER_ERROR` is replaced with a generic fallback to avoid leaking implementation details.
+
+| tRPC Code               | Message Source                                            |
+| ----------------------- | --------------------------------------------------------- |
+| `UNAUTHORIZED`          | Fallback: "Please sign in to continue"                    |
+| `FORBIDDEN`             | Server message (from `ForbiddenError`)                    |
+| `NOT_FOUND`             | Server message (from `NotFoundError`)                     |
+| `TOO_MANY_REQUESTS`     | Fallback: "Too many requests. Please slow down"           |
+| `INTERNAL_SERVER_ERROR` | Always fallback: "Something went wrong. Please try again" |
 
 **Per-component override:**
 
