@@ -370,15 +370,65 @@ The `setupConsoleErrorTracking` helper lives in `e2e/utils.ts` and is shared acr
 
 When importing UI from v0 or other generators, components often have subtle issues that only surface at render time. Smoke tests catch these immediately rather than discovering them in production.
 
+### Authenticated E2E Tests
+
+For pages requiring auth (e.g. admin dashboards), use the `storageState` pattern with a Playwright setup project. Reusable helpers live in `e2e/helpers/`:
+
+| Helper                | Purpose                                             |
+| --------------------- | --------------------------------------------------- |
+| `e2e/helpers/auth.ts` | Create users, promote to admin, save `storageState` |
+| `e2e/helpers/seed.ts` | Seed/cleanup test data (jobs, etc.)                 |
+| `e2e/helpers/db.ts`   | Direct DB access via raw `postgres` driver          |
+
+**Auth setup runs as a Playwright project** (`global.setup.ts`), not `globalSetup` config — because `globalSetup` runs before `webServer` starts, making API calls impossible.
+
+**Adding a new test suite:** Create `e2e/admin/your-feature.spec.ts` — the `admin` project auto-matches all files under `admin/`. Auth `storageState` is applied automatically; no per-test login needed. For seed data, add domain-specific helpers to `e2e/helpers/seed.ts` (see `seedJobs`/`cleanupJobs` as the reference implementation).
+
+**Pattern:**
+
+```typescript
+// e2e/admin/feature.spec.ts
+import { test, expect } from '@playwright/test';
+
+// Serial execution when tests share seeded data
+test.describe.configure({ mode: 'serial' });
+
+test.describe('feature with seeded data', () => {
+    // Seed in beforeAll, cleanup in afterAll
+    // Use domain-specific helpers from e2e/helpers/seed.ts
+
+    test('displays data correctly', async ({ page }) => {
+        await page.goto('/dashboard/admin/feature');
+        // storageState is auto-applied by the "admin" project config
+        // ...assertions
+    });
+});
+```
+
+**Playwright config** has three projects:
+
+- `setup` — Creates test users and saves auth state to `e2e/.auth/`
+- `chromium` — Smoke tests (no auth, matches `smoke/`)
+- `admin` — Authenticated tests (uses `storageState`, depends on `setup`, matches `admin/`)
+
+**Key gotchas:**
+
+- `e2e/helpers/db.ts` uses raw `postgres` driver, not `@nexus/db` — Playwright's CJS resolution can't handle the workspace package's TypeScript source exports + vitest barrel dependency
+- BetterAuth API calls require an `Origin` header for CSRF
+- Raw SQL INSERTs need `gen_random_uuid()` — Drizzle's `$defaultFn` only runs through the ORM
+- React Query retries failed requests 3x (~7s) — use `{ timeout: 15_000 }` for auth guard tests
+- Use `test.describe.configure({ mode: 'serial' })` when tests share seeded DB data
+
 ### Unit Tests
 
 Unit test utilities and pure functions with logic. Skip unit tests for presentational components - E2E tests cover those better.
 
 ```bash
-pnpm -F web test           # Unit tests (watch mode)
-pnpm -F web test:run       # Unit tests (single run)
-pnpm -F web test:e2e:smoke # Smoke tests only (fast)
-pnpm -F web test:e2e       # All E2E tests
+pnpm -F web test            # Unit tests (watch mode)
+pnpm -F web test:run        # Unit tests (single run)
+pnpm -F web test:e2e:smoke  # Smoke tests only (fast)
+pnpm -F web test:e2e:admin  # Admin E2E tests (authenticated)
+pnpm -F web test:e2e        # All E2E tests
 ```
 
 ## Dev Log Access

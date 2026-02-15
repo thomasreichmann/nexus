@@ -13,8 +13,22 @@ export default defineConfig({
     },
     projects: [
         {
+            name: 'setup',
+            testMatch: /global\.setup\.ts/,
+        },
+        {
             name: 'chromium',
             use: { ...devices['Desktop Chrome'] },
+            testMatch: /smoke\/.*/,
+        },
+        {
+            name: 'admin',
+            use: {
+                ...devices['Desktop Chrome'],
+                storageState: 'e2e/.auth/admin.json',
+            },
+            dependencies: ['setup'],
+            testMatch: /admin\/.*/,
         },
     ],
     webServer: {
