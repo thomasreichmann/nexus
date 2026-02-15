@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const logErrorVerbositySchema = z.enum(['minimal', 'standard', 'full']);
+
 // Server-side env vars (not exposed to client)
 export const serverSchema = z.object({
     DATABASE_URL: z.string().url(),
@@ -12,6 +14,7 @@ export const serverSchema = z.object({
     STRIPE_SECRET_KEY: z.string().min(1),
     STRIPE_WEBHOOK_SECRET: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32),
+    LOG_ERROR_VERBOSITY: logErrorVerbositySchema.optional(),
 });
 
 // Client-side env vars (NEXT_PUBLIC_ prefix)

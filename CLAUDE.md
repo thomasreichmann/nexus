@@ -54,6 +54,12 @@ import { env } from '@/lib/env';
 const bucket = env.S3_BUCKET; // Validated at runtime
 ```
 
+**Optional overrides:**
+
+| Variable              | Values                        | Default                           |
+| --------------------- | ----------------------------- | --------------------------------- |
+| `LOG_ERROR_VERBOSITY` | `minimal`, `standard`, `full` | `full` in dev, `standard` in prod |
+
 ## Dev Logs
 
 In development, server logs are written to `apps/web/.dev.log` in NDJSON format. The file is truncated on each dev server start.
