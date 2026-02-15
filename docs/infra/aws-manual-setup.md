@@ -4,12 +4,15 @@ This documents the manual AWS setup for the dev environment. Created 2026-01-23.
 
 ## Resources Created
 
-| Resource   | Name/ARN                               |
-| ---------- | -------------------------------------- |
-| S3 Bucket  | `nexus-storage-files-dev`              |
-| IAM User   | `nexus-app-dev`                        |
-| IAM Policy | `nexus-s3-access-dev` (inline on user) |
-| Region     | `us-east-1`                            |
+| Resource   | Name/ARN                                |
+| ---------- | --------------------------------------- |
+| S3 Bucket  | `nexus-storage-files-dev`               |
+| IAM User   | `nexus-app-dev`                         |
+| IAM Policy | `nexus-s3-access-dev` (inline on user)  |
+| IAM Policy | `nexus-sqs-access-dev` (inline on user) |
+| Region     | `us-east-1`                             |
+
+> **Background Jobs:** SQS, Lambda, and related IAM resources are documented in [[../guides/background-jobs|Background Jobs Runbook]].
 
 ## S3 Bucket Configuration
 

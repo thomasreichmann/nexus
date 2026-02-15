@@ -20,6 +20,7 @@ Technical documentation, setup guides, and implementation patterns for the Nexus
 - [[nextjs-patterns|Next.js Patterns]] - Implementation patterns and best practices
 - [[logging|Logging]] - Server and client-side logging with pino
 - [[lambda-development|Lambda Development]] - Lambda worker conventions and SQS job processing
+- [[background-jobs|Background Jobs Runbook]] - AWS resource ARNs, deployment, and operations
 
 ## Dataview
 
