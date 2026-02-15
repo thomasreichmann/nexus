@@ -44,8 +44,10 @@ export default function AdminJobsPage() {
     });
     const countsOptions = trpc.admin.jobs.counts.queryOptions();
 
-    const { data, isLoading } = useQuery(listOptions);
-    const { data: counts } = useQuery(countsOptions);
+    const { data, isLoading, isFetching } = useQuery(listOptions);
+    const { data: counts, isFetching: isCountsFetching } =
+        useQuery(countsOptions);
+    const isRefreshing = isFetching || isCountsFetching;
 
     const retryMutation = useMutation(
         trpc.admin.jobs.retry.mutationOptions({
@@ -59,6 +61,11 @@ export default function AdminJobsPage() {
             },
         })
     );
+
+    function handleRefresh() {
+        queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
+        queryClient.invalidateQueries({ queryKey: countsOptions.queryKey });
+    }
 
     const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
 
@@ -91,6 +98,21 @@ export default function AdminJobsPage() {
                         {filter.label}
                     </Button>
                 ))}
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                    title="Refresh"
+                    className="ml-auto"
+                >
+                    <RotateCw
+                        className={cn(
+                            'h-4 w-4',
+                            isRefreshing && 'animate-spin'
+                        )}
+                    />
+                </Button>
             </div>
 
             <Card>
