@@ -11,6 +11,12 @@ export function findFileById(db: DB, id: string): Promise<File | undefined> {
     });
 }
 
+export function findByS3Key(db: DB, s3Key: string): Promise<File | undefined> {
+    return db.query.files.findFirst({
+        where: eq(schema.files.s3Key, s3Key),
+    });
+}
+
 export function findUserFile(
     db: DB,
     userId: string,

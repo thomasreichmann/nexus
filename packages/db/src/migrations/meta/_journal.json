@@ -57,6 +57,13 @@
       "when": 1771145996739,
       "tag": "0007_dashing_redwing",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1771153902419,
+      "tag": "0008_orange_centennial",
+      "breakpoints": true
     }
   ]
 }

@@ -23,6 +23,7 @@ export function createMockDb() {
             files: { findFirst, findMany },
             backgroundJobs: { findFirst, findMany },
             retrievals: { findFirst, findMany },
+            webhookEvents: { findFirst, findMany },
         },
         select,
         insert,
