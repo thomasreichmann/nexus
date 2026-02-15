@@ -1,7 +1,7 @@
 ---
 title: AI Changelog
 created: 2025-12-29
-updated: 2026-01-26
+updated: 2026-02-15
 status: active
 tags:
     - ai
@@ -16,6 +16,38 @@ ai_summary: 'Recent AI changes - READ THIS FIRST for context'
 # AI Changelog
 
 Recent changes made by AI assistants. **Read this first** to understand recent context.
+
+---
+
+## 2026-02-15
+
+### Session: Playwright E2E suite for admin jobs dashboard (#147)
+
+Added the first authenticated Playwright E2E test suite, establishing reusable test infrastructure (auth helpers, data seeding, `storageState`) for future E2E suites.
+
+**New Files:**
+
+- `e2e/helpers/db.ts` - Direct DB access via raw `postgres` driver (can't use `@nexus/db` from Playwright due to CJS + vitest barrel export issue)
+- `e2e/helpers/auth.ts` - BetterAuth sign-up/sign-in helpers, admin promotion, `storageState` persistence
+- `e2e/helpers/seed.ts` - Job seeding/cleanup by status with realistic timestamps
+- `e2e/global.setup.ts` - Playwright setup project creating admin + regular test users
+- `e2e/admin/jobs.spec.ts` - 10 test cases: auth guards, status cards, table rendering, filters, empty state, pagination, retry
+
+**Files Modified:**
+
+- `playwright.config.ts` - Added 3 projects: `setup`, `chromium` (smoke), `admin` (authenticated)
+- `package.json` - Added `test:e2e:admin` script and `postgres` devDependency
+- `.gitignore` - Added `e2e/.auth/`
+
+**Documentation Updated:**
+
+- `docs/ai/conventions.md` - Added "Authenticated E2E Tests" section with patterns, helpers reference, and gotchas
+
+**Key Decisions:**
+
+- Raw `postgres` driver over `@nexus/db` — Playwright's CJS module resolution can't handle the workspace package
+- Setup project over `globalSetup` config — `globalSetup` runs before `webServer`, making API calls impossible
+- Serial test execution — parallel describe blocks sharing seeded DB data caused race conditions
 
 ---
 
