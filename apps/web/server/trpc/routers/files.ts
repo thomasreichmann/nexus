@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import { RESTORE_TIERS } from '@nexus/db';
 import * as fileRepo from '@nexus/db';
 import { fileService } from '@/server/services/files';
+import { retrievalService } from '@/server/services/retrieval';
 import { protectedProcedure, router } from '../init';
 
 export const filesRouter = router({
@@ -86,6 +88,48 @@ export const filesRouter = router({
                 ctx.db,
                 ctx.session.user.id,
                 input.ids
+            );
+        }),
+
+    requestRetrieval: protectedProcedure
+        .input(
+            z.object({
+                fileId: z.string().uuid(),
+                tier: z.enum(RESTORE_TIERS).default('standard'),
+            })
+        )
+        .mutation(({ ctx, input }) => {
+            return retrievalService.requestRetrieval(
+                ctx.db,
+                ctx.session.user.id,
+                input.fileId,
+                input.tier
+            );
+        }),
+
+    requestBulkRetrieval: protectedProcedure
+        .input(
+            z.object({
+                fileIds: z.array(z.string().uuid()).min(1).max(100),
+                tier: z.enum(RESTORE_TIERS).default('standard'),
+            })
+        )
+        .mutation(({ ctx, input }) => {
+            return retrievalService.requestBulkRetrieval(
+                ctx.db,
+                ctx.session.user.id,
+                input.fileIds,
+                input.tier
+            );
+        }),
+
+    getDownloadUrl: protectedProcedure
+        .input(z.object({ fileId: z.string().uuid() }))
+        .query(({ ctx, input }) => {
+            return retrievalService.getDownloadUrl(
+                ctx.db,
+                ctx.session.user.id,
+                input.fileId
             );
         }),
 });

@@ -1,11 +1,13 @@
 import * as schema from '../schema';
 import type { File, NewFile } from './files';
 import type { Job, NewJob } from './jobs';
+import type { Retrieval } from './retrievals';
 
 export const TEST_USER_ID = 'user_test123';
 export const TEST_FILE_ID = 'file_test456';
 export const TEST_STORAGE_USAGE_ID = 'storage_test789';
 export const TEST_JOB_ID = 'job_test101';
+export const TEST_RETRIEVAL_ID = 'retrieval_test202';
 
 export type User = typeof schema.user.$inferSelect;
 export type StorageUsage = typeof schema.storageUsage.$inferSelect;
@@ -95,6 +97,27 @@ export function createNewJobFixture(overrides: Partial<NewJob> = {}): NewJob {
     return {
         type: 'delete-account',
         payload: { userId: TEST_USER_ID },
+        ...overrides,
+    };
+}
+
+export function createRetrievalFixture(
+    overrides: Partial<Retrieval> = {}
+): Retrieval {
+    const now = new Date();
+    return {
+        id: TEST_RETRIEVAL_ID,
+        fileId: TEST_FILE_ID,
+        userId: TEST_USER_ID,
+        status: 'pending',
+        tier: 'standard',
+        initiatedAt: null,
+        readyAt: null,
+        expiresAt: null,
+        failedAt: null,
+        errorMessage: null,
+        createdAt: now,
+        updatedAt: now,
         ...overrides,
     };
 }
