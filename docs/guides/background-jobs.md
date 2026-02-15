@@ -289,6 +289,32 @@ aws sqs delete-queue --queue-url https://sqs.us-east-1.amazonaws.com/<ACCOUNT_ID
 aws iam delete-user-policy --user-name nexus-app-dev --policy-name nexus-sqs-access-dev
 ```
 
+## Integration Tests
+
+Automated publish-side integration tests verify the web app's `jobs.publish()` flow against real AWS SQS and the dev database (DB record insertion + SQS message publish).
+
+### Prerequisites
+
+- `.env.local` in `apps/web/` with: `DATABASE_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `SQS_QUEUE_URL`
+- Network access to the dev database and AWS SQS
+
+### Running
+
+```bash
+pnpm -F web test:integration
+```
+
+### How it works
+
+- Uses a separate vitest config (`vitest.integration.config.ts`) with `node` environment
+- Loads env vars from `.env.local` via dotenv in the setup file
+- Excluded from the default `pnpm test` run (only `*.integration.test.ts` files)
+- Connects to the real database via `createDb()` and calls `jobs.publish()` with real SQS credentials
+- Asserts that a `background_jobs` record is created with status `pending` and that the SQS publish resolves without error
+- Cleans up test DB records in `afterAll`
+
+> **Note:** The dev Lambda event source mapping is active, so test messages will be consumed by the real worker. Since the test only asserts on the publish side, this doesn't affect test correctness.
+
 ## Related
 
 - [[lambda-development|Lambda Development]] — Worker conventions and job handler patterns
