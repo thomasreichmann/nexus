@@ -37,19 +37,24 @@ export default function AdminJobsPage() {
     const [statusFilter, setStatusFilter] = useState<JobStatus | undefined>();
     const [page, setPage] = useState(0);
 
-    const queryOptions = trpc.admin.jobs.list.queryOptions({
+    const listOptions = trpc.admin.jobs.list.queryOptions({
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
         status: statusFilter,
     });
+    const countsOptions = trpc.admin.jobs.counts.queryOptions();
 
-    const { data, isLoading } = useQuery(queryOptions);
+    const { data, isLoading } = useQuery(listOptions);
+    const { data: counts } = useQuery(countsOptions);
 
     const retryMutation = useMutation(
         trpc.admin.jobs.retry.mutationOptions({
             onSuccess() {
                 queryClient.invalidateQueries({
-                    queryKey: queryOptions.queryKey,
+                    queryKey: listOptions.queryKey,
+                });
+                queryClient.invalidateQueries({
+                    queryKey: countsOptions.queryKey,
                 });
             },
         })
@@ -66,7 +71,7 @@ export default function AdminJobsPage() {
                 </p>
             </div>
 
-            <StatusCounts counts={data?.counts} />
+            <StatusCounts counts={counts} />
 
             <div className="flex items-center gap-2">
                 {STATUS_FILTERS.map((filter) => (

@@ -34,22 +34,22 @@ export const adminRouter = router({
                 const limit = input?.limit ?? 20;
                 const offset = input?.offset ?? 0;
 
-                const [result, counts] = await Promise.all([
-                    findJobs(ctx.db, {
-                        limit,
-                        offset,
-                        status: input?.status,
-                    }),
-                    countJobsByStatus(ctx.db),
-                ]);
+                const result = await findJobs(ctx.db, {
+                    limit,
+                    offset,
+                    status: input?.status,
+                });
 
                 return {
                     jobs: result.jobs,
                     total: result.total,
                     hasMore: offset + result.jobs.length < result.total,
-                    counts,
                 };
             }),
+
+        counts: adminProcedure.query(({ ctx }) => {
+            return countJobsByStatus(ctx.db);
+        }),
 
         retry: adminProcedure
             .input(z.object({ id: z.string().uuid() }))
