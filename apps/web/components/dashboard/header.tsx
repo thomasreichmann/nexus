@@ -12,7 +12,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { signOut, useSession } from '@/lib/auth/client';
 import { cn } from '@/lib/cn';
-import { dashboardNavigation } from '@/lib/dashboard/navigation';
+import { getNavItems } from '@/lib/dashboard/navigation';
 import { Archive, LogOut, Menu, Settings, User } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -23,6 +23,7 @@ export function DashboardHeader() {
     const router = useRouter();
     const { data: session } = useSession();
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const navItems = getNavItems(session?.user?.role);
 
     async function handleSignOut() {
         await signOut();
@@ -48,7 +49,7 @@ export function DashboardHeader() {
                         </div>
                         <nav className="p-4">
                             <ul className="space-y-1">
-                                {dashboardNavigation.map((item) => {
+                                {navItems.map((item) => {
                                     const isActive = pathname === item.href;
                                     return (
                                         <li key={item.name}>

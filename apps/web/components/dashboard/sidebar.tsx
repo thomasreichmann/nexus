@@ -2,12 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useSession } from '@/lib/auth/client';
 import { cn } from '@/lib/cn';
-import { dashboardNavigation } from '@/lib/dashboard/navigation';
+import { getNavItems } from '@/lib/dashboard/navigation';
 import { Archive } from 'lucide-react';
 
 export function DashboardSidebar() {
     const pathname = usePathname();
+    const { data: session } = useSession();
+    const navItems = getNavItems(session?.user?.role);
 
     return (
         <aside className="hidden w-64 flex-col border-r border-border bg-sidebar md:flex">
@@ -19,7 +22,7 @@ export function DashboardSidebar() {
             </div>
             <nav className="flex-1 p-4">
                 <ul className="space-y-1">
-                    {dashboardNavigation.map((item) => {
+                    {navItems.map((item) => {
                         const isActive = pathname === item.href;
                         return (
                             <li key={item.name}>
