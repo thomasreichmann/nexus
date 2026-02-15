@@ -382,26 +382,20 @@ For pages requiring auth (e.g. admin dashboards), use the `storageState` pattern
 
 **Auth setup runs as a Playwright project** (`global.setup.ts`), not `globalSetup` config — because `globalSetup` runs before `webServer` starts, making API calls impossible.
 
+**Adding a new test suite:** Create `e2e/admin/your-feature.spec.ts` — the `admin` project auto-matches all files under `admin/`. Auth `storageState` is applied automatically; no per-test login needed. For seed data, add domain-specific helpers to `e2e/helpers/seed.ts` (see `seedJobs`/`cleanupJobs` as the reference implementation).
+
 **Pattern:**
 
 ```typescript
 // e2e/admin/feature.spec.ts
 import { test, expect } from '@playwright/test';
-import { seedJobs, cleanupJobs, type DbJob } from '../helpers/seed';
 
-// Serial execution — tests share seeded data
+// Serial execution when tests share seeded data
 test.describe.configure({ mode: 'serial' });
 
 test.describe('feature with seeded data', () => {
-    let seededJobs: DbJob[] = [];
-
-    test.beforeAll(async () => {
-        seededJobs = await seedJobs({ pending: 3, failed: 1 });
-    });
-
-    test.afterAll(async () => {
-        await cleanupJobs(seededJobs);
-    });
+    // Seed in beforeAll, cleanup in afterAll
+    // Use domain-specific helpers from e2e/helpers/seed.ts
 
     test('displays data correctly', async ({ page }) => {
         await page.goto('/dashboard/admin/feature');
