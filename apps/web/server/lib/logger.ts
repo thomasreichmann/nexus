@@ -1,15 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import pino from 'pino';
+import type { z } from 'zod';
 
 // Install source-mapped stack traces in development
 import './logger/patches/install';
 
+import { env } from '@/lib/env';
+import { logErrorVerbositySchema } from '@/lib/env/schema';
+
 export const isDev = process.env.NODE_ENV === 'development';
 
-export type ErrorVerbosity = 'minimal' | 'standard' | 'full';
+export type ErrorVerbosity = z.infer<typeof logErrorVerbositySchema>;
 
-export const errorVerbosity: ErrorVerbosity = isDev ? 'full' : 'standard';
+export const errorVerbosity: ErrorVerbosity =
+    env.LOG_ERROR_VERBOSITY ?? (isDev ? 'full' : 'standard');
 
 const DEV_LOG_PATH = path.join(process.cwd(), '.dev.log');
 
