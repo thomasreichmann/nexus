@@ -53,7 +53,7 @@ External Provider                Nexus (Next.js / Vercel)
 apps/web/
 ├── app/api/webhooks/
 │   ├── stripe/route.ts          # Stripe webhook endpoint
-│   └── sns/route.ts             # AWS SNS endpoint (future)
+│   └── s3-restore/route.ts      # AWS SNS S3 restore endpoint (future)
 ├── lib/stripe/
 │   ├── client.ts                # Stripe SDK singleton
 │   ├── webhooks.ts              # Signature verification + event construction
@@ -478,7 +478,7 @@ Fire SNS-shaped payloads to test the SNS endpoint locally:
 
 ```bash
 # Subscription confirmation (one-time)
-curl -X POST http://localhost:3000/api/webhooks/sns \
+curl -X POST http://localhost:3000/api/webhooks/s3-restore \
   -H 'Content-Type: application/json' \
   -H 'x-amz-sns-message-type: SubscriptionConfirmation' \
   -d '{
@@ -490,7 +490,7 @@ curl -X POST http://localhost:3000/api/webhooks/sns \
   }'
 
 # S3 event notification via SNS
-curl -X POST http://localhost:3000/api/webhooks/sns \
+curl -X POST http://localhost:3000/api/webhooks/s3-restore \
   -H 'Content-Type: application/json' \
   -H 'x-amz-sns-message-type: Notification' \
   -d '{

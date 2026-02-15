@@ -1,16 +1,32 @@
+---
+title: AWS Manual Setup
+created: 2026-01-23
+updated: 2026-02-15
+status: active
+tags:
+    - infra
+    - aws
+aliases:
+    - AWS Manual Setup
+ai_summary: 'Manual AWS provisioning commands for S3, IAM, and SNS resources in dev'
+---
+
 # AWS Manual Setup (Dev Environment)
 
 This documents the manual AWS setup for the dev environment. Created 2026-01-23.
 
 ## Resources Created
 
-| Resource   | Name/ARN                                |
-| ---------- | --------------------------------------- |
-| S3 Bucket  | `nexus-storage-files-dev`               |
-| IAM User   | `nexus-app-dev`                         |
-| IAM Policy | `nexus-s3-access-dev` (inline on user)  |
-| IAM Policy | `nexus-sqs-access-dev` (inline on user) |
-| Region     | `us-east-1`                             |
+| Resource         | Name/ARN                                                                                                 |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| S3 Bucket        | `nexus-storage-files-dev`                                                                                |
+| IAM User         | `nexus-app-dev`                                                                                          |
+| IAM Policy       | `nexus-s3-access-dev` (inline on user)                                                                   |
+| IAM Policy       | `nexus-sqs-access-dev` (inline on user)                                                                  |
+| SNS Topic        | `nexus-s3-restore-events-dev` — `arn:aws:sns:us-east-1:391615358272:nexus-s3-restore-events-dev`         |
+| SNS DLQ          | `nexus-s3-restore-events-dlq-dev` — `arn:aws:sqs:us-east-1:391615358272:nexus-s3-restore-events-dlq-dev` |
+| SNS Subscription | HTTPS → `https://{domain}/api/webhooks/s3-restore` (raw message delivery)                                |
+| Region           | `us-east-1`                                                                                              |
 
 > **Background Jobs:** SQS, Lambda, and related IAM resources are documented in [[../guides/background-jobs|Background Jobs Runbook]].
 
@@ -81,6 +97,182 @@ Add these to Vercel (Development environment):
 | `AWS_SECRET_ACCESS_KEY` | (stored in Vercel)        |
 | `AWS_S3_BUCKET`         | `nexus-storage-files-dev` |
 | `AWS_REGION`            | `us-east-1`               |
+
+## SNS Topic for S3 Restore Events
+
+Receives S3 Glacier restore lifecycle events (`s3:ObjectRestore:Post`, `s3:ObjectRestore:Completed`, `s3:ObjectRestore:Delete`) and delivers them to the webhook endpoint via HTTPS subscription.
+
+See [[../guides/webhooks|Webhook Handling]] for the webhook pattern and signature verification.
+
+### Provisioning Commands
+
+Set these variables before running the commands below. Replace `<ACCOUNT_ID>` with your AWS account ID when provisioning a new environment.
+
+```bash
+ACCOUNT_ID="391615358272"
+REGION="us-east-1"
+BUCKET="nexus-storage-files-dev"
+TOPIC_NAME="nexus-s3-restore-events-dev"
+DLQ_NAME="nexus-s3-restore-events-dlq-dev"
+TOPIC_ARN="arn:aws:sns:${REGION}:${ACCOUNT_ID}:${TOPIC_NAME}"
+DLQ_ARN="arn:aws:sqs:${REGION}:${ACCOUNT_ID}:${DLQ_NAME}"
+DLQ_URL="https://sqs.${REGION}.amazonaws.com/${ACCOUNT_ID}/${DLQ_NAME}"
+```
+
+#### 1. Dead Letter Queue (for failed webhook deliveries)
+
+```bash
+aws sqs create-queue \
+    --queue-name "$DLQ_NAME" \
+    --region "$REGION"
+```
+
+#### 2. SNS Topic
+
+```bash
+aws sns create-topic \
+    --name "$TOPIC_NAME" \
+    --region "$REGION"
+```
+
+#### 3. SNS Topic Policy (allow S3 to publish)
+
+```bash
+aws sns set-topic-attributes \
+    --topic-arn "$TOPIC_ARN" \
+    --attribute-name Policy \
+    --attribute-value '{
+        "Version": "2012-10-17",
+        "Statement": [{
+            "Effect": "Allow",
+            "Principal": {"Service": "s3.amazonaws.com"},
+            "Action": "SNS:Publish",
+            "Resource": "'"$TOPIC_ARN"'",
+            "Condition": {
+                "ArnLike": {
+                    "aws:SourceArn": "arn:aws:s3:::'"$BUCKET"'"
+                }
+            }
+        }]
+    }'
+```
+
+#### 4. DLQ Policy (allow SNS to send failed messages)
+
+```bash
+DLQ_POLICY=$(cat <<EOF
+{
+    "Version": "2012-10-17",
+    "Statement": [{
+        "Effect": "Allow",
+        "Principal": {"Service": "sns.amazonaws.com"},
+        "Action": "sqs:SendMessage",
+        "Resource": "$DLQ_ARN",
+        "Condition": {
+            "ArnEquals": {
+                "aws:SourceArn": "$TOPIC_ARN"
+            }
+        }
+    }]
+}
+EOF
+)
+
+aws sqs set-queue-attributes \
+    --queue-url "$DLQ_URL" \
+    --attributes "{\"Policy\": $(echo "$DLQ_POLICY" | jq -cj | jq -Rs)}"
+```
+
+> **Requires `jq`** for proper JSON escaping. Install with `brew install jq` if needed.
+
+#### 5. HTTPS Subscription
+
+```bash
+aws sns subscribe \
+    --topic-arn "$TOPIC_ARN" \
+    --protocol https \
+    --notification-endpoint "https://{domain}/api/webhooks/s3-restore" \
+    --attributes "{
+        \"RawMessageDelivery\": \"true\",
+        \"RedrivePolicy\": \"{\\\"deadLetterTargetArn\\\":\\\"$DLQ_ARN\\\"}\"
+    }" \
+    --region "$REGION"
+```
+
+> **Note:** The endpoint must be deployed and respond to the SNS `SubscriptionConfirmation` request before the subscription becomes active. Replace `{domain}` with the actual Vercel deployment URL.
+
+#### 6. S3 Event Notifications
+
+```bash
+aws s3api put-bucket-notification-configuration \
+    --bucket "$BUCKET" \
+    --notification-configuration '{
+        "TopicConfigurations": [{
+            "TopicArn": "'"$TOPIC_ARN"'",
+            "Events": [
+                "s3:ObjectRestore:Post",
+                "s3:ObjectRestore:Completed",
+                "s3:ObjectRestore:Delete"
+            ]
+        }]
+    }'
+```
+
+> **Warning:** `put-bucket-notification-configuration` replaces the entire notification config. If the bucket already has other notifications configured, include them in the same command. Check existing config first with `aws s3api get-bucket-notification-configuration --bucket "$BUCKET"`.
+
+### SNS Verification Commands
+
+```bash
+# Check topic exists and view attributes
+aws sns get-topic-attributes \
+    --topic-arn "$TOPIC_ARN" \
+    --region "$REGION"
+
+# List subscriptions on the topic
+aws sns list-subscriptions-by-topic \
+    --topic-arn "$TOPIC_ARN" \
+    --region "$REGION"
+
+# Check S3 event notification config
+aws s3api get-bucket-notification-configuration \
+    --bucket "$BUCKET"
+
+# Check DLQ depth (should be 0 normally)
+aws sqs get-queue-attributes \
+    --queue-url "$DLQ_URL" \
+    --attribute-names ApproximateNumberOfMessages \
+    --region "$REGION"
+
+# Publish a test message to SNS (verifies topic + subscription)
+aws sns publish \
+    --topic-arn "$TOPIC_ARN" \
+    --message '{"test": true}' \
+    --region "$REGION"
+```
+
+### SNS Cleanup
+
+```bash
+# Delete subscription (get ARN from list-subscriptions-by-topic)
+aws sns unsubscribe \
+    --subscription-arn <SUBSCRIPTION_ARN> \
+    --region "$REGION"
+
+# Remove S3 event notifications (set empty config)
+aws s3api put-bucket-notification-configuration \
+    --bucket "$BUCKET" \
+    --notification-configuration '{}'
+
+# Delete SNS topic
+aws sns delete-topic \
+    --topic-arn "$TOPIC_ARN" \
+    --region "$REGION"
+
+# Delete DLQ
+aws sqs delete-queue \
+    --queue-url "$DLQ_URL" \
+    --region "$REGION"
+```
 
 ## Verification Commands
 
