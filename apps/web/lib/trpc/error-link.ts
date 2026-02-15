@@ -31,7 +31,9 @@ export function errorLink(): TRPCLink<AppRouter> {
                             const message =
                                 errorMessages[code] ??
                                 errorMessages.INTERNAL_SERVER_ERROR;
-                            toast.error(message);
+                            toast.error(message, {
+                                id: `trpc-${code}`,
+                            });
                         }
                         observer.error(err);
                     },
