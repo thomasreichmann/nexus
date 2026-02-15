@@ -22,6 +22,7 @@ export function createMockDb() {
         query: {
             files: { findFirst, findMany },
             backgroundJobs: { findFirst, findMany },
+            retrievals: { findFirst, findMany },
         },
         select,
         insert,
