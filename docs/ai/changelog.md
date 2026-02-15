@@ -21,6 +21,27 @@ Recent changes made by AI assistants. **Read this first** to understand recent c
 
 ## 2026-02-15
 
+### Session: Webhook handling pattern documentation (#37)
+
+Documented the architectural pattern for handling inbound webhooks (Stripe, AWS SNS) before implementing them. Added `webhook_events` table schema for idempotency tracking.
+
+**New Files:**
+
+- `docs/guides/webhooks.md` - Full webhook pattern guide: file structure, signature verification, idempotency, error handling, logging, and testing strategies
+- `packages/db/src/schema/webhooks.ts` - `webhook_events` table with `(source, external_id)` unique constraint, status enum, JSONB payload
+
+**Files Modified:**
+
+- `docs/guides/_index.md` - Added webhook guide entry
+- `packages/db/src/schema/index.ts` - Added webhooks export
+
+**Key Decisions:**
+
+- Return `200` for business logic errors (prevents provider retries that would fail the same way)
+- 90-day payload retention for processed events, indefinite for failed events
+- `webhook_events` table lives in `packages/db` (shared by web app and worker)
+- Registry-based event dispatch pattern, matching the Lambda worker's job registry
+
 ### Session: Playwright E2E suite for admin jobs dashboard (#147)
 
 Added the first authenticated Playwright E2E test suite, establishing reusable test infrastructure (auth helpers, data seeding, `storageState`) for future E2E suites.
