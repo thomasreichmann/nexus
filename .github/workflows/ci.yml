@@ -9,6 +9,9 @@ jobs:
     ci:
         name: Lint, Typecheck, Test
         runs-on: ubuntu-latest
+        env:
+            TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+            TURBO_TEAM: ${{ vars.TURBO_TEAM }}
 
         steps:
             - name: Checkout
@@ -33,11 +36,5 @@ jobs:
             - name: Build trpc-devtools
               run: pnpm -F trpc-devtools build
 
-            - name: Lint
-              run: pnpm lint
-
-            - name: Typecheck
-              run: pnpm typecheck
-
-            - name: Test
-              run: pnpm test
+            - name: Lint, Typecheck, Test
+              run: pnpm exec turbo lint typecheck test --continue
