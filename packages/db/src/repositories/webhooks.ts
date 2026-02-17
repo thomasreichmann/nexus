@@ -1,5 +1,5 @@
 import { eq, and } from 'drizzle-orm';
-import type { DB } from '../index';
+import type { DB } from '../connection';
 import * as schema from '../schema';
 
 export type WebhookEvent = typeof schema.webhookEvents.$inferSelect;
@@ -41,3 +41,16 @@ export async function updateWebhookEvent(
         .returning();
     return event;
 }
+
+export function createWebhookRepo(db: DB) {
+    return {
+        find: (source: WebhookEvent['source'], externalId: string) =>
+            findWebhookEvent(db, source, externalId),
+        insert: (data: NewWebhookEvent) => insertWebhookEvent(db, data),
+        update: (
+            id: string,
+            data: Pick<Partial<WebhookEvent>, 'status' | 'error'>
+        ) => updateWebhookEvent(db, id, data),
+    };
+}
+export type WebhookRepo = ReturnType<typeof createWebhookRepo>;

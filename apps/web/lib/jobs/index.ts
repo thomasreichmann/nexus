@@ -21,4 +21,4 @@ export type {
     JobInput,
     JobPayloadMap,
     SqsMessageBody,
-} from '@nexus/db';
+} from '@nexus/db/repo/jobs';

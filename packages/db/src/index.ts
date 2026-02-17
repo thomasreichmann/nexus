@@ -1,26 +1,2 @@
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres, { type Options } from 'postgres';
-import * as schema from './schema';
-
-export function createDb(
-    url: string,
-    options?: Options<Record<string, never>>
-) {
-    const client = postgres(url, options);
-    return drizzle(client, { schema });
-}
-
-/** Shared database type for repositories and services */
-export type DB = ReturnType<typeof createDb>;
-
-/** Transaction type - extracted from db.transaction callback parameter */
-export type Transaction = Parameters<Parameters<DB['transaction']>[0]>[0];
-
-/** Type that accepts both DB and Transaction - use in repository functions that may be called within transactions */
-export type DBOrTransaction = DB | Transaction;
-
-// Re-export everything
-export * from './schema';
-export * as schema from './schema';
-export * from './repositories';
-export * from './jobs/types';
+export { createDb } from './connection';
+export type { DB, Transaction } from './connection';

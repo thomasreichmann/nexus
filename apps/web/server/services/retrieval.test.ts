@@ -5,7 +5,7 @@ import {
     createRetrievalFixture,
     TEST_USER_ID,
     TEST_FILE_ID,
-} from '@nexus/db';
+} from '@nexus/db/testing';
 import { mockS3 } from '@/lib/storage/testing';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { retrievalService } from './retrieval';

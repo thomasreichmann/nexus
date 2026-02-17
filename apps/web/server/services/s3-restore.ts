@@ -1,5 +1,10 @@
-import type { DB, File, Retrieval } from '@nexus/db';
-import { findByS3Key, findByFileId, updateStatus } from '@nexus/db';
+import type { DB } from '@nexus/db';
+import { findByS3Key, type File } from '@nexus/db/repo/files';
+import {
+    findByFileId,
+    updateStatus,
+    type Retrieval,
+} from '@nexus/db/repo/retrievals';
 import { logger } from '@/server/lib/logger';
 import type { S3EventRecord } from '@/lib/sns/types';
 

@@ -12,7 +12,8 @@
  * ```
  */
 
-import { createJobFixture, type Job, type JobInput } from '@nexus/db';
+import type { Job, JobInput } from '@nexus/db/repo/jobs';
+import { createJobFixture } from '@nexus/db/testing';
 
 const publishMock = async (_db: unknown, input: JobInput): Promise<Job> => {
     return createJobFixture({

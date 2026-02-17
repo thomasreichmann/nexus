@@ -1,5 +1,5 @@
 import { vi, type Mock } from 'vitest';
-import type { DB } from '../index';
+import type { DB } from '../connection';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyMock = Mock<any>;

@@ -3,7 +3,7 @@ import {
     findWebhookEvent,
     insertWebhookEvent,
     updateWebhookEvent,
-} from '@nexus/db';
+} from '@nexus/db/repo/webhooks';
 import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import { verifySnsMessage } from '@/lib/sns/webhooks';

@@ -1,8 +1,8 @@
-import * as retrievalRepo from '@nexus/db';
+import { findByUser } from '@nexus/db/repo/retrievals';
 import { protectedProcedure, router } from '../init';
 
 export const retrievalsRouter = router({
     list: protectedProcedure.query(({ ctx }) => {
-        return retrievalRepo.findByUser(ctx.db, ctx.session.user.id);
+        return findByUser(ctx.db, ctx.session.user.id);
     }),
 });

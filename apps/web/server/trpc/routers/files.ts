@@ -1,6 +1,10 @@
 import { z } from 'zod';
-import { RESTORE_TIERS } from '@nexus/db';
-import * as fileRepo from '@nexus/db';
+import { RESTORE_TIERS } from '@nexus/db/schema';
+import {
+    findFilesByUser,
+    countFilesByUser,
+    findUserFile,
+} from '@nexus/db/repo/files';
 import { fileService } from '@/server/services/files';
 import { retrievalService } from '@/server/services/retrieval';
 import { protectedProcedure, router } from '../init';
@@ -22,12 +26,12 @@ export const filesRouter = router({
             const includeHidden = input?.includeHidden ?? false;
 
             const [files, total] = await Promise.all([
-                fileRepo.findFilesByUser(ctx.db, ctx.session.user.id, {
+                findFilesByUser(ctx.db, ctx.session.user.id, {
                     limit,
                     offset,
                     includeHidden,
                 }),
-                fileRepo.countFilesByUser(ctx.db, ctx.session.user.id, {
+                countFilesByUser(ctx.db, ctx.session.user.id, {
                     includeHidden,
                 }),
             ]);
@@ -42,7 +46,7 @@ export const filesRouter = router({
     get: protectedProcedure
         .input(z.object({ id: z.string().uuid() }))
         .query(({ ctx, input }) => {
-            return fileRepo.findUserFile(ctx.db, ctx.session.user.id, input.id);
+            return findUserFile(ctx.db, ctx.session.user.id, input.id);
         }),
 
     upload: protectedProcedure

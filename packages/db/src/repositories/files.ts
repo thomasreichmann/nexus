@@ -1,9 +1,15 @@
 import { eq, and, desc, sql, notInArray, inArray, ne } from 'drizzle-orm';
-import type { DB, DBOrTransaction } from '../index';
+import type { DB } from '../connection';
 import * as schema from '../schema';
 
 export type File = typeof schema.files.$inferSelect;
 export type NewFile = typeof schema.files.$inferInsert;
+
+export interface FindFilesByUserOptions {
+    limit: number;
+    offset: number;
+    includeHidden?: boolean;
+}
 
 export function findFileById(db: DB, id: string): Promise<File | undefined> {
     return db.query.files.findFirst({
@@ -42,12 +48,6 @@ export function findUserFiles(
             eq(schema.files.userId, userId)
         ),
     });
-}
-
-interface FindFilesByUserOptions {
-    limit: number;
-    offset: number;
-    includeHidden?: boolean;
 }
 
 const hiddenStatuses: (typeof schema.files.status.enumValues)[number][] = [
@@ -168,7 +168,7 @@ export async function softDeleteFiles(
 }
 
 export async function softDeleteUserFiles(
-    db: DBOrTransaction,
+    db: DB,
     userId: string,
     fileIds: string[]
 ): Promise<File[]> {
@@ -189,3 +189,28 @@ export async function softDeleteUserFiles(
         )
         .returning();
 }
+
+export function createFileRepo(db: DB) {
+    return {
+        findById: (id: string) => findFileById(db, id),
+        findByS3Key: (s3Key: string) => findByS3Key(db, s3Key),
+        findByUserAndId: (userId: string, fileId: string) =>
+            findUserFile(db, userId, fileId),
+        findManyByUserAndIds: (userId: string, fileIds: string[]) =>
+            findUserFiles(db, userId, fileIds),
+        findByUser: (userId: string, opts?: FindFilesByUserOptions) =>
+            findFilesByUser(db, userId, opts),
+        countByUser: (userId: string, opts?: { includeHidden?: boolean }) =>
+            countFilesByUser(db, userId, opts),
+        sumStorageByUser: (userId: string) => sumStorageBytesByUser(db, userId),
+        insert: (data: NewFile) => insertFile(db, data),
+        update: (id: string, data: Partial<Omit<NewFile, 'id'>>) =>
+            updateFile(db, id, data),
+        delete: (id: string) => deleteFile(db, id),
+        softDelete: (fileId: string) => softDeleteFile(db, fileId),
+        softDeleteMany: (fileIds: string[]) => softDeleteFiles(db, fileIds),
+        softDeleteForUser: (userId: string, fileIds: string[]) =>
+            softDeleteUserFiles(db, userId, fileIds),
+    };
+}
+export type FileRepo = ReturnType<typeof createFileRepo>;

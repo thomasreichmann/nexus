@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TRPCError } from '@trpc/server';
 import {
     findJobs,
     findJobById,
@@ -6,10 +7,9 @@ import {
     updateJob,
     type JobType,
     type SqsMessageBody,
-} from '@nexus/db';
+} from '@nexus/db/repo/jobs';
 import { sendToQueue } from '@/lib/jobs/publish';
 import { adminProcedure, router } from '../init';
-import { TRPCError } from '@trpc/server';
 
 const jobStatusSchema = z.enum([
     'pending',

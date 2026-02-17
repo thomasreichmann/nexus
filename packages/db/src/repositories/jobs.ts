@@ -1,17 +1,17 @@
 import { eq, desc, sql } from 'drizzle-orm';
-import type { DB } from '../index';
+import type { DB } from '../connection';
 import * as schema from '../schema';
 
 export type Job = typeof schema.backgroundJobs.$inferSelect;
 export type NewJob = typeof schema.backgroundJobs.$inferInsert;
 
-interface FindJobsOptions {
+export interface FindJobsOptions {
     limit: number;
     offset: number;
     status?: Job['status'];
 }
 
-interface FindJobsResult {
+export interface FindJobsResult {
     jobs: Job[];
     total: number;
 }
@@ -111,3 +111,19 @@ export async function markJobProcessing(db: DB, id: string): Promise<void> {
         })
         .where(eq(schema.backgroundJobs.id, id));
 }
+
+export function createJobRepo(db: DB) {
+    return {
+        findById: (id: string) => findJobById(db, id),
+        findMany: (opts?: FindJobsOptions) => findJobs(db, opts),
+        countByStatus: () => countJobsByStatus(db),
+        insert: (data: NewJob) => insertJob(db, data),
+        update: (id: string, data: Partial<Omit<NewJob, 'id'>>) =>
+            updateJob(db, id, data),
+        markProcessing: (id: string) => markJobProcessing(db, id),
+    };
+}
+export type JobRepo = ReturnType<typeof createJobRepo>;
+
+// Re-export job types for the @nexus/db/repo/jobs subpath
+export * from '../jobs/types';

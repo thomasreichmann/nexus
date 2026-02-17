@@ -17,7 +17,7 @@ import { useTRPC } from '@/lib/trpc/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { ChevronLeft, ChevronRight, Loader2, RotateCw } from 'lucide-react';
-import type { Job } from '@nexus/db';
+import type { Job } from '@nexus/db/repo/jobs';
 
 type JobStatus = Job['status'];
 
