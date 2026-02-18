@@ -1,6 +1,7 @@
 import { eq, and, inArray } from 'drizzle-orm';
 import type { DB } from '../connection';
 import * as schema from '../schema';
+import { createRepository } from './create';
 
 export type Retrieval = typeof schema.retrievals.$inferSelect;
 export type NewRetrieval = typeof schema.retrievals.$inferInsert;
@@ -69,21 +70,13 @@ async function updateStatus(
     return retrieval;
 }
 
-export function createRetrievalRepo(db: DB) {
-    return {
-        findByFileId: (fileId: string) => findByFileId(db, fileId),
-        findByFileIds: (fileIds: string[]) => findByFileIds(db, fileIds),
-        findByUser: (userId: string) => findByUser(db, userId),
-        insert: (data: NewRetrieval) => insert(db, data),
-        insertMany: (dataArray: NewRetrieval[]) => insertMany(db, dataArray),
-        updateStatus: (
-            retrievalId: string,
-            status: Retrieval['status'],
-            metadata?: Partial<
-                Omit<NewRetrieval, 'id' | 'fileId' | 'userId' | 'status'>
-            >
-        ) => updateStatus(db, retrievalId, status, metadata),
-    };
-}
+export const createRetrievalRepo = createRepository({
+    findByFileId,
+    findByFileIds,
+    findByUser,
+    insert,
+    insertMany,
+    updateStatus,
+});
 
 export type RetrievalRepo = ReturnType<typeof createRetrievalRepo>;

@@ -1,6 +1,7 @@
 import { eq, and, desc, sql, notInArray, inArray, ne } from 'drizzle-orm';
 import type { DB } from '../connection';
 import * as schema from '../schema';
+import { createRepository } from './create';
 
 export type File = typeof schema.files.$inferSelect;
 export type NewFile = typeof schema.files.$inferInsert;
@@ -178,28 +179,20 @@ async function softDeleteForUser(
         .returning();
 }
 
-export function createFileRepo(db: DB) {
-    return {
-        findById: (id: string) => findById(db, id),
-        findByS3Key: (s3Key: string) => findByS3Key(db, s3Key),
-        findByUserAndId: (userId: string, fileId: string) =>
-            findByUserAndId(db, userId, fileId),
-        findManyByUserAndIds: (userId: string, fileIds: string[]) =>
-            findManyByUserAndIds(db, userId, fileIds),
-        findByUser: (userId: string, opts?: FindByUserOptions) =>
-            findByUser(db, userId, opts),
-        countByUser: (userId: string, opts?: { includeHidden?: boolean }) =>
-            countByUser(db, userId, opts),
-        sumStorageByUser: (userId: string) => sumStorageByUser(db, userId),
-        insert: (data: NewFile) => insert(db, data),
-        update: (id: string, data: Partial<Omit<NewFile, 'id'>>) =>
-            update(db, id, data),
-        delete: (id: string) => remove(db, id),
-        softDelete: (fileId: string) => softDelete(db, fileId),
-        softDeleteMany: (fileIds: string[]) => softDeleteMany(db, fileIds),
-        softDeleteForUser: (userId: string, fileIds: string[]) =>
-            softDeleteForUser(db, userId, fileIds),
-    };
-}
+export const createFileRepo = createRepository({
+    findById,
+    findByS3Key,
+    findByUserAndId,
+    findManyByUserAndIds,
+    findByUser,
+    countByUser,
+    sumStorageByUser,
+    insert,
+    update,
+    delete: remove,
+    softDelete,
+    softDeleteMany,
+    softDeleteForUser,
+});
 
 export type FileRepo = ReturnType<typeof createFileRepo>;

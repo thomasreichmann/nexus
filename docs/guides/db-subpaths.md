@@ -86,8 +86,35 @@ function processFiles(fileRepo: FileRepo) {
 1. Create `packages/db/src/repositories/<entity>.ts` with:
     - Entity types (`type Entity = ...`, `type NewEntity = ...`)
     - Private functions (not exported) with `db: DB` as first parameter
-    - `create<Entity>Repo(db: DB)` factory with short method names (exported)
+    - `createRepository({ ... })` factory using the auto-bind helper (exported)
     - `type <Entity>Repo = ReturnType<typeof create<Entity>Repo>` (exported)
+
+    ```typescript
+    import { createRepository } from './create';
+
+    function findById(db: DB, id: string): Promise<Entity | undefined> {
+        return db.query.entities.findFirst({
+            where: eq(schema.entities.id, id),
+        });
+    }
+
+    async function insert(db: DB, data: NewEntity): Promise<Entity> {
+        const [entity] = await db
+            .insert(schema.entities)
+            .values(data)
+            .returning();
+        return entity;
+    }
+
+    export const createEntityRepo = createRepository({
+        findById,
+        insert,
+    });
+
+    export type EntityRepo = ReturnType<typeof createEntityRepo>;
+    ```
+
+    The `createRepository()` helper auto-binds `db` to each function — define the function once and add it to the object by name. No signature duplication needed.
 
 2. Add the subpath to `packages/db/package.json`:
 

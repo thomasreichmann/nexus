@@ -1,6 +1,7 @@
 import { eq, desc, sql } from 'drizzle-orm';
 import type { DB } from '../connection';
 import * as schema from '../schema';
+import { createRepository } from './create';
 
 export type Job = typeof schema.backgroundJobs.$inferSelect;
 export type NewJob = typeof schema.backgroundJobs.$inferInsert;
@@ -109,17 +110,14 @@ async function markProcessing(db: DB, id: string): Promise<void> {
         .where(eq(schema.backgroundJobs.id, id));
 }
 
-export function createJobRepo(db: DB) {
-    return {
-        findById: (id: string) => findById(db, id),
-        findMany: (opts?: FindManyOptions) => findMany(db, opts),
-        countByStatus: () => countByStatus(db),
-        insert: (data: NewJob) => insert(db, data),
-        update: (id: string, data: Partial<Omit<NewJob, 'id'>>) =>
-            update(db, id, data),
-        markProcessing: (id: string) => markProcessing(db, id),
-    };
-}
+export const createJobRepo = createRepository({
+    findById,
+    findMany,
+    countByStatus,
+    insert,
+    update,
+    markProcessing,
+});
 
 export type JobRepo = ReturnType<typeof createJobRepo>;
 
