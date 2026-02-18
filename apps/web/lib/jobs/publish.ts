@@ -1,12 +1,12 @@
 import { SendMessageCommand } from '@aws-sdk/client-sqs';
-import { client, queueUrl } from './client';
+import type { DB } from '@nexus/db';
 import {
-    insertJob,
-    type DB,
+    createJobRepo,
     type Job,
     type JobInput,
     type SqsMessageBody,
-} from '@nexus/db';
+} from '@nexus/db/repo/jobs';
+import { client, queueUrl } from './client';
 
 /** Send an SQS message for a job. Used by publish() and retry flows. */
 export async function sendToQueue(body: SqsMessageBody): Promise<void> {
@@ -25,7 +25,8 @@ export async function sendToQueue(body: SqsMessageBody): Promise<void> {
  * If SQS fails, the DB record remains with status 'pending' (safe to retry).
  */
 export async function publish(db: DB, input: JobInput): Promise<Job> {
-    const job = await insertJob(db, {
+    const jobRepo = createJobRepo(db);
+    const job = await jobRepo.insert({
         type: input.type,
         payload: input.payload,
     });

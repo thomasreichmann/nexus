@@ -7,6 +7,30 @@
         ".": {
             "import": "./src/index.ts",
             "types": "./src/index.ts"
+        },
+        "./schema": {
+            "import": "./src/schema/index.ts",
+            "types": "./src/schema/index.ts"
+        },
+        "./repo/files": {
+            "import": "./src/repositories/files.ts",
+            "types": "./src/repositories/files.ts"
+        },
+        "./repo/jobs": {
+            "import": "./src/repositories/jobs.ts",
+            "types": "./src/repositories/jobs.ts"
+        },
+        "./repo/retrievals": {
+            "import": "./src/repositories/retrievals.ts",
+            "types": "./src/repositories/retrievals.ts"
+        },
+        "./repo/webhooks": {
+            "import": "./src/repositories/webhooks.ts",
+            "types": "./src/repositories/webhooks.ts"
+        },
+        "./testing": {
+            "import": "./src/testing.ts",
+            "types": "./src/testing.ts"
         }
     },
     "scripts": {

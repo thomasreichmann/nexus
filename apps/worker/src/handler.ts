@@ -1,11 +1,6 @@
 import type { SQSEvent } from 'aws-lambda';
-import {
-    createDb,
-    markJobProcessing,
-    updateJob,
-    type DB,
-    type SqsMessageBody,
-} from '@nexus/db';
+import { createDb, type DB } from '@nexus/db';
+import { createJobRepo, type SqsMessageBody } from '@nexus/db/repo/jobs';
 import { getHandler } from './registry';
 
 // Register all job handlers
@@ -20,13 +15,14 @@ export async function processRecord(
     const message: SqsMessageBody = JSON.parse(record.body);
     const { jobId, type, payload } = message;
 
-    await markJobProcessing(db, jobId);
+    const jobRepo = createJobRepo(db);
+    await jobRepo.markProcessing(jobId);
 
     try {
         const jobHandler = getHandler(type);
         await jobHandler({ jobId, payload, db });
 
-        await updateJob(db, jobId, {
+        await jobRepo.update(jobId, {
             status: 'completed',
             completedAt: new Date(),
         });
@@ -34,7 +30,7 @@ export async function processRecord(
         const errorMessage =
             error instanceof Error ? error.message : String(error);
 
-        await updateJob(db, jobId, {
+        await jobRepo.update(jobId, {
             status: 'failed',
             error: errorMessage,
         });

@@ -1,6 +1,6 @@
-import type { DB, Retrieval, File } from '@nexus/db';
-import * as fileRepo from '@nexus/db';
-import * as retrievalRepo from '@nexus/db';
+import type { DB } from '@nexus/db';
+import { createFileRepo, type File } from '@nexus/db/repo/files';
+import { createRetrievalRepo, type Retrieval } from '@nexus/db/repo/retrievals';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
 import type { RestoreTier } from '@/lib/storage';
@@ -26,14 +26,17 @@ async function requestBulkRetrieval(
     fileIds: string[],
     tier: RestoreTier = 'standard'
 ): Promise<Retrieval[]> {
-    const files = await fileRepo.findUserFiles(db, userId, fileIds);
+    const fileRepo = createFileRepo(db);
+    const retrievalRepo = createRetrievalRepo(db);
+
+    const files = await fileRepo.findManyByUserAndIds(userId, fileIds);
     if (files.length !== fileIds.length) {
         const foundIds = new Set(files.map((f) => f.id));
         const missingId = fileIds.find((id) => !foundIds.has(id));
         throw new NotFoundError('File', missingId!);
     }
 
-    const existingRetrievals = await retrievalRepo.findByFileIds(db, fileIds);
+    const existingRetrievals = await retrievalRepo.findByFileIds(fileIds);
     const existingFileIds = new Set(existingRetrievals.map((r) => r.fileId));
 
     const filesToRestore = files.filter((f) => !existingFileIds.has(f.id));
@@ -55,7 +58,6 @@ async function requestBulkRetrieval(
 
         const now = new Date();
         const newRetrievals = await retrievalRepo.insertMany(
-            db,
             filesToRestore.map((f) => ({
                 id: crypto.randomUUID(),
                 fileId: f.id,
@@ -82,12 +84,15 @@ async function getDownloadUrl(
     userId: string,
     fileId: string
 ): Promise<DownloadUrlResult> {
-    const file = await fileRepo.findUserFile(db, userId, fileId);
+    const fileRepo = createFileRepo(db);
+    const retrievalRepo = createRetrievalRepo(db);
+
+    const file = await fileRepo.findByUserAndId(userId, fileId);
     if (!file) {
         throw new NotFoundError('File', fileId);
     }
 
-    const retrieval = await retrievalRepo.findByFileId(db, fileId);
+    const retrieval = await retrievalRepo.findByFileId(fileId);
     if (!retrieval || retrieval.status !== 'ready') {
         throw new InvalidStateError('File retrieval is not ready for download');
     }

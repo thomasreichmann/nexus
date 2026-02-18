@@ -1,19 +1,19 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { createMockDb } from './mocks';
 import { createJobFixture, createNewJobFixture, TEST_JOB_ID } from './fixtures';
-import { findJobs, countJobsByStatus, insertJob, updateJob } from './jobs';
+import { createJobRepo } from './jobs';
 
 describe('jobs repository', () => {
-    let db: ReturnType<typeof createMockDb>['db'];
     let mocks: ReturnType<typeof createMockDb>['mocks'];
+    let repo: ReturnType<typeof createJobRepo>;
 
     beforeEach(() => {
         const mockDb = createMockDb();
-        db = mockDb.db;
         mocks = mockDb.mocks;
+        repo = createJobRepo(mockDb.db);
     });
 
-    describe('findJobs', () => {
+    describe('findMany', () => {
         it('returns jobs and total count', async () => {
             const jobs = [
                 createJobFixture({ id: 'job1' }),
@@ -22,7 +22,7 @@ describe('jobs repository', () => {
             mocks.findMany.mockResolvedValue(jobs);
             mocks.where.mockResolvedValue([{ count: 2 }]);
 
-            const result = await findJobs(db);
+            const result = await repo.findMany();
 
             expect(result.jobs).toEqual(jobs);
             expect(result.total).toBe(2);
@@ -32,7 +32,7 @@ describe('jobs repository', () => {
             mocks.findMany.mockResolvedValue([]);
             mocks.where.mockResolvedValue([{ count: 0 }]);
 
-            await findJobs(db);
+            await repo.findMany();
 
             expect(mocks.findMany).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -46,7 +46,7 @@ describe('jobs repository', () => {
             mocks.findMany.mockResolvedValue([]);
             mocks.where.mockResolvedValue([{ count: 0 }]);
 
-            await findJobs(db, { limit: 10, offset: 20 });
+            await repo.findMany({ limit: 10, offset: 20 });
 
             expect(mocks.findMany).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -60,7 +60,7 @@ describe('jobs repository', () => {
             mocks.findMany.mockResolvedValue([]);
             mocks.where.mockResolvedValue([{ count: 0 }]);
 
-            const result = await findJobs(db);
+            const result = await repo.findMany();
 
             expect(result.jobs).toEqual([]);
             expect(result.total).toBe(0);
@@ -70,7 +70,7 @@ describe('jobs repository', () => {
             mocks.findMany.mockResolvedValue([]);
             mocks.where.mockResolvedValue([{ count: 0 }]);
 
-            await findJobs(db, { limit: 50, offset: 0, status: 'failed' });
+            await repo.findMany({ limit: 50, offset: 0, status: 'failed' });
 
             expect(mocks.findMany).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -80,7 +80,7 @@ describe('jobs repository', () => {
         });
     });
 
-    describe('countJobsByStatus', () => {
+    describe('countByStatus', () => {
         it('returns counts per status', async () => {
             mocks.groupBy.mockResolvedValue([
                 { status: 'pending', count: 5 },
@@ -89,7 +89,7 @@ describe('jobs repository', () => {
                 { status: 'failed', count: 1 },
             ]);
 
-            const result = await countJobsByStatus(db);
+            const result = await repo.countByStatus();
 
             expect(result).toEqual({
                 pending: 5,
@@ -102,7 +102,7 @@ describe('jobs repository', () => {
         it('returns zero for statuses with no jobs', async () => {
             mocks.groupBy.mockResolvedValue([]);
 
-            const result = await countJobsByStatus(db);
+            const result = await repo.countByStatus();
 
             expect(result).toEqual({
                 pending: 0,
@@ -113,13 +113,13 @@ describe('jobs repository', () => {
         });
     });
 
-    describe('insertJob', () => {
+    describe('insert', () => {
         it('returns inserted job', async () => {
             const newJob = createNewJobFixture();
             const insertedJob = createJobFixture();
             mocks.returning.mockResolvedValue([insertedJob]);
 
-            const result = await insertJob(db, newJob);
+            const result = await repo.insert(newJob);
 
             expect(result).toEqual(insertedJob);
             expect(mocks.insert).toHaveBeenCalledOnce();
@@ -127,7 +127,7 @@ describe('jobs repository', () => {
         });
     });
 
-    describe('updateJob', () => {
+    describe('update', () => {
         it('returns updated job', async () => {
             const updatedJob = createJobFixture({
                 status: 'processing',
@@ -135,7 +135,7 @@ describe('jobs repository', () => {
             });
             mocks.returning.mockResolvedValue([updatedJob]);
 
-            const result = await updateJob(db, TEST_JOB_ID, {
+            const result = await repo.update(TEST_JOB_ID, {
                 status: 'processing',
                 startedAt: new Date(),
             });
@@ -147,7 +147,7 @@ describe('jobs repository', () => {
         it('returns undefined when job not found', async () => {
             mocks.returning.mockResolvedValue([]);
 
-            const result = await updateJob(db, 'nonexistent', {
+            const result = await repo.update('nonexistent', {
                 status: 'failed',
                 error: 'Something went wrong',
             });

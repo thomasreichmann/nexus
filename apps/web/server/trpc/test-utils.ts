@@ -1,5 +1,5 @@
 import type { RequestLogger, LoggingContext } from './middleware/logging';
-import { createMockDb, createUserFixture, type User } from '@nexus/db';
+import { createMockDb, createUserFixture, type User } from '@nexus/db/testing';
 import type { Context, LoggedContext } from './init';
 
 /**
@@ -119,7 +119,9 @@ export function createMockContext(
     };
 
     const baseContext: Context = {
-        db,
+        // Cast: createMockDb returns DB (Connection | Transaction union),
+        // but Context['db'] is the narrower Connection type
+        db: db as Context['db'],
         session,
     };
 

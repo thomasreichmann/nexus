@@ -1,5 +1,9 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { createMockDb, createFileFixture, TEST_USER_ID } from '@nexus/db';
+import {
+    createMockDb,
+    createFileFixture,
+    TEST_USER_ID,
+} from '@nexus/db/testing';
 import { mockS3 } from '@/lib/storage/testing';
 import { NotFoundError, QuotaExceededError } from '@/server/errors';
 import { fileService } from './files';

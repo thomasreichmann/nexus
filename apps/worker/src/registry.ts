@@ -1,4 +1,5 @@
-import type { DB, JobType, JobPayloadMap } from '@nexus/db';
+import type { DB } from '@nexus/db';
+import type { JobType, JobPayloadMap } from '@nexus/db/repo/jobs';
 
 export interface HandlerContext<T extends JobType = JobType> {
     jobId: string;

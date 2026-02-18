@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { RESTORE_TIERS } from '@nexus/db';
-import * as fileRepo from '@nexus/db';
+import { RESTORE_TIERS } from '@nexus/db/schema';
+import { createFileRepo } from '@nexus/db/repo/files';
 import { fileService } from '@/server/services/files';
 import { retrievalService } from '@/server/services/retrieval';
 import { protectedProcedure, router } from '../init';
@@ -17,17 +17,18 @@ export const filesRouter = router({
                 .optional()
         )
         .query(async ({ ctx, input }) => {
+            const fileRepo = createFileRepo(ctx.db);
             const limit = input?.limit ?? 50;
             const offset = input?.offset ?? 0;
             const includeHidden = input?.includeHidden ?? false;
 
             const [files, total] = await Promise.all([
-                fileRepo.findFilesByUser(ctx.db, ctx.session.user.id, {
+                fileRepo.findByUser(ctx.session.user.id, {
                     limit,
                     offset,
                     includeHidden,
                 }),
-                fileRepo.countFilesByUser(ctx.db, ctx.session.user.id, {
+                fileRepo.countByUser(ctx.session.user.id, {
                     includeHidden,
                 }),
             ]);
@@ -42,7 +43,8 @@ export const filesRouter = router({
     get: protectedProcedure
         .input(z.object({ id: z.string().uuid() }))
         .query(({ ctx, input }) => {
-            return fileRepo.findUserFile(ctx.db, ctx.session.user.id, input.id);
+            const fileRepo = createFileRepo(ctx.db);
+            return fileRepo.findByUserAndId(ctx.session.user.id, input.id);
         }),
 
     upload: protectedProcedure
