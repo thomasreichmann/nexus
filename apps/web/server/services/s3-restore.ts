@@ -1,10 +1,6 @@
 import type { DB } from '@nexus/db';
-import { findByS3Key, type File } from '@nexus/db/repo/files';
-import {
-    findByFileId,
-    updateStatus,
-    type Retrieval,
-} from '@nexus/db/repo/retrievals';
+import { createFileRepo, type File } from '@nexus/db/repo/files';
+import { createRetrievalRepo, type Retrieval } from '@nexus/db/repo/retrievals';
 import { logger } from '@/server/lib/logger';
 import type { S3EventRecord } from '@/lib/sns/types';
 
@@ -27,14 +23,17 @@ async function resolveRetrieval(
     record: S3EventRecord,
     context: string
 ): Promise<{ file: File; retrieval: Retrieval } | null> {
+    const fileRepo = createFileRepo(db);
+    const retrievalRepo = createRetrievalRepo(db);
+
     const s3Key = decodeS3Key(record);
-    const file = await findByS3Key(db, s3Key);
+    const file = await fileRepo.findByS3Key(s3Key);
     if (!file) {
         log.warn({ s3Key }, `${context} for unknown file`);
         return null;
     }
 
-    const retrieval = await findByFileId(db, file.id);
+    const retrieval = await retrievalRepo.findByFileId(file.id);
     if (!retrieval) {
         log.warn(
             { fileId: file.id, s3Key },
@@ -54,6 +53,7 @@ async function handleRestoreCompleted(
     if (!result) return;
 
     const { file, retrieval } = result;
+    const retrievalRepo = createRetrievalRepo(db);
     const now = new Date();
     const expiresAt = record.glacierEventData?.restoreEventData
         ?.lifecycleRestorationExpiryTime
@@ -63,7 +63,7 @@ async function handleRestoreCompleted(
           )
         : undefined;
 
-    await updateStatus(db, retrieval.id, 'ready', {
+    await retrievalRepo.updateStatus(retrieval.id, 'ready', {
         readyAt: now,
         expiresAt,
     });
@@ -82,7 +82,8 @@ async function handleRestoreExpired(
     if (!result) return;
 
     const { file, retrieval } = result;
-    await updateStatus(db, retrieval.id, 'expired');
+    const retrievalRepo = createRetrievalRepo(db);
+    await retrievalRepo.updateStatus(retrieval.id, 'expired');
 
     log.info(
         { fileId: file.id, retrievalId: retrieval.id },

@@ -5,25 +5,25 @@ import * as schema from '../schema';
 export type File = typeof schema.files.$inferSelect;
 export type NewFile = typeof schema.files.$inferInsert;
 
-export interface FindFilesByUserOptions {
+export interface FindByUserOptions {
     limit: number;
     offset: number;
     includeHidden?: boolean;
 }
 
-export function findFileById(db: DB, id: string): Promise<File | undefined> {
+function findById(db: DB, id: string): Promise<File | undefined> {
     return db.query.files.findFirst({
         where: eq(schema.files.id, id),
     });
 }
 
-export function findByS3Key(db: DB, s3Key: string): Promise<File | undefined> {
+function findByS3Key(db: DB, s3Key: string): Promise<File | undefined> {
     return db.query.files.findFirst({
         where: eq(schema.files.s3Key, s3Key),
     });
 }
 
-export function findUserFile(
+function findByUserAndId(
     db: DB,
     userId: string,
     fileId: string
@@ -36,7 +36,7 @@ export function findUserFile(
     });
 }
 
-export function findUserFiles(
+function findManyByUserAndIds(
     db: DB,
     userId: string,
     fileIds: string[]
@@ -64,10 +64,10 @@ function buildUserFilesWhereClause(userId: string, includeHidden: boolean) {
           );
 }
 
-export function findFilesByUser(
+function findByUser(
     db: DB,
     userId: string,
-    opts: FindFilesByUserOptions = { limit: 50, offset: 0 }
+    opts: FindByUserOptions = { limit: 50, offset: 0 }
 ): Promise<File[]> {
     return db.query.files.findMany({
         where: buildUserFilesWhereClause(userId, opts.includeHidden ?? false),
@@ -77,7 +77,7 @@ export function findFilesByUser(
     });
 }
 
-export async function countFilesByUser(
+async function countByUser(
     db: DB,
     userId: string,
     opts: { includeHidden?: boolean } = {}
@@ -90,10 +90,7 @@ export async function countFilesByUser(
     return result?.count ?? 0;
 }
 
-export async function sumStorageBytesByUser(
-    db: DB,
-    userId: string
-): Promise<number> {
+async function sumStorageByUser(db: DB, userId: string): Promise<number> {
     const [result] = await db
         .select({
             total: sql<number>`coalesce(sum(${schema.files.size}), 0)::bigint`,
@@ -104,12 +101,12 @@ export async function sumStorageBytesByUser(
     return Number(result?.total ?? 0);
 }
 
-export async function insertFile(db: DB, data: NewFile): Promise<File> {
+async function insert(db: DB, data: NewFile): Promise<File> {
     const [file] = await db.insert(schema.files).values(data).returning();
     return file;
 }
 
-export async function updateFile(
+async function update(
     db: DB,
     id: string,
     data: Partial<Omit<NewFile, 'id'>>
@@ -123,10 +120,7 @@ export async function updateFile(
     return file;
 }
 
-export async function deleteFile(
-    db: DB,
-    id: string
-): Promise<File | undefined> {
+async function remove(db: DB, id: string): Promise<File | undefined> {
     const [file] = await db
         .delete(schema.files)
         .where(eq(schema.files.id, id))
@@ -135,10 +129,7 @@ export async function deleteFile(
     return file;
 }
 
-export async function softDeleteFile(
-    db: DB,
-    fileId: string
-): Promise<File | undefined> {
+async function softDelete(db: DB, fileId: string): Promise<File | undefined> {
     const [file] = await db
         .update(schema.files)
         .set({
@@ -151,10 +142,7 @@ export async function softDeleteFile(
     return file;
 }
 
-export async function softDeleteFiles(
-    db: DB,
-    fileIds: string[]
-): Promise<File[]> {
+async function softDeleteMany(db: DB, fileIds: string[]): Promise<File[]> {
     if (fileIds.length === 0) return [];
 
     return db
@@ -167,7 +155,7 @@ export async function softDeleteFiles(
         .returning();
 }
 
-export async function softDeleteUserFiles(
+async function softDeleteForUser(
     db: DB,
     userId: string,
     fileIds: string[]
@@ -192,25 +180,26 @@ export async function softDeleteUserFiles(
 
 export function createFileRepo(db: DB) {
     return {
-        findById: (id: string) => findFileById(db, id),
+        findById: (id: string) => findById(db, id),
         findByS3Key: (s3Key: string) => findByS3Key(db, s3Key),
         findByUserAndId: (userId: string, fileId: string) =>
-            findUserFile(db, userId, fileId),
+            findByUserAndId(db, userId, fileId),
         findManyByUserAndIds: (userId: string, fileIds: string[]) =>
-            findUserFiles(db, userId, fileIds),
-        findByUser: (userId: string, opts?: FindFilesByUserOptions) =>
-            findFilesByUser(db, userId, opts),
+            findManyByUserAndIds(db, userId, fileIds),
+        findByUser: (userId: string, opts?: FindByUserOptions) =>
+            findByUser(db, userId, opts),
         countByUser: (userId: string, opts?: { includeHidden?: boolean }) =>
-            countFilesByUser(db, userId, opts),
-        sumStorageByUser: (userId: string) => sumStorageBytesByUser(db, userId),
-        insert: (data: NewFile) => insertFile(db, data),
+            countByUser(db, userId, opts),
+        sumStorageByUser: (userId: string) => sumStorageByUser(db, userId),
+        insert: (data: NewFile) => insert(db, data),
         update: (id: string, data: Partial<Omit<NewFile, 'id'>>) =>
-            updateFile(db, id, data),
-        delete: (id: string) => deleteFile(db, id),
-        softDelete: (fileId: string) => softDeleteFile(db, fileId),
-        softDeleteMany: (fileIds: string[]) => softDeleteFiles(db, fileIds),
+            update(db, id, data),
+        delete: (id: string) => remove(db, id),
+        softDelete: (fileId: string) => softDelete(db, fileId),
+        softDeleteMany: (fileIds: string[]) => softDeleteMany(db, fileIds),
         softDeleteForUser: (userId: string, fileIds: string[]) =>
-            softDeleteUserFiles(db, userId, fileIds),
+            softDeleteForUser(db, userId, fileIds),
     };
 }
+
 export type FileRepo = ReturnType<typeof createFileRepo>;

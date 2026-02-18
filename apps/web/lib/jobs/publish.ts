@@ -1,7 +1,7 @@
 import { SendMessageCommand } from '@aws-sdk/client-sqs';
 import type { DB } from '@nexus/db';
 import {
-    insertJob,
+    createJobRepo,
     type Job,
     type JobInput,
     type SqsMessageBody,
@@ -25,7 +25,8 @@ export async function sendToQueue(body: SqsMessageBody): Promise<void> {
  * If SQS fails, the DB record remains with status 'pending' (safe to retry).
  */
 export async function publish(db: DB, input: JobInput): Promise<Job> {
-    const job = await insertJob(db, {
+    const jobRepo = createJobRepo(db);
+    const job = await jobRepo.insert({
         type: input.type,
         payload: input.payload,
     });

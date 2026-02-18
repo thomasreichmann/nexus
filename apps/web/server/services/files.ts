@@ -1,12 +1,5 @@
 import type { DB } from '@nexus/db';
-import {
-    sumStorageBytesByUser,
-    insertFile,
-    findUserFile,
-    updateFile,
-    softDeleteUserFiles,
-    type File,
-} from '@nexus/db/repo/files';
+import { createFileRepo, type File } from '@nexus/db/repo/files';
 import { NotFoundError, QuotaExceededError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
 
@@ -34,7 +27,8 @@ async function initiateUpload(
     userId: string,
     input: InitiateUploadInput
 ): Promise<InitiateUploadResult> {
-    const currentUsage = await sumStorageBytesByUser(db, userId);
+    const fileRepo = createFileRepo(db);
+    const currentUsage = await fileRepo.sumStorageByUser(userId);
     if (currentUsage + input.sizeBytes > MAX_STORAGE_BYTES) {
         throw new QuotaExceededError('Storage quota exceeded');
     }
@@ -48,7 +42,7 @@ async function initiateUpload(
         expiresIn: PRESIGNED_URL_EXPIRY_SECONDS,
     });
 
-    await insertFile(db, {
+    await fileRepo.insert({
         id: fileId,
         userId,
         name: input.name,
@@ -74,12 +68,13 @@ async function confirmUpload(
     userId: string,
     fileId: string
 ): Promise<ConfirmUploadResult> {
-    const file = await findUserFile(db, userId, fileId);
+    const fileRepo = createFileRepo(db);
+    const file = await fileRepo.findByUserAndId(userId, fileId);
     if (!file) {
         throw new NotFoundError('File', fileId);
     }
 
-    const updated = await updateFile(db, fileId, {
+    const updated = await fileRepo.update(fileId, {
         status: 'available',
     });
 
@@ -106,7 +101,8 @@ async function deleteUserFile(
     if (fileIds.length === 0) return [];
 
     const deleted = await db.transaction(async (tx) => {
-        const result = await softDeleteUserFiles(tx, userId, fileIds);
+        const fileRepo = createFileRepo(tx);
+        const result = await fileRepo.softDeleteForUser(userId, fileIds);
 
         // If count doesn't match, some files were missing or not owned
         if (result.length !== fileIds.length) {

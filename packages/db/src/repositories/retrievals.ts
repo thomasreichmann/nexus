@@ -12,10 +12,7 @@ const ACTIVE_STATUSES: Retrieval['status'][] = [
     'ready',
 ];
 
-export function findByFileId(
-    db: DB,
-    fileId: string
-): Promise<Retrieval | undefined> {
+function findByFileId(db: DB, fileId: string): Promise<Retrieval | undefined> {
     return db.query.retrievals.findFirst({
         where: and(
             eq(schema.retrievals.fileId, fileId),
@@ -24,7 +21,7 @@ export function findByFileId(
     });
 }
 
-export function findByFileIds(db: DB, fileIds: string[]): Promise<Retrieval[]> {
+function findByFileIds(db: DB, fileIds: string[]): Promise<Retrieval[]> {
     if (fileIds.length === 0) return Promise.resolve([]);
     return db.query.retrievals.findMany({
         where: and(
@@ -34,13 +31,13 @@ export function findByFileIds(db: DB, fileIds: string[]): Promise<Retrieval[]> {
     });
 }
 
-export function findByUser(db: DB, userId: string): Promise<Retrieval[]> {
+function findByUser(db: DB, userId: string): Promise<Retrieval[]> {
     return db.query.retrievals.findMany({
         where: eq(schema.retrievals.userId, userId),
     });
 }
 
-export async function insert(db: DB, data: NewRetrieval): Promise<Retrieval> {
+async function insert(db: DB, data: NewRetrieval): Promise<Retrieval> {
     const [retrieval] = await db
         .insert(schema.retrievals)
         .values(data)
@@ -48,7 +45,7 @@ export async function insert(db: DB, data: NewRetrieval): Promise<Retrieval> {
     return retrieval;
 }
 
-export async function insertMany(
+async function insertMany(
     db: DB,
     dataArray: NewRetrieval[]
 ): Promise<Retrieval[]> {
@@ -56,7 +53,7 @@ export async function insertMany(
     return db.insert(schema.retrievals).values(dataArray).returning();
 }
 
-export async function updateStatus(
+async function updateStatus(
     db: DB,
     retrievalId: string,
     status: Retrieval['status'],
@@ -88,4 +85,5 @@ export function createRetrievalRepo(db: DB) {
         ) => updateStatus(db, retrievalId, status, metadata),
     };
 }
+
 export type RetrievalRepo = ReturnType<typeof createRetrievalRepo>;

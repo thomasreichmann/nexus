@@ -1,10 +1,7 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import {
-    findJobs,
-    findJobById,
-    countJobsByStatus,
-    updateJob,
+    createJobRepo,
     type JobType,
     type SqsMessageBody,
 } from '@nexus/db/repo/jobs';
@@ -31,10 +28,11 @@ export const adminRouter = router({
                     .optional()
             )
             .query(async ({ ctx, input }) => {
+                const jobRepo = createJobRepo(ctx.db);
                 const limit = input?.limit ?? 20;
                 const offset = input?.offset ?? 0;
 
-                const result = await findJobs(ctx.db, {
+                const result = await jobRepo.findMany({
                     limit,
                     offset,
                     status: input?.status,
@@ -48,13 +46,15 @@ export const adminRouter = router({
             }),
 
         counts: adminProcedure.query(({ ctx }) => {
-            return countJobsByStatus(ctx.db);
+            const jobRepo = createJobRepo(ctx.db);
+            return jobRepo.countByStatus();
         }),
 
         retry: adminProcedure
             .input(z.object({ id: z.string().uuid() }))
             .mutation(async ({ ctx, input }) => {
-                const job = await findJobById(ctx.db, input.id);
+                const jobRepo = createJobRepo(ctx.db);
+                const job = await jobRepo.findById(input.id);
 
                 if (!job) {
                     throw new TRPCError({ code: 'NOT_FOUND' });
@@ -67,7 +67,7 @@ export const adminRouter = router({
                     });
                 }
 
-                const updated = await updateJob(ctx.db, input.id, {
+                const updated = await jobRepo.update(input.id, {
                     status: 'pending',
                     error: null,
                     startedAt: null,

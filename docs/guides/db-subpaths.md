@@ -1,7 +1,7 @@
 ---
 title: '@nexus/db Subpath Exports'
 created: 2026-02-17
-updated: 2026-02-17
+updated: 2026-02-18
 status: active
 tags:
     - guide
@@ -18,15 +18,15 @@ The `@nexus/db` package uses subpath exports to provide clean module boundaries.
 
 ## Subpath Reference
 
-| Subpath                     | Contents                                                     |
-| --------------------------- | ------------------------------------------------------------ |
-| `@nexus/db`                 | `createDb`, `DB`, `Transaction`                              |
-| `@nexus/db/schema`          | All schema tables, enums, constants, `timestamps` helper     |
-| `@nexus/db/repo/files`      | `createFileRepo` factory + standalone functions + types      |
-| `@nexus/db/repo/jobs`       | `createJobRepo` factory + standalone functions + job types   |
-| `@nexus/db/repo/retrievals` | `createRetrievalRepo` factory + standalone functions + types |
-| `@nexus/db/repo/webhooks`   | `createWebhookRepo` factory + standalone functions + types   |
-| `@nexus/db/testing`         | `createMockDb`, fixture factories, test constants            |
+| Subpath                     | Contents                                                 |
+| --------------------------- | -------------------------------------------------------- |
+| `@nexus/db`                 | `createDb`, `DB`, `Transaction`                          |
+| `@nexus/db/schema`          | All schema tables, enums, constants, `timestamps` helper |
+| `@nexus/db/repo/files`      | `createFileRepo` factory + `File`, `NewFile` types       |
+| `@nexus/db/repo/jobs`       | `createJobRepo` factory + `Job`, job types               |
+| `@nexus/db/repo/retrievals` | `createRetrievalRepo` factory + `Retrieval` types        |
+| `@nexus/db/repo/webhooks`   | `createWebhookRepo` factory + `WebhookEvent` types       |
+| `@nexus/db/testing`         | `createMockDb`, fixture factories, test constants        |
 
 ## DB Type
 
@@ -36,7 +36,7 @@ The `@nexus/db` package uses subpath exports to provide clean module boundaries.
 type DB = Connection | Transaction;
 ```
 
-This means repository functions don't need to know whether they're running inside a transaction — `DB` covers both. To run queries in a transaction, create a repo from the transaction parameter:
+This means repository factories don't need to know whether they're running inside a transaction — `DB` covers both. To run queries in a transaction, create a repo from the transaction parameter:
 
 ```typescript
 await db.transaction(async (tx) => {
@@ -49,7 +49,7 @@ The architectural constraint is correct by design: `db.transaction()` cannot be 
 
 ## Repository Factory Pattern
 
-Each repository exports a `create<Entity>Repo(db)` factory that binds a `DB` instance and returns a typed namespace object with short method names:
+Each repository subpath exports a `create<Entity>Repo(db)` factory that binds a `DB` instance and returns a typed namespace object with short method names. The factory is the only way to access repository methods — standalone functions are not exported.
 
 ```typescript
 import { createFileRepo } from '@nexus/db/repo/files';
@@ -59,22 +59,14 @@ const file = await fileRepo.findById(id);
 const files = await fileRepo.findByUser(userId, { limit: 50, offset: 0 });
 ```
 
-### When to Use Factories vs Standalone Functions
-
-Both patterns are available. Choose based on context:
-
-- **Factories** — when you call multiple repo methods in the same scope (tRPC routers, services with many queries)
-- **Standalone functions** — when you call one or two functions (simple helpers, one-off queries)
+In services and routers, create the factory at the top of each function or procedure:
 
 ```typescript
-// Factory — binds db once, reuse across calls
-const fileRepo = createFileRepo(ctx.db);
-const files = await fileRepo.findByUser(userId);
-const count = await fileRepo.countByUser(userId);
-
-// Standalone — explicit db parameter each time
-import { findByS3Key } from '@nexus/db/repo/files';
-const file = await findByS3Key(db, s3Key);
+async function confirmUpload(db: DB, userId: string, fileId: string) {
+    const fileRepo = createFileRepo(db);
+    const file = await fileRepo.findByUserAndId(userId, fileId);
+    // ...
+}
 ```
 
 ### Factory Type Export
@@ -93,9 +85,9 @@ function processFiles(fileRepo: FileRepo) {
 
 1. Create `packages/db/src/repositories/<entity>.ts` with:
     - Entity types (`type Entity = ...`, `type NewEntity = ...`)
-    - Standalone functions with `db: DB` as first parameter
-    - `create<Entity>Repo(db: DB)` factory with short method names
-    - `type <Entity>Repo = ReturnType<typeof create<Entity>Repo>`
+    - Private functions (not exported) with `db: DB` as first parameter
+    - `create<Entity>Repo(db: DB)` factory with short method names (exported)
+    - `type <Entity>Repo = ReturnType<typeof create<Entity>Repo>` (exported)
 
 2. Add the subpath to `packages/db/package.json`:
 
