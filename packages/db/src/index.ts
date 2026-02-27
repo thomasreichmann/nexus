@@ -1,2 +1,2 @@
 export { createDb } from './connection';
-export type { DB, Transaction } from './connection';
+export type { DB, Connection, Transaction } from './connection';

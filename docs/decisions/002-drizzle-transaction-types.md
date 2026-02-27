@@ -1,8 +1,8 @@
 ---
 title: 'ADR-002: Drizzle Transaction Type Pattern'
 created: 2026-01-29
-updated: 2026-01-29
-status: accepted
+updated: 2026-02-27
+status: superseded
 tags:
     - decisions
     - adr
@@ -17,7 +17,7 @@ aliases:
 
 ## Status
 
-**Accepted**
+**Superseded** — The Parameters extraction pattern from this ADR is still used, but `DBOrTransaction` has been replaced by a unified `DB = Connection | Transaction` type in `packages/db/src/connection.ts`. All repository functions now accept `DB` directly — there is no separate `DBOrTransaction`. See [[../guides/db-subpaths|@nexus/db Subpath Exports]] for the current pattern.
 
 ## Context
 

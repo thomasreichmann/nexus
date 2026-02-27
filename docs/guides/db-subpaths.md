@@ -1,7 +1,7 @@
 ---
 title: '@nexus/db Subpath Exports'
 created: 2026-02-17
-updated: 2026-02-18
+updated: 2026-02-27
 status: active
 tags:
     - guide
@@ -20,7 +20,7 @@ The `@nexus/db` package uses subpath exports to provide clean module boundaries.
 
 | Subpath                     | Contents                                                 |
 | --------------------------- | -------------------------------------------------------- |
-| `@nexus/db`                 | `createDb`, `DB`, `Transaction`                          |
+| `@nexus/db`                 | `createDb`, `DB`, `Connection`, `Transaction`            |
 | `@nexus/db/schema`          | All schema tables, enums, constants, `timestamps` helper |
 | `@nexus/db/repo/files`      | `createFileRepo` factory + `File`, `NewFile` types       |
 | `@nexus/db/repo/jobs`       | `createJobRepo` factory + `Job`, job types               |
@@ -33,10 +33,16 @@ The `@nexus/db` package uses subpath exports to provide clean module boundaries.
 `DB` is a union type that accepts both database connections and transactions:
 
 ```typescript
+type Connection = ReturnType<typeof createDb>;
+type Transaction = Parameters<Parameters<Connection['transaction']>[0]>[0];
 type DB = Connection | Transaction;
 ```
 
-This means repository factories don't need to know whether they're running inside a transaction — `DB` covers both. To run queries in a transaction, create a repo from the transaction parameter:
+- **`Connection`** — The raw database connection returned by `createDb()`. Has `transaction()` method.
+- **`Transaction`** — The `tx` parameter inside a `db.transaction()` callback. Cannot start nested transactions.
+- **`DB`** — Union of both. Use this in repository functions and service signatures.
+
+Repository factories accept `DB`, so they work seamlessly inside transactions:
 
 ```typescript
 await db.transaction(async (tx) => {
