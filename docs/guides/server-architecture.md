@@ -1,7 +1,7 @@
 ---
 title: Server Architecture
 created: 2026-01-19
-updated: 2026-01-19
+updated: 2026-02-27
 status: active
 tags:
     - guide
@@ -37,13 +37,20 @@ Drizzle / Database
 ## Folder Structure
 
 ```
+packages/db/src/               # @nexus/db package
+├── connection.ts              # createDb, DB, Connection, Transaction types
+├── schema/                    # Table definitions, enums, constants
+├── repositories/              # Data access layer (factory pattern)
+│   ├── create.ts             # createRepository() auto-bind helper
+│   ├── files.ts              # createFileRepo factory
+│   ├── jobs.ts               # createJobRepo factory
+│   ├── retrievals.ts         # createRetrievalRepo factory
+│   └── webhooks.ts           # createWebhookRepo factory
+└── testing.ts                 # Mock DB, fixtures, test constants
+
 apps/web/server/
 ├── db/
-│   ├── index.ts              # Drizzle instance + shared DB type
-│   ├── schema.ts             # Table definitions
-│   └── repositories/         # Data access layer
-│       ├── files.ts
-│       └── users.ts
+│   └── index.ts              # Drizzle instance (re-exports from @nexus/db)
 ├── errors.ts                  # Domain errors
 ├── services/                  # Business logic layer (no index.ts!)
 │   ├── files.ts              # Exports: fileService
@@ -60,31 +67,28 @@ apps/web/server/
 
 ## Layer Responsibilities
 
-| Layer          | Location                  | Responsibility                                      |
-| -------------- | ------------------------- | --------------------------------------------------- |
-| **Repository** | `server/db/repositories/` | Pure data access, no business logic, no errors      |
-| **Service**    | `server/services/`        | Business rules, orchestration, throws domain errors |
-| **tRPC**       | `server/trpc/routers/`    | Input validation, auth, delegates to service/repo   |
+| Layer          | Location                        | Responsibility                                      |
+| -------------- | ------------------------------- | --------------------------------------------------- |
+| **Repository** | `packages/db/src/repositories/` | Pure data access, no business logic, no errors      |
+| **Service**    | `server/services/`              | Business rules, orchestration, throws domain errors |
+| **tRPC**       | `server/trpc/routers/`          | Input validation, auth, delegates to service/repo   |
 
 ---
 
 ## Shared DB Type
 
-Export the DB type from `server/db/index.ts` for use in all repositories and services:
+Types are defined in `@nexus/db` and re-exported from `apps/web/server/db/`:
 
 ```typescript
-// server/db/index.ts
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+// apps/web/server/db/index.ts
+import { createDb } from '@nexus/db';
 import { env } from '@/lib/env';
-import * as schema from './schema';
 
-const client = postgres(env.DATABASE_URL);
-export const db = drizzle(client, { schema });
-
-// Shared type for all repositories and services
-export type DB = typeof db;
+export const db = createDb(env.DATABASE_URL);
+export type { DB, Transaction } from '@nexus/db';
 ```
+
+`DB` is a union type (`Connection | Transaction`) so repository factories work seamlessly inside transactions. See [[db-subpaths|@nexus/db Subpath Exports]] for details.
 
 ---
 
@@ -94,118 +98,83 @@ Repositories are **pure data access** — no business logic, no side effects, no
 
 ### Conventions
 
-| Convention          | Rule                                                         |
-| ------------------- | ------------------------------------------------------------ |
-| **First parameter** | Always `db: DB` — enables testing without DI                 |
-| **Return types**    | Always explicit — prevents Drizzle inference propagation     |
-| **Naming**          | `<verb><Entity>` for single, `<verb><Entities>ByX` for lists |
-| **Queries**         | Use `db.query.*` (relational API) for reads                  |
-| **Aggregates**      | Use `db.select()` builder for complex SQL                    |
-| **Mutations**       | Always use `.returning()` with destructuring                 |
+| Convention       | Rule                                                                          |
+| ---------------- | ----------------------------------------------------------------------------- |
+| **API surface**  | Factory only: `create<Entity>Repo(db)` — standalone functions are private     |
+| **Return types** | Always explicit — prevents Drizzle inference propagation                      |
+| **Naming**       | Short: `findById`, `insert`, `update` — entity context comes from the factory |
+| **Queries**      | Use `db.query.*` (relational API) for reads                                   |
+| **Aggregates**   | Use `db.select()` builder for complex SQL                                     |
+| **Mutations**    | Always use `.returning()` with destructuring                                  |
 
 ### Example
 
 ```typescript
-// server/db/repositories/files.ts
+// packages/db/src/repositories/files.ts
 import { eq, and, desc, sql } from 'drizzle-orm';
-import type { DB } from '../index';
+import type { DB } from '../connection';
 import * as schema from '../schema';
+import { createRepository } from './create';
 
-// Explicit return types using Drizzle's inferred types
-type File = typeof schema.file.$inferSelect;
+export type File = typeof schema.files.$inferSelect;
+export type NewFile = typeof schema.files.$inferInsert;
 
-// ─────────────────────────────────────────────────────────────
-// Queries - use Drizzle's relational query API (db.query.*)
-// ─────────────────────────────────────────────────────────────
+// Functions are module-private — not exported directly
 
-/** Find a single file by ID. Returns undefined if not found. */
-export function findFileById(db: DB, id: string): Promise<File | undefined> {
-    return db.query.file.findFirst({
-        where: eq(schema.file.id, id),
+function findById(db: DB, id: string): Promise<File | undefined> {
+    return db.query.files.findFirst({
+        where: eq(schema.files.id, id),
     });
 }
 
-/** Find a file owned by a specific user. */
-export function findUserFile(
-    db: DB,
-    userId: string,
-    fileId: string
-): Promise<File | undefined> {
-    return db.query.file.findFirst({
-        where: and(eq(schema.file.id, fileId), eq(schema.file.userId, userId)),
-    });
-}
-
-/** List files for a user with pagination. */
-export function findFilesByUser(
+function findByUser(
     db: DB,
     userId: string,
     opts: { limit: number; offset: number } = { limit: 50, offset: 0 }
 ): Promise<File[]> {
-    return db.query.file.findMany({
-        where: eq(schema.file.userId, userId),
-        orderBy: desc(schema.file.createdAt),
+    return db.query.files.findMany({
+        where: eq(schema.files.userId, userId),
+        orderBy: desc(schema.files.createdAt),
         limit: opts.limit,
         offset: opts.offset,
     });
 }
 
-// ─────────────────────────────────────────────────────────────
-// Aggregates - use query builders when relational API isn't enough
-// ─────────────────────────────────────────────────────────────
-
-/** Calculate total storage used by a user in bytes. */
-export async function sumStorageBytesByUser(
-    db: DB,
-    userId: string
-): Promise<number> {
+async function sumStorageByUser(db: DB, userId: string): Promise<number> {
     const [result] = await db
         .select({
-            total: sql<number>`coalesce(sum(${schema.file.sizeBytes}), 0)::bigint`,
+            total: sql<number>`coalesce(sum(${schema.files.size}), 0)::bigint`,
         })
-        .from(schema.file)
-        .where(eq(schema.file.userId, userId));
+        .from(schema.files)
+        .where(eq(schema.files.userId, userId));
 
     return Number(result?.total ?? 0);
 }
 
-// ─────────────────────────────────────────────────────────────
-// Mutations - always use .returning() with destructuring
-// ─────────────────────────────────────────────────────────────
-
-/** Insert a new file record. */
-export async function insertFile(db: DB, data: schema.NewFile): Promise<File> {
-    const [file] = await db.insert(schema.file).values(data).returning();
+async function insert(db: DB, data: NewFile): Promise<File> {
+    const [file] = await db.insert(schema.files).values(data).returning();
     return file;
 }
 
-/** Update a file by ID. Returns undefined if file doesn't exist. */
-export async function updateFile(
-    db: DB,
-    id: string,
-    data: Partial<Omit<schema.NewFile, 'id'>>
-): Promise<File | undefined> {
-    const [file] = await db
-        .update(schema.file)
-        .set(data)
-        .where(eq(schema.file.id, id))
-        .returning();
+// createRepository() auto-binds `db` to each function
+export const createFileRepo = createRepository({
+    findById,
+    findByUser,
+    sumStorageByUser,
+    insert,
+    // ...
+});
 
-    return file;
-}
+export type FileRepo = ReturnType<typeof createFileRepo>;
+```
 
-/** Delete a file by ID. Returns the deleted row, or undefined if not found. */
-export async function deleteFile(
-    db: DB,
-    id: string
-): Promise<File | undefined> {
-    const [file] = await db
-        .delete(schema.file)
-        .where(eq(schema.file.id, id))
-        .returning();
+Consumers import the factory from the subpath:
 
-    return file;
-}
+```typescript
+import { createFileRepo } from '@nexus/db/repo/files';
+
+const fileRepo = createFileRepo(db);
+const file = await fileRepo.findById(id);
 ```
 
 ---
@@ -314,8 +283,8 @@ Services contain business logic and throw domain errors. Each service file expor
 
 ```typescript
 // server/services/files.ts
-import type { DB } from '@/server/db';
-import * as fileRepo from '@/server/db/repositories/files';
+import type { DB } from '@nexus/db';
+import { createFileRepo, type File } from '@nexus/db/repo/files';
 import { NotFoundError, QuotaExceededError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
 
@@ -327,7 +296,8 @@ async function initiateUpload(
     userId: string,
     input: { name: string; sizeBytes: number; mimeType?: string }
 ) {
-    const currentUsage = await fileRepo.sumStorageBytesByUser(db, userId);
+    const fileRepo = createFileRepo(db);
+    const currentUsage = await fileRepo.sumStorageByUser(userId);
     if (currentUsage + input.sizeBytes > MAX_STORAGE_BYTES) {
         throw new QuotaExceededError('Storage quota exceeded');
     }
@@ -336,7 +306,7 @@ async function initiateUpload(
     const s3Key = `${userId}/${fileId}/${input.name}`;
     const uploadUrl = await s3.presigned.put(s3Key);
 
-    await fileRepo.insertFile(db, {
+    await fileRepo.insert({
         id: fileId,
         userId,
         name: input.name,
@@ -350,12 +320,13 @@ async function initiateUpload(
 }
 
 async function confirmUpload(db: DB, userId: string, fileId: string) {
-    const file = await fileRepo.findUserFile(db, userId, fileId);
+    const fileRepo = createFileRepo(db);
+    const file = await fileRepo.findByUserAndId(userId, fileId);
     if (!file) {
         throw new NotFoundError('File', fileId);
     }
 
-    const updated = await fileRepo.updateFile(db, fileId, {
+    const updated = await fileRepo.update(fileId, {
         status: 'available',
     });
 
@@ -408,8 +379,8 @@ tRPC procedures are thin — they validate input, delegate to services/repos, an
 // server/trpc/routers/files.ts
 import { z } from 'zod';
 import { protectedProcedure, router } from '../init';
-import { fileService } from '@/server/services/files'; // Named import from specific file
-import * as fileRepo from '@/server/db/repositories/files';
+import { createFileRepo } from '@nexus/db/repo/files';
+import { fileService } from '@/server/services/files';
 
 export const filesRouter = router({
     // Complex operations delegate to services
@@ -439,7 +410,7 @@ export const filesRouter = router({
             );
         }),
 
-    // Simple queries can use repository directly
+    // Simple queries can use repository factory directly
     list: protectedProcedure
         .input(
             z
@@ -450,7 +421,8 @@ export const filesRouter = router({
                 .optional()
         )
         .query(({ ctx, input }) => {
-            return fileRepo.findFilesByUser(ctx.db, ctx.session.user.id, input);
+            const fileRepo = createFileRepo(ctx.db);
+            return fileRepo.findByUser(ctx.session.user.id, input);
         }),
 });
 ```
@@ -513,6 +485,7 @@ If IntelliSense remains slow on specific procedures:
 
 ## Related
 
+- [[db-subpaths|@nexus/db Subpath Exports]] — Subpath reference, factory pattern, DB types
 - [[database-workflow|Database Workflow]] — Schema changes and migrations
 - [[../ai/conventions|Code Conventions]] — Naming and style rules
 - [[../architecture/system-design|System Design]] — High-level architecture

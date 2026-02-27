@@ -1,5 +1,5 @@
 // Re-export from canonical source in @nexus/db
-export { RESTORE_TIERS, type RestoreTier } from '@nexus/db';
+export { RESTORE_TIERS, type RestoreTier } from '@nexus/db/schema';
 
 export interface RestoreStatus {
     status: 'not-started' | 'in-progress' | 'completed';

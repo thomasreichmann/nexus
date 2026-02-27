@@ -1,34 +1,32 @@
 import { eq, desc, sql } from 'drizzle-orm';
-import type { DB } from '../index';
+import type { DB } from '../connection';
 import * as schema from '../schema';
+import { createRepository } from './create';
 
 export type Job = typeof schema.backgroundJobs.$inferSelect;
 export type NewJob = typeof schema.backgroundJobs.$inferInsert;
 
-interface FindJobsOptions {
+export interface FindManyOptions {
     limit: number;
     offset: number;
     status?: Job['status'];
 }
 
-interface FindJobsResult {
+export interface FindManyResult {
     jobs: Job[];
     total: number;
 }
 
-export async function findJobById(
-    db: DB,
-    id: string
-): Promise<Job | undefined> {
+async function findById(db: DB, id: string): Promise<Job | undefined> {
     return db.query.backgroundJobs.findFirst({
         where: eq(schema.backgroundJobs.id, id),
     });
 }
 
-export async function findJobs(
+async function findMany(
     db: DB,
-    opts: FindJobsOptions = { limit: 50, offset: 0 }
-): Promise<FindJobsResult> {
+    opts: FindManyOptions = { limit: 50, offset: 0 }
+): Promise<FindManyResult> {
     const whereClause = opts.status
         ? eq(schema.backgroundJobs.status, opts.status)
         : undefined;
@@ -49,14 +47,14 @@ export async function findJobs(
     return { jobs, total: countResult?.count ?? 0 };
 }
 
-interface JobStatusCounts {
+interface StatusCounts {
     pending: number;
     processing: number;
     completed: number;
     failed: number;
 }
 
-export async function countJobsByStatus(db: DB): Promise<JobStatusCounts> {
+async function countByStatus(db: DB): Promise<StatusCounts> {
     const rows = await db
         .select({
             status: schema.backgroundJobs.status,
@@ -65,7 +63,7 @@ export async function countJobsByStatus(db: DB): Promise<JobStatusCounts> {
         .from(schema.backgroundJobs)
         .groupBy(schema.backgroundJobs.status);
 
-    const counts: JobStatusCounts = {
+    const counts: StatusCounts = {
         pending: 0,
         processing: 0,
         completed: 0,
@@ -79,7 +77,7 @@ export async function countJobsByStatus(db: DB): Promise<JobStatusCounts> {
     return counts;
 }
 
-export async function insertJob(db: DB, data: NewJob): Promise<Job> {
+async function insert(db: DB, data: NewJob): Promise<Job> {
     const [job] = await db
         .insert(schema.backgroundJobs)
         .values(data)
@@ -87,7 +85,7 @@ export async function insertJob(db: DB, data: NewJob): Promise<Job> {
     return job;
 }
 
-export async function updateJob(
+async function update(
     db: DB,
     id: string,
     data: Partial<Omit<NewJob, 'id'>>
@@ -101,7 +99,7 @@ export async function updateJob(
     return job;
 }
 
-export async function markJobProcessing(db: DB, id: string): Promise<void> {
+async function markProcessing(db: DB, id: string): Promise<void> {
     await db
         .update(schema.backgroundJobs)
         .set({
@@ -111,3 +109,17 @@ export async function markJobProcessing(db: DB, id: string): Promise<void> {
         })
         .where(eq(schema.backgroundJobs.id, id));
 }
+
+export const createJobRepo = createRepository({
+    findById,
+    findMany,
+    countByStatus,
+    insert,
+    update,
+    markProcessing,
+});
+
+export type JobRepo = ReturnType<typeof createJobRepo>;
+
+// Re-export job types for the @nexus/db/repo/jobs subpath
+export * from '../jobs/types';

@@ -1,5 +1,9 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { createMockDb, createJobFixture, TEST_USER_ID } from '@nexus/db';
+import {
+    createMockDb,
+    createJobFixture,
+    TEST_USER_ID,
+} from '@nexus/db/testing';
 import { publish } from './publish';
 
 vi.mock('./client', () => ({

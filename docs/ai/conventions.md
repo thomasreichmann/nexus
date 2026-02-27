@@ -451,17 +451,19 @@ See [[../guides/server-architecture|Server Architecture Guide]] for the full lay
 
 **Quick reference:**
 
-| Layer          | Location                  | Responsibility                          |
-| -------------- | ------------------------- | --------------------------------------- |
-| **Repository** | `server/db/repositories/` | Pure data access, explicit return types |
-| **Service**    | `server/services/`        | Business logic, domain errors           |
-| **tRPC**       | `server/trpc/routers/`    | Input validation, thin delegation       |
+| Layer          | Location                        | Responsibility                       |
+| -------------- | ------------------------------- | ------------------------------------ |
+| **Repository** | `packages/db/src/repositories/` | Pure data access via factory pattern |
+| **Service**    | `server/services/`              | Business logic, domain errors        |
+| **tRPC**       | `server/trpc/routers/`          | Input validation, thin delegation    |
+
+Repositories use the factory pattern — import `create<Entity>Repo` from `@nexus/db/repo/<entity>` subpaths. See [[../guides/db-subpaths|@nexus/db Subpath Exports]] for the full reference.
 
 ## Database (Drizzle)
 
 ### Schema Changes
 
-Edit `server/db/schema.ts`, then generate migration:
+Edit `packages/db/src/schema/`, then generate migration:
 
 ```bash
 pnpm -F web db:generate
@@ -484,7 +486,7 @@ Authorization is handled at the **application layer** (tRPC procedures), not the
 
 ### Timestamp Columns
 
-All tables with timestamp columns must use the `timestamps()` helper from `server/db/schema/helpers.ts`:
+All tables with timestamp columns must use the `timestamps()` helper from `packages/db/src/schema/helpers.ts` (exported via `@nexus/db/schema`):
 
 ```typescript
 import { timestamps } from './helpers';
@@ -503,7 +505,7 @@ This provides:
 
 **Why this matters:** Without `$onUpdate()`, `updatedAt` only gets set on insert. Application code would have to manually set it on every update, which is error-prone.
 
-A unit test in `server/db/schema/schema.test.ts` verifies all `updatedAt` columns have `$onUpdate()` configured, catching regressions when new tables are added.
+A unit test in `packages/db/src/schema/schema.test.ts` verifies all `updatedAt` columns have `$onUpdate()` configured, catching regressions when new tables are added.
 
 ### AI Rules
 

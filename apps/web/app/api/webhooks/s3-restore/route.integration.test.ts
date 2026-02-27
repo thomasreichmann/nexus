@@ -1,13 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { eq, and } from 'drizzle-orm';
-import {
-    createDb,
-    webhookEvents,
-    files,
-    retrievals,
-    user,
-    type DB,
-} from '@nexus/db';
+import { createDb, type DB } from '@nexus/db';
+import { webhookEvents, files, retrievals, user } from '@nexus/db/schema';
 
 // Mock SNS signature verification to always pass in tests
 vi.mock('@/lib/sns/webhooks', () => ({

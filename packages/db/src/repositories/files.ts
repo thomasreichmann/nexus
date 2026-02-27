@@ -1,23 +1,30 @@
 import { eq, and, desc, sql, notInArray, inArray, ne } from 'drizzle-orm';
-import type { DB, DBOrTransaction } from '../index';
+import type { DB } from '../connection';
 import * as schema from '../schema';
+import { createRepository } from './create';
 
 export type File = typeof schema.files.$inferSelect;
 export type NewFile = typeof schema.files.$inferInsert;
 
-export function findFileById(db: DB, id: string): Promise<File | undefined> {
+export interface FindByUserOptions {
+    limit: number;
+    offset: number;
+    includeHidden?: boolean;
+}
+
+function findById(db: DB, id: string): Promise<File | undefined> {
     return db.query.files.findFirst({
         where: eq(schema.files.id, id),
     });
 }
 
-export function findByS3Key(db: DB, s3Key: string): Promise<File | undefined> {
+function findByS3Key(db: DB, s3Key: string): Promise<File | undefined> {
     return db.query.files.findFirst({
         where: eq(schema.files.s3Key, s3Key),
     });
 }
 
-export function findUserFile(
+function findByUserAndId(
     db: DB,
     userId: string,
     fileId: string
@@ -30,7 +37,7 @@ export function findUserFile(
     });
 }
 
-export function findUserFiles(
+function findManyByUserAndIds(
     db: DB,
     userId: string,
     fileIds: string[]
@@ -42,12 +49,6 @@ export function findUserFiles(
             eq(schema.files.userId, userId)
         ),
     });
-}
-
-interface FindFilesByUserOptions {
-    limit: number;
-    offset: number;
-    includeHidden?: boolean;
 }
 
 const hiddenStatuses: (typeof schema.files.status.enumValues)[number][] = [
@@ -64,10 +65,10 @@ function buildUserFilesWhereClause(userId: string, includeHidden: boolean) {
           );
 }
 
-export function findFilesByUser(
+function findByUser(
     db: DB,
     userId: string,
-    opts: FindFilesByUserOptions = { limit: 50, offset: 0 }
+    opts: FindByUserOptions = { limit: 50, offset: 0 }
 ): Promise<File[]> {
     return db.query.files.findMany({
         where: buildUserFilesWhereClause(userId, opts.includeHidden ?? false),
@@ -77,7 +78,7 @@ export function findFilesByUser(
     });
 }
 
-export async function countFilesByUser(
+async function countByUser(
     db: DB,
     userId: string,
     opts: { includeHidden?: boolean } = {}
@@ -90,10 +91,7 @@ export async function countFilesByUser(
     return result?.count ?? 0;
 }
 
-export async function sumStorageBytesByUser(
-    db: DB,
-    userId: string
-): Promise<number> {
+async function sumStorageByUser(db: DB, userId: string): Promise<number> {
     const [result] = await db
         .select({
             total: sql<number>`coalesce(sum(${schema.files.size}), 0)::bigint`,
@@ -104,12 +102,12 @@ export async function sumStorageBytesByUser(
     return Number(result?.total ?? 0);
 }
 
-export async function insertFile(db: DB, data: NewFile): Promise<File> {
+async function insert(db: DB, data: NewFile): Promise<File> {
     const [file] = await db.insert(schema.files).values(data).returning();
     return file;
 }
 
-export async function updateFile(
+async function update(
     db: DB,
     id: string,
     data: Partial<Omit<NewFile, 'id'>>
@@ -123,10 +121,7 @@ export async function updateFile(
     return file;
 }
 
-export async function deleteFile(
-    db: DB,
-    id: string
-): Promise<File | undefined> {
+async function remove(db: DB, id: string): Promise<File | undefined> {
     const [file] = await db
         .delete(schema.files)
         .where(eq(schema.files.id, id))
@@ -135,10 +130,7 @@ export async function deleteFile(
     return file;
 }
 
-export async function softDeleteFile(
-    db: DB,
-    fileId: string
-): Promise<File | undefined> {
+async function softDelete(db: DB, fileId: string): Promise<File | undefined> {
     const [file] = await db
         .update(schema.files)
         .set({
@@ -151,10 +143,7 @@ export async function softDeleteFile(
     return file;
 }
 
-export async function softDeleteFiles(
-    db: DB,
-    fileIds: string[]
-): Promise<File[]> {
+async function softDeleteMany(db: DB, fileIds: string[]): Promise<File[]> {
     if (fileIds.length === 0) return [];
 
     return db
@@ -167,8 +156,8 @@ export async function softDeleteFiles(
         .returning();
 }
 
-export async function softDeleteUserFiles(
-    db: DBOrTransaction,
+async function softDeleteForUser(
+    db: DB,
     userId: string,
     fileIds: string[]
 ): Promise<File[]> {
@@ -189,3 +178,21 @@ export async function softDeleteUserFiles(
         )
         .returning();
 }
+
+export const createFileRepo = createRepository({
+    findById,
+    findByS3Key,
+    findByUserAndId,
+    findManyByUserAndIds,
+    findByUser,
+    countByUser,
+    sumStorageByUser,
+    insert,
+    update,
+    delete: remove,
+    softDelete,
+    softDeleteMany,
+    softDeleteForUser,
+});
+
+export type FileRepo = ReturnType<typeof createFileRepo>;

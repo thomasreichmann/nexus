@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { SQSRecord } from 'aws-lambda';
-import { createMockDb, TEST_JOB_ID, TEST_USER_ID } from '@nexus/db';
+import { createMockDb, TEST_JOB_ID, TEST_USER_ID } from '@nexus/db/testing';
 
 // Mock @nexus/db module to prevent real DB connection
 vi.mock('@nexus/db', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@nexus/db')>();
+    const { createMockDb } = await import('@nexus/db/testing');
     return {
         ...actual,
-        createDb: vi.fn(() => actual.createMockDb().db),
+        createDb: vi.fn(() => createMockDb().db),
     };
 });
 

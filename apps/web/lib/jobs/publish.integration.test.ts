@@ -1,6 +1,8 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { createDb, backgroundJobs, type DB, type Job } from '@nexus/db';
+import { createDb, type DB } from '@nexus/db';
+import { backgroundJobs } from '@nexus/db/schema';
+import type { Job } from '@nexus/db/repo/jobs';
 import { publish } from './publish';
 
 const db: DB = createDb(process.env.DATABASE_URL!);

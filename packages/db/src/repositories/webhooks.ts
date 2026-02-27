@@ -1,11 +1,12 @@
 import { eq, and } from 'drizzle-orm';
-import type { DB } from '../index';
+import type { DB } from '../connection';
 import * as schema from '../schema';
+import { createRepository } from './create';
 
 export type WebhookEvent = typeof schema.webhookEvents.$inferSelect;
 export type NewWebhookEvent = typeof schema.webhookEvents.$inferInsert;
 
-export function findWebhookEvent(
+function find(
     db: DB,
     source: WebhookEvent['source'],
     externalId: string
@@ -18,10 +19,7 @@ export function findWebhookEvent(
     });
 }
 
-export async function insertWebhookEvent(
-    db: DB,
-    data: NewWebhookEvent
-): Promise<WebhookEvent> {
+async function insert(db: DB, data: NewWebhookEvent): Promise<WebhookEvent> {
     const [event] = await db
         .insert(schema.webhookEvents)
         .values(data)
@@ -29,7 +27,7 @@ export async function insertWebhookEvent(
     return event;
 }
 
-export async function updateWebhookEvent(
+async function update(
     db: DB,
     id: string,
     data: Pick<Partial<WebhookEvent>, 'status' | 'error'>
@@ -41,3 +39,11 @@ export async function updateWebhookEvent(
         .returning();
     return event;
 }
+
+export const createWebhookRepo = createRepository({
+    find,
+    insert,
+    update,
+});
+
+export type WebhookRepo = ReturnType<typeof createWebhookRepo>;

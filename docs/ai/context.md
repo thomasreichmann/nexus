@@ -173,7 +173,7 @@ File
 | Feature Components | `apps/web/components/features/` |
 | tRPC Router        | `apps/web/server/trpc/`         |
 | Server Actions     | `apps/web/actions/`             |
-| Database Schema    | `apps/web/server/db/`           |
+| Database Schema    | `packages/db/src/schema/`       |
 | Auth               | `apps/web/lib/auth.ts`          |
 | S3 Operations      | `apps/web/lib/s3/`              |
 | Environment        | `apps/web/lib/env/`             |

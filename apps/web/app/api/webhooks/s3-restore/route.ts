@@ -1,9 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import {
-    findWebhookEvent,
-    insertWebhookEvent,
-    updateWebhookEvent,
-} from '@nexus/db';
+import { createWebhookRepo } from '@nexus/db/repo/webhooks';
 import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import { verifySnsMessage } from '@/lib/sns/webhooks';
@@ -53,8 +49,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const notification = body as unknown as SnsNotification;
+    const webhookRepo = createWebhookRepo(db);
 
-    const existing = await findWebhookEvent(db, 'sns', notification.MessageId);
+    const existing = await webhookRepo.find('sns', notification.MessageId);
 
     if (existing) {
         log.debug(
@@ -77,7 +74,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const eventType = s3Event.Records?.[0]?.eventName ?? 'unknown';
 
-    const webhookEvent = await insertWebhookEvent(db, {
+    const webhookEvent = await webhookRepo.insert({
         source: 'sns',
         externalId: notification.MessageId,
         eventType,
@@ -102,7 +99,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             }
         }
 
-        await updateWebhookEvent(db, webhookEvent.id, {
+        await webhookRepo.update(webhookEvent.id, {
             status: 'processed',
         });
 
@@ -122,7 +119,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             'Webhook processing failed'
         );
 
-        await updateWebhookEvent(db, webhookEvent.id, {
+        await webhookRepo.update(webhookEvent.id, {
             status: 'failed',
             error: error instanceof Error ? error.message : String(error),
         });

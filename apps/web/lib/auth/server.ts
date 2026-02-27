@@ -1,7 +1,7 @@
-import { db } from '@/server/db';
-import { schema } from '@nexus/db';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import * as schema from '@nexus/db/schema';
+import { db } from '@/server/db';
 
 export const auth = betterAuth({
     database: drizzleAdapter(db, {

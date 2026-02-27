@@ -1,0 +1,139 @@
+---
+title: '@nexus/db Subpath Exports'
+created: 2026-02-17
+updated: 2026-02-27
+status: active
+tags:
+    - guide
+    - database
+    - architecture
+aliases:
+    - DB Subpaths
+    - Repository Factory Pattern
+---
+
+# @nexus/db Subpath Exports
+
+The `@nexus/db` package uses subpath exports to provide clean module boundaries. Each subpath exposes a focused API instead of a single barrel export.
+
+## Subpath Reference
+
+| Subpath                     | Contents                                                 |
+| --------------------------- | -------------------------------------------------------- |
+| `@nexus/db`                 | `createDb`, `DB`, `Connection`, `Transaction`            |
+| `@nexus/db/schema`          | All schema tables, enums, constants, `timestamps` helper |
+| `@nexus/db/repo/files`      | `createFileRepo` factory + `File`, `NewFile` types       |
+| `@nexus/db/repo/jobs`       | `createJobRepo` factory + `Job`, job types               |
+| `@nexus/db/repo/retrievals` | `createRetrievalRepo` factory + `Retrieval` types        |
+| `@nexus/db/repo/webhooks`   | `createWebhookRepo` factory + `WebhookEvent` types       |
+| `@nexus/db/testing`         | `createMockDb`, fixture factories, test constants        |
+
+## DB Type
+
+`DB` is a union type that accepts both database connections and transactions:
+
+```typescript
+type Connection = ReturnType<typeof createDb>;
+type Transaction = Parameters<Parameters<Connection['transaction']>[0]>[0];
+type DB = Connection | Transaction;
+```
+
+- **`Connection`** — The raw database connection returned by `createDb()`. Has `transaction()` method.
+- **`Transaction`** — The `tx` parameter inside a `db.transaction()` callback. Cannot start nested transactions.
+- **`DB`** — Union of both. Use this in repository functions and service signatures.
+
+Repository factories accept `DB`, so they work seamlessly inside transactions:
+
+```typescript
+await db.transaction(async (tx) => {
+    const fileRepo = createFileRepo(tx);
+    await fileRepo.softDeleteForUser(userId, fileIds);
+});
+```
+
+The architectural constraint is correct by design: `db.transaction()` cannot be called on a `Transaction` (TypeScript rejects it), which prevents nested transactions. Repos should never start transactions — callers should.
+
+## Repository Factory Pattern
+
+Each repository subpath exports a `create<Entity>Repo(db)` factory that binds a `DB` instance and returns a typed namespace object with short method names. The factory is the only way to access repository methods — standalone functions are not exported.
+
+```typescript
+import { createFileRepo } from '@nexus/db/repo/files';
+
+const fileRepo = createFileRepo(db);
+const file = await fileRepo.findById(id);
+const files = await fileRepo.findByUser(userId, { limit: 50, offset: 0 });
+```
+
+In services and routers, create the factory at the top of each function or procedure:
+
+```typescript
+async function confirmUpload(db: DB, userId: string, fileId: string) {
+    const fileRepo = createFileRepo(db);
+    const file = await fileRepo.findByUserAndId(userId, fileId);
+    // ...
+}
+```
+
+### Factory Type Export
+
+Each factory exports a `<Entity>Repo` type for use in function signatures:
+
+```typescript
+import type { FileRepo } from '@nexus/db/repo/files';
+
+function processFiles(fileRepo: FileRepo) {
+    // ...
+}
+```
+
+## Adding a New Repository
+
+1. Create `packages/db/src/repositories/<entity>.ts` with:
+    - Entity types (`type Entity = ...`, `type NewEntity = ...`)
+    - Private functions (not exported) with `db: DB` as first parameter
+    - `createRepository({ ... })` factory using the auto-bind helper (exported)
+    - `type <Entity>Repo = ReturnType<typeof create<Entity>Repo>` (exported)
+
+    ```typescript
+    import { createRepository } from './create';
+
+    function findById(db: DB, id: string): Promise<Entity | undefined> {
+        return db.query.entities.findFirst({
+            where: eq(schema.entities.id, id),
+        });
+    }
+
+    async function insert(db: DB, data: NewEntity): Promise<Entity> {
+        const [entity] = await db
+            .insert(schema.entities)
+            .values(data)
+            .returning();
+        return entity;
+    }
+
+    export const createEntityRepo = createRepository({
+        findById,
+        insert,
+    });
+
+    export type EntityRepo = ReturnType<typeof createEntityRepo>;
+    ```
+
+    The `createRepository()` helper auto-binds `db` to each function — define the function once and add it to the object by name. No signature duplication needed.
+
+2. Add the subpath to `packages/db/package.json`:
+
+    ```json
+    "./repo/<entity>": {
+        "import": "./src/repositories/<entity>.ts",
+        "types": "./src/repositories/<entity>.ts"
+    }
+    ```
+
+3. If the repo needs test fixtures, add them to `packages/db/src/repositories/fixtures.ts`
+
+## Related
+
+- [[../ai/conventions|Code Conventions]] — naming and style rules
+- [[server-architecture|Server Architecture]] — Repository → Service → tRPC layers
