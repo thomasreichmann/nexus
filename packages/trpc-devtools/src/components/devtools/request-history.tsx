@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronRight, Eye, Trash2, X } from 'lucide-react';
+import { Check, ChevronRight, Trash2, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -14,7 +14,7 @@ import {
 import { cn } from '@/lib/utils';
 
 interface RequestHistoryPanelProps {
-    onReplay: (item: HistoryItem, viewResponse: boolean) => void;
+    onReplay: (item: HistoryItem) => void;
 }
 
 export function RequestHistoryPanel({ onReplay }: RequestHistoryPanelProps) {
@@ -167,14 +167,22 @@ export function RequestHistoryPanel({ onReplay }: RequestHistoryPanelProps) {
 
 interface HistoryItemRowProps {
     item: HistoryItem;
-    onReplay: (item: HistoryItem, viewResponse: boolean) => void;
+    onReplay: (item: HistoryItem) => void;
 }
 
 function HistoryItemRow({ item, onReplay }: HistoryItemRowProps) {
     const truncatedPath = truncatePath(item.request.path, 30);
 
     return (
-        <div className="group flex items-center gap-1.5 px-2 min-h-11 rounded-md text-sm transition-colors hover:bg-accent/50">
+        <button
+            onClick={() => onReplay(item)}
+            title={item.request.path}
+            className={cn(
+                'w-full flex items-center gap-1.5 px-2 min-h-11 rounded-md text-sm text-left transition-colors',
+                'hover:bg-accent/50',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
+            )}
+        >
             {/* Type badge */}
             <Badge
                 variant={item.request.type}
@@ -183,17 +191,10 @@ function HistoryItemRow({ item, onReplay }: HistoryItemRowProps) {
                 {item.request.type.slice(0, 1).toUpperCase()}
             </Badge>
 
-            {/* Procedure path — click to replay */}
-            <button
-                onClick={() => onReplay(item, false)}
-                className={cn(
-                    'flex-1 min-w-0 text-left font-mono text-xs truncate',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm'
-                )}
-                title={item.request.path}
-            >
+            {/* Procedure path */}
+            <span className="flex-1 min-w-0 font-mono text-xs truncate">
                 {truncatedPath}
-            </button>
+            </span>
 
             {/* Status indicator */}
             {item.response.ok ? (
@@ -202,24 +203,11 @@ function HistoryItemRow({ item, onReplay }: HistoryItemRowProps) {
                 <X className="h-3.5 w-3.5 text-destructive shrink-0" />
             )}
 
-            {/* View response button */}
-            <button
-                onClick={() => onReplay(item, true)}
-                className={cn(
-                    'p-1 rounded-sm text-muted-foreground/70 hover:text-foreground transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 shrink-0',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                )}
-                aria-label="View response"
-                title="View response"
-            >
-                <Eye className="h-3.5 w-3.5" />
-            </button>
-
             {/* Timestamp */}
             <span className="text-[10px] text-muted-foreground/70 shrink-0 tabular-nums">
                 {formatRelativeTime(item.timestamp)}
             </span>
-        </div>
+        </button>
     );
 }
 

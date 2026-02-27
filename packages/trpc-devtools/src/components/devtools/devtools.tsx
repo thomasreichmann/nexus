@@ -35,19 +35,16 @@ export function TRPCDevtools({
         response: TRPCResponse | null;
     } | null>(null);
 
-    const handleHistoryReplay = React.useCallback(
-        (item: HistoryItem, viewResponse: boolean) => {
-            setSelectedPath(item.request.path);
-            setHistoryReplay({
-                input:
-                    item.request.input !== undefined
-                        ? JSON.stringify(item.request.input, null, 2)
-                        : '',
-                response: viewResponse ? item.response : null,
-            });
-        },
-        []
-    );
+    const handleHistoryReplay = React.useCallback((item: HistoryItem) => {
+        setSelectedPath(item.request.path);
+        setHistoryReplay({
+            input:
+                item.request.input !== undefined
+                    ? JSON.stringify(item.request.input, null, 2)
+                    : '',
+            response: item.response,
+        });
+    }, []);
 
     // Fetch schema on mount
     React.useEffect(() => {

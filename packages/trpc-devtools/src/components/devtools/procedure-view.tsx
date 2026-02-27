@@ -52,7 +52,7 @@ export function ProcedureView({
         if (historyReplay) {
             setInput(historyReplay.input);
             setResponse(historyReplay.response);
-            setIsFromHistory(historyReplay.response !== null);
+            setIsFromHistory(true);
             wasReplayRef.current = true;
             onHistoryConsumed?.();
         } else if (wasReplayRef.current) {
