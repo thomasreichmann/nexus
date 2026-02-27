@@ -73,6 +73,19 @@ export function saveToHistory(
 }
 
 /**
+ * Replace history with the given items (used for undo after clear)
+ */
+export function restoreHistory(items: HistoryItem[]): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    } catch {
+        // Storage might be full or disabled
+    }
+}
+
+/**
  * Clear all history
  */
 export function clearHistory(): void {

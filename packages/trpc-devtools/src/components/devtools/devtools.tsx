@@ -2,10 +2,13 @@
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import type { HistoryItem } from '@/lib/storage';
+import type { TRPCResponse } from '@/lib/request';
 import type { ProcedureSchema, RouterSchema } from '@/server/types';
 import * as React from 'react';
 import { ProcedureList, ProcedureListSkeleton } from './procedure-list';
 import { ProcedureView, ProcedureViewSkeleton } from './procedure-view';
+import { RequestHistoryPanel } from './request-history';
 
 export interface TRPCDevtoolsProps {
     /** URL to fetch the schema from */
@@ -27,6 +30,21 @@ export function TRPCDevtools({
     const [schema, setSchema] = React.useState<RouterSchema | null>(null);
     const [error, setError] = React.useState<string | null>(null);
     const [selectedPath, setSelectedPath] = React.useState<string | null>(null);
+    const [historyReplay, setHistoryReplay] = React.useState<{
+        input: string;
+        response: TRPCResponse | null;
+    } | null>(null);
+
+    const handleHistoryReplay = React.useCallback((item: HistoryItem) => {
+        setSelectedPath(item.request.path);
+        setHistoryReplay({
+            input:
+                item.request.input !== undefined
+                    ? JSON.stringify(item.request.input, null, 2)
+                    : '',
+            response: item.response,
+        });
+    }, []);
 
     // Fetch schema on mount
     React.useEffect(() => {
@@ -126,6 +144,7 @@ export function TRPCDevtools({
                         onSelect={setSelectedPath}
                     />
                 </div>
+                <RequestHistoryPanel onReplay={handleHistoryReplay} />
             </div>
 
             {/* Main content */}
@@ -135,6 +154,8 @@ export function TRPCDevtools({
                         procedure={selectedProcedure}
                         trpcUrl={trpcUrl}
                         headers={headers}
+                        historyReplay={historyReplay}
+                        onHistoryConsumed={() => setHistoryReplay(null)}
                     />
                 ) : (
                     <div className="flex items-center justify-center h-full text-muted-foreground">
