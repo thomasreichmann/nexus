@@ -11,7 +11,7 @@ export function createDb(
 }
 
 /** Raw database connection type */
-type Connection = ReturnType<typeof createDb>;
+export type Connection = ReturnType<typeof createDb>;
 
 /** Transaction type - extracted from db.transaction callback parameter */
 export type Transaction = Parameters<

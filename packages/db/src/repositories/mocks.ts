@@ -1,5 +1,5 @@
 import { vi, type Mock } from 'vitest';
-import type { DB } from '../connection';
+import type { Connection } from '../connection';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyMock = Mock<any>;
@@ -31,7 +31,7 @@ export function createMockDb() {
         delete: deleteFn,
         // Transaction passes itself as tx, callback can use same mock methods
         transaction: vi.fn((callback) => callback(db)),
-    } as unknown as DB;
+    } as unknown as Connection;
 
     return {
         db,
