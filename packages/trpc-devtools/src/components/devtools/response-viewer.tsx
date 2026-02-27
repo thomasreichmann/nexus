@@ -14,9 +14,14 @@ import { formatIssuePath, type ZodIssue } from '@/lib/zod-error';
 interface ResponseViewerProps {
     response: TRPCResponse | null;
     zodIssues?: ZodIssue[] | null;
+    fromHistory?: boolean;
 }
 
-export function ResponseViewer({ response, zodIssues }: ResponseViewerProps) {
+export function ResponseViewer({
+    response,
+    zodIssues,
+    fromHistory,
+}: ResponseViewerProps) {
     const [showRaw, setShowRaw] = React.useState(false);
 
     if (!response) {
@@ -48,6 +53,11 @@ export function ResponseViewer({ response, zodIssues }: ResponseViewerProps) {
                     <span className="text-xs text-muted-foreground">
                         {response.timing.durationMs}ms
                     </span>
+                    {fromHistory && (
+                        <Badge variant="outline" className="text-xs">
+                            Historical
+                        </Badge>
+                    )}
                     {response.usedSuperJSON && (
                         <Badge variant="outline" className="text-xs">
                             SuperJSON
