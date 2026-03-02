@@ -48,10 +48,24 @@ const objectsMocks = {
     remove: async (): Promise<void> => {},
 };
 
+const multipartMocks = {
+    create: async (): Promise<{ uploadId: string }> => ({
+        uploadId: 'mock-upload-id',
+    }),
+    signParts: async (options: { partCount: number }): Promise<string[]> =>
+        Array.from(
+            { length: options.partCount },
+            (_, i) => `${MOCK_HOST}/${MOCK_BUCKET}/part-${i + 1}`
+        ),
+    complete: async (): Promise<void> => {},
+    abort: async (): Promise<void> => {},
+};
+
 interface MockS3 {
     presigned: typeof presignedMocks;
     glacier: typeof glacierMocks;
     objects: typeof objectsMocks;
+    multipart: typeof multipartMocks;
 }
 
 /**
@@ -79,6 +93,7 @@ export function createPresignedMocks(): MockS3 {
         presigned: presignedMocks,
         glacier: glacierMocks,
         objects: objectsMocks,
+        multipart: multipartMocks,
     };
 }
 
