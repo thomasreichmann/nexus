@@ -21,16 +21,25 @@ interface ProcedureViewProps {
     procedure: ProcedureSchema;
     trpcUrl: string;
     headers?: Record<string, string>;
+    historyReplay?: { input: string; response: TRPCResponse | null } | null;
+    onHistoryConsumed?: () => void;
 }
 
 export function ProcedureView({
     procedure,
     trpcUrl,
     headers,
+    historyReplay,
+    onHistoryConsumed,
 }: ProcedureViewProps) {
     const [input, setInput] = React.useState('');
     const [isLoading, setIsLoading] = React.useState(false);
     const [response, setResponse] = React.useState<TRPCResponse | null>(null);
+    const [isFromHistory, setIsFromHistory] = React.useState(false);
+
+    // Track whether we just consumed a history replay (to skip the reset
+    // triggered by onHistoryConsumed setting historyReplay back to null)
+    const wasReplayRef = React.useRef(false);
 
     // Track SuperJSON preference - load from storage on mount
     const [useSuperJSON, setUseSuperJSON] = React.useState<boolean>(() => {
@@ -38,11 +47,24 @@ export function ProcedureView({
         return loadSuperJSONPreference(trpcUrl) ?? false;
     });
 
-    // Reset state when procedure changes
+    // Reset state when procedure changes, or seed from history replay
     React.useEffect(() => {
-        setInput('');
-        setResponse(null);
-    }, [procedure.path]);
+        if (historyReplay) {
+            setInput(historyReplay.input);
+            setResponse(historyReplay.response);
+            setIsFromHistory(true);
+            wasReplayRef.current = true;
+            onHistoryConsumed?.();
+        } else if (wasReplayRef.current) {
+            // Skip reset — this is just the consumption clearing historyReplay
+            wasReplayRef.current = false;
+        } else {
+            setInput('');
+            setResponse(null);
+            setIsFromHistory(false);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally reset on path change or history replay
+    }, [procedure.path, historyReplay]);
 
     const validationErrors = response?.error
         ? parseZodError(response.error)
@@ -55,6 +77,7 @@ export function ProcedureView({
         }
 
         setIsLoading(true);
+        setIsFromHistory(false);
 
         try {
             let parsedInput: unknown = undefined;
@@ -225,6 +248,7 @@ export function ProcedureView({
                             <ResponseViewer
                                 response={response}
                                 zodIssues={validationErrors}
+                                fromHistory={isFromHistory}
                             />
                         </CardContent>
                     </Card>
