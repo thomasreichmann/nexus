@@ -1,7 +1,7 @@
 ---
 title: AI Changelog
 created: 2025-12-29
-updated: 2026-02-15
+updated: 2026-03-02
 status: active
 tags:
     - ai
@@ -16,6 +16,33 @@ ai_summary: 'Recent AI changes - READ THIS FIRST for context'
 # AI Changelog
 
 Recent changes made by AI assistants. **Read this first** to understand recent context.
+
+---
+
+## 2026-03-02
+
+### Session: Connect UploadZone to multipart upload API (#154)
+
+Replaced the mock `simulateUpload()` with a real `useUpload` hook that uploads files to S3 via presigned URLs. Files <100MB use single PUT, files ≥100MB use multipart with 3 concurrent chunks, auto-retry, and progress tracking.
+
+**New Files:**
+
+- `apps/web/components/dashboard/useUpload.ts` — Upload hook: size-based routing, sequential file queue, per-file cancel/retry, chunk-level progress, cache invalidation
+- `apps/web/lib/http/xhr.ts` — XHR PUT helper with upload progress callbacks (XHR needed because fetch lacks upload progress events)
+- `apps/web/lib/async/retry.ts` — Generic retry with exponential backoff
+
+**Files Modified:**
+
+- `apps/web/components/dashboard/upload-zone.tsx` — Consumes `useUpload` hook, adds cancel/retry/error UI, removes `simulateUpload()`
+- `apps/web/lib/storage/client.ts` — Disabled SDK v3 default CRC32 checksum (`requestChecksumCalculation: 'WHEN_REQUIRED'`) to fix CORS preflight failures on presigned browser uploads
+- `docs/infra/aws-manual-setup.md` — Added note about SDK checksum config requirement for browser uploads
+
+**Key Decisions:**
+
+- Raw XHR over axios/fetch for upload progress (zero dependencies, universal support, reliable `upload.onprogress`)
+- 100MB multipart threshold (matching issue spec, server uses 10MB chunk size)
+- `retryAsync` and `xhrPut` extracted to `lib/` for reuse
+- Disable CRC32 checksum at S3Client level (not per-command) since all presigned URLs are for browser uploads
 
 ---
 

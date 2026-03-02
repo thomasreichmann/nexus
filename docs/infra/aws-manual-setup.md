@@ -61,6 +61,8 @@ Allows requests from:
 Methods: GET, PUT, POST, DELETE, HEAD
 Exposed headers: `ETag` (required for multipart uploads — client must read part ETags)
 
+> **Note:** CORS alone isn't sufficient for browser uploads. The S3Client must also set `requestChecksumCalculation: 'WHEN_REQUIRED'` — AWS SDK v3.950+ adds CRC32 checksums to presigned URLs by default, which browsers can't satisfy, causing preflight failures. See `lib/storage/client.ts`.
+
 ## IAM Policy
 
 The `nexus-app-dev` user has the following permissions on the bucket:
