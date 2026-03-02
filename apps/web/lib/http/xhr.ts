@@ -6,6 +6,7 @@ export function xhrPut(
     url: string,
     body: Blob,
     options: {
+        contentType?: string;
         onProgress?: (loaded: number, total: number) => void;
         signal?: AbortSignal;
     }
@@ -13,6 +14,11 @@ export function xhrPut(
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('PUT', url);
+
+        // Must match the Content-Type the presigned URL was signed with
+        if (options.contentType) {
+            xhr.setRequestHeader('Content-Type', options.contentType);
+        }
 
         if (options.onProgress) {
             xhr.upload.onprogress = (e) => {
