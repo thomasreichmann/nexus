@@ -7,22 +7,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Upload, X, FileIcon, CheckCircle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { formatBytes } from '@/lib/format';
 
 interface UploadFile {
     id: string;
     file: File;
     progress: number;
     status: 'pending' | 'uploading' | 'complete' | 'error';
-}
-
-function formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return (
-        Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-    );
 }
 
 export function UploadZone() {

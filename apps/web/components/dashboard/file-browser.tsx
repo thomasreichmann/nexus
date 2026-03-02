@@ -34,125 +34,115 @@ import {
     FolderArchive,
     ArrowUpDown,
     RotateCw,
+    Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { formatBytes, formatDate } from '@/lib/format';
+import { useTRPC } from '@/lib/trpc/client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import type { File } from '@nexus/db/repo/files';
 
-type FileStatus = 'archived' | 'retrieving' | 'available';
-
-interface StoredFile {
-    id: string;
-    name: string;
-    size: string;
-    sizeBytes: number;
-    uploadedAt: string;
-    uploadedAtDate: Date;
-    status: FileStatus;
-}
-
-const mockFiles: StoredFile[] = [
-    {
-        id: '1',
-        name: 'vacation-photos-2024.zip',
-        size: '4.2 GB',
-        sizeBytes: 4509715660,
-        uploadedAt: 'Jan 2, 2026',
-        uploadedAtDate: new Date('2026-01-02'),
-        status: 'archived',
-    },
-    {
-        id: '2',
-        name: 'project-backup.tar.gz',
-        size: '12.8 GB',
-        sizeBytes: 13743895347,
-        uploadedAt: 'Jan 1, 2026',
-        uploadedAtDate: new Date('2026-01-01'),
-        status: 'archived',
-    },
-    {
-        id: '3',
-        name: 'raw-footage-jan.mov',
-        size: '28.5 GB',
-        sizeBytes: 30601641574,
-        uploadedAt: 'Dec 30, 2025',
-        uploadedAtDate: new Date('2025-12-30'),
-        status: 'retrieving',
-    },
-    {
-        id: '4',
-        name: 'client-deliverables.zip',
-        size: '1.3 GB',
-        sizeBytes: 1395864371,
-        uploadedAt: 'Dec 29, 2025',
-        uploadedAtDate: new Date('2025-12-29'),
-        status: 'available',
-    },
-    {
-        id: '5',
-        name: 'music-library-backup.zip',
-        size: '8.7 GB',
-        sizeBytes: 9341140172,
-        uploadedAt: 'Dec 26, 2025',
-        uploadedAtDate: new Date('2025-12-26'),
-        status: 'archived',
-    },
-    {
-        id: '6',
-        name: 'design-assets-2023.zip',
-        size: '2.1 GB',
-        sizeBytes: 2254857830,
-        uploadedAt: 'Dec 20, 2025',
-        uploadedAtDate: new Date('2025-12-20'),
-        status: 'archived',
-    },
-    {
-        id: '7',
-        name: 'old-projects.tar.gz',
-        size: '5.4 GB',
-        sizeBytes: 5798205850,
-        uploadedAt: 'Dec 15, 2025',
-        uploadedAtDate: new Date('2025-12-15'),
-        status: 'archived',
-    },
-    {
-        id: '8',
-        name: 'family-videos-2022.zip',
-        size: '15.2 GB',
-        sizeBytes: 16322273689,
-        uploadedAt: 'Dec 10, 2025',
-        uploadedAtDate: new Date('2025-12-10'),
-        status: 'archived',
-    },
-    {
-        id: '9',
-        name: 'website-backup-dec.tar.gz',
-        size: '3.8 GB',
-        sizeBytes: 4080218932,
-        uploadedAt: 'Dec 5, 2025',
-        uploadedAtDate: new Date('2025-12-05'),
-        status: 'archived',
-    },
-    {
-        id: '10',
-        name: 'photo-archive-fall.zip',
-        size: '6.9 GB',
-        sizeBytes: 7407722905,
-        uploadedAt: 'Nov 28, 2025',
-        uploadedAtDate: new Date('2025-11-28'),
-        status: 'archived',
-    },
-];
+type DerivedStatus = 'archived' | 'retrieving' | 'available';
 
 type SortKey = 'name' | 'size' | 'uploadedAt';
 type SortOrder = 'asc' | 'desc';
 
+function deriveStatus(file: File): DerivedStatus {
+    if (file.status === 'restoring') return 'retrieving';
+    if (
+        file.status === 'available' &&
+        (file.storageTier === 'glacier' || file.storageTier === 'deep_archive')
+    )
+        return 'archived';
+    return 'available';
+}
+
+function getStatusBadge(status: DerivedStatus) {
+    switch (status) {
+        case 'archived':
+            return (
+                <Badge
+                    variant="secondary"
+                    className="bg-muted text-muted-foreground"
+                >
+                    Archived
+                </Badge>
+            );
+        case 'retrieving':
+            return (
+                <Badge
+                    variant="secondary"
+                    className="bg-primary/10 text-primary"
+                >
+                    Retrieving
+                </Badge>
+            );
+        case 'available':
+            return (
+                <Badge
+                    variant="secondary"
+                    className="bg-green-500/10 text-green-600"
+                >
+                    Available
+                </Badge>
+            );
+    }
+}
+
 export function FileBrowser() {
+    const trpc = useTRPC();
+    const queryClient = useQueryClient();
+
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
     const [sortKey, setSortKey] = useState<SortKey>('uploadedAt');
     const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
-    const filteredFiles = mockFiles.filter((file) =>
+    const listOptions = trpc.files.list.queryOptions();
+    const { data, isLoading } = useQuery(listOptions);
+
+    const files = data?.files ?? [];
+
+    const invalidateFileList = () =>
+        queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
+
+    const deleteMutation = useMutation(
+        trpc.files.delete.mutationOptions({
+            onSuccess: invalidateFileList,
+        })
+    );
+
+    const deleteManyMutation = useMutation(
+        trpc.files.deleteMany.mutationOptions({
+            onSuccess() {
+                invalidateFileList();
+                setSelectedFiles([]);
+            },
+        })
+    );
+
+    const retrievalMutation = useMutation(
+        trpc.files.requestRetrieval.mutationOptions({
+            onSuccess() {
+                invalidateFileList();
+                toast.success('Retrieval request submitted');
+            },
+        })
+    );
+
+    const bulkRetrievalMutation = useMutation(
+        trpc.files.requestBulkRetrieval.mutationOptions({
+            onSuccess() {
+                invalidateFileList();
+                setSelectedFiles([]);
+                toast.success('Retrieval requests submitted');
+            },
+        })
+    );
+
+    const filteredFiles = files.filter((file) =>
         file.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
@@ -163,15 +153,27 @@ export function FileBrowser() {
                 comparison = a.name.localeCompare(b.name);
                 break;
             case 'size':
-                comparison = a.sizeBytes - b.sizeBytes;
+                comparison = a.size - b.size;
                 break;
             case 'uploadedAt':
                 comparison =
-                    a.uploadedAtDate.getTime() - b.uploadedAtDate.getTime();
+                    new Date(a.createdAt).getTime() -
+                    new Date(b.createdAt).getTime();
                 break;
         }
         return sortOrder === 'asc' ? comparison : -comparison;
     });
+
+    const hasRestoringFiles = filteredFiles.some(
+        (f) => f.status === 'restoring'
+    );
+
+    const selectedFileObjects = files.filter((f) =>
+        selectedFiles.includes(f.id)
+    );
+    const hasArchivedSelected = selectedFileObjects.some(
+        (f) => deriveStatus(f) === 'archived'
+    );
 
     const toggleSort = (key: SortKey) => {
         if (sortKey === key) {
@@ -196,37 +198,55 @@ export function FileBrowser() {
         );
     };
 
-    const getStatusBadge = (status: FileStatus) => {
-        switch (status) {
-            case 'archived':
-                return (
-                    <Badge
-                        variant="secondary"
-                        className="bg-muted text-muted-foreground"
-                    >
-                        Archived
-                    </Badge>
-                );
-            case 'retrieving':
-                return (
-                    <Badge
-                        variant="secondary"
-                        className="bg-primary/10 text-primary"
-                    >
-                        Retrieving
-                    </Badge>
-                );
-            case 'available':
-                return (
-                    <Badge
-                        variant="secondary"
-                        className="bg-green-500/10 text-green-600"
-                    >
-                        Available
-                    </Badge>
-                );
+    function handleDelete(id: string) {
+        deleteMutation.mutate({ id });
+    }
+
+    function handleBulkDelete() {
+        // TODO: Replace with AlertDialog component when available
+        const count = selectedFiles.length;
+        if (
+            window.confirm(
+                `Delete ${count} file${count > 1 ? 's' : ''}? This cannot be undone.`
+            )
+        ) {
+            deleteManyMutation.mutate({ ids: selectedFiles });
         }
-    };
+    }
+
+    function handleRetrieval(fileId: string) {
+        retrievalMutation.mutate({ fileId });
+    }
+
+    function handleBulkRetrieval() {
+        const archivedIds = selectedFileObjects
+            .filter((f) => deriveStatus(f) === 'archived')
+            .map((f) => f.id);
+        if (archivedIds.length > 0) {
+            bulkRetrievalMutation.mutate({ fileIds: archivedIds });
+        }
+    }
+
+    async function handleDownload(fileId: string) {
+        try {
+            const { url } = await queryClient.fetchQuery(
+                trpc.files.getDownloadUrl.queryOptions({ fileId })
+            );
+            window.open(url, '_blank');
+        } catch {
+            toast.error('Failed to get download URL');
+        }
+    }
+
+    if (isLoading) {
+        return (
+            <Card>
+                <CardContent className="flex items-center justify-center py-16">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </CardContent>
+            </Card>
+        );
+    }
 
     const isEmpty = filteredFiles.length === 0 && searchQuery === '';
 
@@ -271,19 +291,47 @@ export function FileBrowser() {
                             <span className="text-sm text-muted-foreground">
                                 {selectedFiles.length} selected
                             </span>
-                            <Button variant="outline" size="sm">
-                                <RotateCw className="mr-2 h-4 w-4" />
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleBulkRetrieval}
+                                disabled={
+                                    !hasArchivedSelected ||
+                                    bulkRetrievalMutation.isPending
+                                }
+                            >
+                                {bulkRetrievalMutation.isPending ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <RotateCw className="mr-2 h-4 w-4" />
+                                )}
                                 Retrieve
                             </Button>
                             <Button
                                 variant="outline"
                                 size="sm"
                                 className="text-destructive hover:text-destructive bg-transparent"
+                                onClick={handleBulkDelete}
+                                disabled={deleteManyMutation.isPending}
                             >
-                                <Trash2 className="mr-2 h-4 w-4" />
+                                {deleteManyMutation.isPending ? (
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                )}
                                 Delete
                             </Button>
                         </div>
+                    )}
+                    {hasRestoringFiles && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={invalidateFileList}
+                            title="Refresh"
+                        >
+                            <RotateCw className="h-4 w-4" />
+                        </Button>
                     )}
                     <div className="flex items-center rounded-lg border border-border">
                         <Button
@@ -374,87 +422,24 @@ export function FileBrowser() {
                         </TableHeader>
                         <TableBody>
                             {sortedFiles.map((file) => (
-                                <TableRow key={file.id}>
-                                    <TableCell>
-                                        <Checkbox
-                                            checked={selectedFiles.includes(
-                                                file.id
-                                            )}
-                                            onCheckedChange={() =>
-                                                toggleSelect(file.id)
-                                            }
-                                            aria-label={`Select ${file.name}`}
-                                        />
-                                    </TableCell>
-                                    <TableCell>
-                                        <div className="flex items-center gap-3">
-                                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
-                                                <FileIcon className="h-4 w-4 text-muted-foreground" />
-                                            </div>
-                                            <span className="font-medium">
-                                                {file.name}
-                                            </span>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {file.size}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {file.uploadedAt}
-                                    </TableCell>
-                                    <TableCell>
-                                        {getStatusBadge(file.status)}
-                                    </TableCell>
-                                    <TableCell>
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger
-                                                render={
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                    />
-                                                }
-                                            >
-                                                <MoreHorizontal className="h-4 w-4" />
-                                                <span className="sr-only">
-                                                    Actions
-                                                </span>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuPositioner align="end">
-                                                <DropdownMenuContent>
-                                                    {file.status ===
-                                                        'archived' && (
-                                                        <DropdownMenuItem>
-                                                            <Clock className="mr-2 h-4 w-4" />
-                                                            Request retrieval
-                                                        </DropdownMenuItem>
-                                                    )}
-                                                    {file.status ===
-                                                        'available' && (
-                                                        <DropdownMenuItem>
-                                                            <Download className="mr-2 h-4 w-4" />
-                                                            Download
-                                                        </DropdownMenuItem>
-                                                    )}
-                                                    {file.status ===
-                                                        'retrieving' && (
-                                                        <DropdownMenuItem
-                                                            disabled
-                                                        >
-                                                            <RotateCw className="mr-2 h-4 w-4" />
-                                                            Retrieving...
-                                                        </DropdownMenuItem>
-                                                    )}
-                                                    <DropdownMenuSeparator />
-                                                    <DropdownMenuItem className="text-destructive focus:text-destructive">
-                                                        <Trash2 className="mr-2 h-4 w-4" />
-                                                        Delete
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenuPositioner>
-                                        </DropdownMenu>
-                                    </TableCell>
-                                </TableRow>
+                                <FileRow
+                                    key={file.id}
+                                    file={file}
+                                    isSelected={selectedFiles.includes(file.id)}
+                                    onToggleSelect={() => toggleSelect(file.id)}
+                                    onDelete={() => handleDelete(file.id)}
+                                    onRetrieval={() => handleRetrieval(file.id)}
+                                    onDownload={() => handleDownload(file.id)}
+                                    isDeleting={
+                                        deleteMutation.isPending &&
+                                        deleteMutation.variables?.id === file.id
+                                    }
+                                    isRetrieving={
+                                        retrievalMutation.isPending &&
+                                        retrievalMutation.variables?.fileId ===
+                                            file.id
+                                    }
+                                />
                             ))}
                         </TableBody>
                     </Table>
@@ -462,72 +447,201 @@ export function FileBrowser() {
             ) : (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {sortedFiles.map((file) => (
-                        <Card key={file.id} className="group relative">
-                            <CardContent className="p-4">
-                                <div className="absolute right-2 top-2 flex items-center gap-1">
-                                    <Checkbox
-                                        checked={selectedFiles.includes(
-                                            file.id
-                                        )}
-                                        onCheckedChange={() =>
-                                            toggleSelect(file.id)
-                                        }
-                                        aria-label={`Select ${file.name}`}
-                                    />
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger
-                                            render={
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8"
-                                                />
-                                            }
-                                        >
-                                            <MoreHorizontal className="h-4 w-4" />
-                                            <span className="sr-only">
-                                                Actions
-                                            </span>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuPositioner align="end">
-                                            <DropdownMenuContent>
-                                                {file.status === 'archived' && (
-                                                    <DropdownMenuItem>
-                                                        <Clock className="mr-2 h-4 w-4" />
-                                                        Request retrieval
-                                                    </DropdownMenuItem>
-                                                )}
-                                                {file.status ===
-                                                    'available' && (
-                                                    <DropdownMenuItem>
-                                                        <Download className="mr-2 h-4 w-4" />
-                                                        Download
-                                                    </DropdownMenuItem>
-                                                )}
-                                                <DropdownMenuSeparator />
-                                                <DropdownMenuItem className="text-destructive focus:text-destructive">
-                                                    <Trash2 className="mr-2 h-4 w-4" />
-                                                    Delete
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenuPositioner>
-                                    </DropdownMenu>
-                                </div>
-                                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
-                                    <FileIcon className="h-6 w-6 text-muted-foreground" />
-                                </div>
-                                <p className="mb-1 truncate font-medium">
-                                    {file.name}
-                                </p>
-                                <p className="mb-2 text-sm text-muted-foreground">
-                                    {file.size}
-                                </p>
-                                {getStatusBadge(file.status)}
-                            </CardContent>
-                        </Card>
+                        <FileCard
+                            key={file.id}
+                            file={file}
+                            isSelected={selectedFiles.includes(file.id)}
+                            onToggleSelect={() => toggleSelect(file.id)}
+                            onDelete={() => handleDelete(file.id)}
+                            onRetrieval={() => handleRetrieval(file.id)}
+                            onDownload={() => handleDownload(file.id)}
+                            isDeleting={
+                                deleteMutation.isPending &&
+                                deleteMutation.variables?.id === file.id
+                            }
+                            isRetrieving={
+                                retrievalMutation.isPending &&
+                                retrievalMutation.variables?.fileId === file.id
+                            }
+                        />
                     ))}
                 </div>
             )}
         </div>
+    );
+}
+
+interface FileItemProps {
+    file: File;
+    isSelected: boolean;
+    onToggleSelect: () => void;
+    onDelete: () => void;
+    onRetrieval: () => void;
+    onDownload: () => void;
+    isDeleting: boolean;
+    isRetrieving: boolean;
+}
+
+function FileRow({
+    file,
+    isSelected,
+    onToggleSelect,
+    onDelete,
+    onRetrieval,
+    onDownload,
+    isDeleting,
+    isRetrieving,
+}: FileItemProps) {
+    const status = deriveStatus(file);
+
+    return (
+        <TableRow>
+            <TableCell>
+                <Checkbox
+                    checked={isSelected}
+                    onCheckedChange={onToggleSelect}
+                    aria-label={`Select ${file.name}`}
+                />
+            </TableCell>
+            <TableCell>
+                <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
+                        <FileIcon className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <span className="font-medium">{file.name}</span>
+                </div>
+            </TableCell>
+            <TableCell className="text-muted-foreground">
+                {formatBytes(file.size)}
+            </TableCell>
+            <TableCell className="text-muted-foreground">
+                {formatDate(file.createdAt)}
+            </TableCell>
+            <TableCell>{getStatusBadge(status)}</TableCell>
+            <TableCell>
+                <FileActions
+                    status={status}
+                    onDelete={onDelete}
+                    onRetrieval={onRetrieval}
+                    onDownload={onDownload}
+                    isDeleting={isDeleting}
+                    isRetrieving={isRetrieving}
+                />
+            </TableCell>
+        </TableRow>
+    );
+}
+
+function FileCard({
+    file,
+    isSelected,
+    onToggleSelect,
+    onDelete,
+    onRetrieval,
+    onDownload,
+    isDeleting,
+    isRetrieving,
+}: FileItemProps) {
+    const status = deriveStatus(file);
+
+    return (
+        <Card className="group relative">
+            <CardContent className="p-4">
+                <div className="absolute right-2 top-2 flex items-center gap-1">
+                    <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={onToggleSelect}
+                        aria-label={`Select ${file.name}`}
+                    />
+                    <FileActions
+                        status={status}
+                        onDelete={onDelete}
+                        onRetrieval={onRetrieval}
+                        onDownload={onDownload}
+                        isDeleting={isDeleting}
+                        isRetrieving={isRetrieving}
+                    />
+                </div>
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
+                    <FileIcon className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <p className="mb-1 truncate font-medium">{file.name}</p>
+                <p className="mb-2 text-sm text-muted-foreground">
+                    {formatBytes(file.size)}
+                </p>
+                {getStatusBadge(status)}
+            </CardContent>
+        </Card>
+    );
+}
+
+interface FileActionsProps {
+    status: DerivedStatus;
+    onDelete: () => void;
+    onRetrieval: () => void;
+    onDownload: () => void;
+    isDeleting: boolean;
+    isRetrieving: boolean;
+}
+
+function FileActions({
+    status,
+    onDelete,
+    onRetrieval,
+    onDownload,
+    isDeleting,
+    isRetrieving,
+}: FileActionsProps) {
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger
+                render={<Button variant="ghost" size="icon" />}
+            >
+                <MoreHorizontal className="h-4 w-4" />
+                <span className="sr-only">Actions</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuPositioner align="end">
+                <DropdownMenuContent>
+                    {status === 'archived' && (
+                        <DropdownMenuItem
+                            onClick={onRetrieval}
+                            disabled={isRetrieving}
+                        >
+                            {isRetrieving ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <Clock className="mr-2 h-4 w-4" />
+                            )}
+                            Request retrieval
+                        </DropdownMenuItem>
+                    )}
+                    {status === 'available' && (
+                        <DropdownMenuItem onClick={onDownload}>
+                            <Download className="mr-2 h-4 w-4" />
+                            Download
+                        </DropdownMenuItem>
+                    )}
+                    {status === 'retrieving' && (
+                        <DropdownMenuItem disabled>
+                            <RotateCw className="mr-2 h-4 w-4" />
+                            Retrieving...
+                        </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={onDelete}
+                        disabled={isDeleting}
+                    >
+                        {isDeleting ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                            <Trash2 className="mr-2 h-4 w-4" />
+                        )}
+                        Delete
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenuPositioner>
+        </DropdownMenu>
     );
 }
