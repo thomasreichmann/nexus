@@ -80,7 +80,6 @@ export function useUpload() {
                 updateFile(uploadFile.id, { fileId });
 
                 await xhrPut(uploadUrl, uploadFile.file, {
-                    contentType: uploadFile.file.type || undefined,
                     onProgress: (loaded, total) => {
                         updateFile(uploadFile.id, {
                             progress: Math.round((loaded / total) * 100),
