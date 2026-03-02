@@ -1,6 +1,7 @@
 import * as presigned from './presigned';
 import * as glacier from './glacier';
 import * as objects from './objects';
+import * as multipart from './multipart';
 
 /**
  * S3 storage operations for file archival
@@ -25,6 +26,7 @@ export const s3 = {
     presigned,
     glacier,
     objects,
+    multipart,
 } as const;
 
 // Re-export types for convenience

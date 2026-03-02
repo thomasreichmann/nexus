@@ -5,7 +5,11 @@ import {
     TEST_USER_ID,
 } from '@nexus/db/testing';
 import { mockS3 } from '@/lib/storage/testing';
-import { NotFoundError, QuotaExceededError } from '@/server/errors';
+import {
+    NotFoundError,
+    QuotaExceededError,
+    InvalidStateError,
+} from '@/server/errors';
 import { fileService } from './files';
 
 vi.mock('@/lib/storage', () => ({
@@ -272,6 +276,163 @@ describe('files service', () => {
                     ])
                 ).rejects.toThrow(NotFoundError);
             });
+        });
+    });
+
+    describe('initiateMultipartUpload', () => {
+        it('returns fileId, uploadId, partUrls, chunkSize, and expiresAt', async () => {
+            mocks.where.mockResolvedValue([{ total: 0 }]);
+            const insertedFile = createFileFixture({ status: 'uploading' });
+            mocks.returning.mockResolvedValue([insertedFile]);
+
+            const result = await fileService.initiateMultipartUpload(
+                db,
+                TEST_USER_ID,
+                {
+                    name: 'large-file.zip',
+                    sizeBytes: 50 * 1024 * 1024, // 50MB = 5 parts
+                    mimeType: 'application/zip',
+                }
+            );
+
+            expect(result).toHaveProperty('fileId');
+            expect(result).toHaveProperty('uploadId', 'mock-upload-id');
+            expect(result.partUrls).toHaveLength(5);
+            expect(result.chunkSize).toBe(10 * 1024 * 1024);
+            expect(result.expiresAt).toBeInstanceOf(Date);
+        });
+
+        it('throws QuotaExceededError when storage limit exceeded', async () => {
+            const tenGBMinus1 = 10 * 1024 * 1024 * 1024 - 1;
+            mocks.where.mockResolvedValue([{ total: tenGBMinus1 }]);
+
+            await expect(
+                fileService.initiateMultipartUpload(db, TEST_USER_ID, {
+                    name: 'large-file.zip',
+                    sizeBytes: 2,
+                })
+            ).rejects.toThrow(QuotaExceededError);
+        });
+
+        it('creates file record with status uploading', async () => {
+            mocks.where.mockResolvedValue([{ total: 0 }]);
+            const insertedFile = createFileFixture({ status: 'uploading' });
+            mocks.returning.mockResolvedValue([insertedFile]);
+
+            await fileService.initiateMultipartUpload(db, TEST_USER_ID, {
+                name: 'large-file.zip',
+                sizeBytes: 50 * 1024 * 1024,
+            });
+
+            expect(mocks.insert).toHaveBeenCalledOnce();
+            expect(mocks.values).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    userId: TEST_USER_ID,
+                    name: 'large-file.zip',
+                    status: 'uploading',
+                })
+            );
+        });
+
+        it('calculates correct part count for exact chunk boundary', async () => {
+            mocks.where.mockResolvedValue([{ total: 0 }]);
+            const insertedFile = createFileFixture({ status: 'uploading' });
+            mocks.returning.mockResolvedValue([insertedFile]);
+
+            const result = await fileService.initiateMultipartUpload(
+                db,
+                TEST_USER_ID,
+                {
+                    name: 'exact.bin',
+                    sizeBytes: 20 * 1024 * 1024, // exactly 2 chunks
+                }
+            );
+
+            expect(result.partUrls).toHaveLength(2);
+        });
+    });
+
+    describe('completeMultipartUpload', () => {
+        it('transitions file to available status', async () => {
+            const uploadingFile = createFileFixture({ status: 'uploading' });
+            const availableFile = createFileFixture({ status: 'available' });
+            mocks.findFirst.mockResolvedValue(uploadingFile);
+            mocks.returning.mockResolvedValue([availableFile]);
+
+            const result = await fileService.completeMultipartUpload(
+                db,
+                TEST_USER_ID,
+                {
+                    fileId: uploadingFile.id,
+                    uploadId: 'some-upload-id',
+                    parts: [{ partNumber: 1, etag: '"abc123"' }],
+                }
+            );
+
+            expect(result.file.status).toBe('available');
+            expect(mocks.set).toHaveBeenCalledWith({ status: 'available' });
+        });
+
+        it('throws NotFoundError when file does not exist', async () => {
+            mocks.findFirst.mockResolvedValue(undefined);
+
+            await expect(
+                fileService.completeMultipartUpload(db, TEST_USER_ID, {
+                    fileId: 'nonexistent',
+                    uploadId: 'some-upload-id',
+                    parts: [{ partNumber: 1, etag: '"abc"' }],
+                })
+            ).rejects.toThrow(NotFoundError);
+        });
+
+        it('throws InvalidStateError when file is not uploading', async () => {
+            const availableFile = createFileFixture({ status: 'available' });
+            mocks.findFirst.mockResolvedValue(availableFile);
+
+            await expect(
+                fileService.completeMultipartUpload(db, TEST_USER_ID, {
+                    fileId: availableFile.id,
+                    uploadId: 'some-upload-id',
+                    parts: [{ partNumber: 1, etag: '"abc"' }],
+                })
+            ).rejects.toThrow(InvalidStateError);
+        });
+    });
+
+    describe('abortMultipartUpload', () => {
+        it('soft-deletes the file record', async () => {
+            const uploadingFile = createFileFixture({ status: 'uploading' });
+            mocks.findFirst.mockResolvedValue(uploadingFile);
+            mocks.returning.mockResolvedValue([
+                { ...uploadingFile, status: 'deleted' },
+            ]);
+
+            await fileService.abortMultipartUpload(
+                db,
+                TEST_USER_ID,
+                uploadingFile.id,
+                'some-upload-id'
+            );
+
+            expect(mocks.set).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    status: 'deleted',
+                    deletedAt: expect.any(Date),
+                })
+            );
+        });
+
+        it('throws NotFoundError when file does not exist', async () => {
+            mocks.findFirst.mockResolvedValue(undefined);
+
+            await expect(
+                fileService.abortMultipartUpload(
+                    db,
+                    TEST_USER_ID,
+                    'nonexistent',
+                    'some-upload-id'
+                )
+            ).rejects.toThrow(NotFoundError);
         });
     });
 });

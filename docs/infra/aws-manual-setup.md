@@ -59,6 +59,7 @@ Allows requests from:
 - `https://*.vercel.app`
 
 Methods: GET, PUT, POST, DELETE, HEAD
+Exposed headers: `ETag` (required for multipart uploads — client must read part ETags)
 
 ## IAM Policy
 
@@ -76,7 +77,9 @@ The `nexus-app-dev` user has the following permissions on the bucket:
                 "s3:DeleteObject",
                 "s3:ListBucket",
                 "s3:RestoreObject",
-                "s3:GetObjectAttributes"
+                "s3:GetObjectAttributes",
+                "s3:AbortMultipartUpload",
+                "s3:ListMultipartUploadParts"
             ],
             "Resource": [
                 "arn:aws:s3:::nexus-storage-files-dev",

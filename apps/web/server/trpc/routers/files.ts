@@ -5,6 +5,12 @@ import { fileService } from '@/server/services/files';
 import { retrievalService } from '@/server/services/retrieval';
 import { protectedProcedure, router } from '../init';
 
+const uploadInputSchema = z.object({
+    name: z.string().min(1).max(255),
+    sizeBytes: z.number().positive(),
+    mimeType: z.string().optional(),
+});
+
 export const filesRouter = router({
     list: protectedProcedure
         .input(
@@ -48,13 +54,7 @@ export const filesRouter = router({
         }),
 
     upload: protectedProcedure
-        .input(
-            z.object({
-                name: z.string().min(1).max(255),
-                sizeBytes: z.number().positive(),
-                mimeType: z.string().optional(),
-            })
-        )
+        .input(uploadInputSchema)
         .mutation(({ ctx, input }) => {
             return fileService.initiateUpload(
                 ctx.db,
@@ -134,4 +134,56 @@ export const filesRouter = router({
                 input.fileId
             );
         }),
+
+    multipart: router({
+        init: protectedProcedure
+            .input(uploadInputSchema)
+            .mutation(({ ctx, input }) => {
+                return fileService.initiateMultipartUpload(
+                    ctx.db,
+                    ctx.session.user.id,
+                    input
+                );
+            }),
+
+        complete: protectedProcedure
+            .input(
+                z.object({
+                    fileId: z.string().uuid(),
+                    uploadId: z.string().min(1),
+                    parts: z
+                        .array(
+                            z.object({
+                                partNumber: z.number().int().positive(),
+                                etag: z.string().min(1),
+                            })
+                        )
+                        .min(1)
+                        .max(10000),
+                })
+            )
+            .mutation(({ ctx, input }) => {
+                return fileService.completeMultipartUpload(
+                    ctx.db,
+                    ctx.session.user.id,
+                    input
+                );
+            }),
+
+        abort: protectedProcedure
+            .input(
+                z.object({
+                    fileId: z.string().uuid(),
+                    uploadId: z.string().min(1),
+                })
+            )
+            .mutation(({ ctx, input }) => {
+                return fileService.abortMultipartUpload(
+                    ctx.db,
+                    ctx.session.user.id,
+                    input.fileId,
+                    input.uploadId
+                );
+            }),
+    }),
 });
