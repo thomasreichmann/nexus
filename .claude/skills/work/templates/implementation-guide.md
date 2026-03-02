@@ -52,7 +52,7 @@ New pages need a corresponding smoke test in `apps/web/e2e/smoke/` following the
 If tests fail during implementation:
 
 1. Show the failure output
-2. Use AskUserQuestion:
+2. Ask the user how to proceed:
     - **Fix now**: Attempt to fix the failing tests
     - **Continue anyway**: Proceed (note in PR that tests need review)
     - **Abort**: Stop implementation, keep changes uncommitted

@@ -2,12 +2,12 @@
 name: visual-compare
 description: Visually compare design options (colors, tokens, variants) in a live preview
 argument-hint: [what to compare]
-allowed-tools: Task, AskUserQuestion
+allowed-tools: Task
 ---
 
 # Visual Compare
 
-Two-phase workflow. AskUserQuestion does not work reliably in subprocess agents, so the main thread handles user interaction.
+Two-phase workflow. The main thread handles user interaction.
 
 ## Phase 1: Generate Options (subprocess)
 
@@ -24,7 +24,7 @@ The agent will check the sampler registry (generating a new sampler if the targe
 After the subprocess returns:
 
 1. Tell the user to check **http://localhost:3000/dev/preview** to compare visually
-2. Use **AskUserQuestion** with the option labels from the subprocess summary
+2. Present the option labels from the subprocess summary and ask the user to pick
 3. If user picks "Other", re-run Phase 1 with adjusted prompt
 
 ## Phase 3: Apply Choice (resume subprocess)

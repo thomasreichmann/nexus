@@ -2,7 +2,7 @@
 name: work
 description: Work on a ready GitHub issue (implement, test, commit, PR)
 argument-hint: [issue-number] (optional)
-allowed-tools: Bash, Task, AskUserQuestion, Read, Grep, Glob, Edit, Write
+allowed-tools: Bash, Task, Read, Grep, Glob, Edit, Write
 disable-model-invocation: true
 agent: work-agent
 ---
@@ -40,7 +40,7 @@ If no issue number was provided:
 
 1. Fetch issues: `gh issue list --label ready --json number,title,labels,milestone --limit 20` (exclude any with `in-progress` label)
 2. If none found, inform the user and exit
-3. Use AskUserQuestion to let the user select an issue
+3. Present the issues and ask the user to select one
 
 After selection, mark it in-progress: `gh issue edit <number> --add-label in-progress`
 
@@ -120,7 +120,7 @@ Go through each acceptance criterion from the issue:
 
 3. Collect findings from all 3 agents.
 
-4. If issues found, present them grouped by category, then use AskUserQuestion:
+4. If issues found, present them grouped by category and ask the user how to proceed:
     - **Fix all**: Auto-fix all identified issues
     - **Fix selected**: Let user pick which to fix
     - **Skip**: Proceed without fixes (add note to PR)

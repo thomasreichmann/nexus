@@ -2,7 +2,7 @@
 name: refresh
 description: Verify whether a groomed issue is still accurate
 argument-hint: [issue-number] (optional)
-allowed-tools: Bash, AskUserQuestion, Read, Grep, Glob
+allowed-tools: Bash, Read, Grep, Glob
 disable-model-invocation: true
 agent: refresh-agent
 ---
@@ -48,7 +48,7 @@ If no issue number was provided:
 
 2. If no issues found, inform the user and exit.
 
-3. Use AskUserQuestion to let the user select an issue:
+3. Present the issues and ask the user to select one:
     - Show oldest issues first (more likely to be stale)
     - Each option should include last updated date
     - Include "(oldest)" marker for the oldest issue
@@ -180,7 +180,7 @@ No updates needed.
 
 ### Step 5: User Decision
 
-Use AskUserQuestion with these options:
+Ask the user to choose from these options:
 
 - **Apply updates**: Edit the issue with proposed changes (only if updates recommended)
 - **Mark for re-grooming**: Send back to `needs-details` for more significant rework
