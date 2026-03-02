@@ -195,7 +195,7 @@ Before presenting drafts to the user, review them for quality and codebase align
 
 ### For Each Draft:
 
-1. **Spawn three review agents in the same message** (do NOT use `run_in_background` — make all three Task calls in one message so they run concurrently and return results directly):
+1. **Spawn three review agents in the same message** (do NOT use `run_in_background` — make all three Task calls in one message so they run concurrently and return results directly). **Use `model: "opus"` for all review agents** — do not let them default to haiku:
 
     **Issue Quality Review** (subagent_type: "general-purpose"):
     - Review the draft against `.claude/skills/groom/templates/review-criteria.md`
