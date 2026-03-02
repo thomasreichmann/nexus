@@ -1,4 +1,3 @@
-import { TRPCError } from '@trpc/server';
 import { publicProcedure, router } from '../init';
 
 const recentUploads = [
@@ -58,10 +57,6 @@ export const dashboardRouter = router({
 
     getRetrievals: publicProcedure.query(({ ctx }) => {
         ctx.log.setField('retrievalCount', retrievals.length);
-        throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: 'Test logging: forced error in getRetrievals',
-        });
         return retrievals;
     }),
 
