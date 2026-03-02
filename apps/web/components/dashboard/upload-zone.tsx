@@ -5,36 +5,32 @@ import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Upload, X, FileIcon, CheckCircle, Loader2 } from 'lucide-react';
+import {
+    Upload,
+    X,
+    FileIcon,
+    CheckCircle,
+    Loader2,
+    AlertCircle,
+    RotateCcw,
+} from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatBytes } from '@/lib/format';
-
-interface UploadFile {
-    id: string;
-    file: File;
-    progress: number;
-    status: 'pending' | 'uploading' | 'complete' | 'error';
-}
+import { useUpload } from './useUpload';
 
 export function UploadZone() {
-    const [files, setFiles] = useState<UploadFile[]>([]);
+    const {
+        files,
+        isUploading,
+        addFiles,
+        removeFile,
+        clearFiles,
+        startUpload,
+        cancelFile,
+        retryFile,
+    } = useUpload();
+
     const [isDragOver, setIsDragOver] = useState(false);
-    const [isUploading, setIsUploading] = useState(false);
-
-    const addFiles = useCallback((newFiles: FileList | null) => {
-        if (!newFiles) return;
-        const uploadFiles: UploadFile[] = Array.from(newFiles).map((file) => ({
-            id: Math.random().toString(36).substring(7),
-            file,
-            progress: 0,
-            status: 'pending' as const,
-        }));
-        setFiles((prev) => [...prev, ...uploadFiles]);
-    }, []);
-
-    const removeFile = (id: string) => {
-        setFiles((prev) => prev.filter((f) => f.id !== id));
-    };
 
     const handleDrop = useCallback(
         (e: React.DragEvent) => {
@@ -52,33 +48,6 @@ export function UploadZone() {
 
     const handleDragLeave = () => {
         setIsDragOver(false);
-    };
-
-    const simulateUpload = async () => {
-        setIsUploading(true);
-        for (const file of files) {
-            if (file.status !== 'pending') continue;
-            setFiles((prev) =>
-                prev.map((f) =>
-                    f.id === file.id
-                        ? { ...f, status: 'uploading' as const }
-                        : f
-                )
-            );
-            // Simulate upload progress
-            for (let progress = 0; progress <= 100; progress += 10) {
-                await new Promise((resolve) => setTimeout(resolve, 100));
-                setFiles((prev) =>
-                    prev.map((f) => (f.id === file.id ? { ...f, progress } : f))
-                );
-            }
-            setFiles((prev) =>
-                prev.map((f) =>
-                    f.id === file.id ? { ...f, status: 'complete' as const } : f
-                )
-            );
-        }
-        setIsUploading(false);
     };
 
     const totalSize = files.reduce((acc, f) => acc + f.file.size, 0);
@@ -142,7 +111,7 @@ export function UploadZone() {
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => setFiles([])}
+                                    onClick={clearFiles}
                                 >
                                     Clear all
                                 </Button>
@@ -157,6 +126,8 @@ export function UploadZone() {
                                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
                                         {file.status === 'complete' ? (
                                             <CheckCircle className="h-5 w-5 text-green-500" />
+                                        ) : file.status === 'error' ? (
+                                            <AlertCircle className="h-5 w-5 text-destructive" />
                                         ) : file.status === 'uploading' ? (
                                             <Loader2 className="h-5 w-5 animate-spin text-primary" />
                                         ) : (
@@ -176,6 +147,12 @@ export function UploadZone() {
                                                 className="mt-2 h-1"
                                             />
                                         )}
+                                        {file.status === 'error' &&
+                                            file.error && (
+                                                <p className="mt-1 text-xs text-destructive">
+                                                    {file.error}
+                                                </p>
+                                            )}
                                     </div>
                                     {file.status === 'pending' &&
                                         !isUploading && (
@@ -192,6 +169,30 @@ export function UploadZone() {
                                                 </span>
                                             </Button>
                                         )}
+                                    {file.status === 'uploading' && (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => cancelFile(file.id)}
+                                        >
+                                            <X className="h-4 w-4" />
+                                            <span className="sr-only">
+                                                Cancel upload
+                                            </span>
+                                        </Button>
+                                    )}
+                                    {file.status === 'error' && (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => retryFile(file.id)}
+                                        >
+                                            <RotateCcw className="h-4 w-4" />
+                                            <span className="sr-only">
+                                                Retry upload
+                                            </span>
+                                        </Button>
+                                    )}
                                     {file.status === 'complete' && (
                                         <span className="text-xs font-medium text-green-500">
                                             Uploaded
@@ -221,7 +222,7 @@ export function UploadZone() {
                             </div>
                             {pendingFiles.length > 0 && (
                                 <Button
-                                    onClick={simulateUpload}
+                                    onClick={startUpload}
                                     disabled={isUploading}
                                 >
                                     {isUploading ? (
