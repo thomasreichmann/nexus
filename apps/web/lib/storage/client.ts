@@ -7,6 +7,8 @@ export const client = new S3Client({
         accessKeyId: env.AWS_ACCESS_KEY_ID,
         secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
     },
+    // Presigned URLs for browser uploads can't satisfy SDK v3's default CRC32 checksum
+    requestChecksumCalculation: 'WHEN_REQUIRED',
 });
 
 export const bucket = env.S3_BUCKET;
