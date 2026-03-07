@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -45,7 +45,6 @@ import {
     FileAudio,
     FileArchive,
     FileCode,
-    FolderArchive,
     ArrowUpDown,
     RotateCw,
     Loader2,
@@ -192,6 +191,71 @@ function StatusDot({ status }: { status: DerivedStatus }) {
     );
 }
 
+/**
+ * File icon that morphs into a checkbox on hover or when in selection mode.
+ * Renders at a fixed size to prevent layout shift.
+ */
+function SelectableIcon({
+    name,
+    checked,
+    onCheckedChange,
+    showCheckbox,
+    size = 'sm',
+}: {
+    name: string;
+    checked: boolean;
+    onCheckedChange: () => void;
+    showCheckbox: boolean;
+    size?: 'sm' | 'md';
+}) {
+    const { icon: TypeIcon, colorClass } = getFileTypeInfo(name);
+    const isSmall = size === 'sm';
+    const containerClass = isSmall ? 'size-8' : 'size-10';
+    const iconClass = isSmall ? 'size-4' : 'size-5';
+    const reveal = checked || showCheckbox;
+
+    return (
+        <button
+            type="button"
+            className={cn(
+                'group/icon relative flex shrink-0 items-center justify-center rounded-lg transition-colors',
+                containerClass,
+                reveal ? 'bg-primary/10' : colorClass
+            )}
+            onClick={(e) => {
+                e.stopPropagation();
+                onCheckedChange();
+            }}
+            aria-label={`Select ${name}`}
+        >
+            <TypeIcon
+                className={cn(
+                    iconClass,
+                    'transition-opacity',
+                    reveal
+                        ? 'opacity-0'
+                        : 'opacity-100 group-hover/icon:opacity-0'
+                )}
+            />
+            <div
+                className={cn(
+                    'absolute inset-0 flex items-center justify-center transition-opacity',
+                    reveal
+                        ? 'opacity-100'
+                        : 'opacity-0 group-hover/icon:opacity-100'
+                )}
+            >
+                <Checkbox
+                    checked={checked}
+                    tabIndex={-1}
+                    onCheckedChange={onCheckedChange}
+                    aria-hidden
+                />
+            </div>
+        </button>
+    );
+}
+
 export function FileBrowser() {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
@@ -201,6 +265,7 @@ export function FileBrowser() {
     const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
     const [sortKey, setSortKey] = useState<SortKey>('uploadedAt');
     const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+    const lastSelectedIndex = useRef<number | null>(null);
 
     const listOptions = trpc.files.list.queryOptions();
     const { data, isLoading } = useQuery(listOptions);
@@ -255,6 +320,8 @@ export function FileBrowser() {
         (f) => f.status === 'restoring'
     );
 
+    const hasSelection = selectedFiles.length > 0;
+
     const selectedFileObjects = files.filter((f) =>
         selectedFiles.includes(f.id)
     );
@@ -286,11 +353,30 @@ export function FileBrowser() {
         }
     };
 
-    const toggleSelect = (id: string) => {
-        setSelectedFiles((prev) =>
-            prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]
-        );
-    };
+    const handleSelect = useCallback(
+        (id: string, index: number, shiftKey: boolean) => {
+            setSelectedFiles((prev) => {
+                if (
+                    shiftKey &&
+                    lastSelectedIndex.current !== null &&
+                    lastSelectedIndex.current !== index
+                ) {
+                    const start = Math.min(lastSelectedIndex.current, index);
+                    const end = Math.max(lastSelectedIndex.current, index);
+                    const rangeIds = sortedFiles
+                        .slice(start, end + 1)
+                        .map((f) => f.id);
+                    const merged = new Set([...prev, ...rangeIds]);
+                    return Array.from(merged);
+                }
+                return prev.includes(id)
+                    ? prev.filter((f) => f !== id)
+                    : [...prev, id];
+            });
+            lastSelectedIndex.current = index;
+        },
+        [sortedFiles]
+    );
 
     function handleBulkDelete() {
         deleteManyMutation.reset();
@@ -450,15 +536,18 @@ export function FileBrowser() {
                     <Table>
                         <TableHeader>
                             <TableRow className="hover:bg-transparent">
-                                <TableHead className="w-12 pl-4">
-                                    <Checkbox
-                                        checked={
-                                            selectedFiles.length ===
-                                            sortedFiles.length
-                                        }
-                                        onCheckedChange={toggleSelectAll}
-                                        aria-label="Select all"
-                                    />
+                                <TableHead className="w-[52px] pl-4">
+                                    <div className="flex size-8 items-center justify-center">
+                                        <Checkbox
+                                            checked={
+                                                hasSelection &&
+                                                selectedFiles.length ===
+                                                    sortedFiles.length
+                                            }
+                                            onCheckedChange={toggleSelectAll}
+                                            aria-label="Select all"
+                                        />
+                                    </div>
                                 </TableHead>
                                 <TableHead>
                                     <button
@@ -499,12 +588,15 @@ export function FileBrowser() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {sortedFiles.map((file) => (
+                            {sortedFiles.map((file, index) => (
                                 <FileRow
                                     key={file.id}
                                     file={file}
                                     isSelected={selectedFiles.includes(file.id)}
-                                    onToggleSelect={() => toggleSelect(file.id)}
+                                    hasSelection={hasSelection}
+                                    onSelect={(shiftKey) =>
+                                        handleSelect(file.id, index, shiftKey)
+                                    }
                                 />
                             ))}
                         </TableBody>
@@ -512,19 +604,22 @@ export function FileBrowser() {
                 </Card>
             ) : (
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {sortedFiles.map((file) => (
+                    {sortedFiles.map((file, index) => (
                         <FileCard
                             key={file.id}
                             file={file}
                             isSelected={selectedFiles.includes(file.id)}
-                            onToggleSelect={() => toggleSelect(file.id)}
+                            hasSelection={hasSelection}
+                            onSelect={(shiftKey) =>
+                                handleSelect(file.id, index, shiftKey)
+                            }
                         />
                     ))}
                 </div>
             )}
 
             {/* Floating selection bar */}
-            {selectedFiles.length > 0 && (
+            {hasSelection && (
                 <div className="fixed inset-x-0 bottom-6 z-50 mx-auto w-fit animate-in fade-in slide-in-from-bottom-4">
                     <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 shadow-lg">
                         <span className="text-sm font-medium tabular-nums">
@@ -605,7 +700,8 @@ export function FileBrowser() {
 interface FileItemProps {
     file: File;
     isSelected: boolean;
-    onToggleSelect: () => void;
+    hasSelection: boolean;
+    onSelect: (shiftKey: boolean) => void;
 }
 
 function useFileActions(file: File) {
@@ -651,41 +747,40 @@ function useFileActions(file: File) {
     };
 }
 
-function FileRow({ file, isSelected, onToggleSelect }: FileItemProps) {
+function FileRow({ file, isSelected, hasSelection, onSelect }: FileItemProps) {
     const status = deriveStatus(file);
     const actions = useFileActions(file);
-    const { icon: TypeIcon, colorClass } = getFileTypeInfo(file.name);
     const ext = getFileExtension(file.name);
 
     return (
-        <TableRow data-state={isSelected ? 'selected' : undefined}>
+        <TableRow
+            data-state={isSelected ? 'selected' : undefined}
+            className={cn(
+                'cursor-pointer transition-colors',
+                isSelected &&
+                    'bg-primary/[0.04] hover:bg-primary/[0.06] dark:bg-primary/[0.08] dark:hover:bg-primary/[0.10]'
+            )}
+            onClick={(e) => onSelect(e.shiftKey)}
+        >
             <TableCell className="pl-4">
-                <Checkbox
+                <SelectableIcon
+                    name={file.name}
                     checked={isSelected}
-                    onCheckedChange={onToggleSelect}
-                    aria-label={`Select ${file.name}`}
+                    onCheckedChange={() => onSelect(false)}
+                    showCheckbox={hasSelection}
+                    size="sm"
                 />
             </TableCell>
             <TableCell>
-                <div className="flex items-center gap-3">
-                    <div
-                        className={cn(
-                            'flex size-8 shrink-0 items-center justify-center rounded-lg',
-                            colorClass
-                        )}
-                    >
-                        <TypeIcon className="size-4" />
-                    </div>
-                    <div className="min-w-0">
-                        <p className="truncate font-medium leading-tight">
-                            {file.name}
+                <div className="min-w-0">
+                    <p className="truncate font-medium leading-tight">
+                        {file.name}
+                    </p>
+                    {ext && (
+                        <p className="text-xs uppercase text-muted-foreground">
+                            {ext}
                         </p>
-                        {ext && (
-                            <p className="text-xs uppercase text-muted-foreground">
-                                {ext}
-                            </p>
-                        )}
-                    </div>
+                    )}
                 </div>
             </TableCell>
             <TableCell className="tabular-nums text-muted-foreground">
@@ -697,42 +792,46 @@ function FileRow({ file, isSelected, onToggleSelect }: FileItemProps) {
             <TableCell>
                 <StatusDot status={status} />
             </TableCell>
-            <TableCell>
+            <TableCell onClick={(e) => e.stopPropagation()}>
                 <FileActions status={status} {...actions} />
             </TableCell>
         </TableRow>
     );
 }
 
-function FileCard({ file, isSelected, onToggleSelect }: FileItemProps) {
+function FileCard({ file, isSelected, hasSelection, onSelect }: FileItemProps) {
     const status = deriveStatus(file);
     const actions = useFileActions(file);
-    const { icon: TypeIcon, colorClass } = getFileTypeInfo(file.name);
     const ext = getFileExtension(file.name);
 
     return (
         <Card
             className={cn(
-                'group relative cursor-default py-0 transition-colors',
-                isSelected && 'ring-2 ring-primary/30'
+                'group relative cursor-pointer py-0 transition-all',
+                isSelected
+                    ? 'ring-2 ring-primary/30 bg-primary/[0.02] dark:bg-primary/[0.06]'
+                    : 'hover:border-border/80'
             )}
+            onClick={(e) => onSelect(e.shiftKey)}
         >
             <CardContent className="p-4">
                 <div className="mb-3 flex items-start justify-between">
+                    <SelectableIcon
+                        name={file.name}
+                        checked={isSelected}
+                        onCheckedChange={() => onSelect(false)}
+                        showCheckbox={hasSelection}
+                        size="md"
+                    />
                     <div
                         className={cn(
-                            'flex size-10 items-center justify-center rounded-lg',
-                            colorClass
+                            'transition-opacity',
+                            hasSelection
+                                ? 'opacity-100'
+                                : 'opacity-0 group-hover:opacity-100 [&:has([data-state=open])]:opacity-100'
                         )}
+                        onClick={(e) => e.stopPropagation()}
                     >
-                        <TypeIcon className="size-5" />
-                    </div>
-                    <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 [&:has([data-state=open])]:opacity-100">
-                        <Checkbox
-                            checked={isSelected}
-                            onCheckedChange={onToggleSelect}
-                            aria-label={`Select ${file.name}`}
-                        />
                         <FileActions status={status} {...actions} />
                     </div>
                 </div>
