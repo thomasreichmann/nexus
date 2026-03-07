@@ -199,6 +199,7 @@ export function FileBrowser() {
     };
 
     function handleDelete(id: string) {
+        deleteMutation.reset();
         deleteMutation.mutate({ id });
     }
 
@@ -210,11 +211,13 @@ export function FileBrowser() {
                 `Delete ${count} file${count > 1 ? 's' : ''}? This cannot be undone.`
             )
         ) {
+            deleteManyMutation.reset();
             deleteManyMutation.mutate({ ids: selectedFiles });
         }
     }
 
     function handleRetrieval(fileId: string) {
+        retrievalMutation.reset();
         retrievalMutation.mutate({ fileId });
     }
 
@@ -223,6 +226,7 @@ export function FileBrowser() {
             .filter((f) => deriveStatus(f) === 'archived')
             .map((f) => f.id);
         if (archivedIds.length > 0) {
+            bulkRetrievalMutation.reset();
             bulkRetrievalMutation.mutate({ fileIds: archivedIds });
         }
     }

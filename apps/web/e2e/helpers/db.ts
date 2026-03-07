@@ -91,6 +91,50 @@ export interface JobCounts {
     failed: number;
 }
 
+export interface DbFile {
+    id: string;
+    user_id: string;
+    name: string;
+    size: number;
+    s3_key: string;
+    storage_tier: string;
+    status: string;
+    created_at: Date;
+    updated_at: Date;
+}
+
+export interface InsertFileData {
+    userId: string;
+    name: string;
+    size?: number;
+    s3Key: string;
+    storageTier?: string;
+    status?: string;
+}
+
+export async function insertFile(data: InsertFileData): Promise<DbFile> {
+    const sql = getDb();
+    const [file] = await sql<DbFile[]>`
+        INSERT INTO files (id, user_id, name, size, s3_key, storage_tier, status)
+        VALUES (
+            gen_random_uuid(),
+            ${data.userId},
+            ${data.name},
+            ${data.size ?? 1024},
+            ${data.s3Key},
+            ${data.storageTier ?? 'glacier'},
+            ${data.status ?? 'available'}
+        )
+        RETURNING *
+    `;
+    return file;
+}
+
+export async function deleteFile(id: string): Promise<void> {
+    const sql = getDb();
+    await sql`DELETE FROM files WHERE id = ${id}`;
+}
+
 export async function countJobsByStatus(): Promise<JobCounts> {
     const sql = getDb();
     const rows = await sql<{ status: string; count: number }[]>`
