@@ -5,6 +5,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogDescription,
+    AlertDialogPopup,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
@@ -184,16 +193,8 @@ export function FileBrowser() {
     };
 
     function handleBulkDelete() {
-        // TODO: Replace with AlertDialog component when available
-        const count = selectedFiles.length;
-        if (
-            window.confirm(
-                `Delete ${count} file${count > 1 ? 's' : ''}? This cannot be undone.`
-            )
-        ) {
-            deleteManyMutation.reset();
-            deleteManyMutation.mutate({ ids: selectedFiles });
-        }
+        deleteManyMutation.reset();
+        deleteManyMutation.mutate({ ids: selectedFiles });
     }
 
     function handleBulkRetrieval() {
@@ -275,20 +276,46 @@ export function FileBrowser() {
                                 )}
                                 Retrieve
                             </Button>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-destructive hover:text-destructive bg-transparent"
-                                onClick={handleBulkDelete}
-                                disabled={deleteManyMutation.isPending}
-                            >
-                                {deleteManyMutation.isPending ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                )}
-                                Delete
-                            </Button>
+                            <AlertDialog>
+                                <AlertDialogTrigger
+                                    render={
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="text-destructive hover:text-destructive bg-transparent"
+                                        />
+                                    }
+                                    disabled={deleteManyMutation.isPending}
+                                >
+                                    {deleteManyMutation.isPending ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                    )}
+                                    Delete
+                                </AlertDialogTrigger>
+                                <AlertDialogPopup>
+                                    <AlertDialogTitle>
+                                        Delete {selectedFiles.length} file
+                                        {selectedFiles.length > 1 ? 's' : ''}?
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        This action cannot be undone. The
+                                        selected files will be permanently
+                                        deleted.
+                                    </AlertDialogDescription>
+                                    <div className="flex justify-end gap-2">
+                                        <AlertDialogCancel>
+                                            Cancel
+                                        </AlertDialogCancel>
+                                        <AlertDialogAction
+                                            onClick={handleBulkDelete}
+                                        >
+                                            Delete
+                                        </AlertDialogAction>
+                                    </div>
+                                </AlertDialogPopup>
+                            </AlertDialog>
                         </div>
                     )}
                     {hasRestoringFiles && (
