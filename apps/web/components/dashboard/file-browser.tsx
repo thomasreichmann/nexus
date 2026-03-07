@@ -29,7 +29,6 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import {
     Search,
@@ -40,10 +39,18 @@ import {
     Trash2,
     Clock,
     FileIcon,
+    FileText,
+    FileImage,
+    FileVideo,
+    FileAudio,
+    FileArchive,
+    FileCode,
     FolderArchive,
     ArrowUpDown,
     RotateCw,
     Loader2,
+    X,
+    Snowflake,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDate } from '@/lib/format';
@@ -67,36 +74,122 @@ function deriveStatus(file: File): DerivedStatus {
     return 'available';
 }
 
-function getStatusBadge(status: DerivedStatus) {
-    switch (status) {
-        case 'archived':
-            return (
-                <Badge
-                    variant="secondary"
-                    className="bg-muted text-muted-foreground"
-                >
-                    Archived
-                </Badge>
-            );
-        case 'retrieving':
-            return (
-                <Badge
-                    variant="secondary"
-                    className="bg-primary/10 text-primary"
-                >
-                    Retrieving
-                </Badge>
-            );
-        case 'available':
-            return (
-                <Badge
-                    variant="secondary"
-                    className="bg-green-500/10 text-green-600"
-                >
-                    Available
-                </Badge>
-            );
-    }
+function getFileExtension(name: string): string {
+    const parts = name.split('.');
+    return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+}
+
+function getFileTypeInfo(name: string): {
+    icon: typeof FileIcon;
+    colorClass: string;
+} {
+    const ext = getFileExtension(name);
+
+    const imageExts = [
+        'jpg',
+        'jpeg',
+        'png',
+        'gif',
+        'svg',
+        'webp',
+        'bmp',
+        'ico',
+    ];
+    const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv'];
+    const audioExts = ['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a'];
+    const archiveExts = ['zip', 'tar', 'gz', 'rar', '7z', 'bz2'];
+    const codeExts = [
+        'js',
+        'ts',
+        'tsx',
+        'jsx',
+        'py',
+        'rb',
+        'go',
+        'rs',
+        'java',
+        'c',
+        'cpp',
+        'h',
+        'css',
+        'html',
+        'json',
+        'yaml',
+        'yml',
+        'xml',
+        'sql',
+        'sh',
+    ];
+    const docExts = [
+        'pdf',
+        'doc',
+        'docx',
+        'txt',
+        'md',
+        'rtf',
+        'xls',
+        'xlsx',
+        'csv',
+        'ppt',
+        'pptx',
+    ];
+
+    if (imageExts.includes(ext))
+        return { icon: FileImage, colorClass: 'text-rose-500 bg-rose-500/10' };
+    if (videoExts.includes(ext))
+        return {
+            icon: FileVideo,
+            colorClass: 'text-purple-500 bg-purple-500/10',
+        };
+    if (audioExts.includes(ext))
+        return {
+            icon: FileAudio,
+            colorClass: 'text-amber-500 bg-amber-500/10',
+        };
+    if (archiveExts.includes(ext))
+        return {
+            icon: FileArchive,
+            colorClass: 'text-orange-500 bg-orange-500/10',
+        };
+    if (codeExts.includes(ext))
+        return {
+            icon: FileCode,
+            colorClass: 'text-emerald-500 bg-emerald-500/10',
+        };
+    if (docExts.includes(ext))
+        return { icon: FileText, colorClass: 'text-blue-500 bg-blue-500/10' };
+    return { icon: FileIcon, colorClass: 'text-muted-foreground bg-muted' };
+}
+
+function StatusDot({ status }: { status: DerivedStatus }) {
+    return (
+        <span className="inline-flex items-center gap-1.5">
+            <span
+                className={cn(
+                    'relative inline-block size-2 rounded-full',
+                    status === 'archived' && 'bg-muted-foreground/50',
+                    status === 'retrieving' && 'bg-blue-500',
+                    status === 'available' && 'bg-emerald-500'
+                )}
+            >
+                {status === 'retrieving' && (
+                    <span className="absolute inset-0 animate-ping rounded-full bg-blue-500/60" />
+                )}
+            </span>
+            <span
+                className={cn(
+                    'text-xs capitalize',
+                    status === 'archived' && 'text-muted-foreground',
+                    status === 'retrieving' &&
+                        'text-blue-600 dark:text-blue-400',
+                    status === 'available' &&
+                        'text-emerald-600 dark:text-emerald-400'
+                )}
+            >
+                {status}
+            </span>
+        </span>
+    );
 }
 
 export function FileBrowser() {
@@ -169,6 +262,13 @@ export function FileBrowser() {
         (f) => deriveStatus(f) === 'archived'
     );
 
+    const statusCounts = {
+        archived: files.filter((f) => deriveStatus(f) === 'archived').length,
+        retrieving: files.filter((f) => deriveStatus(f) === 'retrieving')
+            .length,
+        available: files.filter((f) => deriveStatus(f) === 'available').length,
+    };
+
     const toggleSort = (key: SortKey) => {
         if (sortKey === key) {
             setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -209,11 +309,15 @@ export function FileBrowser() {
 
     if (isLoading) {
         return (
-            <Card>
-                <CardContent className="flex items-center justify-center py-16">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </CardContent>
-            </Card>
+            <div className="flex flex-col items-center justify-center py-24">
+                <div className="relative">
+                    <div className="size-12 rounded-xl bg-muted" />
+                    <Loader2 className="absolute inset-0 m-auto size-5 animate-spin text-muted-foreground" />
+                </div>
+                <p className="mt-4 text-sm text-muted-foreground">
+                    Loading vault...
+                </p>
+            </div>
         );
     }
 
@@ -221,32 +325,71 @@ export function FileBrowser() {
 
     if (isEmpty) {
         return (
-            <Card>
-                <CardContent className="flex flex-col items-center justify-center py-16">
-                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                        <FolderArchive className="h-8 w-8 text-muted-foreground" />
+            <div className="flex flex-col items-center justify-center py-24">
+                <div className="relative mb-6">
+                    <div className="flex size-20 items-center justify-center rounded-2xl border border-dashed border-border bg-muted/50">
+                        <Snowflake
+                            className="size-8 text-muted-foreground/60"
+                            strokeWidth={1.5}
+                        />
                     </div>
-                    <h3 className="mb-2 text-lg font-semibold">No files yet</h3>
-                    <p className="mb-4 text-center text-muted-foreground">
-                        Upload your first files to get started with deep
-                        storage.
-                    </p>
-                    <Button
-                        nativeButton={false}
-                        render={<a href="/dashboard/upload" />}
-                    >
-                        Upload files
-                    </Button>
-                </CardContent>
-            </Card>
+                </div>
+                <h3 className="text-lg font-semibold tracking-tight">
+                    Your vault is empty
+                </h3>
+                <p className="mt-1.5 max-w-xs text-center text-sm text-muted-foreground">
+                    Upload files to archive them in deep cold storage. Retrieval
+                    takes 3-12 hours when you need them.
+                </p>
+                <Button
+                    nativeButton={false}
+                    render={<a href="/dashboard/upload" />}
+                    className="mt-6"
+                >
+                    Upload files
+                </Button>
+            </div>
         );
     }
 
     return (
         <div className="space-y-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="relative w-full sm:max-w-xs">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            {/* Stats bar */}
+            {files.length > 0 && (
+                <div className="flex items-center gap-4 text-sm">
+                    <span className="font-medium tabular-nums">
+                        {files.length} file{files.length !== 1 ? 's' : ''}
+                    </span>
+                    <span className="h-3.5 w-px bg-border" />
+                    <div className="flex items-center gap-3 text-muted-foreground">
+                        {statusCounts.archived > 0 && (
+                            <span className="flex items-center gap-1.5">
+                                <span className="size-1.5 rounded-full bg-muted-foreground/50" />
+                                {statusCounts.archived} archived
+                            </span>
+                        )}
+                        {statusCounts.retrieving > 0 && (
+                            <span className="flex items-center gap-1.5">
+                                <span className="relative size-1.5 rounded-full bg-blue-500">
+                                    <span className="absolute inset-0 animate-ping rounded-full bg-blue-500/60" />
+                                </span>
+                                {statusCounts.retrieving} retrieving
+                            </span>
+                        )}
+                        {statusCounts.available > 0 && (
+                            <span className="flex items-center gap-1.5">
+                                <span className="size-1.5 rounded-full bg-emerald-500" />
+                                {statusCounts.available} available
+                            </span>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Toolbar */}
+            <div className="flex items-center justify-between gap-3">
+                <div className="relative w-full max-w-xs">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                         placeholder="Search files..."
                         value={searchQuery}
@@ -254,124 +397,60 @@ export function FileBrowser() {
                         className="pl-9"
                     />
                 </div>
-                <div className="flex items-center gap-2">
-                    {selectedFiles.length > 0 && (
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm text-muted-foreground">
-                                {selectedFiles.length} selected
-                            </span>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={handleBulkRetrieval}
-                                disabled={
-                                    !hasArchivedSelected ||
-                                    bulkRetrievalMutation.isPending
-                                }
-                            >
-                                {bulkRetrievalMutation.isPending ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                    <RotateCw className="mr-2 h-4 w-4" />
-                                )}
-                                Retrieve
-                            </Button>
-                            <AlertDialog>
-                                <AlertDialogTrigger
-                                    render={
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="text-destructive hover:text-destructive bg-transparent"
-                                        />
-                                    }
-                                    disabled={deleteManyMutation.isPending}
-                                >
-                                    {deleteManyMutation.isPending ? (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    ) : (
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                    )}
-                                    Delete
-                                </AlertDialogTrigger>
-                                <AlertDialogPopup>
-                                    <AlertDialogTitle>
-                                        Delete {selectedFiles.length} file
-                                        {selectedFiles.length > 1 ? 's' : ''}?
-                                    </AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                        This action cannot be undone. The
-                                        selected files will be permanently
-                                        deleted.
-                                    </AlertDialogDescription>
-                                    <div className="flex justify-end gap-2">
-                                        <AlertDialogCancel>
-                                            Cancel
-                                        </AlertDialogCancel>
-                                        <AlertDialogAction
-                                            onClick={handleBulkDelete}
-                                        >
-                                            Delete
-                                        </AlertDialogAction>
-                                    </div>
-                                </AlertDialogPopup>
-                            </AlertDialog>
-                        </div>
-                    )}
+                <div className="flex items-center gap-1.5">
                     {hasRestoringFiles && (
                         <Button
                             variant="ghost"
-                            size="icon"
+                            size="icon-sm"
                             onClick={invalidateFileList}
                             title="Refresh"
                         >
-                            <RotateCw className="h-4 w-4" />
+                            <RotateCw className="size-4" />
                         </Button>
                     )}
-                    <div className="flex items-center rounded-lg border border-border">
-                        <Button
-                            variant="ghost"
-                            size="sm"
+                    <div className="flex items-center rounded-lg border border-border p-0.5">
+                        <button
+                            type="button"
                             className={cn(
-                                'rounded-r-none',
-                                viewMode === 'list' && 'bg-muted'
+                                'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors',
+                                viewMode === 'list' &&
+                                    'bg-muted text-foreground shadow-sm'
                             )}
                             onClick={() => setViewMode('list')}
                         >
-                            <LayoutList className="h-4 w-4" />
+                            <LayoutList className="size-3.5" />
                             <span className="sr-only">List view</span>
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
+                        </button>
+                        <button
+                            type="button"
                             className={cn(
-                                'rounded-l-none',
-                                viewMode === 'grid' && 'bg-muted'
+                                'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors',
+                                viewMode === 'grid' &&
+                                    'bg-muted text-foreground shadow-sm'
                             )}
                             onClick={() => setViewMode('grid')}
                         >
-                            <LayoutGrid className="h-4 w-4" />
+                            <LayoutGrid className="size-3.5" />
                             <span className="sr-only">Grid view</span>
-                        </Button>
+                        </button>
                     </div>
                 </div>
             </div>
 
+            {/* Content */}
             {filteredFiles.length === 0 ? (
-                <Card>
-                    <CardContent className="flex flex-col items-center justify-center py-12">
-                        <Search className="mb-4 h-8 w-8 text-muted-foreground" />
-                        <p className="text-muted-foreground">
-                            No files match your search
-                        </p>
-                    </CardContent>
-                </Card>
+                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16">
+                    <Search className="mb-3 size-5 text-muted-foreground/60" />
+                    <p className="text-sm text-muted-foreground">
+                        No files match &ldquo;{searchQuery}&rdquo;
+                    </p>
+                </div>
             ) : viewMode === 'list' ? (
-                <Card>
+                <Card className="py-0">
                     <Table>
                         <TableHeader>
-                            <TableRow>
-                                <TableHead className="w-12">
+                            <TableRow className="hover:bg-transparent">
+                                <TableHead className="w-12 pl-4">
                                     <Checkbox
                                         checked={
                                             selectedFiles.length ===
@@ -382,37 +461,41 @@ export function FileBrowser() {
                                     />
                                 </TableHead>
                                 <TableHead>
-                                    <Button
-                                        variant="ghost"
-                                        className="-ml-4 h-8"
+                                    <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
                                         onClick={() => toggleSort('name')}
                                     >
                                         Name
-                                        <ArrowUpDown className="ml-2 h-4 w-4" />
-                                    </Button>
+                                        <ArrowUpDown className="size-3" />
+                                    </button>
                                 </TableHead>
                                 <TableHead>
-                                    <Button
-                                        variant="ghost"
-                                        className="-ml-4 h-8"
+                                    <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
                                         onClick={() => toggleSort('size')}
                                     >
                                         Size
-                                        <ArrowUpDown className="ml-2 h-4 w-4" />
-                                    </Button>
+                                        <ArrowUpDown className="size-3" />
+                                    </button>
                                 </TableHead>
                                 <TableHead>
-                                    <Button
-                                        variant="ghost"
-                                        className="-ml-4 h-8"
+                                    <button
+                                        type="button"
+                                        className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
                                         onClick={() => toggleSort('uploadedAt')}
                                     >
                                         Uploaded
-                                        <ArrowUpDown className="ml-2 h-4 w-4" />
-                                    </Button>
+                                        <ArrowUpDown className="size-3" />
+                                    </button>
                                 </TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead className="w-12"></TableHead>
+                                <TableHead>
+                                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                        Status
+                                    </span>
+                                </TableHead>
+                                <TableHead className="w-12" />
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -428,7 +511,7 @@ export function FileBrowser() {
                     </Table>
                 </Card>
             ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {sortedFiles.map((file) => (
                         <FileCard
                             key={file.id}
@@ -437,6 +520,82 @@ export function FileBrowser() {
                             onToggleSelect={() => toggleSelect(file.id)}
                         />
                     ))}
+                </div>
+            )}
+
+            {/* Floating selection bar */}
+            {selectedFiles.length > 0 && (
+                <div className="fixed inset-x-0 bottom-6 z-50 mx-auto w-fit animate-in fade-in slide-in-from-bottom-4">
+                    <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 shadow-lg">
+                        <span className="text-sm font-medium tabular-nums">
+                            {selectedFiles.length} selected
+                        </span>
+                        <span className="h-4 w-px bg-border" />
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={handleBulkRetrieval}
+                            disabled={
+                                !hasArchivedSelected ||
+                                bulkRetrievalMutation.isPending
+                            }
+                        >
+                            {bulkRetrievalMutation.isPending ? (
+                                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                            ) : (
+                                <RotateCw className="mr-1.5 size-3.5" />
+                            )}
+                            Retrieve
+                        </Button>
+                        <AlertDialog>
+                            <AlertDialogTrigger
+                                render={
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-destructive hover:text-destructive"
+                                    />
+                                }
+                                disabled={deleteManyMutation.isPending}
+                            >
+                                {deleteManyMutation.isPending ? (
+                                    <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                                ) : (
+                                    <Trash2 className="mr-1.5 size-3.5" />
+                                )}
+                                Delete
+                            </AlertDialogTrigger>
+                            <AlertDialogPopup>
+                                <AlertDialogTitle>
+                                    Delete {selectedFiles.length} file
+                                    {selectedFiles.length > 1 ? 's' : ''}?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    This action cannot be undone. The selected
+                                    files will be permanently deleted.
+                                </AlertDialogDescription>
+                                <div className="flex justify-end gap-2">
+                                    <AlertDialogCancel>
+                                        Cancel
+                                    </AlertDialogCancel>
+                                    <AlertDialogAction
+                                        onClick={handleBulkDelete}
+                                    >
+                                        Delete
+                                    </AlertDialogAction>
+                                </div>
+                            </AlertDialogPopup>
+                        </AlertDialog>
+                        <span className="h-4 w-px bg-border" />
+                        <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => setSelectedFiles([])}
+                        >
+                            <X className="size-3.5" />
+                            <span className="sr-only">Clear selection</span>
+                        </Button>
+                    </div>
                 </div>
             )}
         </div>
@@ -495,10 +654,12 @@ function useFileActions(file: File) {
 function FileRow({ file, isSelected, onToggleSelect }: FileItemProps) {
     const status = deriveStatus(file);
     const actions = useFileActions(file);
+    const { icon: TypeIcon, colorClass } = getFileTypeInfo(file.name);
+    const ext = getFileExtension(file.name);
 
     return (
-        <TableRow>
-            <TableCell>
+        <TableRow data-state={isSelected ? 'selected' : undefined}>
+            <TableCell className="pl-4">
                 <Checkbox
                     checked={isSelected}
                     onCheckedChange={onToggleSelect}
@@ -507,19 +668,35 @@ function FileRow({ file, isSelected, onToggleSelect }: FileItemProps) {
             </TableCell>
             <TableCell>
                 <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
-                        <FileIcon className="h-4 w-4 text-muted-foreground" />
+                    <div
+                        className={cn(
+                            'flex size-8 shrink-0 items-center justify-center rounded-lg',
+                            colorClass
+                        )}
+                    >
+                        <TypeIcon className="size-4" />
                     </div>
-                    <span className="font-medium">{file.name}</span>
+                    <div className="min-w-0">
+                        <p className="truncate font-medium leading-tight">
+                            {file.name}
+                        </p>
+                        {ext && (
+                            <p className="text-xs uppercase text-muted-foreground">
+                                {ext}
+                            </p>
+                        )}
+                    </div>
                 </div>
             </TableCell>
-            <TableCell className="text-muted-foreground">
+            <TableCell className="tabular-nums text-muted-foreground">
                 {formatBytes(file.size)}
             </TableCell>
             <TableCell className="text-muted-foreground">
                 {formatDate(file.createdAt)}
             </TableCell>
-            <TableCell>{getStatusBadge(status)}</TableCell>
+            <TableCell>
+                <StatusDot status={status} />
+            </TableCell>
             <TableCell>
                 <FileActions status={status} {...actions} />
             </TableCell>
@@ -530,26 +707,50 @@ function FileRow({ file, isSelected, onToggleSelect }: FileItemProps) {
 function FileCard({ file, isSelected, onToggleSelect }: FileItemProps) {
     const status = deriveStatus(file);
     const actions = useFileActions(file);
+    const { icon: TypeIcon, colorClass } = getFileTypeInfo(file.name);
+    const ext = getFileExtension(file.name);
 
     return (
-        <Card className="group relative">
+        <Card
+            className={cn(
+                'group relative cursor-default py-0 transition-colors',
+                isSelected && 'ring-2 ring-primary/30'
+            )}
+        >
             <CardContent className="p-4">
-                <div className="absolute right-2 top-2 flex items-center gap-1">
-                    <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={onToggleSelect}
-                        aria-label={`Select ${file.name}`}
-                    />
-                    <FileActions status={status} {...actions} />
+                <div className="mb-3 flex items-start justify-between">
+                    <div
+                        className={cn(
+                            'flex size-10 items-center justify-center rounded-lg',
+                            colorClass
+                        )}
+                    >
+                        <TypeIcon className="size-5" />
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 [&:has([data-state=open])]:opacity-100">
+                        <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={onToggleSelect}
+                            aria-label={`Select ${file.name}`}
+                        />
+                        <FileActions status={status} {...actions} />
+                    </div>
                 </div>
-                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
-                    <FileIcon className="h-6 w-6 text-muted-foreground" />
-                </div>
-                <p className="mb-1 truncate font-medium">{file.name}</p>
-                <p className="mb-2 text-sm text-muted-foreground">
-                    {formatBytes(file.size)}
+                <p className="truncate text-sm font-medium leading-tight">
+                    {file.name}
                 </p>
-                {getStatusBadge(status)}
+                <div className="mt-1.5 flex items-center justify-between">
+                    <span className="text-xs tabular-nums text-muted-foreground">
+                        {formatBytes(file.size)}
+                        {ext && (
+                            <>
+                                <span className="mx-1 text-border">/</span>
+                                <span className="uppercase">{ext}</span>
+                            </>
+                        )}
+                    </span>
+                    <StatusDot status={status} />
+                </div>
             </CardContent>
         </Card>
     );
@@ -575,9 +776,9 @@ function FileActions({
     return (
         <DropdownMenu>
             <DropdownMenuTrigger
-                render={<Button variant="ghost" size="icon" />}
+                render={<Button variant="ghost" size="icon-sm" />}
             >
-                <MoreHorizontal className="h-4 w-4" />
+                <MoreHorizontal className="size-4" />
                 <span className="sr-only">Actions</span>
             </DropdownMenuTrigger>
             <DropdownMenuPositioner align="end">
@@ -588,22 +789,22 @@ function FileActions({
                             disabled={isRetrieving}
                         >
                             {isRetrieving ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                <Loader2 className="mr-2 size-4 animate-spin" />
                             ) : (
-                                <Clock className="mr-2 h-4 w-4" />
+                                <Clock className="mr-2 size-4" />
                             )}
                             Request retrieval
                         </DropdownMenuItem>
                     )}
                     {status === 'available' && (
                         <DropdownMenuItem onClick={onDownload}>
-                            <Download className="mr-2 h-4 w-4" />
+                            <Download className="mr-2 size-4" />
                             Download
                         </DropdownMenuItem>
                     )}
                     {status === 'retrieving' && (
                         <DropdownMenuItem disabled>
-                            <RotateCw className="mr-2 h-4 w-4" />
+                            <RotateCw className="mr-2 size-4" />
                             Retrieving...
                         </DropdownMenuItem>
                     )}
@@ -614,9 +815,9 @@ function FileActions({
                         disabled={isDeleting}
                     >
                         {isDeleting ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            <Loader2 className="mr-2 size-4 animate-spin" />
                         ) : (
-                            <Trash2 className="mr-2 h-4 w-4" />
+                            <Trash2 className="mr-2 size-4" />
                         )}
                         Delete
                     </DropdownMenuItem>
