@@ -1,7 +1,7 @@
 ---
 title: AI Documentation
 created: 2025-12-29
-updated: 2026-01-03
+updated: 2026-03-07
 status: active
 tags:
     - ai
@@ -17,44 +17,33 @@ ai_summary: 'Central hub for AI-readable project documentation'
 
 Documentation optimized for AI assistants (Claude Code, Cursor) to understand and work with the Nexus codebase.
 
-## Purpose
-
-This folder contains context and instructions that help AI:
-
-- Understand the project instantly
-- Generate code matching project patterns
-- Follow naming conventions automatically
-- Avoid deprecated approaches
-- Maintain context across sessions
-
 ## Documents
 
 ### Core Context
 
-- [[context|Project Context]] - Detailed background, business logic, data model
-- [[conventions|Conventions]] - Naming, structure, style rules
-- [[conventions#Library (`apps/web/lib/`) Organization|lib/ organization]] - Where shared modules live and how to keep it scalable
-- [[patterns|Code Patterns]] - Implementation examples to follow
+- [[context|Project Context]] - Background, data model, tech stack
+- [[conventions|Conventions]] - Naming, structure, style rules (terse reference)
+- [[patterns|Code Patterns]] - Implementation examples
 
 ### Workflow
 
-- [[changelog|AI Changelog]] - Recent changes (read first for context)
-- [[prompts|Useful Prompts]] - Templates for common tasks
 - [[github-workflow|GitHub Workflow]] - Issue creation, relationships, and management
+
+### Detailed Conventions
+
+Full code examples and detailed explanations live in `docs/conventions/`:
+
+- [[../conventions/naming|Naming]] - File, component, function, variable naming
+- [[../conventions/typescript|TypeScript]] - Types, interfaces, imports
+- [[../conventions/components|Components]] - Structure, organization, comments
+- [[../conventions/error-handling|Error Handling]] - tRPC, boundaries, forms
+- [[../conventions/testing|Testing]] - Smoke tests, auth tests, unit tests
 
 ## Quick Start for AI
 
-1. **Read `CLAUDE.md`** (repo root) for quick project overview
-2. **Check `changelog.md`** for recent changes and context
-3. **Reference `patterns.md`** when generating code
-4. **Follow `conventions.md`** for naming and structure
-
-## Root Files
-
-| File           | Purpose                      |
-| -------------- | ---------------------------- |
-| `CLAUDE.md`    | Claude Code reads this first |
-| `.cursorrules` | Cursor IDE context           |
+1. **Read `CLAUDE.md`** (repo root) for project overview and commands
+2. **Reference `conventions.md`** for naming and structure rules
+3. **Check `patterns.md`** when generating code
 
 ## Related
 

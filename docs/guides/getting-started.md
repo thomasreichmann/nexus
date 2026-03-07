@@ -175,7 +175,6 @@ Before writing code, familiarize yourself with project conventions:
 
 - **[[../ai/conventions|Code Conventions]]** — Naming, structure, and style rules
 - **README.md** — Commands reference and project overview
-- **[[../ai/changelog|Changelog]]** — Recent changes (update this after significant work)
 
 ## GitHub Workflow
 

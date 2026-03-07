@@ -53,7 +53,6 @@ Before requesting review:
 - [ ] `pnpm typecheck` passes
 - [ ] `pnpm lint` passes
 - [ ] `pnpm -F web test:e2e:smoke` passes (if UI changed)
-- [ ] Updated `docs/ai/changelog.md` (if significant change)
 
 ## Labels
 
