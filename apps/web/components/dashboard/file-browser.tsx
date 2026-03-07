@@ -108,26 +108,11 @@ export function FileBrowser() {
     const invalidateFileList = () =>
         queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
 
-    const deleteMutation = useMutation(
-        trpc.files.delete.mutationOptions({
-            onSuccess: invalidateFileList,
-        })
-    );
-
     const deleteManyMutation = useMutation(
         trpc.files.deleteMany.mutationOptions({
             onSuccess() {
                 invalidateFileList();
                 setSelectedFiles([]);
-            },
-        })
-    );
-
-    const retrievalMutation = useMutation(
-        trpc.files.requestRetrieval.mutationOptions({
-            onSuccess() {
-                invalidateFileList();
-                toast.success('Retrieval request submitted');
             },
         })
     );
@@ -198,11 +183,6 @@ export function FileBrowser() {
         );
     };
 
-    function handleDelete(id: string) {
-        deleteMutation.reset();
-        deleteMutation.mutate({ id });
-    }
-
     function handleBulkDelete() {
         // TODO: Replace with AlertDialog component when available
         const count = selectedFiles.length;
@@ -216,11 +196,6 @@ export function FileBrowser() {
         }
     }
 
-    function handleRetrieval(fileId: string) {
-        retrievalMutation.reset();
-        retrievalMutation.mutate({ fileId });
-    }
-
     function handleBulkRetrieval() {
         const archivedIds = selectedFileObjects
             .filter((f) => deriveStatus(f) === 'archived')
@@ -228,17 +203,6 @@ export function FileBrowser() {
         if (archivedIds.length > 0) {
             bulkRetrievalMutation.reset();
             bulkRetrievalMutation.mutate({ fileIds: archivedIds });
-        }
-    }
-
-    async function handleDownload(fileId: string) {
-        try {
-            const { url } = await queryClient.fetchQuery(
-                trpc.files.getDownloadUrl.queryOptions({ fileId })
-            );
-            window.open(url, '_blank');
-        } catch {
-            toast.error('Failed to get download URL');
         }
     }
 
@@ -431,18 +395,6 @@ export function FileBrowser() {
                                     file={file}
                                     isSelected={selectedFiles.includes(file.id)}
                                     onToggleSelect={() => toggleSelect(file.id)}
-                                    onDelete={() => handleDelete(file.id)}
-                                    onRetrieval={() => handleRetrieval(file.id)}
-                                    onDownload={() => handleDownload(file.id)}
-                                    isDeleting={
-                                        deleteMutation.isPending &&
-                                        deleteMutation.variables?.id === file.id
-                                    }
-                                    isRetrieving={
-                                        retrievalMutation.isPending &&
-                                        retrievalMutation.variables?.fileId ===
-                                            file.id
-                                    }
                                 />
                             ))}
                         </TableBody>
@@ -456,17 +408,6 @@ export function FileBrowser() {
                             file={file}
                             isSelected={selectedFiles.includes(file.id)}
                             onToggleSelect={() => toggleSelect(file.id)}
-                            onDelete={() => handleDelete(file.id)}
-                            onRetrieval={() => handleRetrieval(file.id)}
-                            onDownload={() => handleDownload(file.id)}
-                            isDeleting={
-                                deleteMutation.isPending &&
-                                deleteMutation.variables?.id === file.id
-                            }
-                            isRetrieving={
-                                retrievalMutation.isPending &&
-                                retrievalMutation.variables?.fileId === file.id
-                            }
                         />
                     ))}
                 </div>
@@ -479,24 +420,54 @@ interface FileItemProps {
     file: File;
     isSelected: boolean;
     onToggleSelect: () => void;
-    onDelete: () => void;
-    onRetrieval: () => void;
-    onDownload: () => void;
-    isDeleting: boolean;
-    isRetrieving: boolean;
 }
 
-function FileRow({
-    file,
-    isSelected,
-    onToggleSelect,
-    onDelete,
-    onRetrieval,
-    onDownload,
-    isDeleting,
-    isRetrieving,
-}: FileItemProps) {
+function useFileActions(file: File) {
+    const trpc = useTRPC();
+    const queryClient = useQueryClient();
+    const listQueryKey = trpc.files.list.queryOptions().queryKey;
+
+    const invalidateFileList = () =>
+        queryClient.invalidateQueries({ queryKey: listQueryKey });
+
+    const deleteMutation = useMutation(
+        trpc.files.delete.mutationOptions({
+            onSuccess: invalidateFileList,
+        })
+    );
+
+    const retrievalMutation = useMutation(
+        trpc.files.requestRetrieval.mutationOptions({
+            onSuccess() {
+                invalidateFileList();
+                toast.success('Retrieval request submitted');
+            },
+        })
+    );
+
+    async function handleDownload() {
+        try {
+            const { url } = await queryClient.fetchQuery(
+                trpc.files.getDownloadUrl.queryOptions({ fileId: file.id })
+            );
+            window.open(url, '_blank');
+        } catch {
+            toast.error('Failed to get download URL');
+        }
+    }
+
+    return {
+        onDelete: () => deleteMutation.mutate({ id: file.id }),
+        onRetrieval: () => retrievalMutation.mutate({ fileId: file.id }),
+        onDownload: handleDownload,
+        isDeleting: deleteMutation.isPending,
+        isRetrieving: retrievalMutation.isPending,
+    };
+}
+
+function FileRow({ file, isSelected, onToggleSelect }: FileItemProps) {
     const status = deriveStatus(file);
+    const actions = useFileActions(file);
 
     return (
         <TableRow>
@@ -523,30 +494,15 @@ function FileRow({
             </TableCell>
             <TableCell>{getStatusBadge(status)}</TableCell>
             <TableCell>
-                <FileActions
-                    status={status}
-                    onDelete={onDelete}
-                    onRetrieval={onRetrieval}
-                    onDownload={onDownload}
-                    isDeleting={isDeleting}
-                    isRetrieving={isRetrieving}
-                />
+                <FileActions status={status} {...actions} />
             </TableCell>
         </TableRow>
     );
 }
 
-function FileCard({
-    file,
-    isSelected,
-    onToggleSelect,
-    onDelete,
-    onRetrieval,
-    onDownload,
-    isDeleting,
-    isRetrieving,
-}: FileItemProps) {
+function FileCard({ file, isSelected, onToggleSelect }: FileItemProps) {
     const status = deriveStatus(file);
+    const actions = useFileActions(file);
 
     return (
         <Card className="group relative">
@@ -557,14 +513,7 @@ function FileCard({
                         onCheckedChange={onToggleSelect}
                         aria-label={`Select ${file.name}`}
                     />
-                    <FileActions
-                        status={status}
-                        onDelete={onDelete}
-                        onRetrieval={onRetrieval}
-                        onDownload={onDownload}
-                        isDeleting={isDeleting}
-                        isRetrieving={isRetrieving}
-                    />
+                    <FileActions status={status} {...actions} />
                 </div>
                 <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
                     <FileIcon className="h-6 w-6 text-muted-foreground" />
