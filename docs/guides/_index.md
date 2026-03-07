@@ -23,6 +23,7 @@ Technical documentation, setup guides, and implementation patterns for the Nexus
 - [[background-jobs|Background Jobs Runbook]] - AWS resource ARNs, deployment, and operations
 - [[webhooks|Webhook Handling]] - Webhook handler architecture, idempotency, and testing patterns
 - [[db-subpaths|@nexus/db Subpath Exports]] - Subpath conventions, factory pattern, DB type rationale
+- [[e2e-testing-guidelines|E2E Testing Guidelines]] - When to write Playwright E2E tests vs smoke + unit tests
 
 ## Dataview
 

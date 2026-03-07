@@ -145,10 +145,11 @@ docs/
 
 ### Required Reading
 
-| When                             | You MUST read                                               |
-| -------------------------------- | ----------------------------------------------------------- |
-| Before writing any code          | `docs/ai/conventions.md` - naming, structure, code style    |
-| When unfamiliar with the project | `docs/ai/context.md` - data model, architecture, tech stack |
+| When                             | You MUST read                                                         |
+| -------------------------------- | --------------------------------------------------------------------- |
+| Before writing any code          | `docs/ai/conventions.md` - naming, structure, code style              |
+| When unfamiliar with the project | `docs/ai/context.md` - data model, architecture, tech stack           |
+| When writing UI features         | `docs/guides/e2e-testing-guidelines.md` - E2E test decision framework |
 
 ## Git Commits
 
