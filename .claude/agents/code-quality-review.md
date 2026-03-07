@@ -29,6 +29,10 @@ Review code changes for quality issues that hurt maintainability.
 - Deep nesting that could be flattened
 - Overly clever code that's hard to read
 
+### Shared Mutation Anti-pattern (React Query)
+
+- A single `useMutation` shared across list items (e.g., one delete mutation at the parent passed to each row via callbacks). Each item in a list should own its own `useMutation` instance so mutation state (pending/error/success) is isolated per item. A shared mutation causes sequential operations to race with query invalidation re-renders.
+
 ### Scope Creep
 
 - Changes unrelated to the issue

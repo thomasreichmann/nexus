@@ -2,12 +2,15 @@ import {
     insertJob,
     deleteJob,
     countJobsByStatus,
+    insertFile,
+    deleteFile,
     type DbJob,
+    type DbFile,
     type JobCounts,
 } from './db';
 
 export { countJobsByStatus };
-export type { DbJob, JobCounts };
+export type { DbJob, DbFile, JobCounts };
 
 export interface SeedJobsOptions {
     pending?: number;
@@ -60,5 +63,28 @@ export async function seedJobs(options: SeedJobsOptions): Promise<DbJob[]> {
 export async function cleanupJobs(jobs: DbJob[]): Promise<void> {
     for (const job of jobs) {
         await deleteJob(job.id);
+    }
+}
+
+export async function seedFiles(
+    userId: string,
+    count: number
+): Promise<DbFile[]> {
+    const files: DbFile[] = [];
+    for (let i = 0; i < count; i++) {
+        const file = await insertFile({
+            userId,
+            name: `e2e-test-file-${i + 1}.txt`,
+            size: 1024 * (i + 1),
+            s3Key: `e2e/${userId}/test-file-${Date.now()}-${i}`,
+        });
+        files.push(file);
+    }
+    return files;
+}
+
+export async function cleanupFiles(files: DbFile[]): Promise<void> {
+    for (const file of files) {
+        await deleteFile(file.id);
     }
 }
