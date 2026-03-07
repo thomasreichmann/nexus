@@ -17,10 +17,10 @@ Nexus uses a dual-logger architecture with [pino](https://getpino.io/) for both 
 
 ## Overview
 
-| Logger | Import | Environment | Output |
-|--------|--------|-------------|--------|
-| Server | `@/server/lib/logger` | Server-side only | Terminal (pretty in dev, JSON in prod) |
-| Client | `@/lib/logger` | Client-side only | Dev: transmitted to terminal via `/api/dev-log` |
+| Logger | Import                | Environment      | Output                                          |
+| ------ | --------------------- | ---------------- | ----------------------------------------------- |
+| Server | `@/server/lib/logger` | Server-side only | Terminal (pretty in dev, JSON in prod)          |
+| Client | `@/lib/logger`        | Client-side only | Dev: transmitted to terminal via `/api/dev-log` |
 
 ## Server Logger
 
@@ -97,6 +97,7 @@ export const log = pino({
 ```
 
 **Why:** `'use client'` marks the hydration boundary but doesn't prevent server-side execution. Without this guard, log calls in client components would run twice:
+
 1. During SSR (server) - pino outputs raw JSON to terminal
 2. During hydration (browser) - pino transmits to `/api/dev-log`
 
@@ -104,14 +105,13 @@ When `enabled: false`, pino becomes a noop - all log methods do nothing.
 
 ## When to Use Which
 
-| Scenario | Logger |
-|----------|--------|
-| API routes, tRPC procedures | Server (`@/server/lib/logger`) |
-| Server components | Server (`@/server/lib/logger`) |
-| Client components (`'use client'`) | Client (`@/lib/logger`) |
-| Shared utilities | Depends on where they run |
+| Scenario                           | Logger                         |
+| ---------------------------------- | ------------------------------ |
+| API routes, tRPC procedures        | Server (`@/server/lib/logger`) |
+| Server components                  | Server (`@/server/lib/logger`) |
+| Client components (`'use client'`) | Client (`@/lib/logger`)        |
+| Shared utilities                   | Depends on where they run      |
 
 ## Related
 
 - [[server-architecture|Server Architecture]] - tRPC logging middleware
-- [[../ai/changelog|Changelog]] - Implementation history (#8, #9)

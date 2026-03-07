@@ -19,8 +19,8 @@ Implement a `ready`-labeled GitHub issue: research, implement, review, commit, a
 **Current branch:**
 !`git branch --show-current 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "Unknown"`
 
-**Recent changelog entries:**
-!`head -50 docs/ai/changelog.md 2>/dev/null || echo "No changelog found"`
+**Recent commits:**
+!`git log --oneline -20 2>/dev/null || echo "No git history found"`
 
 ## Prerequisites
 
@@ -179,6 +179,5 @@ Provide a summary including:
 - ALWAYS research the codebase to understand existing patterns
 - NEVER skip self-review — always spawn review agents before committing
 - Follow conventions in `docs/ai/conventions.md`
-- Update `docs/ai/changelog.md` after significant changes
 - Keep commits focused and atomic; reference the issue number in commits and PR
 - For edge cases (issue not ready, lint errors, branch conflicts, etc.), see `templates/edge-cases.md`

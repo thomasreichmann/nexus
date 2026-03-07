@@ -123,8 +123,7 @@ Use Obsidian callouts for emphasis:
 
 1. Update the `updated:` date in frontmatter
 2. Make your changes
-3. Update [[changelog]] if significant
-4. Commit with descriptive message
+3. Commit with descriptive message
 
 ## Visual Tools
 

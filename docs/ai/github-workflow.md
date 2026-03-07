@@ -1,7 +1,7 @@
 ---
 title: GitHub Workflow for AI Agents
 created: 2026-01-18
-updated: 2026-01-18
+updated: 2026-03-07
 status: active
 tags:
     - ai
@@ -15,270 +15,121 @@ ai_summary: 'How AI agents should create, link, and manage GitHub issues'
 
 # GitHub Workflow for AI Agents
 
-How to create, link, and manage GitHub issues using the CLI and GraphQL API.
-
 ## Creating Issues
 
-### Before Creating
-
-1. **Get explicit approval** - Draft the issue content and present to user first
-2. **Check for duplicates** - Search existing issues: `gh issue list --search "keyword"`
-3. **Determine scope** - One issue per coherent unit of work
-
-### Issue Format
+1. **Get explicit approval** — draft content, present to user first
+2. **Check duplicates** — `gh issue list --search "keyword"`
+3. **One issue per coherent unit of work**
 
 ```bash
-gh issue create --title "Brief descriptive title" --label "area,type" --body "$(cat <<'EOF'
+gh issue create --title "Brief title" --label "area,type,status" --body "$(cat <<'EOF'
 ## Description
-
-What and why (2-3 sentences).
+What and why.
 
 ## Acceptance Criteria
-
-- [ ] Specific, testable criterion
-- [ ] Another criterion
+- [ ] Criterion
 
 ## Out of Scope
-
-- What this issue explicitly doesn't cover
-- Potential follow-up work (create separate issues)
+- Not covered
 EOF
 )"
 ```
 
 ### Labels
 
-Combine project + area + type:
+| Area           | Type       | Status          |
+| -------------- | ---------- | --------------- |
+| `frontend`     | `feature`  | `needs-details` |
+| `backend`      | `bug`      | `ready`         |
+| `infra`        | `chore`    |                 |
+| `docs`         | `refactor` |                 |
+| `architecture` |            |                 |
 
-**Project Labels (Optional)**
+Project labels: `trpc-devtools` (for npm package), none for Nexus core.
+Every issue MUST have exactly one status label (`needs-details` or `ready`).
 
-| Label           | Scope                                         |
-| --------------- | --------------------------------------------- |
-| `trpc-devtools` | Work on the trpc-devtools npm package         |
-| _(no label)_    | Nexus core (default, no project label needed) |
+### Prerequisites Checklist
 
-**Area Labels**
-
-| Area           | Type       |
-| -------------- | ---------- |
-| `frontend`     | `feature`  |
-| `backend`      | `bug`      |
-| `infra`        | `chore`    |
-| `docs`         | `refactor` |
-| `architecture` |            |
-
-Example: `--label "backend,feature"` or `--label "trpc-devtools,frontend,bug"`
-
-### Status Labels (Required)
-
-Every issue MUST have exactly one status label:
-
-| Status          | When to Use                                           |
-| --------------- | ----------------------------------------------------- |
-| `needs-details` | Issue is a draft or missing acceptance criteria       |
-| `ready`         | Issue is fully specified and ready for implementation |
-
-**An issue without a status label is invalid.** When creating issues:
-
-- Use `needs-details` for drafts, incomplete specs, or when scope needs refinement
-- Use `ready` only when all acceptance criteria are clear and actionable
-
-Example: `--label "backend,feature,needs-details"`
-
-## Prerequisites Checklist
-
-Before creating an implementation issue, check:
-
-1. **What modules does this need?** (e.g., `lib/storage/`, `lib/stripe/`)
-2. **Do those modules exist?** If not, create foundational issues first
-3. **What patterns does this follow?** Check if architecture is documented
-4. **What database tables does this need?** List schema dependencies
-
-If any prerequisite doesn't exist, create it as a separate issue with `architecture` label and add it to "Blocked By".
+Before creating: check what modules/tables/patterns are needed. If prerequisites don't exist, create foundational issues first with `architecture` label.
 
 ## Issue Relationships
 
-GitHub supports native issue relationships. Use these instead of just mentioning issues in descriptions.
-
-### Sub-Issues (Parent/Child)
-
-When work naturally breaks down into a parent task with child tasks:
+### GraphQL Helper Pattern
 
 ```bash
-# Get issue node IDs
+# Get node IDs for any two issues
 gh api graphql -f query='
 query {
   repository(owner: "OWNER", name: "REPO") {
-    parent: issue(number: 30) { id }
-    child: issue(number: 31) { id }
+    a: issue(number: NUM_A) { id }
+    b: issue(number: NUM_B) { id }
   }
 }'
+```
 
-# Link child to parent
+### Sub-Issues (Parent/Child)
+
+Use when B is _part of_ A.
+
+```bash
 gh api graphql -f query='
-mutation {
-  addSubIssue(input: {
-    issueId: "PARENT_NODE_ID",
-    subIssueId: "CHILD_NODE_ID"
-  }) {
-    issue {
-      number
-      subIssues(first: 5) {
-        nodes { number title }
-      }
+mutation { addSubIssue(input: { issueId: "PARENT_ID", subIssueId: "CHILD_ID" }) { issue { number } } }'
+
+# Remove:
+mutation { removeSubIssue(input: { issueId: "PARENT_ID", subIssueId: "CHILD_ID" }) { issue { number } } }
+```
+
+### Blocking (Dependencies)
+
+Use when B must complete _before_ A can start.
+
+```bash
+gh api graphql -f query='
+mutation { addBlockedBy(input: { issueId: "BLOCKED_ID", blockingIssueId: "BLOCKING_ID" }) { issue { number } } }'
+
+# Remove:
+mutation { removeBlockedBy(input: { issueId: "BLOCKED_ID", blockingIssueId: "BLOCKING_ID" }) { issue { number } } }
+```
+
+### Check Relationships
+
+```bash
+gh api graphql -f query='
+query {
+  repository(owner: "OWNER", name: "REPO") {
+    issue(number: NUM) {
+      title
+      parent { number title }
+      subIssues(first: 10) { nodes { number title state } }
     }
   }
 }'
 ```
 
-### When to Use Sub-Issues
-
-| Scenario                                        | Action                                   |
-| ----------------------------------------------- | ---------------------------------------- |
-| Implementation plan mentions "follow-up ticket" | Create as sub-issue of main ticket       |
-| Feature breaks into phases                      | Parent = epic, children = phases         |
-| Bug fix reveals related issues                  | Parent = original, children = discovered |
-| Config/setup depends on core implementation     | Core = parent, config = child            |
-
-### Removing Sub-Issue Relationship
-
-```bash
-gh api graphql -f query='
-mutation {
-  removeSubIssue(input: {
-    issueId: "PARENT_NODE_ID",
-    subIssueId: "CHILD_NODE_ID"
-  }) {
-    issue { number }
-  }
-}'
-```
-
-### Blocking Relationships (Dependencies)
-
-For issues that block other issues (but are NOT parent/child), use the native blocking API:
-
-```bash
-# Get node IDs
-gh api graphql -f query='
-query {
-  repository(owner: "OWNER", name: "REPO") {
-    blocked: issue(number: BLOCKED_NUM) { id }
-    blocking: issue(number: BLOCKING_NUM) { id }
-  }
-}'
-
-# Add blocking relationship
-gh api graphql -f query='
-mutation {
-  addBlockedBy(input: {
-    issueId: "BLOCKED_NODE_ID",
-    blockingIssueId: "BLOCKING_NODE_ID"
-  }) {
-    issue { number }
-    blockingIssue { number }
-  }
-}'
-
-# Remove blocking relationship
-gh api graphql -f query='
-mutation {
-  removeBlockedBy(input: {
-    issueId: "BLOCKED_NODE_ID",
-    blockingIssueId: "BLOCKING_NODE_ID"
-  }) {
-    issue { number }
-  }
-}'
-```
-
-### When to Use Each Relationship
-
-| Question                              | Answer | Relationship                |
-| ------------------------------------- | ------ | --------------------------- |
-| Is B _part of_ A?                     | Yes    | Sub-issue (B is child of A) |
-| Must B complete _before_ A can start? | Yes    | Blocking (B blocks A)       |
-
-**Example**: "Add files table to schema" blocks "File upload API" - use blocking, not sub-issue.
-
 ## Updating Issues
 
-### Add Comment
-
 ```bash
-gh issue comment 42 --body "Status update or clarification"
-```
-
-### Update Labels
-
-```bash
-# Add label
+gh issue comment 42 --body "Status update"
 gh issue edit 42 --add-label "ready"
-
-# Remove label
 gh issue edit 42 --remove-label "blocked"
-```
-
-### Close Issue
-
-```bash
 gh issue close 42 --comment "Completed in PR #45"
 ```
 
 ## Referencing Issues
 
-| Context                 | Format                              |
-| ----------------------- | ----------------------------------- |
-| Commit message          | `feat: add login form (#42)`        |
-| PR body                 | `Closes #42` (auto-closes on merge) |
-| Related but not closing | `Related to #42`                    |
+| Context      | Format                       |
+| ------------ | ---------------------------- |
+| Commit       | `feat: add login form (#42)` |
+| PR (closing) | `Closes #42`                 |
+| PR (related) | `Related to #42`             |
 
 ## Token Efficiency
 
-- Fetch only needed fields: `gh issue view 42 --json title,body,state`
-- Don't re-fetch issues already read in the session
-- Use `--limit` when listing: `gh issue list --limit 10`
-
-## Examples
-
-### Create Feature with Follow-up
-
-```bash
-# Create main issue
-gh issue create --title "Add error verbosity to logging" \
-  --label "backend,feature" \
-  --body "..."
-# Returns: Created issue #30
-
-# Create follow-up as separate issue first
-gh issue create --title "Add env var config for error verbosity" \
-  --label "backend,chore" \
-  --body "..."
-# Returns: Created issue #31
-
-# Link as sub-issue
-gh api graphql -f query='...'  # Link #31 as child of #30
-```
-
-### Check Issue Relationships
-
-```bash
-gh api graphql -f query='
-query {
-  repository(owner: "OWNER", name: "REPO") {
-    issue(number: 30) {
-      title
-      subIssues(first: 10) {
-        nodes { number title state }
-      }
-      parent { number title }
-    }
-  }
-}'
-```
+- Fetch only needed fields: `--json title,body,state`
+- Don't re-fetch issues already read
+- Use `--limit` when listing
 
 ## Related
 
 - [[conventions|Code Conventions]] - Commit message format
-- [[../guides/github-workflow|GitHub Workflow (UI)]] - Human guide for GitHub UI
 - [[_index|Back to AI Docs]]

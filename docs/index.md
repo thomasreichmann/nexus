@@ -1,7 +1,7 @@
 ---
 title: Nexus
 created: 2025-12-29
-updated: 2025-12-29
+updated: 2026-03-07
 status: active
 tags:
     - index
@@ -60,10 +60,8 @@ Welcome to the Nexus project documentation. This is your central hub for buildin
 ### AI Documentation
 
 - [[ai/_index|AI Docs Hub]] - Context for AI assistants
-- [[ai/changelog|AI Changelog]] - Recent AI changes (read first!)
 - [[ai/patterns|Code Patterns]] - Implementation templates
 - [[ai/conventions|Conventions]] - Naming and style rules
-- [[ai/prompts|Useful Prompts]] - Task prompt templates
 
 ### Resources
 
@@ -133,4 +131,4 @@ SORT file.folder, file.name ASC
 > This is a "poster" project - keep it simple, focused, and not over-engineered.
 
 > [!note] For AI Assistants
-> See `CLAUDE.md` (repo root) for quick context, or `docs/ai/changelog.md` for recent changes.
+> See `CLAUDE.md` (repo root) for quick context, or `docs/ai/` for detailed AI documentation.
