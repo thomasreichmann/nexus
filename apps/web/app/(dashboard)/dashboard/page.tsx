@@ -1,6 +1,8 @@
 'use client';
 
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
+import { FileIcon, ArrowRight, RotateCw, Archive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -9,12 +11,12 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { FileIcon, ArrowRight, RotateCw, Archive } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useSession } from '@/lib/auth/client';
 import { useTRPC } from '@/lib/trpc/client';
-import { useQuery } from '@tanstack/react-query';
+import { StorageUsageBar } from '@/components/dashboard/StorageUsageBar';
+import { StorageByType } from '@/components/dashboard/StorageByType';
+import { UploadHistory } from '@/components/dashboard/UploadHistory';
 
 export default function DashboardPage() {
     const trpc = useTRPC();
@@ -40,27 +42,7 @@ export default function DashboardPage() {
                 </p>
             </div>
 
-            <div className="grid gap-6 sm:grid-cols-3">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium">
-                            Storage Used
-                        </CardTitle>
-                        <FileIcon className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">
-                            {stats?.storageUsedGb ?? '-'} GB
-                        </div>
-                        <Progress
-                            value={stats?.storageUsedGb ?? 0}
-                            className="mt-3 h-2"
-                        />
-                        <p className="mt-2 text-xs text-muted-foreground">
-                            of {stats?.storageTotalGb ?? '-'} GB total
-                        </p>
-                    </CardContent>
-                </Card>
+            <div className="grid gap-6 sm:grid-cols-2">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                         <CardTitle className="text-sm font-medium">
@@ -104,6 +86,13 @@ export default function DashboardPage() {
                     </CardContent>
                 </Card>
             </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+                <StorageUsageBar />
+                <StorageByType />
+            </div>
+
+            <UploadHistory />
 
             <div className="flex flex-col gap-6 lg:flex-row">
                 <Card className="flex-1">
