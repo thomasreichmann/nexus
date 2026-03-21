@@ -14,20 +14,28 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useSession } from '@/lib/auth/client';
 import { useTRPC } from '@/lib/trpc/client';
+import { formatBytes, formatRelativeTime } from '@/lib/format';
 import { StorageUsageBar } from '@/components/dashboard/StorageUsageBar';
 import { StorageByType } from '@/components/dashboard/StorageByType';
 import { UploadHistory } from '@/components/dashboard/UploadHistory';
+
+function getRetrievalBadge(status: string, tier: string): string {
+    if (status === 'ready') return 'Ready';
+    return tier.charAt(0).toUpperCase() + tier.slice(1);
+}
 
 export default function DashboardPage() {
     const trpc = useTRPC();
     const { data: session } = useSession();
 
-    const { data: stats } = useQuery(trpc.dashboard.getStats.queryOptions());
-    const { data: recentUploads } = useQuery(
-        trpc.dashboard.getRecentUploads.queryOptions()
+    const { data: storageUsage } = useQuery(
+        trpc.storage.getUsage.queryOptions()
     );
-    const { data: retrievals } = useQuery(
-        trpc.dashboard.getRetrievals.queryOptions()
+    const { data: filesData } = useQuery(
+        trpc.files.list.queryOptions({ limit: 5 })
+    );
+    const { data: activeRetrievals } = useQuery(
+        trpc.retrievals.listActive.queryOptions()
     );
 
     return (
@@ -52,7 +60,7 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">
-                            {stats?.filesStored ?? '-'}
+                            {storageUsage?.fileCount ?? '-'}
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
                             files archived
@@ -75,13 +83,10 @@ export default function DashboardPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">
-                            {stats?.activeRetrievals ?? '-'}
+                            {activeRetrievals?.length ?? '-'}
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
-                            in progress
-                        </p>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                            Next ready in ~2 hours
+                            active
                         </p>
                     </CardContent>
                 </Card>
@@ -114,56 +119,64 @@ export default function DashboardPage() {
                         </div>
                     </CardHeader>
                     <CardContent>
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead>
-                                    <tr className="border-b text-left text-xs text-muted-foreground">
-                                        <th className="pb-3 font-medium">
-                                            Name
-                                        </th>
-                                        <th className="pb-3 font-medium">
-                                            Size
-                                        </th>
-                                        <th className="pb-3 font-medium">
-                                            Uploaded
-                                        </th>
-                                        <th className="pb-3 text-right font-medium">
-                                            Status
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y">
-                                    {recentUploads?.map((file) => (
-                                        <tr key={file.name} className="group">
-                                            <td className="py-3">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted">
-                                                        <FileIcon className="h-4 w-4 text-muted-foreground" />
-                                                    </div>
-                                                    <span className="font-medium">
-                                                        {file.name}
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td className="py-3 text-sm text-muted-foreground">
-                                                {file.size}
-                                            </td>
-                                            <td className="py-3 text-sm text-muted-foreground">
-                                                {file.date}
-                                            </td>
-                                            <td className="py-3 text-right">
-                                                <Badge
-                                                    variant="secondary"
-                                                    className="capitalize"
-                                                >
-                                                    {file.status}
-                                                </Badge>
-                                            </td>
+                        {filesData?.files && filesData.files.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full">
+                                    <thead>
+                                        <tr className="border-b text-left text-xs text-muted-foreground">
+                                            <th className="pb-3 font-medium">
+                                                Name
+                                            </th>
+                                            <th className="pb-3 font-medium">
+                                                Size
+                                            </th>
+                                            <th className="pb-3 font-medium">
+                                                Uploaded
+                                            </th>
+                                            <th className="pb-3 text-right font-medium">
+                                                Status
+                                            </th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                        {filesData.files.map((file) => (
+                                            <tr key={file.id} className="group">
+                                                <td className="py-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted">
+                                                            <FileIcon className="h-4 w-4 text-muted-foreground" />
+                                                        </div>
+                                                        <span className="truncate font-medium">
+                                                            {file.name}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="py-3 text-sm text-muted-foreground">
+                                                    {formatBytes(file.size)}
+                                                </td>
+                                                <td className="py-3 text-sm text-muted-foreground">
+                                                    {formatRelativeTime(
+                                                        file.createdAt
+                                                    )}
+                                                </td>
+                                                <td className="py-3 text-right">
+                                                    <Badge
+                                                        variant="secondary"
+                                                        className="capitalize"
+                                                    >
+                                                        {file.status}
+                                                    </Badge>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <div className="py-8 text-center text-sm text-muted-foreground">
+                                No files uploaded yet
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 
@@ -177,31 +190,36 @@ export default function DashboardPage() {
                                 </CardTitle>
                             </div>
                             <Badge variant="secondary" className="text-xs">
-                                {retrievals?.length ?? 0} active
+                                {activeRetrievals?.length ?? 0} active
                             </Badge>
                         </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                        {retrievals && retrievals.length > 0 ? (
-                            retrievals.map((file) => (
+                        {activeRetrievals && activeRetrievals.length > 0 ? (
+                            activeRetrievals.map((r) => (
                                 <div
-                                    key={file.name}
+                                    key={r.id}
                                     className="rounded-lg border border-border bg-muted/50 p-3"
                                 >
                                     <div className="flex items-center justify-between gap-2">
                                         <p className="truncate text-sm font-medium">
-                                            {file.name}
+                                            {r.fileName}
                                         </p>
                                         <Badge
                                             variant="outline"
                                             className="shrink-0 text-xs text-primary"
                                         >
-                                            {file.readyIn}
+                                            {getRetrievalBadge(
+                                                r.status,
+                                                r.tier
+                                            )}
                                         </Badge>
                                     </div>
                                     <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                                        <span>{file.size}</span>
-                                        <span>{file.requestedAt}</span>
+                                        <span>{formatBytes(r.fileSize)}</span>
+                                        <span>
+                                            {formatRelativeTime(r.createdAt)}
+                                        </span>
                                     </div>
                                 </div>
                             ))

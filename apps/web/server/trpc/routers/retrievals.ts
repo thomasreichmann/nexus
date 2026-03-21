@@ -6,4 +6,9 @@ export const retrievalsRouter = router({
         const retrievalRepo = createRetrievalRepo(ctx.db);
         return retrievalRepo.findByUser(ctx.session.user.id);
     }),
+
+    listActive: protectedProcedure.query(({ ctx }) => {
+        const retrievalRepo = createRetrievalRepo(ctx.db);
+        return retrievalRepo.findActiveByUserWithFiles(ctx.session.user.id);
+    }),
 });
