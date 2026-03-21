@@ -25,7 +25,7 @@ export function DashboardSidebar() {
                 </div>
                 <span className="text-xl font-semibold">Nexus</span>
             </div>
-            <nav className="flex-1 p-4">
+            <nav className="flex-1 overflow-y-auto p-4">
                 <ul className="space-y-1">
                     {navItems.map((item) => {
                         const isActive = pathname === item.href;
