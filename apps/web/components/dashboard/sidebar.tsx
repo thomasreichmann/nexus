@@ -5,12 +5,17 @@ import { usePathname } from 'next/navigation';
 import { useSession } from '@/lib/auth/client';
 import { cn } from '@/lib/cn';
 import { getNavItems } from '@/lib/dashboard/navigation';
+import { formatBytes } from '@/lib/format';
+import { useTRPC } from '@/lib/trpc/client';
+import { useQuery } from '@tanstack/react-query';
 import { Archive } from 'lucide-react';
 
 export function DashboardSidebar() {
     const pathname = usePathname();
     const { data: session } = useSession();
     const navItems = getNavItems(session?.user?.role);
+    const trpc = useTRPC();
+    const { data: usage } = useQuery(trpc.storage.getUsage.queryOptions());
 
     return (
         <aside className="hidden w-64 flex-col border-r border-border bg-sidebar md:flex">
@@ -20,7 +25,7 @@ export function DashboardSidebar() {
                 </div>
                 <span className="text-xl font-semibold">Nexus</span>
             </div>
-            <nav className="flex-1 p-4">
+            <nav className="flex-1 overflow-y-auto p-4">
                 <ul className="space-y-1">
                     {navItems.map((item) => {
                         const isActive = pathname === item.href;
@@ -49,10 +54,17 @@ export function DashboardSidebar() {
                         Storage used
                     </p>
                     <div className="mt-2 h-2 overflow-hidden rounded-full bg-sidebar-border">
-                        <div className="h-full w-1/3 rounded-full bg-primary" />
+                        <div
+                            className="h-full rounded-full bg-primary transition-all"
+                            style={{
+                                width: `${usage?.percentage ?? 0}%`,
+                            }}
+                        />
                     </div>
                     <p className="mt-2 text-xs text-muted-foreground">
-                        34.2 GB of 100 GB
+                        {usage
+                            ? `${formatBytes(usage.usedBytes)} of ${formatBytes(usage.quotaBytes)}`
+                            : 'Loading...'}
                     </p>
                 </div>
             </div>

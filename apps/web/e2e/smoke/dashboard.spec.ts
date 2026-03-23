@@ -13,6 +13,9 @@ test.describe('Dashboard Pages', () => {
         await expect(
             page.getByRole('heading', { name: /welcome back/i })
         ).toBeVisible();
+        await expect(page.getByText('Storage Usage')).toBeVisible();
+        await expect(page.getByText('Storage by Type')).toBeVisible();
+        await expect(page.getByText('Upload History')).toBeVisible();
         await expect(page.getByText('Recent Uploads')).toBeVisible();
 
         expect(errors).toEqual([]);

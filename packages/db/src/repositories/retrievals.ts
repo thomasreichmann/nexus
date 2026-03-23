@@ -38,6 +38,49 @@ function findByUser(db: DB, userId: string): Promise<Retrieval[]> {
     });
 }
 
+export interface ActiveRetrievalWithFile {
+    id: string;
+    fileId: string;
+    status: Retrieval['status'];
+    tier: Retrieval['tier'];
+    createdAt: Date;
+    initiatedAt: Date | null;
+    readyAt: Date | null;
+    expiresAt: Date | null;
+    fileName: string;
+    fileSize: number;
+}
+
+async function findActiveByUserWithFiles(
+    db: DB,
+    userId: string
+): Promise<ActiveRetrievalWithFile[]> {
+    const rows = await db
+        .select({
+            id: schema.retrievals.id,
+            fileId: schema.retrievals.fileId,
+            status: schema.retrievals.status,
+            tier: schema.retrievals.tier,
+            createdAt: schema.retrievals.createdAt,
+            initiatedAt: schema.retrievals.initiatedAt,
+            readyAt: schema.retrievals.readyAt,
+            expiresAt: schema.retrievals.expiresAt,
+            fileName: schema.files.name,
+            fileSize: schema.files.size,
+        })
+        .from(schema.retrievals)
+        .innerJoin(schema.files, eq(schema.retrievals.fileId, schema.files.id))
+        .where(
+            and(
+                eq(schema.retrievals.userId, userId),
+                inArray(schema.retrievals.status, ACTIVE_STATUSES)
+            )
+        )
+        .orderBy(schema.retrievals.createdAt);
+
+    return rows;
+}
+
 async function insert(db: DB, data: NewRetrieval): Promise<Retrieval> {
     const [retrieval] = await db
         .insert(schema.retrievals)
@@ -74,6 +117,7 @@ export const createRetrievalRepo = createRepository({
     findByFileId,
     findByFileIds,
     findByUser,
+    findActiveByUserWithFiles,
     insert,
     insertMany,
     updateStatus,

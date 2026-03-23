@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, notInArray, inArray, ne } from 'drizzle-orm';
+import { eq, and, desc, sql, notInArray, inArray, ne, gte } from 'drizzle-orm';
 import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
@@ -97,7 +97,7 @@ async function sumStorageByUser(db: DB, userId: string): Promise<number> {
             total: sql<number>`coalesce(sum(${schema.files.size}), 0)::bigint`,
         })
         .from(schema.files)
-        .where(eq(schema.files.userId, userId));
+        .where(buildUserFilesWhereClause(userId, false));
 
     return Number(result?.total ?? 0);
 }
@@ -179,6 +179,96 @@ async function softDeleteForUser(
         .returning();
 }
 
+export interface StorageByCategory {
+    category: string;
+    totalBytes: number;
+    fileCount: number;
+}
+
+async function sumStorageByMimeCategory(
+    db: DB,
+    userId: string
+): Promise<StorageByCategory[]> {
+    const rows = await db
+        .select({
+            category: sql<string>`
+                CASE
+                    WHEN ${schema.files.mimeType} LIKE 'image/%' THEN 'Images'
+                    WHEN ${schema.files.mimeType} LIKE 'video/%' THEN 'Videos'
+                    WHEN ${schema.files.mimeType} LIKE 'application/pdf'
+                        OR ${schema.files.mimeType} LIKE 'application/%document%'
+                        OR ${schema.files.mimeType} LIKE 'application/%sheet%'
+                        OR ${schema.files.mimeType} LIKE 'text/%' THEN 'Documents'
+                    WHEN ${schema.files.mimeType} LIKE 'application/zip'
+                        OR ${schema.files.mimeType} LIKE 'application/gzip'
+                        OR ${schema.files.mimeType} LIKE 'application/x-tar'
+                        OR ${schema.files.mimeType} LIKE 'application/x-rar%'
+                        OR ${schema.files.mimeType} LIKE 'application/x-7z%' THEN 'Archives'
+                    ELSE 'Other'
+                END`.as('category'),
+            totalBytes:
+                sql<number>`coalesce(sum(${schema.files.size}), 0)::bigint`.as(
+                    'total_bytes'
+                ),
+            fileCount: sql<number>`count(*)::int`.as('file_count'),
+        })
+        .from(schema.files)
+        .where(
+            and(
+                eq(schema.files.userId, userId),
+                notInArray(schema.files.status, hiddenStatuses)
+            )
+        )
+        .groupBy(sql`category`)
+        .orderBy(sql`total_bytes DESC`);
+
+    return rows.map((r) => ({
+        category: r.category,
+        totalBytes: Number(r.totalBytes),
+        fileCount: r.fileCount,
+    }));
+}
+
+export interface DailyUploadVolume {
+    date: string;
+    totalBytes: number;
+}
+
+async function uploadHistoryByDay(
+    db: DB,
+    userId: string,
+    days: number = 30
+): Promise<DailyUploadVolume[]> {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const rows = await db
+        .select({
+            date: sql<string>`to_char(${schema.files.createdAt}, 'YYYY-MM-DD')`.as(
+                'date'
+            ),
+            totalBytes:
+                sql<number>`coalesce(sum(${schema.files.size}), 0)::bigint`.as(
+                    'total_bytes'
+                ),
+        })
+        .from(schema.files)
+        .where(
+            and(
+                eq(schema.files.userId, userId),
+                notInArray(schema.files.status, hiddenStatuses),
+                gte(schema.files.createdAt, since)
+            )
+        )
+        .groupBy(sql`date`)
+        .orderBy(sql`date ASC`);
+
+    return rows.map((r) => ({
+        date: r.date,
+        totalBytes: Number(r.totalBytes),
+    }));
+}
+
 export const createFileRepo = createRepository({
     findById,
     findByS3Key,
@@ -193,6 +283,8 @@ export const createFileRepo = createRepository({
     softDelete,
     softDeleteMany,
     softDeleteForUser,
+    sumStorageByMimeCategory,
+    uploadHistoryByDay,
 });
 
 export type FileRepo = ReturnType<typeof createFileRepo>;

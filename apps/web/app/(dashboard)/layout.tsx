@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
     return (
-        <div className="flex min-h-screen">
+        <div className="flex h-screen overflow-hidden">
             <DashboardSidebar />
             <div className="flex flex-1 flex-col">
                 <DashboardHeader />
