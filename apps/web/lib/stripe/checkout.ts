@@ -6,6 +6,7 @@ interface CreateCheckoutSessionParams {
     priceId: string;
     successUrl: string;
     cancelUrl: string;
+    mode?: Stripe.Checkout.SessionCreateParams.Mode;
 }
 
 export async function createCheckoutSession(
@@ -13,7 +14,7 @@ export async function createCheckoutSession(
 ): Promise<Stripe.Checkout.Session> {
     return stripeClient.checkout.sessions.create({
         customer: params.customerId,
-        mode: 'subscription',
+        mode: params.mode ?? 'subscription',
         line_items: [{ price: params.priceId, quantity: 1 }],
         success_url: params.successUrl,
         cancel_url: params.cancelUrl,
