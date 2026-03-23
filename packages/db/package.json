@@ -24,6 +24,10 @@
             "import": "./src/repositories/retrievals.ts",
             "types": "./src/repositories/retrievals.ts"
         },
+        "./repo/subscriptions": {
+            "import": "./src/repositories/subscriptions.ts",
+            "types": "./src/repositories/subscriptions.ts"
+        },
         "./repo/webhooks": {
             "import": "./src/repositories/webhooks.ts",
             "types": "./src/repositories/webhooks.ts"

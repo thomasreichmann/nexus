@@ -6,8 +6,8 @@ import {
     InvalidStateError,
 } from '@/server/errors';
 import { s3 } from '@/lib/storage';
+import { DEFAULT_STORAGE_LIMIT_BYTES } from './constants';
 
-const MAX_STORAGE_BYTES = 10 * 1024 * 1024 * 1024; // 10GB for MVP
 const PRESIGNED_URL_EXPIRY_SECONDS = 900; // 15 minutes
 const MULTIPART_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
 const MULTIPART_URL_EXPIRY_SECONDS = 3600; // 1 hour
@@ -53,7 +53,7 @@ async function initiateUpload(
 ): Promise<InitiateUploadResult> {
     const fileRepo = createFileRepo(db);
     const currentUsage = await fileRepo.sumStorageByUser(userId);
-    if (currentUsage + input.sizeBytes > MAX_STORAGE_BYTES) {
+    if (currentUsage + input.sizeBytes > DEFAULT_STORAGE_LIMIT_BYTES) {
         throw new QuotaExceededError('Storage quota exceeded');
     }
 
@@ -116,7 +116,7 @@ async function initiateMultipartUpload(
 ): Promise<InitiateMultipartResult> {
     const fileRepo = createFileRepo(db);
     const currentUsage = await fileRepo.sumStorageByUser(userId);
-    if (currentUsage + input.sizeBytes > MAX_STORAGE_BYTES) {
+    if (currentUsage + input.sizeBytes > DEFAULT_STORAGE_LIMIT_BYTES) {
         throw new QuotaExceededError('Storage quota exceeded');
     }
 
