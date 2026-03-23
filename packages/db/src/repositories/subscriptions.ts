@@ -3,14 +3,18 @@ import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
 
-export type Subscription = typeof schema.subscriptions.$inferSelect;
+export type SubscriptionPlan = Pick<
+    typeof schema.subscriptions.$inferSelect,
+    'storageLimit' | 'planTier'
+>;
 
 function findByUserId(
     db: DB,
     userId: string
-): Promise<Subscription | undefined> {
+): Promise<SubscriptionPlan | undefined> {
     return db.query.subscriptions.findFirst({
         where: eq(schema.subscriptions.userId, userId),
+        columns: { storageLimit: true, planTier: true },
     });
 }
 

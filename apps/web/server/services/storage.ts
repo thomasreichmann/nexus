@@ -1,4 +1,5 @@
 import type { DB } from '@nexus/db';
+import { type planTierEnum } from '@nexus/db/schema';
 import {
     createFileRepo,
     type StorageByCategory,
@@ -12,7 +13,7 @@ interface StorageUsage {
     quotaBytes: number;
     percentage: number;
     fileCount: number;
-    planTier: string;
+    planTier: (typeof planTierEnum.enumValues)[number];
 }
 
 async function getUsage(db: DB, userId: string): Promise<StorageUsage> {
