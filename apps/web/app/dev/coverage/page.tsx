@@ -40,6 +40,129 @@ const LABELS: Record<MetricKey, string> = {
     lines: 'Lines',
 };
 
+const R = 56;
+const SW = 7;
+const CIRC = 2 * Math.PI * R;
+const VIEW = (R + SW) * 2;
+const MID = VIEW / 2;
+
+/* ------------------------------------------------------------------ */
+/*  Page                                                               */
+/* ------------------------------------------------------------------ */
+
+export default function CoveragePage() {
+    const [data, setData] = useState<CoverageResponse | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [ready, setReady] = useState(false);
+
+    useEffect(() => {
+        fetch('/api/dev/coverage')
+            .then((r) => {
+                if (!r.ok) throw new Error('Could not load coverage data');
+                return r.json();
+            })
+            .then(setData)
+            .catch((e: unknown) =>
+                setError(e instanceof Error ? e.message : 'Unknown error')
+            );
+    }, []);
+
+    useEffect(() => {
+        if (!data) return;
+        const raf = requestAnimationFrame(() => setReady(true));
+        return () => cancelAnimationFrame(raf);
+    }, [data]);
+
+    if (error) {
+        return (
+            <Shell>
+                <div className="flex flex-1 items-center justify-center">
+                    <p className="text-sm text-muted-foreground">{error}</p>
+                </div>
+            </Shell>
+        );
+    }
+
+    if (!data) {
+        return (
+            <Shell>
+                <div className="flex flex-1 items-center justify-center">
+                    <p className="animate-pulse font-mono text-sm text-muted-foreground">
+                        Loading coverage&hellip;
+                    </p>
+                </div>
+            </Shell>
+        );
+    }
+
+    const hasData = data.workspaces.some((ws) => !ws.error);
+    if (!hasData) {
+        return (
+            <Shell>
+                <div className="flex flex-1 items-center justify-center text-center">
+                    <div>
+                        <p className="font-medium">No coverage data found</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            Run{' '}
+                            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                                pnpm test:coverage
+                            </code>{' '}
+                            first.
+                        </p>
+                    </div>
+                </div>
+            </Shell>
+        );
+    }
+
+    return (
+        <Shell>
+            <div className="mx-auto w-full max-w-5xl px-8 py-10">
+                <header className="mb-10">
+                    <p className="font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-muted-foreground">
+                        Coverage
+                    </p>
+                    <h1 className="mt-1.5 text-3xl font-bold tracking-tight">
+                        Test Coverage
+                    </h1>
+                </header>
+
+                <section className="mb-10">
+                    <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
+                        {METRICS.map((m, i) => (
+                            <RingGauge
+                                key={m}
+                                pct={data.total[m].pct}
+                                label={LABELS[m]}
+                                covered={data.total[m].covered}
+                                total={data.total[m].total}
+                                ready={ready}
+                                delay={i * 120}
+                            />
+                        ))}
+                    </div>
+                </section>
+
+                <section>
+                    <p className="mb-4 font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-muted-foreground">
+                        Workspaces
+                    </p>
+                    <div className="space-y-3">
+                        {data.workspaces.map((ws, i) => (
+                            <WorkspaceCard
+                                key={ws.name}
+                                ws={ws}
+                                ready={ready}
+                                delay={300 + i * 80}
+                            />
+                        ))}
+                    </div>
+                </section>
+            </div>
+        </Shell>
+    );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Colors                                                             */
 /* ------------------------------------------------------------------ */
@@ -92,12 +215,6 @@ function useCounter(target: number, ms: number, delay: number, go: boolean) {
 /* ------------------------------------------------------------------ */
 /*  Ring gauge                                                         */
 /* ------------------------------------------------------------------ */
-
-const R = 56;
-const SW = 7;
-const CIRC = 2 * Math.PI * R;
-const VIEW = (R + SW) * 2;
-const MID = VIEW / 2;
 
 function RingGauge({
     pct,
@@ -282,125 +399,5 @@ function Shell({ children }: { children: React.ReactNode }) {
         >
             {children}
         </div>
-    );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Page                                                               */
-/* ------------------------------------------------------------------ */
-
-export default function CoveragePage() {
-    const [data, setData] = useState<CoverageResponse | null>(null);
-    const [error, setError] = useState<string | null>(null);
-    const [ready, setReady] = useState(false);
-
-    useEffect(() => {
-        fetch('/api/dev/coverage')
-            .then((r) => {
-                if (!r.ok) throw new Error('Could not load coverage data');
-                return r.json();
-            })
-            .then(setData)
-            .catch((e: unknown) =>
-                setError(e instanceof Error ? e.message : 'Unknown error')
-            );
-    }, []);
-
-    useEffect(() => {
-        if (!data) return;
-        const raf = requestAnimationFrame(() => setReady(true));
-        return () => cancelAnimationFrame(raf);
-    }, [data]);
-
-    if (error) {
-        return (
-            <Shell>
-                <div className="flex flex-1 items-center justify-center">
-                    <p className="text-sm text-muted-foreground">{error}</p>
-                </div>
-            </Shell>
-        );
-    }
-
-    if (!data) {
-        return (
-            <Shell>
-                <div className="flex flex-1 items-center justify-center">
-                    <p className="animate-pulse font-mono text-sm text-muted-foreground">
-                        Loading coverage&hellip;
-                    </p>
-                </div>
-            </Shell>
-        );
-    }
-
-    const hasData = data.workspaces.some((ws) => !ws.error);
-    if (!hasData) {
-        return (
-            <Shell>
-                <div className="flex flex-1 items-center justify-center text-center">
-                    <div>
-                        <p className="font-medium">No coverage data found</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            Run{' '}
-                            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                                pnpm test:coverage
-                            </code>{' '}
-                            first.
-                        </p>
-                    </div>
-                </div>
-            </Shell>
-        );
-    }
-
-    return (
-        <Shell>
-            <div className="mx-auto w-full max-w-5xl px-8 py-10">
-                {/* Header */}
-                <header className="mb-10">
-                    <p className="font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-muted-foreground">
-                        Coverage
-                    </p>
-                    <h1 className="mt-1.5 text-3xl font-bold tracking-tight">
-                        Test Coverage
-                    </h1>
-                </header>
-
-                {/* Total gauges */}
-                <section className="mb-10">
-                    <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
-                        {METRICS.map((m, i) => (
-                            <RingGauge
-                                key={m}
-                                pct={data.total[m].pct}
-                                label={LABELS[m]}
-                                covered={data.total[m].covered}
-                                total={data.total[m].total}
-                                ready={ready}
-                                delay={i * 120}
-                            />
-                        ))}
-                    </div>
-                </section>
-
-                {/* Workspace breakdown */}
-                <section>
-                    <p className="mb-4 font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-muted-foreground">
-                        Workspaces
-                    </p>
-                    <div className="space-y-3">
-                        {data.workspaces.map((ws, i) => (
-                            <WorkspaceCard
-                                key={ws.name}
-                                ws={ws}
-                                ready={ready}
-                                delay={300 + i * 80}
-                            />
-                        ))}
-                    </div>
-                </section>
-            </div>
-        </Shell>
     );
 }

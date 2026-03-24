@@ -21,14 +21,6 @@ import { StorageUsageBar } from '@/components/dashboard/StorageUsageBar';
 import { StorageByType } from '@/components/dashboard/StorageByType';
 import { UploadHistory } from '@/components/dashboard/UploadHistory';
 
-function getRetrievalBadge(
-    status: Retrieval['status'],
-    tier: Retrieval['tier']
-): string {
-    if (status === 'ready') return 'Ready';
-    return tier.charAt(0).toUpperCase() + tier.slice(1);
-}
-
 export default function DashboardPage() {
     const trpc = useTRPC();
     const { data: session } = useSession();
@@ -270,4 +262,12 @@ export default function DashboardPage() {
             </div>
         </div>
     );
+}
+
+function getRetrievalBadge(
+    status: Retrieval['status'],
+    tier: Retrieval['tier']
+): string {
+    if (status === 'ready') return 'Ready';
+    return tier.charAt(0).toUpperCase() + tier.slice(1);
 }
