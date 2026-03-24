@@ -5,6 +5,7 @@ import {
     ListChecks,
     Settings,
     Upload,
+    Wrench,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -23,6 +24,12 @@ export const dashboardNavigation: NavItem[] = [
         name: 'Jobs',
         href: '/dashboard/admin/jobs',
         icon: ListChecks,
+        isAdminOnly: true,
+    },
+    {
+        name: 'Dev Tools',
+        href: '/dashboard/admin/dev-tools',
+        icon: Wrench,
         isAdminOnly: true,
     },
 ];
