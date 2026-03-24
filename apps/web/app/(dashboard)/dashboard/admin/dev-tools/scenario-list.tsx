@@ -6,15 +6,19 @@ import { cn } from '@/lib/cn';
 import { Check, Loader2, Play } from 'lucide-react';
 import {
     DEFAULT_DISTRIBUTION,
-    ME_VALUE,
     SCENARIO_PRESETS,
     type ScenarioPreset,
 } from './presets';
-import { TierBar, useSeedTools } from './use-seed-tools';
+import { TierBar } from './TierBar';
+import { useSeedTools } from './useSeedTools';
 
-export function ScenarioList() {
-    const { users, seed, isPending } = useSeedTools();
-    const [targetUser, setTargetUser] = useState(ME_VALUE);
+interface ScenarioListProps {
+    targetUser: string;
+    targetLabel: string;
+}
+
+export function ScenarioList({ targetUser, targetLabel }: ScenarioListProps) {
+    const { seed, isPending } = useSeedTools();
     const [runningKey, setRunningKey] = useState<string | null>(null);
 
     const [lastResult, setLastResult] = useState<{
@@ -46,35 +50,12 @@ export function ScenarioList() {
         );
     }
 
-    const targetLabel =
-        targetUser === ME_VALUE
-            ? 'me'
-            : (users.find((u) => u.id === targetUser)?.name ?? 'user');
-
     return (
         <Card className="flex flex-col overflow-hidden border-border/50 bg-zinc-900/60">
-            <div className="flex items-center justify-between border-b border-border/30 px-3 py-2">
+            <div className="border-b border-border/30 px-3 py-2">
                 <span className="font-mono text-xs text-emerald-400/80">
                     {'>'} scenarios
                 </span>
-                <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-xs text-muted-foreground/50">
-                        target →
-                    </span>
-                    <select
-                        aria-label="Scenario target user"
-                        value={targetUser}
-                        onChange={(e) => setTargetUser(e.target.value)}
-                        className="h-6 rounded border border-border/40 bg-zinc-950/60 px-2 pr-6 font-mono text-xs text-foreground outline-none transition-colors hover:border-border/60 focus:border-emerald-400/40"
-                    >
-                        <option value={ME_VALUE}>me (current user)</option>
-                        {users.map((u) => (
-                            <option key={u.id} value={u.id}>
-                                {u.name} ({u.email})
-                            </option>
-                        ))}
-                    </select>
-                </div>
             </div>
 
             <div className="flex-1 divide-y divide-border/10">

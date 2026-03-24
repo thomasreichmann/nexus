@@ -7,12 +7,15 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/cn';
 import { Database, Loader2 } from 'lucide-react';
-import { ME_VALUE } from './presets';
-import { TierBar, useSeedTools } from './use-seed-tools';
+import { TierBar } from './TierBar';
+import { useSeedTools } from './useSeedTools';
 
-export function CustomSeedForm() {
-    const { users, seed, isPending, isSuccess, lastData } = useSeedTools();
-    const [targetUser, setTargetUser] = useState(ME_VALUE);
+interface CustomSeedFormProps {
+    targetUser: string;
+}
+
+export function CustomSeedForm({ targetUser }: CustomSeedFormProps) {
+    const { seed, isPending, isSuccess, lastData } = useSeedTools();
     const [fileCount, setFileCount] = useState(50);
     const [standard, setStandard] = useState(10);
     const [glacier, setGlacier] = useState(60);
@@ -43,28 +46,6 @@ export function CustomSeedForm() {
             </div>
             <CardContent className="space-y-3 p-3">
                 <form onSubmit={handleSubmit} className="space-y-3">
-                    <div className="space-y-1.5">
-                        <Label
-                            htmlFor="custom-seed-target"
-                            className="font-mono text-xs uppercase tracking-wider text-muted-foreground"
-                        >
-                            Target
-                        </Label>
-                        <select
-                            id="custom-seed-target"
-                            value={targetUser}
-                            onChange={(e) => setTargetUser(e.target.value)}
-                            className="h-8 w-full rounded-md border border-border bg-zinc-950/50 px-2 font-mono text-sm"
-                        >
-                            <option value={ME_VALUE}>me (current user)</option>
-                            {users.map((u) => (
-                                <option key={u.id} value={u.id}>
-                                    {u.name} ({u.email})
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
                     <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1.5">
                             <Label

@@ -12,6 +12,15 @@ export interface ScenarioPreset {
 
 export const ME_VALUE = '__me__';
 
+export function getTargetLabel(
+    targetUser: string,
+    users: { id: string; name: string }[]
+): string {
+    return targetUser === ME_VALUE
+        ? 'me'
+        : (users.find((u) => u.id === targetUser)?.name ?? 'user');
+}
+
 export const DEFAULT_DISTRIBUTION = {
     standard: 0.33,
     glacier: 0.34,
