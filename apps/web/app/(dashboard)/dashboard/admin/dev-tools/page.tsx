@@ -34,22 +34,11 @@ export default function AdminDevToolsPage() {
 
             <SeedSummary />
 
-            <div className="flex items-center gap-2 font-mono text-xs">
-                <span className="text-muted-foreground/50">target →</span>
-                <select
-                    aria-label="Target user"
-                    value={targetUser}
-                    onChange={(e) => setTargetUser(e.target.value)}
-                    className="h-7 rounded border border-border/40 bg-zinc-950/60 px-2 pr-6 font-mono text-xs text-foreground outline-none transition-colors hover:border-border/60 focus:border-emerald-400/40"
-                >
-                    <option value={ME_VALUE}>me (current user)</option>
-                    {users.map((u) => (
-                        <option key={u.id} value={u.id}>
-                            {u.name} ({u.email})
-                        </option>
-                    ))}
-                </select>
-            </div>
+            <TargetUserSelect
+                users={users}
+                value={targetUser}
+                onChange={setTargetUser}
+            />
 
             <div className="grid grid-cols-[1fr_340px] gap-4">
                 <ScenarioList
@@ -64,6 +53,33 @@ export default function AdminDevToolsPage() {
                     />
                 </div>
             </div>
+        </div>
+    );
+}
+
+interface TargetUserSelectProps {
+    users: { id: string; name: string; email: string }[];
+    value: string;
+    onChange: (value: string) => void;
+}
+
+function TargetUserSelect({ users, value, onChange }: TargetUserSelectProps) {
+    return (
+        <div className="flex items-center gap-2 font-mono text-xs">
+            <span className="text-muted-foreground/50">target →</span>
+            <select
+                aria-label="Target user"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                className="h-7 rounded border border-border/40 bg-zinc-950/60 px-2 pr-6 font-mono text-xs text-foreground outline-none transition-colors hover:border-border/60 focus:border-emerald-400/40"
+            >
+                <option value={ME_VALUE}>me (current user)</option>
+                {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                        {u.name} ({u.email})
+                    </option>
+                ))}
+            </select>
         </div>
     );
 }
