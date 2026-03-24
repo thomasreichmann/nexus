@@ -40,12 +40,12 @@ export default function AdminDevToolsPage() {
                 onChange={setTargetUser}
             />
 
-            <div className="grid grid-cols-[1fr_340px] gap-4">
+            <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
                 <ScenarioList
                     targetUser={targetUser}
                     targetLabel={targetLabel}
                 />
-                <div className="space-y-4">
+                <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
                     <CustomSeedForm targetUser={targetUser} />
                     <CleanupControls
                         targetUser={targetUser}
