@@ -1,4 +1,4 @@
-# Gaps: Nexus vs PRD CloudVault
+# Gaps: Nexus
 
 Análise do que falta implementar no Nexus comparando com o PRD completo. Organizado por fase (MVP → v1.5 → v2.0) e com indicação do que já existe.
 
@@ -86,13 +86,9 @@ Análise do que falta implementar no Nexus comparando com o PRD completo. Organi
 | -------------------------------------- | ------ | ---- | ----------------------------------------------------------- |
 | Stripe subscriptions                   | ✅     | —    | Planos starter/pro/max/enterprise                           |
 | PIX via Stripe Brazil                  | ❌     | MVP  | 0.33% merchant fee vs 2–5% cartão — sem PIX = 68%+ abandono |
-| Boleto bancário                        | ❌     | MVP  | Método de pagamento essencial no Brasil                     |
-| Parcelamento em até 12x no cartão      | ❌     | MVP  | Padrão brasileiro                                           |
-| Pricing em BRL                         | ❌     | MVP  | R$29/69/149 conforme PRD                                    |
 | Desconto de 20% no plano anual         | ❌     | MVP  | Anual como opção com desconto                               |
 | Trial de 14 dias sem cartão            | ❌     | MVP  | Plano Pro sem pedir cartão                                  |
 | Storage adicional por TB (R$25/TB/mês) | ❌     | MVP  | Add-on em qualquer plano pago                               |
-| Pricing USD pra mercado global         | ❌     | v2.0 | $9/$19/$39 — fase de expansão                               |
 
 ---
 
@@ -121,15 +117,13 @@ Análise do que falta implementar no Nexus comparando com o PRD completo. Organi
 
 ## 8. Dashboard & UX
 
-| Feature                        | Status | Fase | Notas                                  |
-| ------------------------------ | ------ | ---- | -------------------------------------- |
-| Dashboard com uso de storage   | ✅     | —    | StorageUsageBar + StorageByType        |
-| Upload history                 | ✅     | —    | UploadHistory component                |
-| Distribuição entre tiers       | ✅     | —    | StorageByType com recharts             |
-| Projeção de custo pro usuário  | ❌     | MVP  | "Quanto vou gastar nos próximos meses" |
-| Interface em português (pt-BR) | ❌     | MVP  | PRD: Portuguese-first UX               |
-| Internacionalização (i18n)     | ❌     | MVP  | Suporte a pt-BR e en-US                |
-| Dark/light mode                | ✅     | —    | Theme provider implementado            |
+| Feature                       | Status | Fase | Notas                                  |
+| ----------------------------- | ------ | ---- | -------------------------------------- |
+| Dashboard com uso de storage  | ✅     | —    | StorageUsageBar + StorageByType        |
+| Upload history                | ✅     | —    | UploadHistory component                |
+| Distribuição entre tiers      | ✅     | —    | StorageByType com recharts             |
+| Projeção de custo pro usuário | ❌     | MVP  | "Quanto vou gastar nos próximos meses" |
+| Dark/light mode               | ✅     | —    | Theme provider implementado            |
 
 ---
 
@@ -139,22 +133,17 @@ Análise do que falta implementar no Nexus comparando com o PRD completo. Organi
 | -------------------------------------------- | ------ | ---- | ---------------------------- |
 | Landing page com hero, features, pricing     | ✅     | —    | Componentes implementados    |
 | Waitlist na landing page                     | ❌     | MVP  | Captura de emails pré-launch |
-| Pricing em BRL na landing                    | ❌     | MVP  | R$0/29/69/149 conforme PRD   |
 | Referral program (1 mês grátis + 50GB extra) | ❌     | v1.5 | Fotógrafos indicam entre si  |
-| Landing page em inglês (expansão US)         | ❌     | v2.0 | Fase de internacionalização  |
-| Integração com Alboom (API sync)             | ❌     | v2.0 | Complementar, não competir   |
 
 ---
 
 ## 10. Compliance & Segurança
 
-| Feature                                    | Status | Fase | Notas                                             |
-| ------------------------------------------ | ------ | ---- | ------------------------------------------------- |
-| Webhook events audit log                   | ✅     | —    | Tabela webhookEvents                              |
-| LGPD — consent flow pra facial recognition | ❌     | v2.0 | Opt-in explícito + DPIA documentado               |
-| LGPD — SCCs pra transferência cross-border | ❌     | MVP  | Dados armazenados fora do Brasil precisam de SCCs |
-| Política de privacidade / termos de uso    | ❌     | MVP  | Obrigatório pra launch                            |
-| Data Protection Impact Assessment (DPIA)   | ❌     | v2.0 | Antes de lançar reconhecimento facial             |
+| Feature                                  | Status | Fase | Notas                                 |
+| ---------------------------------------- | ------ | ---- | ------------------------------------- |
+| Webhook events audit log                 | ✅     | —    | Tabela webhookEvents                  |
+| Política de privacidade / termos de uso  | ❌     | MVP  | Obrigatório pra launch                |
+| Data Protection Impact Assessment (DPIA) | ❌     | v2.0 | Antes de lançar reconhecimento facial |
 
 ---
 
@@ -193,15 +182,12 @@ Análise do que falta implementar no Nexus comparando com o PRD completo. Organi
 
 1. Geração de thumbnails/previews (Sharp + FFmpeg)
 2. Organização por Projetos com estrutura de pastas
-3. PIX + Boleto + Parcelamento via Stripe Brazil
-4. Pricing em BRL (R$0/29/69/149)
-5. App desktop Tauri com auto-upload
-6. Cloudflare R2 como tier quente + CDN
-7. Interface em português (i18n pt-BR)
-8. Trial de 14 dias sem cartão
-9. Google/Apple OAuth
+3. App desktop Tauri com auto-upload
+4. Cloudflare R2 como tier quente + CDN
+5. Trial de 14 dias sem cartão
+6. Google/Apple OAuth
 
-**Prioridade alta:** 10. Backblaze B2 como tier frio 11. Lifecycle automático entre 3 tiers 12. Extração de metadados EXIF 13. Preview de RAW files no browser 14. Upload pausável/resumível na UI 15. Projeção de custo no dashboard 16. SCCs pra LGPD (transferência cross-border) 17. Termos de uso e política de privacidade 18. Waitlist na landing page
+**Prioridade alta:** 10. Backblaze B2 como tier frio 11. Lifecycle automático entre 3 tiers 12. Extração de metadados EXIF 13. Preview de RAW files no browser 14. Upload pausável/resumível na UI 15. Projeção de custo no dashboard 17. Termos de uso e política de privacidade 18. Waitlist na landing page
 
 ### v1.5 (Meses 7–9) — 10 itens
 
@@ -224,11 +210,3 @@ Análise do que falta implementar no Nexus comparando com o PRD completo. Organi
 6. App nativo React Native
 7. Smart albums
 8. Cross-archive search
-9. Integração Alboom (API)
-10. Landing page em inglês
-11. Pricing USD
-12. Print sales
-13. Marketing automatizado
-14. Upload via API pública
-15. DPIA documentado
-16. Alertas de anomalia
