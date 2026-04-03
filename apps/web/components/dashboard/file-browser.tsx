@@ -835,7 +835,7 @@ function FileCard({ file, isSelected, hasSelection, onSelect }: FileItemProps) {
                         <FileActions status={status} {...actions} />
                     </div>
                 </div>
-                <p className="truncate text-sm/tight font-medium ">
+                <p className="truncate text-sm/tight font-medium">
                     {file.name}
                 </p>
                 <div className="mt-1.5 flex items-center justify-between">

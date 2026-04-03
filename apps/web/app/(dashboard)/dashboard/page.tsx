@@ -71,7 +71,7 @@ export default function DashboardPage() {
                             className="mt-2 inline-flex items-center text-xs text-primary hover:underline"
                         >
                             View all files
-                            <ArrowRight className="ml-1 size-3 " />
+                            <ArrowRight className="ml-1 size-3" />
                         </Link>
                     </CardContent>
                 </Card>
@@ -131,7 +131,7 @@ export default function DashboardPage() {
                                         key={i}
                                         className="flex items-center gap-3"
                                     >
-                                        <Skeleton className="h-8 w-8 rounded" />
+                                        <Skeleton className="h-8 w-8 rounded-sm" />
                                         <div className="flex-1 space-y-1.5">
                                             <Skeleton className="h-4 w-40" />
                                             <Skeleton className="h-3 w-24" />
@@ -163,7 +163,7 @@ export default function DashboardPage() {
                                             <tr key={file.id} className="group">
                                                 <td className="py-3">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted">
+                                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted">
                                                             <FileIcon className="h-4 w-4 text-muted-foreground" />
                                                         </div>
                                                         <span className="truncate font-medium">

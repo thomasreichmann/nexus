@@ -78,7 +78,7 @@ export function ScenarioList({ targetUser, targetLabel }: ScenarioListProps) {
                         >
                             <div
                                 className={cn(
-                                    'flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors',
+                                    'flex h-6 w-6 shrink-0 items-center justify-center rounded-sm transition-colors',
                                     isRunning
                                         ? 'bg-emerald-400/10'
                                         : isComplete

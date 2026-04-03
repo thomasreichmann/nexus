@@ -80,12 +80,12 @@ export function CleanupControls({
                             {isCleanPending ? (
                                 <Loader2
                                     aria-hidden="true"
-                                    className="mr-1 inline size-3.5  animate-spin"
+                                    className="mr-1 inline size-3.5 animate-spin"
                                 />
                             ) : (
                                 <User
                                     aria-hidden="true"
-                                    className="mr-1 inline size-3.5 "
+                                    className="mr-1 inline size-3.5"
                                 />
                             )}
                             Clean {targetLabel}
@@ -116,12 +116,12 @@ export function CleanupControls({
                             {cleanAllMutation.isPending ? (
                                 <Loader2
                                     aria-hidden="true"
-                                    className="mr-1 inline size-3.5  animate-spin"
+                                    className="mr-1 inline size-3.5 animate-spin"
                                 />
                             ) : (
                                 <Trash2
                                     aria-hidden="true"
-                                    className="mr-1 inline size-3.5 "
+                                    className="mr-1 inline size-3.5"
                                 />
                             )}
                             Nuke all

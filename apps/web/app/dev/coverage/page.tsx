@@ -104,7 +104,7 @@ export default function CoveragePage() {
                         <p className="font-medium">No coverage data found</p>
                         <p className="mt-1 text-sm text-muted-foreground">
                             Run{' '}
-                            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                            <code className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs">
                                 pnpm test:coverage
                             </code>{' '}
                             first.

@@ -115,7 +115,7 @@ function TargetUserSelect({ users, value, onChange }: TargetUserSelectProps) {
                 <Select.Trigger
                     aria-label="Target user"
                     className={cn(
-                        'flex h-7 min-w-40 cursor-pointer items-center gap-1.5 rounded border bg-zinc-950/60 px-2 font-mono text-xs outline-none transition-colors',
+                        'flex h-7 min-w-40 cursor-pointer items-center gap-1.5 rounded-sm border bg-zinc-950/60 px-2 font-mono text-xs outline-none transition-colors',
                         isOtherUser
                             ? 'border-amber-400/30 text-amber-200 hover:border-amber-400/50 focus:border-amber-400/60'
                             : 'border-border/40 text-foreground hover:border-border/60 focus:border-emerald-400/40'

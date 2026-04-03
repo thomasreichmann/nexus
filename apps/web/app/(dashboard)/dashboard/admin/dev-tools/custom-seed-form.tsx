@@ -158,12 +158,12 @@ export function CustomSeedForm({ targetUser }: CustomSeedFormProps) {
                         {isPending ? (
                             <Loader2
                                 aria-hidden="true"
-                                className="mr-1.5 size-3.5  animate-spin"
+                                className="mr-1.5 size-3.5 animate-spin"
                             />
                         ) : (
                             <Database
                                 aria-hidden="true"
-                                className="mr-1.5 size-3.5 "
+                                className="mr-1.5 size-3.5"
                             />
                         )}
                         {isPending ? 'Seeding...' : 'Seed'}
