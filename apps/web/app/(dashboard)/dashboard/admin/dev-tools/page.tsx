@@ -1,12 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Select } from '@base-ui/react/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { formatBytes } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
 import { useQuery } from '@tanstack/react-query';
-import { FileStack, HardDrive, RotateCw, Users } from 'lucide-react';
+import {
+    CheckIcon,
+    ChevronDownIcon,
+    FileStack,
+    HardDrive,
+    RotateCw,
+    Users,
+} from 'lucide-react';
 import { CleanupControls } from './cleanup-controls';
 import { CustomSeedForm } from './custom-seed-form';
 import { getTargetLabel, ME_VALUE } from './presets';
@@ -34,23 +42,25 @@ export default function AdminDevToolsPage() {
 
             <SeedSummary />
 
-            <TargetUserSelect
-                users={users}
-                value={targetUser}
-                onChange={setTargetUser}
-            />
-
-            <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
-                <ScenarioList
-                    targetUser={targetUser}
-                    targetLabel={targetLabel}
+            <div className="space-y-2">
+                <TargetUserSelect
+                    users={users}
+                    value={targetUser}
+                    onChange={setTargetUser}
                 />
-                <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
-                    <CustomSeedForm targetUser={targetUser} />
-                    <CleanupControls
+
+                <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+                    <ScenarioList
                         targetUser={targetUser}
                         targetLabel={targetLabel}
                     />
+                    <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+                        <CustomSeedForm targetUser={targetUser} />
+                        <CleanupControls
+                            targetUser={targetUser}
+                            targetLabel={targetLabel}
+                        />
+                    </div>
                 </div>
             </div>
         </div>
@@ -64,22 +74,114 @@ interface TargetUserSelectProps {
 }
 
 function TargetUserSelect({ users, value, onChange }: TargetUserSelectProps) {
+    const isOtherUser = value !== ME_VALUE;
+
+    const items = useMemo(
+        () => ({
+            [ME_VALUE]: 'me (current user)',
+            ...Object.fromEntries(users.map((u) => [u.id, u.name])),
+        }),
+        [users]
+    );
+
     return (
-        <div className="flex items-center gap-2 font-mono text-xs">
-            <span className="text-muted-foreground/50">target →</span>
-            <select
-                aria-label="Target user"
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                className="h-7 rounded border border-border/40 bg-zinc-950/60 px-2 pr-6 font-mono text-xs text-foreground outline-none transition-colors hover:border-border/60 focus:border-emerald-400/40"
+        <div
+            className={cn(
+                'flex items-center gap-2.5 rounded-md border-l-2 bg-zinc-900/60 px-3 py-2 font-mono text-xs transition-colors',
+                isOtherUser
+                    ? 'border-l-amber-400/80'
+                    : 'border-l-emerald-400/40'
+            )}
+        >
+            <span
+                className={cn(
+                    'text-xs tracking-wide transition-colors',
+                    isOtherUser
+                        ? 'text-amber-400/70'
+                        : 'text-muted-foreground/50'
+                )}
             >
-                <option value={ME_VALUE}>me (current user)</option>
-                {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                        {u.name} ({u.email})
-                    </option>
-                ))}
-            </select>
+                target →
+            </span>
+
+            <Select.Root
+                value={value}
+                onValueChange={(val) => {
+                    if (val !== null) onChange(val);
+                }}
+                items={items}
+                modal={false}
+            >
+                <Select.Trigger
+                    aria-label="Target user"
+                    className={cn(
+                        'flex h-7 min-w-40 cursor-pointer items-center gap-1.5 rounded border bg-zinc-950/60 px-2 font-mono text-xs outline-none transition-colors',
+                        isOtherUser
+                            ? 'border-amber-400/30 text-amber-200 hover:border-amber-400/50 focus:border-amber-400/60'
+                            : 'border-border/40 text-foreground hover:border-border/60 focus:border-emerald-400/40'
+                    )}
+                >
+                    <Select.Value />
+                    <Select.Icon className="ml-auto">
+                        <ChevronDownIcon className="size-3 text-muted-foreground transition-transform data-popup-open:rotate-180" />
+                    </Select.Icon>
+                </Select.Trigger>
+
+                <Select.Portal>
+                    <Select.Positioner
+                        sideOffset={4}
+                        className="z-50"
+                        alignItemWithTrigger={false}
+                    >
+                        <Select.Popup
+                            className={cn(
+                                'max-h-[--available-height] min-w-(--anchor-width) origin-(--transform-origin)',
+                                'overflow-y-auto rounded-md border border-zinc-700/50 bg-zinc-800/80 p-1 shadow-lg backdrop-blur-sm',
+                                'data-open:animate-in data-closed:animate-out',
+                                'data-closed:fade-out-0 data-open:fade-in-0',
+                                'data-closed:zoom-out-95 data-open:zoom-in-95',
+                                'data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2'
+                            )}
+                        >
+                            <Select.Item
+                                value={ME_VALUE}
+                                className="flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 font-mono text-xs outline-none select-none data-highlighted:bg-zinc-700/50"
+                            >
+                                <Select.ItemIndicator className="inline-flex w-4 items-center justify-center">
+                                    <CheckIcon className="size-3" />
+                                </Select.ItemIndicator>
+                                <Select.ItemText>
+                                    me (current user)
+                                </Select.ItemText>
+                            </Select.Item>
+
+                            {users.length > 0 && (
+                                <div className="my-1 h-px bg-zinc-700/50" />
+                            )}
+
+                            {users.map((u) => (
+                                <Select.Item
+                                    key={u.id}
+                                    value={u.id}
+                                    className="flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 font-mono text-xs outline-none select-none data-highlighted:bg-zinc-700/50"
+                                >
+                                    <Select.ItemIndicator className="inline-flex w-4 items-center justify-center">
+                                        <CheckIcon className="size-3" />
+                                    </Select.ItemIndicator>
+                                    <div className="flex flex-col">
+                                        <Select.ItemText>
+                                            {u.name}
+                                        </Select.ItemText>
+                                        <span className="text-[10px] text-muted-foreground">
+                                            {u.email}
+                                        </span>
+                                    </div>
+                                </Select.Item>
+                            ))}
+                        </Select.Popup>
+                    </Select.Positioner>
+                </Select.Portal>
+            </Select.Root>
         </div>
     );
 }
@@ -138,7 +240,7 @@ function SeedSummary() {
                     </CardContent>
                 </Card>
             ))}
-            <Card className="border-border/50 bg-zinc-900/60">
+            <Card className="flex-1 border-border/50 bg-zinc-900/60">
                 <CardContent className="flex items-center gap-2.5 px-3 py-2.5">
                     <HardDrive
                         aria-hidden="true"

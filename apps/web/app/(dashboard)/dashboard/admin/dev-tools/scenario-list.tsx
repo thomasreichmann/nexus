@@ -53,9 +53,9 @@ export function ScenarioList({ targetUser, targetLabel }: ScenarioListProps) {
     return (
         <Card className="flex flex-col overflow-hidden border-border/50 bg-zinc-900/60">
             <div className="border-b border-border/30 px-3 py-2">
-                <span className="font-mono text-xs text-emerald-400/80">
+                <h2 className="font-mono text-xs text-emerald-400/80">
                     {'>'} scenarios
-                </span>
+                </h2>
             </div>
 
             <div className="flex-1 divide-y divide-border/10">
@@ -99,7 +99,7 @@ export function ScenarioList({ targetUser, targetLabel }: ScenarioListProps) {
                                 ) : (
                                     <Play
                                         aria-hidden="true"
-                                        className="h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-emerald-400"
+                                        className="h-3.5 w-3.5 text-muted-foreground/80 transition-colors group-hover:text-emerald-400"
                                     />
                                 )}
                             </div>

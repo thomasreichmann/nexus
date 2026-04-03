@@ -66,9 +66,9 @@ export function CleanupControls({
     return (
         <Card className="border-border/50 bg-zinc-900/60">
             <div className="border-b border-border/30 px-3 py-2">
-                <span className="font-mono text-xs text-red-400/80">
+                <h2 className="font-mono text-xs text-red-400/80">
                     {'>'} cleanup
-                </span>
+                </h2>
             </div>
             <CardContent className="space-y-2.5 p-3">
                 <div className="flex gap-2">
@@ -80,12 +80,12 @@ export function CleanupControls({
                             {isCleanPending ? (
                                 <Loader2
                                     aria-hidden="true"
-                                    className="mr-1 inline h-3.5 w-3.5 animate-spin"
+                                    className="mr-1 inline size-3.5  animate-spin"
                                 />
                             ) : (
                                 <User
                                     aria-hidden="true"
-                                    className="mr-1 inline h-3.5 w-3.5"
+                                    className="mr-1 inline size-3.5 "
                                 />
                             )}
                             Clean {targetLabel}
@@ -116,12 +116,12 @@ export function CleanupControls({
                             {cleanAllMutation.isPending ? (
                                 <Loader2
                                     aria-hidden="true"
-                                    className="mr-1 inline h-3.5 w-3.5 animate-spin"
+                                    className="mr-1 inline size-3.5  animate-spin"
                                 />
                             ) : (
                                 <Trash2
                                     aria-hidden="true"
-                                    className="mr-1 inline h-3.5 w-3.5"
+                                    className="mr-1 inline size-3.5 "
                                 />
                             )}
                             Nuke all

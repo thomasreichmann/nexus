@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from 'eslint/config';
 import nextVitals from 'eslint-config-next/core-web-vitals';
 import nextTs from 'eslint-config-next/typescript';
+import tailwindPlugin from 'eslint-plugin-better-tailwindcss';
 
 // Convention: "Main export first, helper components below" (conventions.md)
 const localPlugin = {
@@ -191,6 +192,17 @@ const eslintConfig = defineConfig([
         plugins: { local: localPlugin },
         rules: {
             'local/export-default-first': 'warn',
+        },
+    },
+    // Enforce canonical Tailwind class order
+    {
+        files: ['**/*.tsx'],
+        plugins: { 'better-tailwindcss': tailwindPlugin },
+        rules: {
+            'better-tailwindcss/enforce-canonical-classes': [
+                'warn',
+                { entryPoint: 'app/globals.css' },
+            ],
         },
     },
     // Ban barrel re-exports in services - each service should export its own namespace

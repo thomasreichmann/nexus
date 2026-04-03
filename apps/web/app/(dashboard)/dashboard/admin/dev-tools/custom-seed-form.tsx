@@ -40,9 +40,9 @@ export function CustomSeedForm({ targetUser }: CustomSeedFormProps) {
     return (
         <Card className="border-border/50 bg-zinc-900/60">
             <div className="border-b border-border/30 px-3 py-2">
-                <span className="font-mono text-xs text-cyan-400/80">
+                <h2 className="font-mono text-xs text-cyan-400/80">
                     {'>'} custom seed
-                </span>
+                </h2>
             </div>
             <CardContent className="space-y-3 p-3">
                 <form onSubmit={handleSubmit} className="space-y-3">
@@ -87,10 +87,10 @@ export function CustomSeedForm({ targetUser }: CustomSeedFormProps) {
                         </div>
                     </div>
 
-                    <div className="space-y-1.5">
-                        <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                    <fieldset className="space-y-1.5">
+                        <legend className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
                             Tier distribution
-                        </span>
+                        </legend>
                         <div className="grid grid-cols-3 gap-1.5">
                             {[
                                 {
@@ -147,7 +147,7 @@ export function CustomSeedForm({ targetUser }: CustomSeedFormProps) {
                             }}
                             className="h-1.5"
                         />
-                    </div>
+                    </fieldset>
 
                     <Button
                         type="submit"
@@ -158,12 +158,12 @@ export function CustomSeedForm({ targetUser }: CustomSeedFormProps) {
                         {isPending ? (
                             <Loader2
                                 aria-hidden="true"
-                                className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                                className="mr-1.5 size-3.5  animate-spin"
                             />
                         ) : (
                             <Database
                                 aria-hidden="true"
-                                className="mr-1.5 h-3.5 w-3.5"
+                                className="mr-1.5 size-3.5 "
                             />
                         )}
                         {isPending ? 'Seeding...' : 'Seed'}
