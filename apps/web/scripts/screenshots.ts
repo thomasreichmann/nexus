@@ -14,7 +14,6 @@
  *   - preview.html (opens in browser for visual approval)
  */
 
-import { execSync } from 'node:child_process';
 import {
     existsSync,
     mkdirSync,
@@ -302,21 +301,6 @@ ${images}
 </html>`;
 
     writeFileSync(join(outDir, 'preview.html'), html);
-}
-
-function openPreview(outDir: string): void {
-    const previewPath = join(outDir, 'preview.html');
-    try {
-        if (process.platform === 'darwin') {
-            execSync(`open "${previewPath}"`);
-        } else {
-            execSync(`xdg-open "${previewPath}"`);
-        }
-    } catch {
-        console.error(
-            `  Could not open preview automatically. Open: ${previewPath}`
-        );
-    }
 }
 
 // ---------------------------------------------------------------------------
