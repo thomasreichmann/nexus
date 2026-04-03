@@ -758,7 +758,7 @@ function FileRow({ file, isSelected, hasSelection, onSelect }: FileItemProps) {
             className={cn(
                 'cursor-pointer transition-colors',
                 isSelected &&
-                    'bg-primary/[0.04] hover:bg-primary/[0.06] dark:bg-primary/[0.08] dark:hover:bg-primary/[0.10]'
+                    'bg-primary/4 hover:bg-primary/6 dark:bg-primary/8 dark:hover:bg-primary/10'
             )}
             onClick={(e) => onSelect(e.shiftKey)}
         >
@@ -809,7 +809,7 @@ function FileCard({ file, isSelected, hasSelection, onSelect }: FileItemProps) {
             className={cn(
                 'group relative cursor-pointer py-0 transition-all',
                 isSelected
-                    ? 'ring-2 ring-primary/30 bg-primary/[0.02] dark:bg-primary/[0.06]'
+                    ? 'ring-2 ring-primary/30 bg-primary/2 dark:bg-primary/6'
                     : 'hover:border-border/80'
             )}
             onClick={(e) => onSelect(e.shiftKey)}
@@ -835,7 +835,7 @@ function FileCard({ file, isSelected, hasSelection, onSelect }: FileItemProps) {
                         <FileActions status={status} {...actions} />
                     </div>
                 </div>
-                <p className="truncate text-sm font-medium leading-tight">
+                <p className="truncate text-sm/tight font-medium ">
                     {file.name}
                 </p>
                 <div className="mt-1.5 flex items-center justify-between">

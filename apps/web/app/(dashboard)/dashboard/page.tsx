@@ -71,7 +71,7 @@ export default function DashboardPage() {
                             className="mt-2 inline-flex items-center text-xs text-primary hover:underline"
                         >
                             View all files
-                            <ArrowRight className="ml-1 h-3 w-3" />
+                            <ArrowRight className="ml-1 size-3 " />
                         </Link>
                     </CardContent>
                 </Card>

@@ -23,15 +23,15 @@ export default function SignUpPage() {
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">
                 <div className="flex items-center gap-1.5">
-                    <DollarSign className="h-3.5 w-3.5 text-primary" />
+                    <DollarSign className="size-3.5  text-primary" />
                     <span>5 GB free</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                    <Shield className="h-3.5 w-3.5 text-primary" />
+                    <Shield className="size-3.5  text-primary" />
                     <span>Encrypted</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                    <Archive className="h-3.5 w-3.5 text-primary" />
+                    <Archive className="size-3.5  text-primary" />
                     <span>No credit card</span>
                 </div>
             </div>
