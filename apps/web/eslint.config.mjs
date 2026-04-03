@@ -203,6 +203,22 @@ const eslintConfig = defineConfig([
                 'warn',
                 { entryPoint: 'app/globals.css' },
             ],
+            'better-tailwindcss/no-duplicate-classes': [
+                'warn',
+                { entryPoint: 'app/globals.css' },
+            ],
+            'better-tailwindcss/no-conflicting-classes': [
+                'warn',
+                { entryPoint: 'app/globals.css' },
+            ],
+            'better-tailwindcss/no-unnecessary-whitespace': [
+                'warn',
+                { entryPoint: 'app/globals.css' },
+            ],
+            'better-tailwindcss/no-deprecated-classes': [
+                'warn',
+                { entryPoint: 'app/globals.css' },
+            ],
         },
     },
     // Ban barrel re-exports in services - each service should export its own namespace
