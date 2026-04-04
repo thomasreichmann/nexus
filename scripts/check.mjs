@@ -3,6 +3,7 @@
  * `turbo run lint build test` dumps ~150 lines on a clean cached run.
  * This wrapper condenses passing runs to a single summary line so
  * `pnpm check` stays scannable in terminals and LLM context windows.
+ * On failure, noise is stripped to surface only actionable error output.
  * Pass --verbose for the full turbo output.
  */
 import { spawn } from 'node:child_process';
@@ -33,7 +34,7 @@ if (verbose) {
 
     proc.on('close', (code) => {
         const raw = chunks.map((c) => c.data.toString()).join('');
-        const plain = raw.replace(/\x1b\[[0-9;]*m/g, '');
+        const plain = stripAnsi(raw);
 
         const tasksMatch = plain.match(
             /Tasks:\s+(\d+)\s+successful(?:,\s+(\d+)\s+failed)?,\s+(\d+)\s+total/
@@ -57,14 +58,10 @@ if (verbose) {
             if (elapsed) parts.push(c.dim(elapsed));
             console.log(parts.join('  '));
         } else {
-            // Replay captured output (failing-task errors + turbo metadata)
-            for (const chunk of chunks) {
-                const target =
-                    chunk.stream === 'err' ? process.stderr : process.stdout;
-                target.write(chunk.data);
-            }
+            const filtered = filterFailureOutput(plain);
+            process.stdout.write(filtered);
 
-            const parts = ['\n' + c.red('✗'), c.bold('Checks failed')];
+            const parts = [c.red('✗'), c.bold('Checks failed')];
             if (passed !== '?' && total !== '?')
                 parts.push(c.dim(`${passed}/${total} tasks passed`));
             if (elapsed) parts.push(c.dim(elapsed));
@@ -73,6 +70,88 @@ if (verbose) {
 
         process.exit(code ?? 1);
     });
+}
+
+function stripAnsi(str) {
+    return str.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+/**
+ * Filter turbo error output down to actionable lines only.
+ * Strips task prefixes first, then filters noise (turbo metadata,
+ * passing tests, pnpm lifecycle, vitest profiling, duplicate errors).
+ */
+function filterFailureOutput(plain) {
+    const lines = plain.split('\n');
+    // Turbo uses ":" in logs (@nexus/web:test:) and "#" in summaries (@nexus/web#test)
+    const taskPrefixRe = /^(@[^:]+[:#]\w+):?\s*/;
+    const shownTasks = new Set();
+    const kept = [];
+    let prevBlank = false;
+
+    for (const rawLine of lines) {
+        // Step 1: strip task prefix, track task identity
+        let content = rawLine;
+        let task = null;
+        const prefixMatch = rawLine.trim().match(taskPrefixRe);
+        if (prefixMatch) {
+            task = prefixMatch[1];
+            content = rawLine.trim().slice(prefixMatch[0].length);
+        }
+
+        const trimmed = content.trim();
+
+        // Collapse consecutive blank lines to max 1
+        if (trimmed === '') {
+            if (!prevBlank && kept.length > 0) kept.push('');
+            prevBlank = true;
+            continue;
+        }
+        prevBlank = false;
+
+        // Step 2: filter noise from the content (prefix already stripped)
+        if (isNoise(trimmed)) continue;
+
+        // Step 3: emit task header once, then the content
+        if (task && !shownTasks.has(task)) {
+            shownTasks.add(task);
+            kept.push(`${task} FAILED`);
+        }
+
+        kept.push(content);
+    }
+
+    // Trim leading/trailing blank lines
+    while (kept.length > 0 && kept[0].trim() === '') kept.shift();
+    while (kept.length > 0 && kept[kept.length - 1].trim() === '') kept.pop();
+
+    return kept.length > 0 ? kept.join('\n') + '\n\n' : '';
+}
+
+function isNoise(trimmed) {
+    // Turbo metadata
+    if (trimmed.startsWith('•')) return true;
+    // Turbo summary lines (we print our own)
+    if (/^(Tasks|Cached|Time|Failed):/.test(trimmed)) return true;
+    // Turbo/pnpm error boilerplate
+    if (/^ERROR/.test(trimmed)) return true;
+    if (/ELIFECYCLE/.test(trimmed)) return true;
+    if (/command.*exited\s+\(\d+\)/.test(trimmed)) return true;
+    // pnpm script invocation lines ("> vitest", "> next build", etc.)
+    if (trimmed.startsWith('>')) return true;
+    // Cache status
+    if (/^cache (miss|hit),/.test(trimmed)) return true;
+    // Vitest RUN header
+    if (/^RUN\s+v[\d.]+/.test(trimmed)) return true;
+    // Vitest timing/profiling
+    if (/^Start at\s/.test(trimmed)) return true;
+    if (/^Duration\s/.test(trimmed)) return true;
+    // Passing test lines (file-level and individual)
+    if (/^✓\s/.test(trimmed)) return true;
+    // Decorative separators (vitest ⎯ lines)
+    if (trimmed.includes('⎯⎯⎯⎯')) return true;
+
+    return false;
 }
 
 function bail(err) {
