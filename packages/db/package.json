@@ -32,6 +32,10 @@
             "import": "./src/repositories/webhooks.ts",
             "types": "./src/repositories/webhooks.ts"
         },
+        "./plans": {
+            "import": "./src/plans.ts",
+            "types": "./src/plans.ts"
+        },
         "./testing": {
             "import": "./src/testing.ts",
             "types": "./src/testing.ts"
