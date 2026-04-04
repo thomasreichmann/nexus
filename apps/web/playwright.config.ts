@@ -22,6 +22,12 @@ export default defineConfig({
             testMatch: /smoke\/.*/,
         },
         {
+            name: 'smoke-auth',
+            use: { ...devices['Desktop Chrome'] },
+            dependencies: ['setup'],
+            testMatch: /smoke-auth\/.*/,
+        },
+        {
             name: 'admin',
             use: {
                 ...devices['Desktop Chrome'],

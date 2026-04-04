@@ -133,6 +133,13 @@ const eslintConfig = defineConfig([
         // Generated coverage output
         'coverage/**',
     ]),
+    // Playwright fixtures use `use()` which triggers react-hooks/rules-of-hooks
+    {
+        files: ['e2e/fixtures/**/*.ts'],
+        rules: {
+            'react-hooks/rules-of-hooks': 'off',
+        },
+    },
     // Enforce service import pattern - import from specific service files, not barrel
     {
         files: ['**/*.ts', '**/*.tsx'],

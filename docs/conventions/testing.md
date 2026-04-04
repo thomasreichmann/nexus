@@ -43,6 +43,44 @@ test('feature page renders without console errors', async ({ page }) => {
 
 The `setupConsoleErrorTracking` helper lives in `e2e/utils.ts` and is shared across all test files.
 
+## Authenticated Smoke Tests
+
+For pages that require authentication (dashboards, admin pages), use the `authenticated` fixture instead of writing bare smoke tests. Tests live in `e2e/smoke-auth/` and run under the `smoke-auth` Playwright project, which depends on `setup` for auth state.
+
+**Fixture:** `e2e/fixtures/authenticated.ts`
+
+| Option          | Type                | Default  | Purpose                                                                   |
+| --------------- | ------------------- | -------- | ------------------------------------------------------------------------- |
+| `userRole`      | `'admin' \| 'user'` | `'user'` | Selects auth state (`e2e/.auth/admin.json` or `user.json`)                |
+| `consoleErrors` | `string[]`          | (auto)   | Collects console errors — assert with `expect(consoleErrors).toEqual([])` |
+
+**Pattern:**
+
+```typescript
+// e2e/smoke-auth/feature.spec.ts
+import { test, expect } from '../fixtures/authenticated';
+
+test.use({ userRole: 'admin' });
+
+test.describe('Admin Feature', () => {
+    test('feature page renders without console errors', async ({
+        page,
+        consoleErrors,
+    }) => {
+        await page.goto('/dashboard/admin/feature');
+        await expect(
+            page.getByRole('heading', { name: /feature/i })
+        ).toBeVisible();
+        expect(consoleErrors).toEqual([]);
+    });
+});
+```
+
+**When to use `smoke/` vs `smoke-auth/`:**
+
+- `smoke/` — public pages (landing, sign-in, sign-up, dev tools)
+- `smoke-auth/` — any page behind authentication (dashboard, admin, settings)
+
 ## Authenticated E2E Tests
 
 For pages requiring auth (e.g. admin dashboards), use the `storageState` pattern with a Playwright setup project. Reusable helpers live in `e2e/helpers/`:
@@ -78,11 +116,12 @@ test.describe('feature with seeded data', () => {
 });
 ```
 
-**Playwright config** has three projects:
+**Playwright config** has four projects:
 
 - `setup` — Creates test users and saves auth state to `e2e/.auth/`
 - `chromium` — Smoke tests (no auth, matches `smoke/`)
-- `admin` — Authenticated tests (uses `storageState`, depends on `setup`, matches `admin/`)
+- `smoke-auth` — Authenticated smoke tests (uses fixture-driven `storageState`, depends on `setup`, matches `smoke-auth/`)
+- `admin` — Authenticated E2E tests (uses `storageState`, depends on `setup`, matches `admin/`)
 
 **Key gotchas:**
 
@@ -99,9 +138,10 @@ Unit test utilities and pure functions with logic. Skip unit tests for presentat
 ```bash
 pnpm -F web test            # Unit tests (watch mode)
 pnpm -F web test:run        # Unit tests (single run)
-pnpm -F web test:e2e:smoke  # Smoke tests only (fast)
-pnpm -F web test:e2e:admin  # Admin E2E tests (authenticated)
-pnpm -F web test:e2e        # All E2E tests
+pnpm -F web test:e2e:smoke       # Smoke tests only (fast, no auth)
+pnpm -F web test:e2e:smoke-auth  # Authenticated smoke tests
+pnpm -F web test:e2e:admin       # Admin E2E tests (authenticated)
+pnpm -F web test:e2e             # All E2E tests
 ```
 
 ## Related

@@ -13,24 +13,20 @@ const PAGE_URL = '/dashboard/admin/jobs';
 test.describe.configure({ mode: 'serial' });
 
 test.describe('auth guards', () => {
-    test('unauthenticated user sees empty/error state', async ({ browser }) => {
+    test('unauthenticated user is redirected to dashboard', async ({
+        browser,
+    }) => {
         const context = await browser.newContext({ storageState: undefined });
         const page = await context.newPage();
 
         await page.goto(PAGE_URL);
 
-        await expect(
-            page.getByRole('heading', { name: /background jobs/i })
-        ).toBeVisible();
-
-        // tRPC calls fail without auth — React Query retries 3x with backoff (~7s)
-        await expect(page.getByText('No jobs found')).toBeVisible({
-            timeout: 15_000,
-        });
+        // Admin layout redirects unauthenticated users to /dashboard
+        await expect(page).toHaveURL(/\/dashboard$/);
         await context.close();
     });
 
-    test('non-admin user sees error state', async ({ browser }) => {
+    test('non-admin user is redirected to dashboard', async ({ browser }) => {
         const context = await browser.newContext({
             storageState: USER_STATE_PATH,
         });
@@ -38,14 +34,8 @@ test.describe('auth guards', () => {
 
         await page.goto(PAGE_URL);
 
-        await expect(
-            page.getByRole('heading', { name: /background jobs/i })
-        ).toBeVisible();
-
-        // adminProcedure returns FORBIDDEN — React Query retries before giving up
-        await expect(page.getByText('No jobs found')).toBeVisible({
-            timeout: 15_000,
-        });
+        // Admin layout redirects non-admin users to /dashboard
+        await expect(page).toHaveURL(/\/dashboard$/);
         await context.close();
     });
 });
