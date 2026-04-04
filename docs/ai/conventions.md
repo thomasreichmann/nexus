@@ -71,10 +71,10 @@ Terse reference for AI agents. Detailed examples with code: [[../conventions/nam
 ## Testing
 
 - Public pages: smoke test in `e2e/smoke/` using `setupConsoleErrorTracking`
-- Authenticated pages: smoke test in `e2e/smoke-auth/` using `authenticated` fixture (supports `userRole` + `traits`)
+- Authenticated pages: smoke test in `e2e/smoke/authenticated/` using `authenticated` fixture (supports `userRole`)
 - Auth E2E tests use `storageState` pattern via Playwright `setup` project
 - Unit test utilities/pure functions only; skip presentational components
-- Test commands: `pnpm -F web test`, `test:e2e:smoke`, `test:e2e:smoke-auth`, `test:e2e:admin`, `test:e2e`
+- Test commands: `pnpm -F web test`, `test:e2e:smoke`, `test:e2e:admin`, `test:e2e`
 - Full details: [[../conventions/testing|Testing]]
 
 ## Server Architecture

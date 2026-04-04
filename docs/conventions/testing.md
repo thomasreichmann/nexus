@@ -45,7 +45,7 @@ The `setupConsoleErrorTracking` helper lives in `e2e/utils.ts` and is shared acr
 
 ## Authenticated Smoke Tests
 
-For pages that require authentication (dashboards, admin pages), use the `authenticated` fixture instead of writing bare smoke tests. Tests live in `e2e/smoke-auth/` and run under the `smoke-auth` Playwright project, which depends on `setup` for auth state.
+For pages that require authentication (dashboards, admin pages), use the `authenticated` fixture instead of writing bare smoke tests. Tests live in `e2e/smoke/authenticated/` and run under the same `smoke` Playwright project (which depends on `setup` for auth state).
 
 **Fixture:** `e2e/fixtures/authenticated.ts`
 
@@ -57,8 +57,8 @@ For pages that require authentication (dashboards, admin pages), use the `authen
 **Pattern:**
 
 ```typescript
-// e2e/smoke-auth/feature.spec.ts
-import { test, expect } from '../fixtures/authenticated';
+// e2e/smoke/authenticated/feature.spec.ts
+import { test, expect } from '../../fixtures/authenticated';
 
 test.use({ userRole: 'admin' });
 
@@ -76,10 +76,10 @@ test.describe('Admin Feature', () => {
 });
 ```
 
-**When to use `smoke/` vs `smoke-auth/`:**
+**Where to place tests:**
 
-- `smoke/` — public pages (landing, sign-in, sign-up, dev tools)
-- `smoke-auth/` — any page behind authentication (dashboard, admin, settings)
+- `e2e/smoke/` — public pages (landing, sign-in, sign-up, dev tools)
+- `e2e/smoke/authenticated/` — any page behind authentication (dashboard, admin, settings)
 
 ## Authenticated E2E Tests
 
@@ -116,11 +116,10 @@ test.describe('feature with seeded data', () => {
 });
 ```
 
-**Playwright config** has four projects:
+**Playwright config** has three projects:
 
 - `setup` — Creates test users and saves auth state to `e2e/.auth/`
-- `chromium` — Smoke tests (no auth, matches `smoke/`)
-- `smoke-auth` — Authenticated smoke tests (uses fixture-driven `storageState`, depends on `setup`, matches `smoke-auth/`)
+- `smoke` — All smoke tests (public + authenticated, depends on `setup`, matches `smoke/`)
 - `admin` — Authenticated E2E tests (uses `storageState`, depends on `setup`, matches `admin/`)
 
 **Key gotchas:**
@@ -138,8 +137,7 @@ Unit test utilities and pure functions with logic. Skip unit tests for presentat
 ```bash
 pnpm -F web test            # Unit tests (watch mode)
 pnpm -F web test:run        # Unit tests (single run)
-pnpm -F web test:e2e:smoke       # Smoke tests only (fast, no auth)
-pnpm -F web test:e2e:smoke-auth  # Authenticated smoke tests
+pnpm -F web test:e2e:smoke       # All smoke tests (public + authenticated)
 pnpm -F web test:e2e:admin       # Admin E2E tests (authenticated)
 pnpm -F web test:e2e             # All E2E tests
 ```

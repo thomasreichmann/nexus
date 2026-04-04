@@ -17,15 +17,10 @@ export default defineConfig({
             testMatch: /global\.setup\.ts/,
         },
         {
-            name: 'chromium',
-            use: { ...devices['Desktop Chrome'] },
-            testMatch: /smoke\/.*/,
-        },
-        {
-            name: 'smoke-auth',
+            name: 'smoke',
             use: { ...devices['Desktop Chrome'] },
             dependencies: ['setup'],
-            testMatch: /smoke-auth\/.*/,
+            testMatch: /smoke\/.*/,
         },
         {
             name: 'admin',

@@ -52,7 +52,7 @@ Don't write E2E tests for:
 - **Pure logic** — Utilities, formatters, validators (unit test these)
 - **Layout changes** — Header, sidebar, footer updates
 
-Smoke tests already verify these pages render without console errors. For authenticated pages, use the `authenticated` fixture in `e2e/smoke-auth/` (see [[../conventions/testing|Testing Conventions]]).
+Smoke tests already verify these pages render without console errors. For authenticated pages, use the `authenticated` fixture in `e2e/smoke/authenticated/` (see [[../conventions/testing|Testing Conventions]]).
 
 ## Writing & Running Tests
 
