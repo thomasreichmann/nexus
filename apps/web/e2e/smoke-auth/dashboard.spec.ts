@@ -9,8 +9,9 @@ test.describe('Dashboard Pages', () => {
     }) => {
         await page.goto('/dashboard');
 
+        // Heading includes user name only when authenticated
         await expect(
-            page.getByRole('heading', { name: /welcome back/i })
+            page.getByRole('heading', { name: /welcome back, .+/i })
         ).toBeVisible();
         await expect(page.getByText('Storage Usage')).toBeVisible();
         await expect(page.getByText('Storage by Type')).toBeVisible();
