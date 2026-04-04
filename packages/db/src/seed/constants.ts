@@ -1,6 +1,7 @@
+import type { Connection, DB } from '../connection';
 import type { PlanTier } from './types';
 
-// ── Seed ID prefixes ──────────────────────────────────────────────
+// Seed ID prefixes
 // All seeded entities use these prefixes so cleanup can target them
 // without schema changes.
 
@@ -13,7 +14,7 @@ export const SEED_STORAGE_PREFIX = 'seed_sto_';
 
 export const SEED_EMAIL_DOMAIN = 'seed.nexus.local';
 
-// ── Plan storage limits ───────────────────────────────────────────
+// Plan storage limits
 
 export const PLAN_LIMITS: Record<PlanTier, number> = {
     starter: 10 * 1024 ** 3, //    10 GB
@@ -22,7 +23,7 @@ export const PLAN_LIMITS: Record<PlanTier, number> = {
     enterprise: 10 * 1024 ** 4, //  10 TB
 };
 
-// ── Realistic file data pools ─────────────────────────────────────
+// Realistic file data pools
 // Each entry: [filename, mimeType, minBytes, maxBytes]
 
 type FileTemplate = [name: string, mime: string, min: number, max: number];
@@ -91,7 +92,7 @@ export const FILE_POOLS: Record<string, FileTemplate[]> = {
 export const ALL_FILE_TEMPLATES: FileTemplate[] =
     Object.values(FILE_POOLS).flat();
 
-// ── Helpers ───────────────────────────────────────────────────────
+// Helpers
 
 export function seedId(prefix: string): string {
     return `${prefix}${crypto.randomUUID()}`;
@@ -109,4 +110,12 @@ export function randomDate(from: Date, to: Date): Date {
     const fromMs = from.getTime();
     const toMs = to.getTime();
     return new Date(fromMs + Math.random() * (toMs - fromMs));
+}
+
+export async function withTransaction<T>(
+    db: DB,
+    fn: (tx: DB) => Promise<T>
+): Promise<T> {
+    if ('transaction' in db) return (db as Connection).transaction(fn);
+    return fn(db);
 }

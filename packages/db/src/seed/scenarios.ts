@@ -11,9 +11,9 @@ import {
     buildStorageUsage,
     buildRetrievals,
 } from './builders';
-import { PLAN_LIMITS } from './constants';
+import { PLAN_LIMITS, withTransaction } from './constants';
 
-// ── Scenario registry ─────────────────────────────────────────────
+// Scenario registry
 
 export const SCENARIO_DEFINITIONS: Record<string, ScenarioDefinition> = {
     powerUser: {
@@ -56,7 +56,7 @@ export const SCENARIO_DEFINITIONS: Record<string, ScenarioDefinition> = {
 
 export type ScenarioName = keyof typeof SCENARIO_DEFINITIONS;
 
-// ── Scenario implementations ──────────────────────────────────────
+// Scenario implementations
 
 async function powerUser(db: DB): Promise<SeedResult> {
     const user = await buildUser(db, { name: 'Power User' });
@@ -286,74 +286,77 @@ async function fullDemo(db: DB): Promise<SeedResult> {
     return mergeResults(results);
 }
 
-// ── Custom seed ───────────────────────────────────────────────────
+// Custom seed
 
 export async function customSeed(
     db: DB,
     options: CustomSeedOptions
 ): Promise<SeedResult> {
-    const {
-        existingUserId,
-        userName = 'Custom User',
-        fileCount = 50,
-        planTier = 'starter',
-        subscriptionStatus = 'active',
-        storageTierDistribution,
-        retrievalCount = 0,
-    } = options;
-
-    let user;
-    if (existingUserId) {
-        // Verify user exists (will be validated by FK constraints anyway)
-        user = { id: existingUserId } as SeedResult['users'][0];
-    } else {
-        user = await buildUser(db, { name: userName });
-    }
-
-    const results: SeedResult = {
-        users: existingUserId ? [] : [user],
-        files: [],
-        subscriptions: [],
-        retrievals: [],
-        storageUsage: [],
-    };
-
-    if (!existingUserId) {
-        const sub = await buildSubscription(db, user.id, {
-            planTier,
-            status: subscriptionStatus,
-        });
-        results.subscriptions.push(sub);
-    }
-
-    if (fileCount > 0) {
-        const files = await buildFiles(db, user.id, {
-            count: fileCount,
+    return withTransaction(db, async (tx) => {
+        const {
+            existingUserId,
+            userName = 'Custom User',
+            fileCount = 50,
+            planTier = 'starter',
+            subscriptionStatus = 'active',
             storageTierDistribution,
-        });
-        results.files = files;
+            retrievalCount = 0,
+        } = options;
 
-        if (retrievalCount > 0) {
-            const glacierFiles = files.filter(
-                (f) => f.storageTier !== 'standard'
-            );
-            const retrievals = await buildRetrievals(
-                db,
-                user.id,
-                glacierFiles.slice(0, retrievalCount).map((f) => f.id),
-                { count: retrievalCount }
-            );
-            results.retrievals = retrievals;
+        let createdUser: SeedResult['users'][0] | undefined;
+        let userId: string;
+        if (existingUserId) {
+            userId = existingUserId;
+        } else {
+            createdUser = await buildUser(tx, { name: userName });
+            userId = createdUser.id;
         }
-    }
 
-    const usage = await buildStorageUsage(db, user.id);
-    results.storageUsage.push(usage);
+        const results: SeedResult = {
+            users: createdUser ? [createdUser] : [],
+            files: [],
+            subscriptions: [],
+            retrievals: [],
+            storageUsage: [],
+        };
 
-    return results;
+        if (!existingUserId) {
+            const sub = await buildSubscription(tx, userId, {
+                planTier,
+                status: subscriptionStatus,
+            });
+            results.subscriptions.push(sub);
+        }
+
+        if (fileCount > 0) {
+            const files = await buildFiles(tx, userId, {
+                count: fileCount,
+                storageTierDistribution,
+            });
+            results.files = files;
+
+            if (retrievalCount > 0) {
+                const glacierFiles = files.filter(
+                    (f) => f.storageTier !== 'standard'
+                );
+                const retrievals = await buildRetrievals(
+                    tx,
+                    userId,
+                    glacierFiles.slice(0, retrievalCount).map((f) => f.id),
+                    { count: retrievalCount }
+                );
+                results.retrievals = retrievals;
+            }
+        }
+
+        const usage = await buildStorageUsage(tx, userId);
+        results.storageUsage.push(usage);
+
+        return results;
+    });
 }
 
-// ── Scenario runner ───────────────────────────────────────────────
+// Scenario runner
 
 const SCENARIO_RUNNERS: Record<string, (db: DB) => Promise<SeedResult>> = {
     powerUser,
@@ -372,10 +375,10 @@ export async function runScenario(db: DB, name: string): Promise<SeedResult> {
             `Unknown scenario: "${name}". Available: ${Object.keys(SCENARIO_RUNNERS).join(', ')}`
         );
     }
-    return runner(db);
+    return withTransaction(db, runner);
 }
 
-// ── Helpers ───────────────────────────────────────────────────────
+// Helpers
 
 function mergeResults(results: SeedResult[]): SeedResult {
     return {

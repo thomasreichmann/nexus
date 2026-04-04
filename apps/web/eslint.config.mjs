@@ -133,31 +133,6 @@ const eslintConfig = defineConfig([
         // Generated coverage output
         'coverage/**',
     ]),
-    // Ban direct pino imports in routers - use ctx.log instead
-    {
-        files: ['**/server/trpc/routers/**/*.ts'],
-        rules: {
-            'no-restricted-imports': [
-                'error',
-                {
-                    paths: [
-                        {
-                            name: 'pino',
-                            message:
-                                'Use ctx.log instead of importing pino directly.',
-                        },
-                    ],
-                    patterns: [
-                        {
-                            group: ['**/server/lib/logger*'],
-                            message:
-                                'Use ctx.log instead of importing logger directly.',
-                        },
-                    ],
-                },
-            ],
-        },
-    },
     // Enforce service import pattern - import from specific service files, not barrel
     {
         files: ['**/*.ts', '**/*.tsx'],
@@ -173,6 +148,45 @@ const eslintConfig = defineConfig([
                         },
                     ],
                     patterns: [
+                        {
+                            group: [
+                                '@/server/services/index',
+                                '**/server/services/index',
+                            ],
+                            message:
+                                'Import from specific service file: @/server/services/files, not @/server/services/index',
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+    // Router files: also ban direct pino/logger imports (merged with service barrel ban
+    // since flat config replaces, not merges, the same rule for overlapping file globs)
+    {
+        files: ['**/server/trpc/routers/**/*.ts'],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    paths: [
+                        {
+                            name: 'pino',
+                            message:
+                                'Use ctx.log instead of importing pino directly.',
+                        },
+                        {
+                            name: '@/server/services',
+                            message:
+                                'Import from specific service file: @/server/services/files, not @/server/services',
+                        },
+                    ],
+                    patterns: [
+                        {
+                            group: ['**/server/lib/logger*'],
+                            message:
+                                'Use ctx.log instead of importing logger directly.',
+                        },
                         {
                             group: [
                                 '@/server/services/index',

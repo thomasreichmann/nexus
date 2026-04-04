@@ -99,3 +99,15 @@ export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 
     return next({ ctx });
 });
+
+// Dev tools procedure - admin-only and blocked in production
+export const devToolsProcedure = adminProcedure.use(({ next }) => {
+    if (process.env.NODE_ENV === 'production') {
+        throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Dev tools are not available in production',
+        });
+    }
+
+    return next();
+});

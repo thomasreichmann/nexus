@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useTRPC } from '@/lib/trpc/client';
 import { useMutation } from '@tanstack/react-query';
 import { ME_VALUE } from './presets';
@@ -8,6 +9,7 @@ import { useSummaryInvalidation } from './useSummaryInvalidation';
 export function useSeedTools() {
     const trpc = useTRPC();
     const { invalidateSummary } = useSummaryInvalidation();
+    const [lastBranch, setLastBranch] = useState<'me' | 'user'>('me');
 
     const seedForMe = useMutation(
         trpc.admin.devTools.seedForMe.mutationOptions({
@@ -38,16 +40,20 @@ export function useSeedTools() {
         }
     ) {
         if (targetUser === ME_VALUE) {
+            setLastBranch('me');
             seedForMe.mutate(params, callbacks);
         } else {
+            setLastBranch('user');
             seedForUser.mutate({ userId: targetUser, ...params }, callbacks);
         }
     }
 
+    const lastMutation = lastBranch === 'me' ? seedForMe : seedForUser;
+
     return {
         seed,
         isPending: seedForMe.isPending || seedForUser.isPending,
-        isSuccess: seedForMe.isSuccess || seedForUser.isSuccess,
-        lastData: seedForMe.data ?? seedForUser.data,
+        isSuccess: lastMutation.isSuccess,
+        lastData: lastMutation.data,
     };
 }

@@ -29,7 +29,7 @@ import {
     randomDate,
 } from './constants';
 
-// ── User builder ──────────────────────────────────────────────────
+// User builder
 
 export async function buildUser(
     db: DB,
@@ -56,7 +56,7 @@ export async function buildUser(
     return user!;
 }
 
-// ── File builder ──────────────────────────────────────────────────
+// File builder
 
 const DEFAULT_TIER_DISTRIBUTION: Record<StorageTier, number> = {
     standard: 0.1,
@@ -153,7 +153,7 @@ function pickTier(
     return 'deep_archive';
 }
 
-// ── Subscription builder ──────────────────────────────────────────
+// Subscription builder
 
 export async function buildSubscription(
     db: DB,
@@ -188,7 +188,7 @@ export async function buildSubscription(
     return sub!;
 }
 
-// ── Storage usage builder ─────────────────────────────────────────
+// Storage usage builder
 // Computes actual usage from seeded files in the DB.
 
 export async function buildStorageUsage(
@@ -223,13 +223,14 @@ export async function buildStorageUsage(
     return usage!;
 }
 
-// ── Retrieval builder ─────────────────────────────────────────────
+// Retrieval builder
 
-const DEFAULT_RETRIEVAL_STATUS_DIST: Record<string, number> = {
-    pending: 0.3,
-    in_progress: 0.3,
-    ready: 0.4,
-};
+const DEFAULT_RETRIEVAL_STATUS_DIST: Partial<Record<RetrievalStatus, number>> =
+    {
+        pending: 0.3,
+        in_progress: 0.3,
+        ready: 0.4,
+    };
 
 export async function buildRetrievals(
     db: DB,
@@ -290,18 +291,18 @@ export async function buildRetrievals(
 }
 
 function pickRetrievalStatus(
-    distribution: Record<string, number>,
+    distribution: Partial<Record<RetrievalStatus, number>>,
     index: number,
     total: number
 ): RetrievalStatus {
-    const entries = Object.entries(distribution);
+    const entries = Object.entries(distribution) as [RetrievalStatus, number][];
     const normalizedTotal = entries.reduce((s, [, v]) => s + v, 0);
     let cumulative = 0;
 
     for (const [status, weight] of entries) {
         cumulative += Math.round((weight / normalizedTotal) * total);
-        if (index < cumulative) return status as RetrievalStatus;
+        if (index < cumulative) return status;
     }
 
-    return (entries.at(-1)?.[0] ?? 'pending') as RetrievalStatus;
+    return entries.at(-1)?.[0] ?? 'pending';
 }

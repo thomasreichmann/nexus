@@ -1,5 +1,9 @@
+import { resolve } from 'node:path';
 import { config } from 'dotenv';
-config({ path: '../../apps/web/.env.local' });
+
+config({
+    path: resolve(import.meta.dirname, '../../../../apps/web/.env.local'),
+});
 
 import { createDb } from '../connection';
 import {
@@ -9,7 +13,13 @@ import {
     getSeedSummary,
 } from './index';
 
-const db = createDb(process.env.DATABASE_URL!);
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) {
+    console.error('DATABASE_URL is not set. Check apps/web/.env.local exists.');
+    process.exit(1);
+}
+
+const db = createDb(databaseUrl);
 
 const args = process.argv.slice(2);
 const cleanFlag = args.includes('--clean');

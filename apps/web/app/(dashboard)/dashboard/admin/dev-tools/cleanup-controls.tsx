@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useTRPC } from '@/lib/trpc/client';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { Loader2, Trash2, User } from 'lucide-react';
 import { ME_VALUE } from './presets';
 import { useSummaryInvalidation } from './useSummaryInvalidation';
@@ -54,6 +55,26 @@ export function CleanupControls({
     const isCleanPending =
         cleanForMeMutation.isPending || cleanForUserMutation.isPending;
     const isAnyPending = isCleanPending || cleanAllMutation.isPending;
+
+    const showSuccess =
+        cleanForMeMutation.isSuccess ||
+        cleanAllMutation.isSuccess ||
+        cleanForUserMutation.isSuccess;
+
+    useEffect(() => {
+        if (!showSuccess) return;
+        const timer = setTimeout(() => {
+            cleanForMeMutation.reset();
+            cleanAllMutation.reset();
+            cleanForUserMutation.reset();
+        }, 4000);
+        return () => clearTimeout(timer);
+    }, [
+        showSuccess,
+        cleanForMeMutation,
+        cleanAllMutation,
+        cleanForUserMutation,
+    ]);
 
     function handleClean() {
         if (isMe) {
@@ -148,9 +169,7 @@ export function CleanupControls({
                     </AlertDialog>
                 </div>
 
-                {(cleanForMeMutation.isSuccess ||
-                    cleanAllMutation.isSuccess ||
-                    cleanForUserMutation.isSuccess) && (
+                {showSuccess && (
                     <p
                         role="status"
                         className="font-mono text-xs text-amber-400"

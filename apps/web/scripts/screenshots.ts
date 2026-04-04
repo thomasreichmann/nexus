@@ -35,9 +35,7 @@ const BASE_URL = 'http://localhost:3000';
 const DEFAULT_WIDTH = 1280;
 const OUT_ROOT = '/tmp/nexus-screenshots';
 
-// ---------------------------------------------------------------------------
 // CLI parsing
-// ---------------------------------------------------------------------------
 
 function parseArgs() {
     const args = process.argv.slice(2);
@@ -72,9 +70,7 @@ function parseArgs() {
     return { routePath, width };
 }
 
-// ---------------------------------------------------------------------------
 // Dev server check
-// ---------------------------------------------------------------------------
 
 async function checkDevServer(): Promise<void> {
     try {
@@ -90,9 +86,7 @@ async function checkDevServer(): Promise<void> {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Auth state
-// ---------------------------------------------------------------------------
 
 function isAuthStateValid(): boolean {
     try {
@@ -123,9 +117,7 @@ async function ensureAuth(): Promise<void> {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Screenshot capture
-// ---------------------------------------------------------------------------
 
 async function countVisible(locator: Locator, count: number): Promise<number> {
     let visible = 0;
@@ -191,8 +183,7 @@ async function capture(
                 (depth === 0
                     ? `section-${prefix}`
                     : `child-${prefix.split('-').pop()}`);
-            const filename =
-                depth === 0 ? `${prefix}-${name}.png` : `${prefix}-${name}.png`;
+            const filename = `${prefix}-${name}.png`;
 
             await locator.screenshot({ path: join(outDir, filename) });
             files.push(filename);
@@ -242,9 +233,7 @@ async function capture(
     return files;
 }
 
-// ---------------------------------------------------------------------------
 // HTML preview
-// ---------------------------------------------------------------------------
 
 function generatePreview(
     outDir: string,
@@ -303,9 +292,7 @@ ${images}
     writeFileSync(join(outDir, 'preview.html'), html);
 }
 
-// ---------------------------------------------------------------------------
 // Main
-// ---------------------------------------------------------------------------
 
 async function main() {
     const { routePath, width } = parseArgs();
