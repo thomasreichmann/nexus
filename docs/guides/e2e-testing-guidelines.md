@@ -24,6 +24,7 @@ Decision framework for when AI agents should write Playwright E2E tests vs rely 
 | Does the feature have multi-step user interactions? | E2E test        | Smoke + unit |
 | Does it depend on auth guards or role-based access? | E2E test        | Smoke + unit |
 | Does it filter, paginate, or sort server data?      | E2E test        | Smoke + unit |
+| Does the page require authentication to render?     | Auth smoke test | —            |
 | Is it a new page with no interactivity?             | Smoke test only | —            |
 | Is it a pure utility or business logic function?    | Unit test only  | —            |
 
@@ -51,7 +52,7 @@ Don't write E2E tests for:
 - **Pure logic** — Utilities, formatters, validators (unit test these)
 - **Layout changes** — Header, sidebar, footer updates
 
-Smoke tests already verify these pages render without console errors.
+Smoke tests already verify these pages render without console errors. For authenticated pages, use the `authenticated` fixture in `e2e/smoke/authenticated/` (see [[../conventions/testing|Testing Conventions]]).
 
 ## Writing & Running Tests
 

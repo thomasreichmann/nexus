@@ -35,6 +35,10 @@
         "./testing": {
             "import": "./src/testing.ts",
             "types": "./src/testing.ts"
+        },
+        "./seed": {
+            "import": "./src/seed/index.ts",
+            "types": "./src/seed/index.ts"
         }
     },
     "scripts": {
@@ -42,6 +46,7 @@
         "db:migrate": "drizzle-kit migrate",
         "db:studio": "drizzle-kit studio",
         "db:custom": "drizzle-kit generate --custom --name",
+        "db:seed": "npx tsx src/seed/cli.ts",
         "test": "vitest",
         "test:run": "vitest run",
         "test:coverage": "vitest run --coverage",
@@ -56,6 +61,7 @@
         "@vitest/coverage-v8": "^4.0.18",
         "dotenv": "^17.2.3",
         "drizzle-kit": "^0.31.8",
+        "tsx": "^4.19.0",
         "typescript": "^5",
         "vitest": "^4.0.18"
     }

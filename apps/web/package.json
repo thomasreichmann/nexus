@@ -11,11 +11,12 @@
         "test": "vitest",
         "test:run": "vitest run",
         "test:e2e": "playwright test",
-        "test:e2e:smoke": "playwright test e2e/smoke",
+        "test:e2e:smoke": "playwright test --project=setup --project=smoke",
         "test:e2e:admin": "playwright test --project=setup --project=admin",
         "test:e2e:ui": "playwright test --ui",
         "test:coverage": "vitest run --coverage",
-        "test:integration": "vitest run --config vitest.integration.config.ts"
+        "test:integration": "vitest run --config vitest.integration.config.ts",
+        "screenshots": "tsx scripts/screenshots.ts"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.975.0",
@@ -64,6 +65,7 @@
         "eslint": "^9",
         "eslint-config-next": "16.1.1",
         "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-better-tailwindcss": "^4.3.2",
         "eslint-plugin-prettier": "^5.5.4",
         "jsdom": "^27.4.0",
         "pino-pretty": "^13.1.3",

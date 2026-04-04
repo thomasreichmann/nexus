@@ -7,6 +7,7 @@ import {
 } from '@nexus/db/repo/jobs';
 import { sendToQueue } from '@/lib/jobs/publish';
 import { adminProcedure, router } from '../init';
+import { devToolsRouter } from './adminDevTools';
 
 const jobStatusSchema = z.enum([
     'pending',
@@ -16,6 +17,7 @@ const jobStatusSchema = z.enum([
 ]);
 
 export const adminRouter = router({
+    devTools: devToolsRouter,
     jobs: router({
         list: adminProcedure
             .input(

@@ -80,7 +80,7 @@ function EmptyState() {
                 <CardTitle>No preview data</CardTitle>
                 <CardDescription>
                     Use the{' '}
-                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">
+                    <code className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-sm">
                         /visual-compare
                     </code>{' '}
                     skill to populate this page with design token options.
@@ -89,13 +89,13 @@ function EmptyState() {
             <CardContent className="space-y-3 text-sm text-muted-foreground">
                 <p>
                     Example:{' '}
-                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
+                    <code className="rounded-sm bg-muted px-1.5 py-0.5 font-mono">
                         /visual-compare dark mode destructive color
                     </code>
                 </p>
                 <p>
                     The skill writes options to{' '}
-                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
+                    <code className="rounded-sm bg-muted px-1.5 py-0.5 font-mono">
                         data.json
                     </code>{' '}
                     and this page auto-refreshes via HMR.

@@ -7,8 +7,8 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         <div className="flex min-h-screen flex-col">
             <header className="flex h-16 items-center px-4">
                 <Link href="/" className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                        <Archive className="h-4 w-4 text-primary-foreground" />
+                    <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
+                        <Archive className="size-4 text-primary-foreground" />
                     </div>
                     <span className="text-xl font-semibold">Nexus</span>
                 </Link>

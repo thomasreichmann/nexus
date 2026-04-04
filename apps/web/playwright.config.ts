@@ -17,8 +17,9 @@ export default defineConfig({
             testMatch: /global\.setup\.ts/,
         },
         {
-            name: 'chromium',
+            name: 'smoke',
             use: { ...devices['Desktop Chrome'] },
+            dependencies: ['setup'],
             testMatch: /smoke\/.*/,
         },
         {
