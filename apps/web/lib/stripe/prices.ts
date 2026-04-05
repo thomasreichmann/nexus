@@ -1,8 +1,5 @@
 import type Stripe from 'stripe';
-import type {
-    CheckoutTier,
-    BillingInterval,
-} from '@/server/services/constants';
+import type { CheckoutTier, BillingInterval } from './types';
 import { stripeClient } from './client';
 
 /** Avoids repeated Stripe API calls; populated once per process, keyed by tier:interval. */

@@ -6,8 +6,11 @@ import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import { stripe } from '@/lib/stripe';
 import { PLAN_LIMITS, type PlanTier } from '@/server/services/constants';
+import { subscriptionStatusEnum } from '@nexus/db/schema';
 
 const log = logger.child({ handler: 'stripe-webhook' });
+
+const VALID_STATUSES = new Set<string>(subscriptionStatusEnum.enumValues);
 
 /** Stripe uses expandable fields (string | object | null) — normalize to the ID string. */
 function resolveStripeId(
@@ -15,6 +18,23 @@ function resolveStripeId(
 ): string | undefined {
     if (!field) return undefined;
     return typeof field === 'string' ? field : field.id;
+}
+
+type SubscriptionStatus = (typeof subscriptionStatusEnum.enumValues)[number];
+
+/** Map Stripe status to our DB enum, falling back to existing value for unknown statuses. */
+function mapStripeStatus(
+    stripeStatus: string,
+    fallback: SubscriptionStatus
+): SubscriptionStatus {
+    if (VALID_STATUSES.has(stripeStatus)) {
+        return stripeStatus as SubscriptionStatus;
+    }
+    log.warn(
+        { stripeStatus },
+        'Unknown Stripe subscription status, using fallback'
+    );
+    return fallback;
 }
 
 function resolveTierFromSubscription(
@@ -55,7 +75,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             );
         }
     } else {
-        event = JSON.parse(rawBody) as Stripe.Event;
+        try {
+            event = JSON.parse(rawBody) as Stripe.Event;
+        } catch {
+            return NextResponse.json(
+                { error: 'Invalid JSON' },
+                { status: 400 }
+            );
+        }
     }
 
     const webhookRepo = createWebhookRepo(db);
@@ -70,12 +97,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ received: true, duplicate: true });
     }
 
-    const webhookEvent = await webhookRepo.insert({
-        source: 'stripe',
-        externalId: event.id,
-        eventType: event.type,
-        payload: event as unknown as Record<string, unknown>,
-    });
+    let webhookEvent;
+    try {
+        webhookEvent = await webhookRepo.insert({
+            source: 'stripe',
+            externalId: event.id,
+            eventType: event.type,
+            payload: event as unknown as Record<string, unknown>,
+        });
+    } catch {
+        // Unique constraint violation from concurrent redelivery
+        log.debug({ eventId: event.id }, 'Concurrent duplicate skipped');
+        return NextResponse.json({ received: true, duplicate: true });
+    }
 
     const start = Date.now();
     log.info({ eventId: event.id, eventType: event.type }, 'Webhook received');
@@ -206,7 +240,7 @@ async function handleSubscriptionUpsert(
         ...existing,
         stripeSubscriptionId: sub.id,
         planTier: tier,
-        status: sub.status as typeof existing.status,
+        status: mapStripeStatus(sub.status, existing.status),
         storageLimit,
         currentPeriodStart: periodStart,
         currentPeriodEnd: periodEnd,
