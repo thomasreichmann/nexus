@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CHECKOUT_TIERS, BILLING_INTERVALS } from '@/lib/stripe/types';
 import { subscriptionService } from '@/server/services/subscriptions';
 import { protectedProcedure, router } from '../init';
 
@@ -13,8 +14,8 @@ export const subscriptionsRouter = router({
     createCheckoutSession: protectedProcedure
         .input(
             z.object({
-                tier: z.enum(['starter', 'pro', 'max']),
-                interval: z.enum(['month', 'year']),
+                tier: z.enum(CHECKOUT_TIERS),
+                interval: z.enum(BILLING_INTERVALS),
             })
         )
         .mutation(({ ctx, input }) => {

@@ -1,19 +1,68 @@
+import type Stripe from 'stripe';
 import type { DB } from '@nexus/db';
 import {
     createSubscriptionRepo,
     type Subscription,
 } from '@nexus/db/repo/subscriptions';
+import { subscriptionStatusEnum } from '@nexus/db/schema';
 import { env } from '@/lib/env';
 import { stripe, stripeClient } from '@/lib/stripe';
+import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { logger } from '@/server/lib/logger';
 import {
     PLAN_LIMITS,
     TRIAL_DURATION_DAYS,
+    type PlanTier,
     type CheckoutTier,
     type BillingInterval,
 } from './constants';
 
 const log = logger.child({ service: 'subscriptions' });
+
+const VALID_STATUSES = new Set<string>(subscriptionStatusEnum.enumValues);
+
+type SubscriptionStatus = (typeof subscriptionStatusEnum.enumValues)[number];
+
+// Terminal or severe statuses that should not be overwritten by past_due
+const TERMINAL_STATUSES = new Set<SubscriptionStatus>(['canceled', 'unpaid']);
+
+// ─── Helpers ────────────────────────────────────────────────────────────
+
+/** Stripe uses expandable fields (string | object | null) — normalize to the ID string. */
+function resolveStripeId(
+    field: string | { id: string } | null | undefined
+): string | undefined {
+    if (!field) return undefined;
+    return typeof field === 'string' ? field : field.id;
+}
+
+/** Map Stripe status to our DB enum, falling back to existing value for unknown statuses. */
+function mapStripeStatus(
+    stripeStatus: string,
+    fallback: SubscriptionStatus
+): SubscriptionStatus {
+    if (VALID_STATUSES.has(stripeStatus)) {
+        return stripeStatus as SubscriptionStatus;
+    }
+    log.warn(
+        { stripeStatus },
+        'Unknown Stripe subscription status, using fallback'
+    );
+    return fallback;
+}
+
+function resolveTierFromSubscription(
+    sub: Stripe.Subscription
+): PlanTier | null {
+    const item = sub.items.data[0];
+    if (!item) return null;
+    const product = item.price.product as Stripe.Product | string;
+    const metadata =
+        typeof product === 'string' ? null : (product.metadata ?? null);
+    return (metadata?.tier as PlanTier) ?? null;
+}
+
+// ─── tRPC-facing service methods ────────────────────────────────────────
 
 async function getCurrentSubscription(
     db: DB,
@@ -33,7 +82,7 @@ async function createCheckoutSession(
     const sub = await repo.findByUserId(userId);
 
     if (!sub) {
-        throw new Error('No subscription record found for user');
+        throw new NotFoundError('Subscription');
     }
 
     const priceId = await stripe.prices.resolvePriceId(tier, interval);
@@ -46,7 +95,7 @@ async function createCheckoutSession(
     });
 
     if (!session.url) {
-        throw new Error('Stripe did not return a checkout URL');
+        throw new InvalidStateError('Stripe did not return a checkout URL');
     }
 
     log.info(
@@ -65,7 +114,7 @@ async function createPortalSession(
     const sub = await repo.findByUserId(userId);
 
     if (!sub) {
-        throw new Error('No subscription record found for user');
+        throw new NotFoundError('Subscription');
     }
 
     const session = await stripe.checkout.createBillingPortalSession(
@@ -108,9 +157,191 @@ async function provisionTrialSubscription(
     );
 }
 
+// ─── Webhook event handlers ─────────────────────────────────────────────
+
+async function handleCheckoutCompleted(
+    db: DB,
+    session: Stripe.Checkout.Session
+): Promise<void> {
+    if (session.mode !== 'subscription') return;
+
+    const customerId = resolveStripeId(session.customer);
+    const subscriptionId = resolveStripeId(session.subscription);
+
+    if (!customerId || !subscriptionId) {
+        log.warn(
+            { sessionId: session.id },
+            'Checkout session missing customer or subscription'
+        );
+        return;
+    }
+
+    const repo = createSubscriptionRepo(db);
+    const sub = await repo.findByStripeCustomerId(customerId);
+    if (!sub) {
+        log.warn(
+            { customerId, sessionId: session.id },
+            'No subscription record for customer'
+        );
+        return;
+    }
+
+    // subscription.created will fill in plan details; this just links the IDs
+    await repo.upsertFromWebhook({
+        ...sub,
+        stripeSubscriptionId: subscriptionId,
+    });
+
+    log.info(
+        { customerId, subscriptionId },
+        'Linked Stripe subscription from checkout'
+    );
+}
+
+async function handleSubscriptionUpsert(
+    db: DB,
+    sub: Stripe.Subscription
+): Promise<void> {
+    const customerId = resolveStripeId(sub.customer);
+    if (!customerId) return;
+
+    const repo = createSubscriptionRepo(db);
+    const existing = await repo.findByStripeCustomerId(customerId);
+    if (!existing) {
+        log.warn(
+            { customerId, stripeSubscriptionId: sub.id },
+            'No local record for subscription upsert'
+        );
+        return;
+    }
+
+    const tier = resolveTierFromSubscription(sub) ?? existing.planTier;
+    const storageLimit = PLAN_LIMITS[tier] ?? existing.storageLimit;
+
+    // In API version 2026-02-25.clover, period fields moved from Subscription to its items
+    const firstItem = sub.items.data[0];
+    const periodStart = firstItem
+        ? new Date(firstItem.current_period_start * 1000)
+        : existing.currentPeriodStart;
+    const periodEnd = firstItem
+        ? new Date(firstItem.current_period_end * 1000)
+        : existing.currentPeriodEnd;
+
+    await repo.upsertFromWebhook({
+        ...existing,
+        stripeSubscriptionId: sub.id,
+        planTier: tier,
+        status: mapStripeStatus(sub.status, existing.status),
+        storageLimit,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+        cancelAtPeriodEnd: sub.cancel_at_period_end,
+        trialEnd: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
+    });
+
+    log.info(
+        { customerId, tier, status: sub.status },
+        'Subscription synced from webhook'
+    );
+}
+
+async function handleSubscriptionDeleted(
+    db: DB,
+    sub: Stripe.Subscription
+): Promise<void> {
+    const customerId = resolveStripeId(sub.customer);
+    if (!customerId) return;
+
+    const repo = createSubscriptionRepo(db);
+    const existing = await repo.findByStripeCustomerId(customerId);
+    if (!existing) {
+        log.warn({ customerId }, 'No local record for subscription deletion');
+        return;
+    }
+
+    await repo.upsertFromWebhook({
+        ...existing,
+        status: 'canceled',
+        cancelAtPeriodEnd: false,
+    });
+
+    log.info({ customerId }, 'Subscription marked as canceled');
+}
+
+async function handlePaymentFailed(
+    db: DB,
+    invoice: Stripe.Invoice
+): Promise<void> {
+    const customerId = resolveStripeId(invoice.customer);
+
+    if (!customerId) {
+        log.warn({ invoiceId: invoice.id }, 'Invoice missing customer');
+        return;
+    }
+
+    const repo = createSubscriptionRepo(db);
+    const existing = await repo.findByStripeCustomerId(customerId);
+    if (!existing) {
+        log.warn({ customerId }, 'No local record for payment failure');
+        return;
+    }
+
+    // Don't regress from a more severe status if events arrive out of order
+    if (TERMINAL_STATUSES.has(existing.status)) {
+        log.debug(
+            { customerId, currentStatus: existing.status },
+            'Skipping past_due — subscription already in terminal status'
+        );
+        return;
+    }
+
+    await repo.upsertFromWebhook({
+        ...existing,
+        status: 'past_due',
+    });
+
+    log.info(
+        { customerId, invoiceId: invoice.id },
+        'Subscription marked past_due'
+    );
+}
+
+async function dispatchWebhookEvent(
+    db: DB,
+    event: Stripe.Event
+): Promise<void> {
+    switch (event.type) {
+        case 'checkout.session.completed':
+            await handleCheckoutCompleted(
+                db,
+                event.data.object as Stripe.Checkout.Session
+            );
+            break;
+        case 'customer.subscription.created':
+        case 'customer.subscription.updated':
+            await handleSubscriptionUpsert(
+                db,
+                event.data.object as Stripe.Subscription
+            );
+            break;
+        case 'customer.subscription.deleted':
+            await handleSubscriptionDeleted(
+                db,
+                event.data.object as Stripe.Subscription
+            );
+            break;
+        case 'invoice.payment_failed':
+            await handlePaymentFailed(db, event.data.object as Stripe.Invoice);
+            break;
+        default:
+            log.debug({ eventType: event.type }, 'Unhandled event type');
+    }
+}
+
 export const subscriptionService = {
     getCurrentSubscription,
     createCheckoutSession,
     createPortalSession,
     provisionTrialSubscription,
+    dispatchWebhookEvent,
 } as const;
