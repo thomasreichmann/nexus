@@ -26,14 +26,14 @@ if (verbose) {
         env: isTTY ? { ...process.env, FORCE_COLOR: '1' } : process.env,
     });
 
-    /** @type {{ stream: 'out' | 'err', data: Buffer }[]} */
+    /** @type {Buffer[]} */
     const chunks = [];
-    proc.stdout.on('data', (d) => chunks.push({ stream: 'out', data: d }));
-    proc.stderr.on('data', (d) => chunks.push({ stream: 'err', data: d }));
+    proc.stdout.on('data', (d) => chunks.push(d));
+    proc.stderr.on('data', (d) => chunks.push(d));
     proc.on('error', bail);
 
     proc.on('close', (code) => {
-        const raw = chunks.map((c) => c.data.toString()).join('');
+        const raw = Buffer.concat(chunks).toString();
         const plain = stripAnsi(raw);
 
         const tasksMatch = plain.match(
@@ -83,14 +83,13 @@ function stripAnsi(str) {
  */
 function filterFailureOutput(plain) {
     const lines = plain.split('\n');
-    // Turbo uses ":" in logs (@nexus/web:test:) and "#" in summaries (@nexus/web#test)
-    const taskPrefixRe = /^(@[^:]+[:#]\w+):?\s*/;
+    // Turbo prefixes: @nexus/web:test: (logs), @nexus/web#test (summaries), trpc-devtools:build: (unscoped)
+    const taskPrefixRe = /^(@?[\w@/-]+[:#]\w+):?\s*/;
     const shownTasks = new Set();
     const kept = [];
     let prevBlank = false;
 
     for (const rawLine of lines) {
-        // Step 1: strip task prefix, track task identity
         let content = rawLine;
         let task = null;
         const prefixMatch = rawLine.trim().match(taskPrefixRe);
@@ -109,10 +108,8 @@ function filterFailureOutput(plain) {
         }
         prevBlank = false;
 
-        // Step 2: filter noise from the content (prefix already stripped)
         if (isNoise(trimmed)) continue;
 
-        // Step 3: emit task header once, then the content
         if (task && !shownTasks.has(task)) {
             shownTasks.add(task);
             kept.push(`${task} FAILED`);
@@ -133,8 +130,8 @@ function isNoise(trimmed) {
     if (trimmed.startsWith('•')) return true;
     // Turbo summary lines (we print our own)
     if (/^(Tasks|Cached|Time|Failed):/.test(trimmed)) return true;
-    // Turbo/pnpm error boilerplate
-    if (/^ERROR/.test(trimmed)) return true;
+    // Turbo error boilerplate (narrow match to avoid swallowing real errors)
+    if (/^ERROR\s+run\s+failed/.test(trimmed)) return true;
     if (/ELIFECYCLE/.test(trimmed)) return true;
     if (/command.*exited\s+\(\d+\)/.test(trimmed)) return true;
     // pnpm script invocation lines ("> vitest", "> next build", etc.)
