@@ -6,11 +6,11 @@ import {
     TEST_USER_ID,
     TEST_FILE_ID,
 } from './fixtures';
-import { createFileRepo } from './files';
+import { createFileRepo, type FileRepo } from './files';
 
 describe('files repository', () => {
     let mocks: MockDbMocks;
-    let repo: ReturnType<typeof createFileRepo>;
+    let repo: FileRepo;
 
     beforeEach(() => {
         const mockDb = createMockDb();
