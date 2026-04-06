@@ -32,9 +32,8 @@ describe('retrieval service', () => {
 
             // requestRetrieval delegates to requestBulkRetrieval:
             // findUserFiles -> findByFileIds -> s3.glacier.restoreMany -> insertMany
-            mocks.findMany
-                .mockResolvedValueOnce([file]) // findUserFiles
-                .mockResolvedValueOnce([]); // findByFileIds (no existing)
+            mocks.files.findMany.mockResolvedValue([file]);
+            mocks.retrievals.findMany.mockResolvedValue([]);
             mocks.returning.mockResolvedValue([retrieval]);
 
             const result = await retrievalService.requestRetrieval(
@@ -52,9 +51,8 @@ describe('retrieval service', () => {
             const file = createFileFixture({ storageTier: 'deep_archive' });
             const retrieval = createRetrievalFixture({ tier: 'bulk' });
 
-            mocks.findMany
-                .mockResolvedValueOnce([file])
-                .mockResolvedValueOnce([]);
+            mocks.files.findMany.mockResolvedValue([file]);
+            mocks.retrievals.findMany.mockResolvedValue([]);
             mocks.returning.mockResolvedValue([retrieval]);
 
             const result = await retrievalService.requestRetrieval(
@@ -71,9 +69,8 @@ describe('retrieval service', () => {
             const file = createFileFixture({ storageTier: 'glacier' });
             const existing = createRetrievalFixture({ status: 'pending' });
 
-            mocks.findMany
-                .mockResolvedValueOnce([file]) // findUserFiles
-                .mockResolvedValueOnce([existing]); // findByFileIds returns active retrieval
+            mocks.files.findMany.mockResolvedValue([file]);
+            mocks.retrievals.findMany.mockResolvedValue([existing]);
 
             const result = await retrievalService.requestRetrieval(
                 db,
@@ -86,7 +83,7 @@ describe('retrieval service', () => {
         });
 
         it('throws NotFoundError when file does not exist', async () => {
-            mocks.findMany.mockResolvedValueOnce([]); // findUserFiles returns empty
+            mocks.files.findMany.mockResolvedValue([]);
 
             await expect(
                 retrievalService.requestRetrieval(
@@ -100,9 +97,8 @@ describe('retrieval service', () => {
         it('throws InvalidStateError when file is not in Glacier tier', async () => {
             const file = createFileFixture({ storageTier: 'standard' });
 
-            mocks.findMany
-                .mockResolvedValueOnce([file]) // findUserFiles
-                .mockResolvedValueOnce([]); // findByFileIds (no existing)
+            mocks.files.findMany.mockResolvedValue([file]);
+            mocks.retrievals.findMany.mockResolvedValue([]);
 
             await expect(
                 retrievalService.requestRetrieval(
@@ -133,9 +129,8 @@ describe('retrieval service', () => {
                 createRetrievalFixture({ id: 'r2', fileId: 'file2' }),
             ];
 
-            mocks.findMany
-                .mockResolvedValueOnce(files) // findUserFiles
-                .mockResolvedValueOnce([]); // findByFileIds (no existing)
+            mocks.files.findMany.mockResolvedValue(files);
+            mocks.retrievals.findMany.mockResolvedValue([]);
             mocks.returning.mockResolvedValue(newRetrievals);
 
             const result = await retrievalService.requestBulkRetrieval(
@@ -172,9 +167,8 @@ describe('retrieval service', () => {
                 fileId: 'file2',
             });
 
-            mocks.findMany
-                .mockResolvedValueOnce(files) // findUserFiles
-                .mockResolvedValueOnce([existingRetrieval]); // findByFileIds
+            mocks.files.findMany.mockResolvedValue(files);
+            mocks.retrievals.findMany.mockResolvedValue([existingRetrieval]);
             mocks.returning.mockResolvedValue([newRetrieval]);
 
             const result = await retrievalService.requestBulkRetrieval(
@@ -188,7 +182,7 @@ describe('retrieval service', () => {
 
         it('throws NotFoundError when any file is missing', async () => {
             const files = [createFileFixture({ id: 'file1' })];
-            mocks.findMany.mockResolvedValueOnce(files);
+            mocks.files.findMany.mockResolvedValue(files);
 
             await expect(
                 retrievalService.requestBulkRetrieval(db, TEST_USER_ID, [
@@ -210,9 +204,8 @@ describe('retrieval service', () => {
                 }),
             ];
 
-            mocks.findMany
-                .mockResolvedValueOnce(files) // findUserFiles
-                .mockResolvedValueOnce([]); // findByFileIds (no existing)
+            mocks.files.findMany.mockResolvedValue(files);
+            mocks.retrievals.findMany.mockResolvedValue([]);
 
             await expect(
                 retrievalService.requestBulkRetrieval(db, TEST_USER_ID, [
@@ -232,9 +225,8 @@ describe('retrieval service', () => {
                 status: 'ready',
             });
 
-            mocks.findMany
-                .mockResolvedValueOnce(files) // findUserFiles
-                .mockResolvedValueOnce([existingRetrieval]); // findByFileIds
+            mocks.files.findMany.mockResolvedValue(files);
+            mocks.retrievals.findMany.mockResolvedValue([existingRetrieval]);
 
             const result = await retrievalService.requestBulkRetrieval(
                 db,
@@ -252,9 +244,8 @@ describe('retrieval service', () => {
             const file = createFileFixture();
             const retrieval = createRetrievalFixture({ status: 'ready' });
 
-            mocks.findFirst
-                .mockResolvedValueOnce(file) // findUserFile
-                .mockResolvedValueOnce(retrieval); // findByFileId
+            mocks.files.findFirst.mockResolvedValue(file);
+            mocks.retrievals.findFirst.mockResolvedValue(retrieval);
 
             const result = await retrievalService.getDownloadUrl(
                 db,
@@ -269,7 +260,7 @@ describe('retrieval service', () => {
         });
 
         it('throws NotFoundError when file does not exist', async () => {
-            mocks.findFirst.mockResolvedValue(undefined);
+            mocks.files.findFirst.mockResolvedValue(undefined);
 
             await expect(
                 retrievalService.getDownloadUrl(db, TEST_USER_ID, 'nonexistent')
@@ -279,9 +270,8 @@ describe('retrieval service', () => {
         it('throws InvalidStateError when no retrieval exists', async () => {
             const file = createFileFixture();
 
-            mocks.findFirst
-                .mockResolvedValueOnce(file) // findUserFile
-                .mockResolvedValueOnce(undefined); // findByFileId (no retrieval)
+            mocks.files.findFirst.mockResolvedValue(file);
+            mocks.retrievals.findFirst.mockResolvedValue(undefined);
 
             await expect(
                 retrievalService.getDownloadUrl(db, TEST_USER_ID, TEST_FILE_ID)
@@ -292,9 +282,8 @@ describe('retrieval service', () => {
             const file = createFileFixture();
             const retrieval = createRetrievalFixture({ status: 'pending' });
 
-            mocks.findFirst
-                .mockResolvedValueOnce(file) // findUserFile
-                .mockResolvedValueOnce(retrieval); // findByFileId
+            mocks.files.findFirst.mockResolvedValue(file);
+            mocks.retrievals.findFirst.mockResolvedValue(retrieval);
 
             await expect(
                 retrievalService.getDownloadUrl(db, TEST_USER_ID, TEST_FILE_ID)

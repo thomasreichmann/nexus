@@ -19,7 +19,7 @@ describe('jobs repository', () => {
                 createJobFixture({ id: 'job1' }),
                 createJobFixture({ id: 'job2' }),
             ];
-            mocks.findMany.mockResolvedValue(jobs);
+            mocks.backgroundJobs.findMany.mockResolvedValue(jobs);
             mocks.where.mockResolvedValue([{ count: 2 }]);
 
             const result = await repo.findMany();
@@ -29,12 +29,12 @@ describe('jobs repository', () => {
         });
 
         it('uses default pagination (limit: 50, offset: 0)', async () => {
-            mocks.findMany.mockResolvedValue([]);
+            mocks.backgroundJobs.findMany.mockResolvedValue([]);
             mocks.where.mockResolvedValue([{ count: 0 }]);
 
             await repo.findMany();
 
-            expect(mocks.findMany).toHaveBeenCalledWith(
+            expect(mocks.backgroundJobs.findMany).toHaveBeenCalledWith(
                 expect.objectContaining({
                     limit: 50,
                     offset: 0,
@@ -43,12 +43,12 @@ describe('jobs repository', () => {
         });
 
         it('respects custom pagination options', async () => {
-            mocks.findMany.mockResolvedValue([]);
+            mocks.backgroundJobs.findMany.mockResolvedValue([]);
             mocks.where.mockResolvedValue([{ count: 0 }]);
 
             await repo.findMany({ limit: 10, offset: 20 });
 
-            expect(mocks.findMany).toHaveBeenCalledWith(
+            expect(mocks.backgroundJobs.findMany).toHaveBeenCalledWith(
                 expect.objectContaining({
                     limit: 10,
                     offset: 20,
@@ -57,7 +57,7 @@ describe('jobs repository', () => {
         });
 
         it('returns empty result when no jobs exist', async () => {
-            mocks.findMany.mockResolvedValue([]);
+            mocks.backgroundJobs.findMany.mockResolvedValue([]);
             mocks.where.mockResolvedValue([{ count: 0 }]);
 
             const result = await repo.findMany();
@@ -67,12 +67,12 @@ describe('jobs repository', () => {
         });
 
         it('filters by status when provided', async () => {
-            mocks.findMany.mockResolvedValue([]);
+            mocks.backgroundJobs.findMany.mockResolvedValue([]);
             mocks.where.mockResolvedValue([{ count: 0 }]);
 
             await repo.findMany({ limit: 50, offset: 0, status: 'failed' });
 
-            expect(mocks.findMany).toHaveBeenCalledWith(
+            expect(mocks.backgroundJobs.findMany).toHaveBeenCalledWith(
                 expect.objectContaining({
                     where: expect.anything(),
                 })

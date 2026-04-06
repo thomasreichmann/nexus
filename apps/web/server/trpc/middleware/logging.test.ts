@@ -2,22 +2,20 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-// Mock the logger module so we can control errorVerbosity per test
-const mockLogger = {
-    errorVerbosity: 'full' as 'minimal' | 'standard' | 'full',
-};
+// Mutable holder so individual tests can swap errorVerbosity
+const config = { errorVerbosity: 'full' as 'minimal' | 'standard' | 'full' };
+
+const hoisted = await vi.hoisted(async () => {
+    const { createMockLogger } = await import('@/server/lib/logger/testing');
+    return { logger: createMockLogger() };
+});
 
 vi.mock('@/server/lib/logger', () => ({
     get errorVerbosity() {
-        return mockLogger.errorVerbosity;
+        return config.errorVerbosity;
     },
     isDev: true,
-    logger: {
-        info: vi.fn(),
-        error: vi.fn(),
-        warn: vi.fn(),
-        debug: vi.fn(),
-    },
+    logger: hoisted.logger,
 }));
 
 import {
@@ -28,7 +26,7 @@ import {
 } from './logging';
 
 beforeEach(() => {
-    mockLogger.errorVerbosity = 'full';
+    config.errorVerbosity = 'full';
 });
 
 /** Create a real ZodError by parsing invalid data. */
@@ -243,7 +241,7 @@ describe('formatError', () => {
 
     describe('standard verbosity', () => {
         beforeEach(() => {
-            mockLogger.errorVerbosity = 'standard';
+            config.errorVerbosity = 'standard';
         });
 
         it('includes message but no stack or cause', () => {
@@ -264,7 +262,7 @@ describe('formatError', () => {
 
     describe('minimal verbosity', () => {
         beforeEach(() => {
-            mockLogger.errorVerbosity = 'minimal';
+            config.errorVerbosity = 'minimal';
         });
 
         it('includes only code', () => {
