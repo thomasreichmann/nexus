@@ -11,7 +11,8 @@ export function createMockDb() {
     const groupBy: AnyMock = vi.fn();
     const where: AnyMock = vi.fn(() => ({ returning, groupBy }));
     const set: AnyMock = vi.fn(() => ({ where }));
-    const values: AnyMock = vi.fn(() => ({ returning }));
+    const onConflictDoUpdate: AnyMock = vi.fn(() => ({ returning }));
+    const values: AnyMock = vi.fn(() => ({ returning, onConflictDoUpdate }));
     const from: AnyMock = vi.fn(() => ({ where, groupBy }));
     const select: AnyMock = vi.fn(() => ({ from }));
     const insert: AnyMock = vi.fn(() => ({ values }));
@@ -44,6 +45,7 @@ export function createMockDb() {
             where,
             insert,
             values,
+            onConflictDoUpdate,
             update,
             set,
             delete: deleteFn,
