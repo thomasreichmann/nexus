@@ -51,15 +51,30 @@ function mapStripeStatus(
     return fallback;
 }
 
-function resolveTierFromSubscription(
+async function resolveTierFromSubscription(
     sub: Stripe.Subscription
-): PlanTier | null {
+): Promise<PlanTier | null> {
     const item = sub.items.data[0];
     if (!item) return null;
-    const product = item.price.product as Stripe.Product | string;
-    const metadata =
-        typeof product === 'string' ? null : (product.metadata ?? null);
-    return (metadata?.tier as PlanTier) ?? null;
+
+    const rawProduct = item.price.product;
+    let product: Stripe.Product;
+
+    if (typeof rawProduct === 'string') {
+        try {
+            product = await stripeClient.products.retrieve(rawProduct);
+        } catch (err) {
+            log.warn(
+                { productId: rawProduct, err },
+                'Failed to retrieve product from Stripe'
+            );
+            return null;
+        }
+    } else {
+        product = rawProduct as Stripe.Product;
+    }
+
+    return (product.metadata?.tier as PlanTier) ?? null;
 }
 
 // ─── tRPC-facing service methods ────────────────────────────────────────
@@ -125,6 +140,19 @@ async function createPortalSession(
     return { url: session.url };
 }
 
+/**
+ * Provisions a local-only trial: creates a Stripe Customer but no Stripe
+ * Subscription. The trial is tracked via `trialEnd` in the local DB.
+ *
+ * There is currently no automatic expiry transition — when `trialEnd` passes,
+ * the row stays `status: 'trialing'`. Enforcement is soft: the upload quota
+ * check in `files.ts` (`assertWithinQuota`) rejects uploads for expired trials.
+ *
+ * Future options for proper lifecycle handling:
+ *   1. Cron job to transition expired trials to `canceled`
+ *   2. Real Stripe Subscription with `trial_period_days` so Stripe manages expiry
+ *   3. Middleware in `protectedProcedure` that checks trial status on every request
+ */
 async function provisionTrialSubscription(
     db: DB,
     userId: string,
@@ -215,7 +243,7 @@ async function handleSubscriptionUpsert(
         return;
     }
 
-    const tier = resolveTierFromSubscription(sub) ?? existing.planTier;
+    const tier = (await resolveTierFromSubscription(sub)) ?? existing.planTier;
     const storageLimit = PLAN_LIMITS[tier] ?? existing.storageLimit;
 
     // In API version 2026-02-25.clover, period fields moved from Subscription to its items
