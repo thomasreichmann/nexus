@@ -1,6 +1,8 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
     createMockDb,
+    type MockDb,
+    type MockDbMocks,
     createJobFixture,
     TEST_USER_ID,
 } from '@nexus/db/testing';
@@ -12,8 +14,8 @@ vi.mock('./client', () => ({
 }));
 
 describe('publish', () => {
-    let db: ReturnType<typeof createMockDb>['db'];
-    let mocks: ReturnType<typeof createMockDb>['mocks'];
+    let db: MockDb;
+    let mocks: MockDbMocks;
     let sqsClient: { send: ReturnType<typeof vi.fn> };
 
     beforeEach(async () => {

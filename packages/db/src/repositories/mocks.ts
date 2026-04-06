@@ -51,3 +51,6 @@ export function createMockDb() {
         },
     };
 }
+
+export type MockDb = ReturnType<typeof createMockDb>['db'];
+export type MockDbMocks = ReturnType<typeof createMockDb>['mocks'];

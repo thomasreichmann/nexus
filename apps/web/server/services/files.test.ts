@@ -1,6 +1,8 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
     createMockDb,
+    type MockDb,
+    type MockDbMocks,
     createFileFixture,
     TEST_USER_ID,
 } from '@nexus/db/testing';
@@ -17,8 +19,8 @@ vi.mock('@/lib/storage', () => ({
 }));
 
 describe('files service', () => {
-    let db: ReturnType<typeof createMockDb>['db'];
-    let mocks: ReturnType<typeof createMockDb>['mocks'];
+    let db: MockDb;
+    let mocks: MockDbMocks;
 
     beforeEach(() => {
         vi.clearAllMocks();

@@ -1,16 +1,16 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { createMockDb } from './mocks';
+import { createMockDb, type MockDbMocks } from './mocks';
 import {
     createRetrievalFixture,
     TEST_USER_ID,
     TEST_FILE_ID,
     TEST_RETRIEVAL_ID,
 } from './fixtures';
-import { createRetrievalRepo } from './retrievals';
+import { createRetrievalRepo, type RetrievalRepo } from './retrievals';
 
 describe('retrievals repository', () => {
-    let mocks: ReturnType<typeof createMockDb>['mocks'];
-    let repo: ReturnType<typeof createRetrievalRepo>;
+    let mocks: MockDbMocks;
+    let repo: RetrievalRepo;
 
     beforeEach(() => {
         const mockDb = createMockDb();
