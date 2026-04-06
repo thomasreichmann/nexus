@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { createMockDb } from './mocks';
+import { createMockDb, type MockDbMocks } from './mocks';
 import {
     createFileFixture,
     createNewFileFixture,
@@ -9,7 +9,7 @@ import {
 import { createFileRepo } from './files';
 
 describe('files repository', () => {
-    let mocks: ReturnType<typeof createMockDb>['mocks'];
+    let mocks: MockDbMocks;
     let repo: ReturnType<typeof createFileRepo>;
 
     beforeEach(() => {

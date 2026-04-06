@@ -1,5 +1,10 @@
 import type { RequestLogger, LoggingContext } from './middleware/logging';
-import { createMockDb, createUserFixture, type User } from '@nexus/db/testing';
+import {
+    createMockDb,
+    type MockDbMocks,
+    createUserFixture,
+    type User,
+} from '@nexus/db/testing';
 import type { Context, LoggedContext } from './init';
 
 /**
@@ -40,7 +45,7 @@ export interface MockSession {
  */
 export interface MockContext {
     ctx: LoggedContext;
-    mocks: ReturnType<typeof createMockDb>['mocks'];
+    mocks: MockDbMocks;
     session: MockSession | null;
 }
 

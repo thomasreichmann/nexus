@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { SQSRecord } from 'aws-lambda';
-import { createMockDb, TEST_JOB_ID, TEST_USER_ID } from '@nexus/db/testing';
+import {
+    createMockDb,
+    type MockDb,
+    type MockDbMocks,
+    TEST_JOB_ID,
+    TEST_USER_ID,
+} from '@nexus/db/testing';
 
 // Mock @nexus/db module to prevent real DB connection
 vi.mock('@nexus/db', async (importOriginal) => {
@@ -38,8 +44,8 @@ function createSqsRecord(body: object): SQSRecord {
 }
 
 describe('processRecord', () => {
-    let db: ReturnType<typeof createMockDb>['db'];
-    let mocks: ReturnType<typeof createMockDb>['mocks'];
+    let db: MockDb;
+    let mocks: MockDbMocks;
 
     beforeEach(() => {
         vi.clearAllMocks();
