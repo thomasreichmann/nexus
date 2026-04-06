@@ -3,6 +3,7 @@ import type { File, NewFile } from './files';
 import type { Job, NewJob } from './jobs';
 import type { Retrieval } from './retrievals';
 import type { Subscription } from './subscriptions';
+import type { WebhookEvent } from './webhooks';
 
 export const TEST_USER_ID = 'user_test123';
 export const TEST_FILE_ID = 'file_test456';
@@ -11,6 +12,7 @@ export const TEST_JOB_ID = 'job_test101';
 export const TEST_RETRIEVAL_ID = 'retrieval_test202';
 export const TEST_SUBSCRIPTION_ID = 'sub_test303';
 export const TEST_STRIPE_CUSTOMER_ID = 'cus_test303';
+export const TEST_WEBHOOK_EVENT_ID = 'wh_test404';
 
 export type User = typeof schema.user.$inferSelect;
 export type StorageUsage = typeof schema.storageUsage.$inferSelect;
@@ -120,6 +122,24 @@ export function createSubscriptionFixture(
         currentPeriodEnd: null,
         cancelAtPeriodEnd: false,
         trialEnd: null,
+        createdAt: now,
+        updatedAt: now,
+        ...overrides,
+    };
+}
+
+export function createWebhookEventFixture(
+    overrides: Partial<WebhookEvent> = {}
+): WebhookEvent {
+    const now = new Date();
+    return {
+        id: TEST_WEBHOOK_EVENT_ID,
+        source: 'stripe',
+        externalId: 'evt_test',
+        eventType: 'customer.subscription.updated',
+        payload: {},
+        status: 'received',
+        error: null,
         createdAt: now,
         updatedAt: now,
         ...overrides,
