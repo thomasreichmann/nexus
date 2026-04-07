@@ -1,10 +1,11 @@
 import type Stripe from 'stripe';
+import { addDays } from 'date-fns';
 import type { DB } from '@nexus/db';
 import {
     createSubscriptionRepo,
     type Subscription,
 } from '@nexus/db/repo/subscriptions';
-import { subscriptionStatusEnum } from '@nexus/db/schema';
+import { planTierEnum, subscriptionStatusEnum } from '@nexus/db/schema';
 import { env } from '@/lib/env';
 import { stripe, stripeClient } from '@/lib/stripe';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
@@ -20,6 +21,7 @@ import {
 const log = logger.child({ service: 'subscriptions' });
 
 const VALID_STATUSES = new Set<string>(subscriptionStatusEnum.enumValues);
+const VALID_TIERS = new Set<string>(planTierEnum.enumValues);
 
 type SubscriptionStatus = (typeof subscriptionStatusEnum.enumValues)[number];
 
@@ -83,12 +85,9 @@ function findPlanItem(
     return planItems[0] ?? sub.items.data[0];
 }
 
-async function resolveTierFromSubscription(
-    sub: Stripe.Subscription
+async function resolveTierFromItem(
+    item: Stripe.SubscriptionItem
 ): Promise<PlanTier | null> {
-    const item = findPlanItem(sub);
-    if (!item) return null;
-
     const rawProduct = item.price.product;
     let product: Stripe.Product;
 
@@ -102,11 +101,22 @@ async function resolveTierFromSubscription(
             );
             return null;
         }
+    } else if ('deleted' in rawProduct && rawProduct.deleted) {
+        return null;
     } else {
-        product = rawProduct as Stripe.Product;
+        product = rawProduct;
     }
 
-    return (product.metadata?.tier as PlanTier) ?? null;
+    const tier = product.metadata?.tier;
+    if (!tier) return null;
+    if (!VALID_TIERS.has(tier)) {
+        log.warn(
+            { productId: product.id, tier },
+            'Stripe product metadata.tier does not match any DB plan tier'
+        );
+        return null;
+    }
+    return tier as PlanTier;
 }
 
 // ─── tRPC-facing service methods ────────────────────────────────────────
@@ -174,16 +184,8 @@ async function createPortalSession(
 
 /**
  * Provisions a local-only trial: creates a Stripe Customer but no Stripe
- * Subscription. The trial is tracked via `trialEnd` in the local DB.
- *
- * There is currently no automatic expiry transition — when `trialEnd` passes,
- * the row stays `status: 'trialing'`. Enforcement is soft: the upload quota
- * check in `files.ts` (`assertWithinQuota`) rejects uploads for expired trials.
- *
- * Future options for proper lifecycle handling:
- *   1. Cron job to transition expired trials to `canceled`
- *   2. Real Stripe Subscription with `trial_period_days` so Stripe manages expiry
- *   3. Middleware in `protectedProcedure` that checks trial status on every request
+ * Subscription. Expiry is enforced soft by `assertWithinQuota` in files.ts —
+ * the row stays `status: 'trialing'` until a real subscription replaces it.
  */
 async function provisionTrialSubscription(
     db: DB,
@@ -197,8 +199,7 @@ async function provisionTrialSubscription(
         metadata: { userId },
     });
 
-    const trialEnd = new Date();
-    trialEnd.setDate(trialEnd.getDate() + TRIAL_DURATION_DAYS);
+    const trialEnd = addDays(new Date(), TRIAL_DURATION_DAYS);
 
     const repo = createSubscriptionRepo(db);
     await repo.insert({
@@ -275,12 +276,14 @@ async function handleSubscriptionUpsert(
         return;
     }
 
-    const tier = (await resolveTierFromSubscription(sub)) ?? existing.planTier;
-    const storageLimit = PLAN_LIMITS[tier] ?? existing.storageLimit;
-
-    // In API version 2026-02-25.clover, period fields moved from Subscription to its items.
-    // Read from the plan item (not the first add-on) so add-ons with different cycles don't override.
+    // Period fields live on subscription items (Stripe API 2026-02-25.clover);
+    // pick the plan item once and reuse it for both tier and period extraction.
     const planItem = findPlanItem(sub);
+    const tier =
+        (planItem ? await resolveTierFromItem(planItem) : null) ??
+        existing.planTier;
+    const storageLimit = PLAN_LIMITS[tier];
+
     const periodStart = planItem
         ? new Date(planItem.current_period_start * 1000)
         : existing.currentPeriodStart;

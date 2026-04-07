@@ -8,6 +8,17 @@ import { subscriptionService } from '@/server/services/subscriptions';
 
 const log = logger.child({ handler: 'stripe-webhook' });
 
+const POSTGRES_UNIQUE_VIOLATION = '23505';
+
+function isUniqueViolation(err: unknown): boolean {
+    return (
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code: unknown }).code === POSTGRES_UNIQUE_VIOLATION
+    );
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
     let rawBody: string;
     try {
@@ -71,10 +82,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 eventType: event.type,
                 payload: event as unknown as Record<string, unknown>,
             });
-        } catch {
-            // Unique constraint violation from concurrent redelivery
-            log.debug({ eventId: event.id }, 'Concurrent duplicate skipped');
-            return NextResponse.json({ received: true, duplicate: true });
+        } catch (err) {
+            // Only swallow Postgres unique-violation (23505) — that's a
+            // concurrent redelivery race. Anything else (schema mismatch,
+            // connection drop, etc.) is a real failure and must surface.
+            if (isUniqueViolation(err)) {
+                log.debug(
+                    { eventId: event.id },
+                    'Concurrent duplicate skipped'
+                );
+                return NextResponse.json({
+                    received: true,
+                    duplicate: true,
+                });
+            }
+            throw err;
         }
     }
 

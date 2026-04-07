@@ -1,12 +1,24 @@
 import type Stripe from 'stripe';
-import type { CheckoutTier, BillingInterval } from './types';
+import {
+    CHECKOUT_TIERS,
+    type CheckoutTier,
+    type BillingInterval,
+} from './types';
 import { stripeClient } from './client';
 
-/** Avoids repeated Stripe API calls; populated once per process, keyed by tier:interval. */
-let priceCache: Map<string, string> | null = null;
+// Cache the in-flight promise (not just the resolved Map) so concurrent first
+// callers share a single Stripe pagination instead of stampeding.
+let pricesPromise: Promise<Map<string, string>> | null = null;
 
 function cacheKey(tier: CheckoutTier, interval: BillingInterval): string {
     return `${tier}:${interval}`;
+}
+
+function isCheckoutTier(value: string | undefined): value is CheckoutTier {
+    return (
+        value !== undefined &&
+        (CHECKOUT_TIERS as readonly string[]).includes(value)
+    );
 }
 
 async function loadPrices(): Promise<Map<string, string>> {
@@ -26,12 +38,13 @@ async function loadPrices(): Promise<Map<string, string>> {
 
         for (const price of page.data) {
             const product = price.product as Stripe.Product;
-            const tier = product.metadata?.tier as CheckoutTier | undefined;
-            const interval = price.recurring?.interval as
-                | BillingInterval
-                | undefined;
+            const tier = product.metadata?.tier;
+            const interval = price.recurring?.interval;
 
-            if (tier && interval) {
+            if (
+                isCheckoutTier(tier) &&
+                (interval === 'month' || interval === 'year')
+            ) {
                 cache.set(cacheKey(tier, interval), price.id);
             }
         }
@@ -50,11 +63,16 @@ export async function resolvePriceId(
     tier: CheckoutTier,
     interval: BillingInterval
 ): Promise<string> {
-    if (!priceCache) {
-        priceCache = await loadPrices();
+    if (!pricesPromise) {
+        pricesPromise = loadPrices().catch((err) => {
+            // Don't pin a rejected promise — let the next call retry.
+            pricesPromise = null;
+            throw err;
+        });
     }
 
-    const priceId = priceCache.get(cacheKey(tier, interval));
+    const cache = await pricesPromise;
+    const priceId = cache.get(cacheKey(tier, interval));
     if (!priceId) {
         throw new Error(
             `No Stripe price found for tier="${tier}" interval="${interval}". ` +
@@ -63,9 +81,4 @@ export async function resolvePriceId(
     }
 
     return priceId;
-}
-
-/** Call after adding or changing prices in the Stripe Dashboard. */
-export function invalidatePriceCache(): void {
-    priceCache = null;
 }

@@ -217,13 +217,15 @@ describe('POST /api/webhooks/stripe', () => {
             expect(mocks.insert).not.toHaveBeenCalled();
         });
 
-        it('treats unique-constraint failure on insert as a duplicate', async () => {
+        it('treats Postgres unique-violation on insert as a duplicate', async () => {
             // Concurrent redelivery: the find() race lost, the insert hits the
-            // unique index. Production code should swallow it as a duplicate.
+            // unique index. Production code should swallow code 23505 only.
             mocks.webhookEvents.findFirst.mockResolvedValue(undefined);
-            mocks.returning.mockRejectedValue(
-                new Error('duplicate key value violates unique constraint')
+            const uniqueViolation = Object.assign(
+                new Error('duplicate key value violates unique constraint'),
+                { code: '23505' }
             );
+            mocks.returning.mockRejectedValue(uniqueViolation);
 
             const response = await POST(makeRequest(sampleEvent));
 
@@ -232,6 +234,18 @@ describe('POST /api/webhooks/stripe', () => {
                 received: true,
                 duplicate: true,
             });
+            expect(dispatchWebhookEvent).not.toHaveBeenCalled();
+        });
+
+        it('rethrows non-unique-violation insert errors instead of masking them', async () => {
+            // A schema mismatch or connection drop must NOT be silently
+            // reported as a duplicate — Stripe needs to retry the delivery.
+            mocks.webhookEvents.findFirst.mockResolvedValue(undefined);
+            mocks.returning.mockRejectedValue(new Error('connection refused'));
+
+            await expect(POST(makeRequest(sampleEvent))).rejects.toThrow(
+                'connection refused'
+            );
             expect(dispatchWebhookEvent).not.toHaveBeenCalled();
         });
     });
