@@ -159,7 +159,7 @@ describe('POST /api/webhooks/stripe', () => {
             vi.stubEnv('NODE_ENV', 'development');
         });
 
-        it('skips dispatch when event id already recorded', async () => {
+        it('skips dispatch when event was already processed', async () => {
             mocks.webhookEvents.findFirst.mockResolvedValue(
                 createWebhookEventFixture({
                     externalId: sampleEvent.id,
@@ -175,6 +175,45 @@ describe('POST /api/webhooks/stripe', () => {
                 duplicate: true,
             });
             expect(dispatchWebhookEvent).not.toHaveBeenCalled();
+            expect(mocks.insert).not.toHaveBeenCalled();
+        });
+
+        it('retries dispatch when prior attempt failed', async () => {
+            // Stripe redelivers a previously-failed event. The original record
+            // exists with status 'failed' — this run should re-dispatch and
+            // promote it to 'processed' on success.
+            const failedRecord = createWebhookEventFixture({
+                externalId: sampleEvent.id,
+                status: 'failed',
+                error: 'previous downstream error',
+            });
+            mocks.webhookEvents.findFirst.mockResolvedValue(failedRecord);
+            dispatchWebhookEvent.mockResolvedValue(undefined);
+
+            const response = await POST(makeRequest(sampleEvent));
+
+            expect(response.status).toBe(200);
+            await expect(response.json()).resolves.toEqual({ received: true });
+            expect(dispatchWebhookEvent).toHaveBeenCalled();
+            expect(mocks.insert).not.toHaveBeenCalled();
+            expect(mocks.set).toHaveBeenCalledWith({ status: 'processed' });
+        });
+
+        it('retries dispatch when prior attempt is still in received state', async () => {
+            // Edge case: a prior crash left the row stuck on 'received'.
+            // Stripe's retry should be allowed to drive it to a terminal state.
+            mocks.webhookEvents.findFirst.mockResolvedValue(
+                createWebhookEventFixture({
+                    externalId: sampleEvent.id,
+                    status: 'received',
+                })
+            );
+            dispatchWebhookEvent.mockResolvedValue(undefined);
+
+            const response = await POST(makeRequest(sampleEvent));
+
+            expect(response.status).toBe(200);
+            expect(dispatchWebhookEvent).toHaveBeenCalled();
             expect(mocks.insert).not.toHaveBeenCalled();
         });
 

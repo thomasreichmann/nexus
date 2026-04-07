@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import type Stripe from 'stripe';
-import { createWebhookRepo } from '@nexus/db/repo/webhooks';
+import { createWebhookRepo, type WebhookEvent } from '@nexus/db/repo/webhooks';
 import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import { stripe } from '@/lib/stripe';
@@ -47,28 +47,35 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const webhookRepo = createWebhookRepo(db);
 
-    // Stripe may redeliver events during outages
+    // Stripe may redeliver events during outages, or retry after a prior
+    // failure. Only `processed` short-circuits — `failed` and `received` rows
+    // fall through so the dispatch can re-run and recover.
     const existing = await webhookRepo.find('stripe', event.id);
-    if (existing) {
-        log.debug(
-            { eventId: event.id, duplicate: true },
-            'Duplicate webhook event skipped'
-        );
+    if (existing?.status === 'processed') {
+        log.debug({ eventId: event.id }, 'Webhook already processed, skipping');
         return NextResponse.json({ received: true, duplicate: true });
     }
 
-    let webhookEvent;
-    try {
-        webhookEvent = await webhookRepo.insert({
-            source: 'stripe',
-            externalId: event.id,
-            eventType: event.type,
-            payload: event as unknown as Record<string, unknown>,
-        });
-    } catch {
-        // Unique constraint violation from concurrent redelivery
-        log.debug({ eventId: event.id }, 'Concurrent duplicate skipped');
-        return NextResponse.json({ received: true, duplicate: true });
+    let webhookEvent: WebhookEvent;
+    if (existing) {
+        webhookEvent = existing;
+        log.info(
+            { eventId: event.id, prevStatus: existing.status },
+            'Retrying webhook event'
+        );
+    } else {
+        try {
+            webhookEvent = await webhookRepo.insert({
+                source: 'stripe',
+                externalId: event.id,
+                eventType: event.type,
+                payload: event as unknown as Record<string, unknown>,
+            });
+        } catch {
+            // Unique constraint violation from concurrent redelivery
+            log.debug({ eventId: event.id }, 'Concurrent duplicate skipped');
+            return NextResponse.json({ received: true, duplicate: true });
+        }
     }
 
     const start = Date.now();
