@@ -2,6 +2,10 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import * as schema from '@nexus/db/schema';
 import { db } from '@/server/db';
+import { subscriptionService } from '@/server/services/subscriptions';
+import { logger } from '@/server/lib/logger';
+
+const log = logger.child({ module: 'auth' });
 
 export const auth = betterAuth({
     database: drizzleAdapter(db, {
@@ -20,6 +24,27 @@ export const auth = betterAuth({
             role: {
                 type: 'string',
                 input: false,
+            },
+        },
+    },
+    databaseHooks: {
+        user: {
+            create: {
+                after: async (user) => {
+                    try {
+                        await subscriptionService.provisionTrialSubscription(
+                            db,
+                            user.id,
+                            user.email,
+                            user.name
+                        );
+                    } catch (err) {
+                        log.error(
+                            { err, userId: user.id },
+                            'Failed to provision trial subscription on signup'
+                        );
+                    }
+                },
             },
         },
     },

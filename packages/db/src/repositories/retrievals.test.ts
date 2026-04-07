@@ -21,16 +21,16 @@ describe('retrievals repository', () => {
     describe('findByFileId', () => {
         it('returns active retrieval when found', async () => {
             const retrieval = createRetrievalFixture();
-            mocks.findFirst.mockResolvedValue(retrieval);
+            mocks.retrievals.findFirst.mockResolvedValue(retrieval);
 
             const result = await repo.findByFileId(TEST_FILE_ID);
 
             expect(result).toEqual(retrieval);
-            expect(mocks.findFirst).toHaveBeenCalledOnce();
+            expect(mocks.retrievals.findFirst).toHaveBeenCalledOnce();
         });
 
         it('returns undefined when no active retrieval exists', async () => {
-            mocks.findFirst.mockResolvedValue(undefined);
+            mocks.retrievals.findFirst.mockResolvedValue(undefined);
 
             const result = await repo.findByFileId('nonexistent');
 
@@ -44,19 +44,19 @@ describe('retrievals repository', () => {
                 createRetrievalFixture({ id: 'r1', fileId: 'file1' }),
                 createRetrievalFixture({ id: 'r2', fileId: 'file2' }),
             ];
-            mocks.findMany.mockResolvedValue(retrievals);
+            mocks.retrievals.findMany.mockResolvedValue(retrievals);
 
             const result = await repo.findByFileIds(['file1', 'file2']);
 
             expect(result).toEqual(retrievals);
-            expect(mocks.findMany).toHaveBeenCalledOnce();
+            expect(mocks.retrievals.findMany).toHaveBeenCalledOnce();
         });
 
         it('returns empty array when given empty ids', async () => {
             const result = await repo.findByFileIds([]);
 
             expect(result).toEqual([]);
-            expect(mocks.findMany).not.toHaveBeenCalled();
+            expect(mocks.retrievals.findMany).not.toHaveBeenCalled();
         });
     });
 
@@ -66,16 +66,16 @@ describe('retrievals repository', () => {
                 createRetrievalFixture({ id: 'r1' }),
                 createRetrievalFixture({ id: 'r2', status: 'ready' }),
             ];
-            mocks.findMany.mockResolvedValue(retrievals);
+            mocks.retrievals.findMany.mockResolvedValue(retrievals);
 
             const result = await repo.findByUser(TEST_USER_ID);
 
             expect(result).toEqual(retrievals);
-            expect(mocks.findMany).toHaveBeenCalledOnce();
+            expect(mocks.retrievals.findMany).toHaveBeenCalledOnce();
         });
 
         it('returns empty array when user has no retrievals', async () => {
-            mocks.findMany.mockResolvedValue([]);
+            mocks.retrievals.findMany.mockResolvedValue([]);
 
             const result = await repo.findByUser(TEST_USER_ID);
 

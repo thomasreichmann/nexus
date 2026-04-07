@@ -2,12 +2,17 @@ import * as schema from '../schema';
 import type { File, NewFile } from './files';
 import type { Job, NewJob } from './jobs';
 import type { Retrieval } from './retrievals';
+import type { Subscription } from './subscriptions';
+import type { WebhookEvent } from './webhooks';
 
 export const TEST_USER_ID = 'user_test123';
 export const TEST_FILE_ID = 'file_test456';
 export const TEST_STORAGE_USAGE_ID = 'storage_test789';
 export const TEST_JOB_ID = 'job_test101';
 export const TEST_RETRIEVAL_ID = 'retrieval_test202';
+export const TEST_SUBSCRIPTION_ID = 'sub_test303';
+export const TEST_STRIPE_CUSTOMER_ID = 'cus_test303';
+export const TEST_WEBHOOK_EVENT_ID = 'wh_test404';
 
 export type User = typeof schema.user.$inferSelect;
 export type StorageUsage = typeof schema.storageUsage.$inferSelect;
@@ -97,6 +102,46 @@ export function createNewJobFixture(overrides: Partial<NewJob> = {}): NewJob {
     return {
         type: 'delete-account',
         payload: { userId: TEST_USER_ID },
+        ...overrides,
+    };
+}
+
+export function createSubscriptionFixture(
+    overrides: Partial<Subscription> = {}
+): Subscription {
+    const now = new Date();
+    return {
+        id: TEST_SUBSCRIPTION_ID,
+        userId: TEST_USER_ID,
+        stripeCustomerId: TEST_STRIPE_CUSTOMER_ID,
+        stripeSubscriptionId: null,
+        planTier: 'starter',
+        status: 'active',
+        storageLimit: 10 * 1024 ** 3, // 10 GB
+        currentPeriodStart: null,
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+        trialEnd: null,
+        createdAt: now,
+        updatedAt: now,
+        ...overrides,
+    };
+}
+
+export function createWebhookEventFixture(
+    overrides: Partial<WebhookEvent> = {}
+): WebhookEvent {
+    const now = new Date();
+    return {
+        id: TEST_WEBHOOK_EVENT_ID,
+        source: 'stripe',
+        externalId: 'evt_test',
+        eventType: 'customer.subscription.updated',
+        payload: {},
+        status: 'received',
+        error: null,
+        createdAt: now,
+        updatedAt: now,
         ...overrides,
     };
 }

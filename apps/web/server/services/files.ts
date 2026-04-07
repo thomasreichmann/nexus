@@ -1,12 +1,14 @@
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
+import { createSubscriptionRepo } from '@nexus/db/repo/subscriptions';
 import {
     NotFoundError,
     QuotaExceededError,
     InvalidStateError,
+    TrialExpiredError,
 } from '@/server/errors';
 import { s3 } from '@/lib/storage';
-import { DEFAULT_STORAGE_LIMIT_BYTES } from './constants';
+import { PLAN_LIMITS } from './constants';
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 900; // 15 minutes
 const MULTIPART_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
@@ -46,17 +48,41 @@ interface ConfirmUploadResult {
     file: File;
 }
 
+async function assertWithinQuota(
+    db: DB,
+    userId: string,
+    additionalBytes: number
+): Promise<void> {
+    const fileRepo = createFileRepo(db);
+    const subscriptionRepo = createSubscriptionRepo(db);
+
+    const [currentUsage, sub] = await Promise.all([
+        fileRepo.sumStorageByUser(userId),
+        subscriptionRepo.findByUserId(userId),
+    ]);
+
+    if (
+        sub?.status === 'trialing' &&
+        sub.trialEnd &&
+        sub.trialEnd < new Date()
+    ) {
+        throw new TrialExpiredError();
+    }
+
+    const quotaBytes = sub?.storageLimit ?? PLAN_LIMITS.starter;
+    if (currentUsage + additionalBytes > quotaBytes) {
+        throw new QuotaExceededError('Storage quota exceeded');
+    }
+}
+
 async function initiateUpload(
     db: DB,
     userId: string,
     input: UploadInput
 ): Promise<InitiateUploadResult> {
-    const fileRepo = createFileRepo(db);
-    const currentUsage = await fileRepo.sumStorageByUser(userId);
-    if (currentUsage + input.sizeBytes > DEFAULT_STORAGE_LIMIT_BYTES) {
-        throw new QuotaExceededError('Storage quota exceeded');
-    }
+    await assertWithinQuota(db, userId, input.sizeBytes);
 
+    const fileRepo = createFileRepo(db);
     const fileId = crypto.randomUUID();
     const s3Key = `${userId}/${fileId}/${input.name}`;
 
@@ -114,12 +140,9 @@ async function initiateMultipartUpload(
     userId: string,
     input: UploadInput
 ): Promise<InitiateMultipartResult> {
-    const fileRepo = createFileRepo(db);
-    const currentUsage = await fileRepo.sumStorageByUser(userId);
-    if (currentUsage + input.sizeBytes > DEFAULT_STORAGE_LIMIT_BYTES) {
-        throw new QuotaExceededError('Storage quota exceeded');
-    }
+    await assertWithinQuota(db, userId, input.sizeBytes);
 
+    const fileRepo = createFileRepo(db);
     const fileId = crypto.randomUUID();
     const s3Key = `${userId}/${fileId}/${input.name}`;
     const partCount = Math.ceil(input.sizeBytes / MULTIPART_CHUNK_SIZE);

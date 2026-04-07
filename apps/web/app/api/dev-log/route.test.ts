@@ -2,26 +2,17 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import type { LogEvent } from 'pino';
 
-const mockChild = vi.hoisted(() => ({
-    trace: vi.fn(),
-    debug: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    fatal: vi.fn(),
-}));
-
-// Mock the logger module
-vi.mock('@/server/lib/logger', () => {
-    return {
-        logger: {
-            child: vi.fn(() => mockChild),
-        },
-    };
+const hoisted = await vi.hoisted(async () => {
+    const { createMockLogger } = await import('@/server/lib/logger/testing');
+    return { logger: createMockLogger() };
 });
+
+vi.mock('@/server/lib/logger', () => ({ logger: hoisted.logger }));
 
 // Import after mock setup
 import { POST } from './route';
+
+const mockChild = hoisted.logger;
 
 function createLogEvent(overrides: Partial<LogEvent> = {}): LogEvent {
     return {

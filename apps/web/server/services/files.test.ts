@@ -4,6 +4,7 @@ import {
     type MockDb,
     type MockDbMocks,
     createFileFixture,
+    createSubscriptionFixture,
     TEST_USER_ID,
 } from '@nexus/db/testing';
 import { mockS3 } from '@/lib/storage/testing';
@@ -11,6 +12,7 @@ import {
     NotFoundError,
     QuotaExceededError,
     InvalidStateError,
+    TrialExpiredError,
 } from '@/server/errors';
 import { fileService } from './files';
 
@@ -128,11 +130,133 @@ describe('files service', () => {
         });
     });
 
+    describe('quota enforcement with subscription', () => {
+        const oneGB = 1024 ** 3;
+        const hundredGB = 100 * 1024 ** 3;
+
+        it('uses subscription storageLimit instead of starter default', async () => {
+            // Pro subscription with 100 GB limit — user is already at 50 GB
+            mocks.subscriptions.findFirst.mockResolvedValue(
+                createSubscriptionFixture({
+                    planTier: 'pro',
+                    status: 'active',
+                    storageLimit: hundredGB,
+                })
+            );
+            mocks.where.mockResolvedValue([{ total: 50 * oneGB }]);
+            mocks.returning.mockResolvedValue([createFileFixture()]);
+
+            // 40 GB upload would exceed starter (10 GB) but fits in pro (100 GB)
+            const result = await fileService.initiateUpload(db, TEST_USER_ID, {
+                name: 'big.bin',
+                sizeBytes: 40 * oneGB,
+            });
+
+            expect(result).toHaveProperty('fileId');
+        });
+
+        it('throws QuotaExceededError when over subscription limit', async () => {
+            mocks.subscriptions.findFirst.mockResolvedValue(
+                createSubscriptionFixture({
+                    planTier: 'pro',
+                    status: 'active',
+                    storageLimit: hundredGB,
+                })
+            );
+            // At 99 GB, a 2 GB upload would exceed the 100 GB limit
+            mocks.where.mockResolvedValue([{ total: 99 * oneGB }]);
+
+            await expect(
+                fileService.initiateUpload(db, TEST_USER_ID, {
+                    name: 'overflow.bin',
+                    sizeBytes: 2 * oneGB,
+                })
+            ).rejects.toThrow(QuotaExceededError);
+        });
+
+        it('allows upload during active trial within quota', async () => {
+            const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // +7 days
+            mocks.subscriptions.findFirst.mockResolvedValue(
+                createSubscriptionFixture({
+                    status: 'trialing',
+                    trialEnd: future,
+                })
+            );
+            mocks.where.mockResolvedValue([{ total: 0 }]);
+            mocks.returning.mockResolvedValue([createFileFixture()]);
+
+            const result = await fileService.initiateUpload(db, TEST_USER_ID, {
+                name: 'trial.pdf',
+                sizeBytes: 1024,
+            });
+
+            expect(result).toHaveProperty('fileId');
+        });
+
+        it('throws TrialExpiredError when trial has ended', async () => {
+            const past = new Date(Date.now() - 24 * 60 * 60 * 1000); // -1 day
+            mocks.subscriptions.findFirst.mockResolvedValue(
+                createSubscriptionFixture({
+                    status: 'trialing',
+                    trialEnd: past,
+                })
+            );
+            mocks.where.mockResolvedValue([{ total: 0 }]);
+
+            await expect(
+                fileService.initiateUpload(db, TEST_USER_ID, {
+                    name: 'expired.pdf',
+                    sizeBytes: 1024,
+                })
+            ).rejects.toThrow(TrialExpiredError);
+        });
+
+        it('prefers TrialExpiredError over QuotaExceededError when both apply', async () => {
+            // Expired trial AND over quota — trial check must run first
+            const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            mocks.subscriptions.findFirst.mockResolvedValue(
+                createSubscriptionFixture({
+                    status: 'trialing',
+                    trialEnd: past,
+                    storageLimit: oneGB,
+                })
+            );
+            mocks.where.mockResolvedValue([{ total: oneGB }]); // already at quota
+
+            await expect(
+                fileService.initiateUpload(db, TEST_USER_ID, {
+                    name: 'double-fail.pdf',
+                    sizeBytes: 1024,
+                })
+            ).rejects.toThrow(TrialExpiredError);
+        });
+
+        it('ignores trialEnd when status is not trialing', async () => {
+            // Active sub with a stale trialEnd in the past — should not throw
+            const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            mocks.subscriptions.findFirst.mockResolvedValue(
+                createSubscriptionFixture({
+                    status: 'active',
+                    trialEnd: past,
+                })
+            );
+            mocks.where.mockResolvedValue([{ total: 0 }]);
+            mocks.returning.mockResolvedValue([createFileFixture()]);
+
+            const result = await fileService.initiateUpload(db, TEST_USER_ID, {
+                name: 'active.pdf',
+                sizeBytes: 1024,
+            });
+
+            expect(result).toHaveProperty('fileId');
+        });
+    });
+
     describe('confirmUpload', () => {
         it('returns file with status available', async () => {
             const uploadingFile = createFileFixture({ status: 'uploading' });
             const availableFile = createFileFixture({ status: 'available' });
-            mocks.findFirst.mockResolvedValue(uploadingFile);
+            mocks.files.findFirst.mockResolvedValue(uploadingFile);
             mocks.returning.mockResolvedValue([availableFile]);
 
             const result = await fileService.confirmUpload(
@@ -146,7 +270,7 @@ describe('files service', () => {
         });
 
         it('throws NotFoundError when file does not exist', async () => {
-            mocks.findFirst.mockResolvedValue(undefined);
+            mocks.files.findFirst.mockResolvedValue(undefined);
 
             await expect(
                 fileService.confirmUpload(db, TEST_USER_ID, 'nonexistent-id')
@@ -155,7 +279,7 @@ describe('files service', () => {
 
         it('throws NotFoundError when file belongs to different user', async () => {
             // findUserFile returns undefined when user doesn't own file
-            mocks.findFirst.mockResolvedValue(undefined);
+            mocks.files.findFirst.mockResolvedValue(undefined);
 
             await expect(
                 fileService.confirmUpload(db, 'different-user', 'some-file-id')
@@ -358,7 +482,7 @@ describe('files service', () => {
         it('transitions file to available status', async () => {
             const uploadingFile = createFileFixture({ status: 'uploading' });
             const availableFile = createFileFixture({ status: 'available' });
-            mocks.findFirst.mockResolvedValue(uploadingFile);
+            mocks.files.findFirst.mockResolvedValue(uploadingFile);
             mocks.returning.mockResolvedValue([availableFile]);
 
             const result = await fileService.completeMultipartUpload(
@@ -376,7 +500,7 @@ describe('files service', () => {
         });
 
         it('throws NotFoundError when file does not exist', async () => {
-            mocks.findFirst.mockResolvedValue(undefined);
+            mocks.files.findFirst.mockResolvedValue(undefined);
 
             await expect(
                 fileService.completeMultipartUpload(db, TEST_USER_ID, {
@@ -389,7 +513,7 @@ describe('files service', () => {
 
         it('throws InvalidStateError when file is not uploading', async () => {
             const availableFile = createFileFixture({ status: 'available' });
-            mocks.findFirst.mockResolvedValue(availableFile);
+            mocks.files.findFirst.mockResolvedValue(availableFile);
 
             await expect(
                 fileService.completeMultipartUpload(db, TEST_USER_ID, {
@@ -404,7 +528,7 @@ describe('files service', () => {
     describe('abortMultipartUpload', () => {
         it('soft-deletes the file record', async () => {
             const uploadingFile = createFileFixture({ status: 'uploading' });
-            mocks.findFirst.mockResolvedValue(uploadingFile);
+            mocks.files.findFirst.mockResolvedValue(uploadingFile);
             mocks.returning.mockResolvedValue([
                 { ...uploadingFile, status: 'deleted' },
             ]);
@@ -425,7 +549,7 @@ describe('files service', () => {
         });
 
         it('throws NotFoundError when file does not exist', async () => {
-            mocks.findFirst.mockResolvedValue(undefined);
+            mocks.files.findFirst.mockResolvedValue(undefined);
 
             await expect(
                 fileService.abortMultipartUpload(

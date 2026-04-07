@@ -21,16 +21,16 @@ describe('files repository', () => {
     describe('findById', () => {
         it('returns file when found', async () => {
             const file = createFileFixture();
-            mocks.findFirst.mockResolvedValue(file);
+            mocks.files.findFirst.mockResolvedValue(file);
 
             const result = await repo.findById(TEST_FILE_ID);
 
             expect(result).toEqual(file);
-            expect(mocks.findFirst).toHaveBeenCalledOnce();
+            expect(mocks.files.findFirst).toHaveBeenCalledOnce();
         });
 
         it('returns undefined when not found', async () => {
-            mocks.findFirst.mockResolvedValue(undefined);
+            mocks.files.findFirst.mockResolvedValue(undefined);
 
             const result = await repo.findById('nonexistent');
 
@@ -41,7 +41,7 @@ describe('files repository', () => {
     describe('findByUserAndId', () => {
         it('returns file when user owns it', async () => {
             const file = createFileFixture();
-            mocks.findFirst.mockResolvedValue(file);
+            mocks.files.findFirst.mockResolvedValue(file);
 
             const result = await repo.findByUserAndId(
                 TEST_USER_ID,
@@ -49,11 +49,11 @@ describe('files repository', () => {
             );
 
             expect(result).toEqual(file);
-            expect(mocks.findFirst).toHaveBeenCalledOnce();
+            expect(mocks.files.findFirst).toHaveBeenCalledOnce();
         });
 
         it('returns undefined when user does not own file', async () => {
-            mocks.findFirst.mockResolvedValue(undefined);
+            mocks.files.findFirst.mockResolvedValue(undefined);
 
             const result = await repo.findByUserAndId(
                 'other_user',
@@ -70,7 +70,7 @@ describe('files repository', () => {
                 createFileFixture({ id: 'file1' }),
                 createFileFixture({ id: 'file2' }),
             ];
-            mocks.findMany.mockResolvedValue(files);
+            mocks.files.findMany.mockResolvedValue(files);
 
             const result = await repo.findManyByUserAndIds(TEST_USER_ID, [
                 'file1',
@@ -78,19 +78,19 @@ describe('files repository', () => {
             ]);
 
             expect(result).toEqual(files);
-            expect(mocks.findMany).toHaveBeenCalledOnce();
+            expect(mocks.files.findMany).toHaveBeenCalledOnce();
         });
 
         it('returns empty array when given empty ids', async () => {
             const result = await repo.findManyByUserAndIds(TEST_USER_ID, []);
 
             expect(result).toEqual([]);
-            expect(mocks.findMany).not.toHaveBeenCalled();
+            expect(mocks.files.findMany).not.toHaveBeenCalled();
         });
 
         it('returns only files that exist and are owned by user', async () => {
             const files = [createFileFixture({ id: 'file1' })];
-            mocks.findMany.mockResolvedValue(files);
+            mocks.files.findMany.mockResolvedValue(files);
 
             const result = await repo.findManyByUserAndIds(TEST_USER_ID, [
                 'file1',
@@ -107,7 +107,7 @@ describe('files repository', () => {
                 createFileFixture({ id: 'file1' }),
                 createFileFixture({ id: 'file2' }),
             ];
-            mocks.findMany.mockResolvedValue(files);
+            mocks.files.findMany.mockResolvedValue(files);
 
             const result = await repo.findByUser(TEST_USER_ID);
 
@@ -116,11 +116,11 @@ describe('files repository', () => {
         });
 
         it('uses default pagination (limit: 50, offset: 0)', async () => {
-            mocks.findMany.mockResolvedValue([]);
+            mocks.files.findMany.mockResolvedValue([]);
 
             await repo.findByUser(TEST_USER_ID);
 
-            expect(mocks.findMany).toHaveBeenCalledWith(
+            expect(mocks.files.findMany).toHaveBeenCalledWith(
                 expect.objectContaining({
                     limit: 50,
                     offset: 0,
@@ -129,11 +129,11 @@ describe('files repository', () => {
         });
 
         it('respects custom pagination options', async () => {
-            mocks.findMany.mockResolvedValue([]);
+            mocks.files.findMany.mockResolvedValue([]);
 
             await repo.findByUser(TEST_USER_ID, { limit: 10, offset: 20 });
 
-            expect(mocks.findMany).toHaveBeenCalledWith(
+            expect(mocks.files.findMany).toHaveBeenCalledWith(
                 expect.objectContaining({
                     limit: 10,
                     offset: 20,
@@ -142,7 +142,7 @@ describe('files repository', () => {
         });
 
         it('returns empty array when user has no files', async () => {
-            mocks.findMany.mockResolvedValue([]);
+            mocks.files.findMany.mockResolvedValue([]);
 
             const result = await repo.findByUser(TEST_USER_ID);
 
@@ -150,7 +150,7 @@ describe('files repository', () => {
         });
 
         it('respects includeHidden option', async () => {
-            mocks.findMany.mockResolvedValue([]);
+            mocks.files.findMany.mockResolvedValue([]);
 
             await repo.findByUser(TEST_USER_ID, {
                 limit: 50,
@@ -159,7 +159,7 @@ describe('files repository', () => {
             });
 
             // When includeHidden is true, the where clause should only filter by userId
-            expect(mocks.findMany).toHaveBeenCalledOnce();
+            expect(mocks.files.findMany).toHaveBeenCalledOnce();
         });
     });
 

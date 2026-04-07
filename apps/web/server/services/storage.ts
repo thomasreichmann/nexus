@@ -1,19 +1,18 @@
 import type { DB } from '@nexus/db';
-import { type planTierEnum } from '@nexus/db/schema';
 import {
     createFileRepo,
     type StorageByCategory,
     type DailyUploadVolume,
 } from '@nexus/db/repo/files';
 import { createSubscriptionRepo } from '@nexus/db/repo/subscriptions';
-import { DEFAULT_STORAGE_LIMIT_BYTES } from './constants';
+import { PLAN_LIMITS, type PlanTier } from './constants';
 
 interface StorageUsage {
     usedBytes: number;
     quotaBytes: number;
     percentage: number;
     fileCount: number;
-    planTier: (typeof planTierEnum.enumValues)[number];
+    planTier: PlanTier;
 }
 
 async function getUsage(db: DB, userId: string): Promise<StorageUsage> {
@@ -26,7 +25,7 @@ async function getUsage(db: DB, userId: string): Promise<StorageUsage> {
         subscriptionRepo.findByUserId(userId),
     ]);
 
-    const quotaBytes = sub?.storageLimit ?? DEFAULT_STORAGE_LIMIT_BYTES;
+    const quotaBytes = sub?.storageLimit ?? PLAN_LIMITS.starter;
     const percentage = quotaBytes > 0 ? (usedBytes / quotaBytes) * 100 : 0;
 
     return {

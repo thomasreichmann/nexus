@@ -42,6 +42,13 @@ export class QuotaExceededError extends DomainError {
     }
 }
 
+/** Trial subscription has expired. */
+export class TrialExpiredError extends DomainError {
+    constructor(message = 'Trial has expired') {
+        super(message, 'FORBIDDEN');
+    }
+}
+
 /** Type guard to check for DomainError (handles cross-module instanceof issues). */
 export function isDomainError(error: unknown): error is DomainError {
     return (

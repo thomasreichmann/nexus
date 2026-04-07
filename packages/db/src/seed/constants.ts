@@ -1,5 +1,5 @@
 import type { Connection, DB } from '../connection';
-import type { PlanTier } from './types';
+export { PLAN_LIMITS, type PlanTier } from '../plans';
 
 // Seed ID prefixes
 // All seeded entities use these prefixes so cleanup can target them
@@ -13,15 +13,6 @@ export const SEED_RETRIEVAL_PREFIX = 'seed_ret_';
 export const SEED_STORAGE_PREFIX = 'seed_sto_';
 
 export const SEED_EMAIL_DOMAIN = 'seed.nexus.local';
-
-// Plan storage limits
-
-export const PLAN_LIMITS: Record<PlanTier, number> = {
-    starter: 10 * 1024 ** 3, //    10 GB
-    pro: 100 * 1024 ** 3, //   100 GB
-    max: 1024 * 1024 ** 3, // 1,024 GB (1 TB)
-    enterprise: 10 * 1024 ** 4, //  10 TB
-};
 
 // Realistic file data pools
 // Each entry: [filename, mimeType, minBytes, maxBytes]
