@@ -51,10 +51,42 @@ function mapStripeStatus(
     return fallback;
 }
 
+/**
+ * Returns the subscription item that represents the plan (vs. add-ons).
+ *
+ * Stripe doesn't guarantee item ordering, and a single subscription may carry
+ * a base plan plus metered add-ons. We identify the plan by looking for an
+ * expanded product carrying `metadata.tier`. When products aren't expanded
+ * (or none have tier metadata), fall back to the first item — preserving the
+ * old behavior for the common single-item case.
+ */
+function findPlanItem(
+    sub: Stripe.Subscription
+): Stripe.SubscriptionItem | undefined {
+    const planItems = sub.items.data.filter((item) => {
+        const product = item.price.product;
+        return (
+            typeof product === 'object' &&
+            product !== null &&
+            !('deleted' in product && product.deleted) &&
+            !!product.metadata?.tier
+        );
+    });
+
+    if (planItems.length > 1) {
+        log.warn(
+            { stripeSubId: sub.id, count: planItems.length },
+            'Multiple plan items found in subscription, using first'
+        );
+    }
+
+    return planItems[0] ?? sub.items.data[0];
+}
+
 async function resolveTierFromSubscription(
     sub: Stripe.Subscription
 ): Promise<PlanTier | null> {
-    const item = sub.items.data[0];
+    const item = findPlanItem(sub);
     if (!item) return null;
 
     const rawProduct = item.price.product;
@@ -246,13 +278,14 @@ async function handleSubscriptionUpsert(
     const tier = (await resolveTierFromSubscription(sub)) ?? existing.planTier;
     const storageLimit = PLAN_LIMITS[tier] ?? existing.storageLimit;
 
-    // In API version 2026-02-25.clover, period fields moved from Subscription to its items
-    const firstItem = sub.items.data[0];
-    const periodStart = firstItem
-        ? new Date(firstItem.current_period_start * 1000)
+    // In API version 2026-02-25.clover, period fields moved from Subscription to its items.
+    // Read from the plan item (not the first add-on) so add-ons with different cycles don't override.
+    const planItem = findPlanItem(sub);
+    const periodStart = planItem
+        ? new Date(planItem.current_period_start * 1000)
         : existing.currentPeriodStart;
-    const periodEnd = firstItem
-        ? new Date(firstItem.current_period_end * 1000)
+    const periodEnd = planItem
+        ? new Date(planItem.current_period_end * 1000)
         : existing.currentPeriodEnd;
 
     await repo.upsertFromWebhook({

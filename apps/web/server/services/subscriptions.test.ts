@@ -56,25 +56,54 @@ interface SubscriptionEventOpts {
     periodEnd?: number;
     /** When true, omit `items.data` entirely (used for the deleted handler which doesn't need them). */
     noItems?: boolean;
+    /**
+     * Items prepended before the main plan item — use to simulate add-ons or
+     * non-plan items appearing at index 0, exercising findPlanItem's selector.
+     */
+    prependItems?: Array<{
+        productMetadata?: Record<string, string>;
+        periodStart?: number;
+        periodEnd?: number;
+    }>;
+}
+
+function makeSubscriptionItem(opts: {
+    productMetadata?: Record<string, string>;
+    periodStart?: number;
+    periodEnd?: number;
+    productId?: string;
+}) {
+    return {
+        current_period_start: opts.periodStart ?? 1_700_000_000,
+        current_period_end: opts.periodEnd ?? 1_702_000_000,
+        price: {
+            product: {
+                id: opts.productId ?? 'prod_test',
+                metadata: opts.productMetadata ?? {},
+            },
+        },
+    };
 }
 
 function makeSubscriptionEvent(opts: SubscriptionEventOpts = {}): Stripe.Event {
-    const product = opts.unexpandedProductId ?? {
+    const mainProduct = opts.unexpandedProductId ?? {
         id: 'prod_test',
         metadata: opts.productMetadata ?? {},
     };
 
+    const mainItem = {
+        current_period_start: opts.periodStart ?? 1_700_000_000,
+        current_period_end: opts.periodEnd ?? 1_702_000_000,
+        price: { product: mainProduct },
+    };
+
+    const prepended = (opts.prependItems ?? []).map((extra, idx) =>
+        makeSubscriptionItem({ ...extra, productId: `prod_extra_${idx}` })
+    );
+
     const items = opts.noItems
         ? { data: [] }
-        : {
-              data: [
-                  {
-                      current_period_start: opts.periodStart ?? 1_700_000_000,
-                      current_period_end: opts.periodEnd ?? 1_702_000_000,
-                      price: { product },
-                  },
-              ],
-          };
+        : { data: [...prepended, mainItem] };
 
     const subscription = {
         id: opts.stripeSubId ?? 'sub_stripe_test',
@@ -276,6 +305,41 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
 
             expect(mocks.values).toHaveBeenCalledWith(
                 expect.objectContaining({
+                    currentPeriodStart: new Date(1_700_000_000 * 1000),
+                    currentPeriodEnd: new Date(1_702_000_000 * 1000),
+                })
+            );
+        });
+
+        it('selects plan item from multi-item subscription regardless of order', async () => {
+            // A metered add-on at index 0, with the real plan item second.
+            // The old `items.data[0]` selector would have used the add-on's
+            // empty metadata + cycle. findPlanItem must pick the tiered item.
+            mocks.subscriptions.findFirst.mockResolvedValue(
+                createSubscriptionFixture({ planTier: 'starter' })
+            );
+
+            await subscriptionService.dispatchWebhookEvent(
+                db,
+                makeSubscriptionEvent({
+                    prependItems: [
+                        {
+                            // add-on with no tier metadata, different cycle
+                            productMetadata: {},
+                            periodStart: 1_500_000_000,
+                            periodEnd: 1_500_500_000,
+                        },
+                    ],
+                    productMetadata: { tier: 'pro' },
+                    periodStart: 1_700_000_000,
+                    periodEnd: 1_702_000_000,
+                })
+            );
+
+            expect(mocks.values).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    planTier: 'pro',
+                    storageLimit: PLAN_LIMITS.pro,
                     currentPeriodStart: new Date(1_700_000_000 * 1000),
                     currentPeriodEnd: new Date(1_702_000_000 * 1000),
                 })
