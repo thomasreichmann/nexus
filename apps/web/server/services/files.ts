@@ -1,6 +1,6 @@
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
-import { createSubscriptionRepo } from '@nexus/db/repo/subscriptions';
+import type { Subscription } from '@nexus/db/repo/subscriptions';
 import {
     NotFoundError,
     QuotaExceededError,
@@ -8,7 +8,7 @@ import {
     TrialExpiredError,
 } from '@/server/errors';
 import { s3 } from '@/lib/storage';
-import { PLAN_LIMITS } from './constants';
+import { resolvePlan } from './constants';
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 900; // 15 minutes
 const MULTIPART_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
@@ -51,15 +51,11 @@ interface ConfirmUploadResult {
 async function assertWithinQuota(
     db: DB,
     userId: string,
-    additionalBytes: number
+    additionalBytes: number,
+    sub: Subscription | undefined
 ): Promise<void> {
     const fileRepo = createFileRepo(db);
-    const subscriptionRepo = createSubscriptionRepo(db);
-
-    const [currentUsage, sub] = await Promise.all([
-        fileRepo.sumStorageByUser(userId),
-        subscriptionRepo.findByUserId(userId),
-    ]);
+    const currentUsage = await fileRepo.sumStorageByUser(userId);
 
     if (
         sub?.status === 'trialing' &&
@@ -69,7 +65,7 @@ async function assertWithinQuota(
         throw new TrialExpiredError();
     }
 
-    const quotaBytes = sub?.storageLimit ?? PLAN_LIMITS.starter;
+    const { quotaBytes } = resolvePlan(sub);
     if (currentUsage + additionalBytes > quotaBytes) {
         throw new QuotaExceededError('Storage quota exceeded');
     }
@@ -78,9 +74,10 @@ async function assertWithinQuota(
 async function initiateUpload(
     db: DB,
     userId: string,
-    input: UploadInput
+    input: UploadInput,
+    sub: Subscription | undefined
 ): Promise<InitiateUploadResult> {
-    await assertWithinQuota(db, userId, input.sizeBytes);
+    await assertWithinQuota(db, userId, input.sizeBytes, sub);
 
     const fileRepo = createFileRepo(db);
     const fileId = crypto.randomUUID();
@@ -138,9 +135,10 @@ async function confirmUpload(
 async function initiateMultipartUpload(
     db: DB,
     userId: string,
-    input: UploadInput
+    input: UploadInput,
+    sub: Subscription | undefined
 ): Promise<InitiateMultipartResult> {
-    await assertWithinQuota(db, userId, input.sizeBytes);
+    await assertWithinQuota(db, userId, input.sizeBytes, sub);
 
     const fileRepo = createFileRepo(db);
     const fileId = crypto.randomUUID();

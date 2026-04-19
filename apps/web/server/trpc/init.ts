@@ -1,6 +1,8 @@
 import { auth } from '@/lib/auth/server';
+import { lazyAsync } from '@/lib/async/lazy';
 import { db } from '@/server/db';
 import { isDomainError } from '@/server/errors';
+import { createSubscriptionRepo } from '@nexus/db/repo/subscriptions';
 import { initTRPC, TRPCError } from '@trpc/server';
 import { headers } from 'next/headers';
 import superjson from 'superjson';
@@ -85,10 +87,17 @@ export const protectedProcedure = baseProcedure.use(({ ctx, next }) => {
         throw new TRPCError({ code: 'UNAUTHORIZED' });
     }
 
+    const userId = ctx.session.user.id;
+
     return next({
         ctx: {
             ...ctx,
             session: ctx.session,
+            // Bulk uploads call services that each need the subscription;
+            // this lazy getter ensures one DB query per request, not per file.
+            getSubscription: lazyAsync(() =>
+                createSubscriptionRepo(ctx.db).findByUserId(userId)
+            ),
         },
     });
 });

@@ -4,8 +4,8 @@ import {
     type StorageByCategory,
     type DailyUploadVolume,
 } from '@nexus/db/repo/files';
-import { createSubscriptionRepo } from '@nexus/db/repo/subscriptions';
-import { PLAN_LIMITS, type PlanTier } from './constants';
+import type { Subscription } from '@nexus/db/repo/subscriptions';
+import { resolvePlan, type PlanTier } from './constants';
 
 interface StorageUsage {
     usedBytes: number;
@@ -15,17 +15,19 @@ interface StorageUsage {
     planTier: PlanTier;
 }
 
-async function getUsage(db: DB, userId: string): Promise<StorageUsage> {
+async function getUsage(
+    db: DB,
+    userId: string,
+    sub: Subscription | undefined
+): Promise<StorageUsage> {
     const fileRepo = createFileRepo(db);
-    const subscriptionRepo = createSubscriptionRepo(db);
 
-    const [usedBytes, fileCount, sub] = await Promise.all([
+    const [usedBytes, fileCount] = await Promise.all([
         fileRepo.sumStorageByUser(userId),
         fileRepo.countByUser(userId),
-        subscriptionRepo.findByUserId(userId),
     ]);
 
-    const quotaBytes = sub?.storageLimit ?? PLAN_LIMITS.starter;
+    const { quotaBytes, planTier } = resolvePlan(sub);
     const percentage = quotaBytes > 0 ? (usedBytes / quotaBytes) * 100 : 0;
 
     return {
@@ -33,7 +35,7 @@ async function getUsage(db: DB, userId: string): Promise<StorageUsage> {
         quotaBytes,
         percentage: Math.min(percentage, 100),
         fileCount,
-        planTier: sub?.planTier ?? 'starter',
+        planTier,
     };
 }
 
