@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth/server';
 import { lazyAsync } from '@/lib/async/lazy';
 import { db } from '@/server/db';
+import type { Connection } from '@nexus/db';
 import { isDomainError } from '@/server/errors';
 import { createSubscriptionRepo } from '@nexus/db/repo/subscriptions';
 import { initTRPC, TRPCError } from '@trpc/server';
@@ -9,23 +10,35 @@ import superjson from 'superjson';
 import { domainErrorFormatter } from './error-formatter';
 import { logRequest, type LoggingContext } from './middleware/logging';
 
-export async function createTRPCContext() {
-    const session = await auth.api.getSession({
-        headers: await headers(),
-    });
+type Session = Awaited<ReturnType<typeof auth.api.getSession>>;
 
+/**
+ * Pure context builder — assembles the tRPC ctx from its inputs. Kept
+ * separate from `createTRPCContext` so tests can build an equivalent ctx
+ * without running the Next-specific session fetch. New ctx fields added
+ * here flow into both production and test callers automatically.
+ */
+export function buildContext(deps: { db: Connection; session: Session }) {
     return {
-        db,
-        session,
+        ...deps,
         // Request-scoped: one DB fetch per HTTP request, shared across every
         // procedure in a tRPC batch. Returns undefined for unauthenticated
         // callers; protected services receive it as-is.
         getSubscription: lazyAsync(() =>
-            session
-                ? createSubscriptionRepo(db).findByUserId(session.user.id)
+            deps.session
+                ? createSubscriptionRepo(deps.db).findByUserId(
+                      deps.session.user.id
+                  )
                 : Promise.resolve(undefined)
         ),
     };
+}
+
+export async function createTRPCContext() {
+    const session = await auth.api.getSession({
+        headers: await headers(),
+    });
+    return buildContext({ db, session });
 }
 
 export type Context = Awaited<ReturnType<typeof createTRPCContext>>;

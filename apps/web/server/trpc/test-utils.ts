@@ -5,9 +5,7 @@ import {
     createUserFixture,
     type User,
 } from '@nexus/db/testing';
-import { lazyAsync } from '@/lib/async/lazy';
-import { createSubscriptionRepo } from '@nexus/db/repo/subscriptions';
-import type { Context, LoggedContext } from './init';
+import { buildContext, type LoggedContext } from './init';
 
 /**
  * Options for creating a mock tRPC context
@@ -125,18 +123,8 @@ export function createMockContext(
         log,
     };
 
-    const baseContext: Context = {
-        db,
-        session,
-        getSubscription: lazyAsync(() =>
-            session
-                ? createSubscriptionRepo(db).findByUserId(session.user.id)
-                : Promise.resolve(undefined)
-        ),
-    };
-
     const ctx: LoggedContext = {
-        ...baseContext,
+        ...buildContext({ db, session }),
         ...loggingContext,
     };
 
