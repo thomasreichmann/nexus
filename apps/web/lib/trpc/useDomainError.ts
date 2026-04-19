@@ -1,6 +1,6 @@
 import type { TRPCClientErrorLike } from '@trpc/client';
 
-import type { DomainErrorCode } from '@/server/errors';
+import type { DomainErrorCode } from '@/lib/errors/codes';
 import type { AppRouter } from '@/server/trpc/router';
 
 export interface DomainErrorInfo {

@@ -1,6 +1,7 @@
 import type { TRPCDefaultErrorShape, TRPCError } from '@trpc/server';
 
-import { isDomainError, type DomainErrorCode } from '@/server/errors';
+import type { DomainErrorCode } from '@/lib/errors/codes';
+import { isDomainError } from '@/server/errors';
 
 export type DomainErrorShape = TRPCDefaultErrorShape & {
     data: TRPCDefaultErrorShape['data'] & {

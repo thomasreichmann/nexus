@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { DOMAIN_ERROR_CODES, type DomainErrorCode } from '@/lib/errors/codes';
 import {
-    DOMAIN_ERROR_CODES,
     DomainError,
     NotFoundError,
     ForbiddenError,
@@ -8,7 +8,6 @@ import {
     QuotaExceededError,
     TrialExpiredError,
     isDomainError,
-    type DomainErrorCode,
 } from './errors';
 
 describe('DOMAIN_ERROR_CODES registry', () => {

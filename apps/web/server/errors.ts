@@ -1,27 +1,17 @@
 import type { TRPC_ERROR_CODE_KEY } from '@trpc/server/rpc';
 
-/**
- * Registry of all domain error codes. Each code maps 1:1 to a DomainError subclass.
- * Frontend imports `DomainErrorCode` to exhaustively branch on server-side errors.
- */
-export const DOMAIN_ERROR_CODES = {
-    NOT_FOUND: 'NOT_FOUND',
-    INVALID_STATE: 'INVALID_STATE',
-    FORBIDDEN: 'FORBIDDEN',
-    QUOTA_EXCEEDED: 'QUOTA_EXCEEDED',
-    TRIAL_EXPIRED: 'TRIAL_EXPIRED',
-} as const;
-
-export type DomainErrorCode =
-    (typeof DOMAIN_ERROR_CODES)[keyof typeof DOMAIN_ERROR_CODES];
+import { DOMAIN_ERROR_CODES, type DomainErrorCode } from '@/lib/errors/codes';
 
 /**
  * Base class for all domain errors. Services throw these, middleware maps to
- * TRPCError. Each subclass declares a `static readonly code` from the registry;
- * the instance `code` getter reads it so the wire format stays a single source
- * of truth.
+ * TRPCError. Each subclass declares a `static readonly code` from the registry
+ * and mirrors it onto the instance, so class-level (`NotFoundError.code`) and
+ * instance-level (`error.code`) reads both work without drift. The `abstract
+ * readonly code` here is what forces every subclass to wire that up.
  */
 export abstract class DomainError extends Error {
+    abstract readonly code: DomainErrorCode;
+
     constructor(
         message: string,
         public readonly trpcCode: TRPC_ERROR_CODE_KEY
@@ -29,15 +19,12 @@ export abstract class DomainError extends Error {
         super(message);
         this.name = this.constructor.name;
     }
-
-    get code(): DomainErrorCode {
-        return (this.constructor as unknown as { code: DomainErrorCode }).code;
-    }
 }
 
 /** Resource not found. */
 export class NotFoundError extends DomainError {
     static readonly code = DOMAIN_ERROR_CODES.NOT_FOUND;
+    readonly code = NotFoundError.code;
     constructor(entity: string, id?: string) {
         super(
             id ? `${entity} not found: ${id}` : `${entity} not found`,
@@ -49,6 +36,7 @@ export class NotFoundError extends DomainError {
 /** User doesn't have permission. */
 export class ForbiddenError extends DomainError {
     static readonly code = DOMAIN_ERROR_CODES.FORBIDDEN;
+    readonly code = ForbiddenError.code;
     constructor(message = 'You do not have permission to perform this action') {
         super(message, 'FORBIDDEN');
     }
@@ -57,6 +45,7 @@ export class ForbiddenError extends DomainError {
 /** Operation not allowed in current state. */
 export class InvalidStateError extends DomainError {
     static readonly code = DOMAIN_ERROR_CODES.INVALID_STATE;
+    readonly code = InvalidStateError.code;
     constructor(message: string) {
         super(message, 'BAD_REQUEST');
     }
@@ -65,6 +54,7 @@ export class InvalidStateError extends DomainError {
 /** Quota or limit exceeded. */
 export class QuotaExceededError extends DomainError {
     static readonly code = DOMAIN_ERROR_CODES.QUOTA_EXCEEDED;
+    readonly code = QuotaExceededError.code;
     constructor(message = 'Quota exceeded') {
         super(message, 'PRECONDITION_FAILED');
     }
@@ -73,6 +63,7 @@ export class QuotaExceededError extends DomainError {
 /** User's trial has expired. Distinct from generic FORBIDDEN so the UI can show a dedicated banner. */
 export class TrialExpiredError extends DomainError {
     static readonly code = DOMAIN_ERROR_CODES.TRIAL_EXPIRED;
+    readonly code = TrialExpiredError.code;
     constructor(message = 'Your trial has expired') {
         super(message, 'FORBIDDEN');
     }
