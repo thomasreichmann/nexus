@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { useTRPC } from '@/lib/trpc/client';
+import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { xhrPut } from '@/lib/http/xhr';
 import { retryAsync } from '@/lib/async/retry';
 
@@ -27,17 +28,12 @@ interface InternalUploadFile extends UploadFile {
 
 export function useUpload() {
     const trpc = useTRPC();
-    const queryClient = useQueryClient();
     const [files, setFiles] = useState<InternalUploadFile[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const filesRef = useRef(files);
     filesRef.current = files;
 
-    const listOptions = trpc.files.list.queryOptions();
-    const invalidateFileList = useCallback(
-        () => queryClient.invalidateQueries({ queryKey: listOptions.queryKey }),
-        [queryClient, listOptions.queryKey]
-    );
+    const invalidateFileList = useInvalidateFileList();
 
     const uploadMutation = useMutation(trpc.files.upload.mutationOptions());
     const confirmMutation = useMutation(
