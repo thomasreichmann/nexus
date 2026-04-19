@@ -1,14 +1,9 @@
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
-import {
-    NotFoundError,
-    QuotaExceededError,
-    InvalidStateError,
-    TrialExpiredError,
-} from '@/server/errors';
+import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
-import { resolvePlan } from './constants';
+import { assertUploadAllowed } from './quota';
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 900; // 15 minutes
 const MULTIPART_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
@@ -56,19 +51,10 @@ async function assertWithinQuota(
 ): Promise<void> {
     const fileRepo = createFileRepo(db);
     const currentUsage = await fileRepo.sumStorageByUser(userId);
-
-    if (
-        sub?.status === 'trialing' &&
-        sub.trialEnd &&
-        sub.trialEnd < new Date()
-    ) {
-        throw new TrialExpiredError();
-    }
-
-    const { quotaBytes } = resolvePlan(sub);
-    if (currentUsage + additionalBytes > quotaBytes) {
-        throw new QuotaExceededError('Storage quota exceeded');
-    }
+    assertUploadAllowed(
+        { currentUsage, subscription: sub ?? null },
+        additionalBytes
+    );
 }
 
 async function initiateUpload(

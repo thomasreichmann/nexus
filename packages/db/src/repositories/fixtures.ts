@@ -1,4 +1,5 @@
 import * as schema from '../schema';
+import { PLAN_LIMITS } from '../plans';
 import type { File, NewFile } from './files';
 import type { Job, NewJob } from './jobs';
 import type { Retrieval } from './retrievals';
@@ -117,7 +118,7 @@ export function createSubscriptionFixture(
         stripeSubscriptionId: null,
         planTier: 'starter',
         status: 'active',
-        storageLimit: 10 * 1024 ** 3, // 10 GB
+        storageLimit: PLAN_LIMITS.starter,
         currentPeriodStart: null,
         currentPeriodEnd: null,
         cancelAtPeriodEnd: false,

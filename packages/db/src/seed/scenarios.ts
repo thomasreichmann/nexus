@@ -109,7 +109,7 @@ async function emptyUser(db: DB): Promise<SeedResult> {
 
 async function quotaNearLimit(db: DB): Promise<SeedResult> {
     const user = await buildUser(db, { name: 'Quota User' });
-    const starterLimit = PLAN_LIMITS.starter; // 10 GB
+    const starterLimit = PLAN_LIMITS.starter; // 1 TB
     const sub = await buildSubscription(db, user.id, {
         planTier: 'starter',
         status: 'active',

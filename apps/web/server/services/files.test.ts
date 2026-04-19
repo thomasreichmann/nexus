@@ -4,7 +4,6 @@ import {
     type MockDb,
     type MockDbMocks,
     createFileFixture,
-    createSubscriptionFixture,
     TEST_USER_ID,
 } from '@nexus/db/testing';
 import { mockS3 } from '@/lib/storage/testing';
@@ -12,9 +11,9 @@ import {
     NotFoundError,
     QuotaExceededError,
     InvalidStateError,
-    TrialExpiredError,
 } from '@/server/errors';
 import { fileService } from './files';
+import { PLAN_LIMITS } from './constants';
 
 vi.mock('@/lib/storage', () => ({
     s3: mockS3,
@@ -59,10 +58,10 @@ describe('files service', () => {
             expect(result.expiresAt).toBeInstanceOf(Date);
         });
 
-        it('throws QuotaExceededError when storage limit exceeded', async () => {
-            // Mock sumStorageBytesByUser to return near max (10GB - 1 byte)
-            const tenGBMinus1 = 10 * 1024 * 1024 * 1024 - 1;
-            mocks.where.mockResolvedValue([{ total: tenGBMinus1 }]);
+        // Smoke test that quota rejection wires through — full branch
+        // coverage lives in quota.test.ts.
+        it('surfaces QuotaExceededError from the quota check', async () => {
+            mocks.where.mockResolvedValue([{ total: PLAN_LIMITS.starter }]);
 
             await expect(
                 fileService.initiateUpload(
@@ -70,33 +69,11 @@ describe('files service', () => {
                     TEST_USER_ID,
                     {
                         name: 'test.pdf',
-                        sizeBytes: 2, // This would exceed quota
+                        sizeBytes: 1,
                     },
                     undefined
                 )
             ).rejects.toThrow(QuotaExceededError);
-        });
-
-        it('allows upload exactly at quota limit', async () => {
-            // Mock sumStorageBytesByUser to return 9GB
-            const nineGB = 9 * 1024 * 1024 * 1024;
-            mocks.where.mockResolvedValue([{ total: nineGB }]);
-            const insertedFile = createFileFixture({ status: 'uploading' });
-            mocks.returning.mockResolvedValue([insertedFile]);
-
-            // 1GB file should fit exactly at 10GB limit
-            const oneGB = 1 * 1024 * 1024 * 1024;
-            const result = await fileService.initiateUpload(
-                db,
-                TEST_USER_ID,
-                {
-                    name: 'test.pdf',
-                    sizeBytes: oneGB,
-                },
-                undefined
-            );
-
-            expect(result).toHaveProperty('fileId');
         });
 
         it('creates file record with status uploading', async () => {
@@ -152,146 +129,6 @@ describe('files service', () => {
                     ),
                 })
             );
-        });
-    });
-
-    describe('quota enforcement with subscription', () => {
-        const oneGB = 1024 ** 3;
-        const hundredGB = 100 * 1024 ** 3;
-
-        it('uses subscription storageLimit instead of starter default', async () => {
-            // Pro subscription with 100 GB limit — user is already at 50 GB
-            const sub = createSubscriptionFixture({
-                planTier: 'pro',
-                status: 'active',
-                storageLimit: hundredGB,
-            });
-            mocks.where.mockResolvedValue([{ total: 50 * oneGB }]);
-            mocks.returning.mockResolvedValue([createFileFixture()]);
-
-            // 40 GB upload would exceed starter (10 GB) but fits in pro (100 GB)
-            const result = await fileService.initiateUpload(
-                db,
-                TEST_USER_ID,
-                {
-                    name: 'big.bin',
-                    sizeBytes: 40 * oneGB,
-                },
-                sub
-            );
-
-            expect(result).toHaveProperty('fileId');
-        });
-
-        it('throws QuotaExceededError when over subscription limit', async () => {
-            const sub = createSubscriptionFixture({
-                planTier: 'pro',
-                status: 'active',
-                storageLimit: hundredGB,
-            });
-            // At 99 GB, a 2 GB upload would exceed the 100 GB limit
-            mocks.where.mockResolvedValue([{ total: 99 * oneGB }]);
-
-            await expect(
-                fileService.initiateUpload(
-                    db,
-                    TEST_USER_ID,
-                    {
-                        name: 'overflow.bin',
-                        sizeBytes: 2 * oneGB,
-                    },
-                    sub
-                )
-            ).rejects.toThrow(QuotaExceededError);
-        });
-
-        it('allows upload during active trial within quota', async () => {
-            const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // +7 days
-            const sub = createSubscriptionFixture({
-                status: 'trialing',
-                trialEnd: future,
-            });
-            mocks.where.mockResolvedValue([{ total: 0 }]);
-            mocks.returning.mockResolvedValue([createFileFixture()]);
-
-            const result = await fileService.initiateUpload(
-                db,
-                TEST_USER_ID,
-                {
-                    name: 'trial.pdf',
-                    sizeBytes: 1024,
-                },
-                sub
-            );
-
-            expect(result).toHaveProperty('fileId');
-        });
-
-        it('throws TrialExpiredError when trial has ended', async () => {
-            const past = new Date(Date.now() - 24 * 60 * 60 * 1000); // -1 day
-            const sub = createSubscriptionFixture({
-                status: 'trialing',
-                trialEnd: past,
-            });
-            mocks.where.mockResolvedValue([{ total: 0 }]);
-
-            await expect(
-                fileService.initiateUpload(
-                    db,
-                    TEST_USER_ID,
-                    {
-                        name: 'expired.pdf',
-                        sizeBytes: 1024,
-                    },
-                    sub
-                )
-            ).rejects.toThrow(TrialExpiredError);
-        });
-
-        it('prefers TrialExpiredError over QuotaExceededError when both apply', async () => {
-            // Expired trial AND over quota — trial check must run first
-            const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
-            const sub = createSubscriptionFixture({
-                status: 'trialing',
-                trialEnd: past,
-                storageLimit: oneGB,
-            });
-            mocks.where.mockResolvedValue([{ total: oneGB }]); // already at quota
-
-            await expect(
-                fileService.initiateUpload(
-                    db,
-                    TEST_USER_ID,
-                    {
-                        name: 'double-fail.pdf',
-                        sizeBytes: 1024,
-                    },
-                    sub
-                )
-            ).rejects.toThrow(TrialExpiredError);
-        });
-
-        it('ignores trialEnd when status is not trialing', async () => {
-            // Active sub with a stale trialEnd in the past — should not throw
-            const past = new Date(Date.now() - 24 * 60 * 60 * 1000);
-            const sub = createSubscriptionFixture({
-                status: 'active',
-                trialEnd: past,
-            });
-            mocks.where.mockResolvedValue([{ total: 0 }]);
-            mocks.returning.mockResolvedValue([createFileFixture()]);
-
-            const result = await fileService.initiateUpload(
-                db,
-                TEST_USER_ID,
-                {
-                    name: 'active.pdf',
-                    sizeBytes: 1024,
-                },
-                sub
-            );
-
-            expect(result).toHaveProperty('fileId');
         });
     });
 
@@ -472,9 +309,9 @@ describe('files service', () => {
             expect(result.expiresAt).toBeInstanceOf(Date);
         });
 
-        it('throws QuotaExceededError when storage limit exceeded', async () => {
-            const tenGBMinus1 = 10 * 1024 * 1024 * 1024 - 1;
-            mocks.where.mockResolvedValue([{ total: tenGBMinus1 }]);
+        // Smoke test — quota logic itself is covered in quota.test.ts.
+        it('surfaces QuotaExceededError from the quota check', async () => {
+            mocks.where.mockResolvedValue([{ total: PLAN_LIMITS.starter }]);
 
             await expect(
                 fileService.initiateMultipartUpload(
@@ -482,7 +319,7 @@ describe('files service', () => {
                     TEST_USER_ID,
                     {
                         name: 'large-file.zip',
-                        sizeBytes: 2,
+                        sizeBytes: 1,
                     },
                     undefined
                 )
