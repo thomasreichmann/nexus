@@ -8,29 +8,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Check } from 'lucide-react';
-
-const plans = [
-    {
-        name: 'Starter',
-        storage: '100 GB',
-        price: '$2',
-        current: true,
-    },
-    {
-        name: 'Pro',
-        storage: '1 TB',
-        price: '$9',
-        current: false,
-    },
-    {
-        name: 'Business',
-        storage: '5 TB',
-        price: '$39',
-        current: false,
-    },
-];
+import { SubscriptionSection } from '@/components/dashboard/SubscriptionSection';
 
 export default function SettingsPage() {
     return (
@@ -68,57 +46,7 @@ export default function SettingsPage() {
                 </CardContent>
             </Card>
 
-            <Card>
-                <CardHeader>
-                    <CardTitle>Subscription</CardTitle>
-                    <CardDescription>Manage your storage plan</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid gap-4 md:grid-cols-3">
-                        {plans.map((plan) => (
-                            <div
-                                key={plan.name}
-                                className={`relative rounded-lg border p-4 ${
-                                    plan.current
-                                        ? 'border-primary bg-primary/5'
-                                        : 'border-border'
-                                }`}
-                            >
-                                {plan.current && (
-                                    <Badge className="absolute -top-2 right-2">
-                                        Current
-                                    </Badge>
-                                )}
-                                <h3 className="font-semibold">{plan.name}</h3>
-                                <p className="text-sm text-muted-foreground">
-                                    {plan.storage}
-                                </p>
-                                <p className="mt-2 text-2xl font-bold">
-                                    {plan.price}
-                                    <span className="text-sm font-normal text-muted-foreground">
-                                        /mo
-                                    </span>
-                                </p>
-                                {!plan.current && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="mt-3 w-full bg-transparent"
-                                    >
-                                        Upgrade
-                                    </Button>
-                                )}
-                                {plan.current && (
-                                    <div className="mt-3 flex items-center gap-1 text-sm text-primary">
-                                        <Check className="h-4 w-4" />
-                                        Active
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                </CardContent>
-            </Card>
+            <SubscriptionSection />
 
             <Card>
                 <CardHeader>

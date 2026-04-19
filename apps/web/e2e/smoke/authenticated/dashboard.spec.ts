@@ -58,6 +58,19 @@ test.describe('Dashboard Pages', () => {
             page.getByRole('heading', { name: /settings/i })
         ).toBeVisible();
 
+        // Subscription section renders once tRPC resolves; seeded users get a
+        // starter trial row so all three checkout tiers should be visible.
+        await expect(page.getByText('Manage your storage plan')).toBeVisible();
+        await expect(
+            page.getByRole('heading', { name: 'Starter', exact: true })
+        ).toBeVisible();
+        await expect(
+            page.getByRole('heading', { name: 'Pro', exact: true })
+        ).toBeVisible();
+        await expect(
+            page.getByRole('heading', { name: 'Max', exact: true })
+        ).toBeVisible();
+
         expect(consoleErrors).toEqual([]);
     });
 });
