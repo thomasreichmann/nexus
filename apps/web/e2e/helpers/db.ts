@@ -135,6 +135,35 @@ export async function deleteFile(id: string): Promise<void> {
     await sql`DELETE FROM files WHERE id = ${id}`;
 }
 
+/**
+ * Guarantees the user has a trial subscription row for tests that exercise
+ * the Settings subscription UI. `provisionTrialSubscription` runs on sign-up,
+ * but the e2e user is created once and reused — users created before that
+ * hook landed won't have a row. Safe to call repeatedly.
+ */
+export async function ensureTrialSubscription(userId: string): Promise<void> {
+    const sql = getDb();
+    const existing = await sql<{ id: string }[]>`
+        SELECT id FROM subscriptions WHERE user_id = ${userId}
+    `;
+    if (existing.length > 0) return;
+
+    await sql`
+        INSERT INTO subscriptions (
+            id, user_id, stripe_customer_id, plan_tier, status,
+            storage_limit, trial_end
+        ) VALUES (
+            gen_random_uuid()::text,
+            ${userId},
+            ${`cus_test_${userId}`},
+            'starter',
+            'trialing',
+            ${1024 ** 4},
+            NOW() + INTERVAL '30 days'
+        )
+    `;
+}
+
 export async function countJobsByStatus(): Promise<JobCounts> {
     const sql = getDb();
     const rows = await sql<{ status: string; count: number }[]>`
