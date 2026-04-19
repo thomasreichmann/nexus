@@ -3,7 +3,7 @@ import { TRPCClientError } from '@trpc/client';
 
 import type { AppRouter } from '@/server/trpc/router';
 import { getToastId } from './error-link';
-import { makeClientError } from './testing';
+import { makeClientError } from './test-fixtures';
 
 describe('getToastId', () => {
     it('returns distinct ids for two DomainErrors sharing a tRPC code', () => {

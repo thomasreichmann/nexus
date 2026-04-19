@@ -12,7 +12,7 @@ export interface DomainErrorInfo {
  * Returns `{ code, message }` when the tRPC error is a `DomainError`, otherwise
  * `null`. Use the returned `code` to branch exhaustively on `DomainErrorCode`.
  */
-export function useDomainError(
+export function getDomainError(
     error: TRPCClientErrorLike<AppRouter> | null | undefined
 ): DomainErrorInfo | null {
     const domainCode = error?.data?.domainCode;

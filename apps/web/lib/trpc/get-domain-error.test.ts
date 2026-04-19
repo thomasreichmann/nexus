@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { makeClientError } from './testing';
-import { useDomainError } from './useDomainError';
+import { makeClientError } from './test-fixtures';
+import { getDomainError } from './get-domain-error';
 
-describe('useDomainError', () => {
+describe('getDomainError', () => {
     it('returns null for null/undefined input', () => {
-        expect(useDomainError(null)).toBeNull();
-        expect(useDomainError(undefined)).toBeNull();
+        expect(getDomainError(null)).toBeNull();
+        expect(getDomainError(undefined)).toBeNull();
     });
 
     it('returns null when the error has no domainCode (bare TRPCError)', () => {
         expect(
-            useDomainError(makeClientError({ code: 'UNAUTHORIZED' }))
+            getDomainError(makeClientError({ code: 'UNAUTHORIZED' }))
         ).toBeNull();
     });
 
@@ -22,17 +22,17 @@ describe('useDomainError', () => {
             message: 'trial gone',
         });
 
-        expect(useDomainError(err)).toEqual({
+        expect(getDomainError(err)).toEqual({
             code: 'TRIAL_EXPIRED',
             message: 'trial gone',
         });
     });
 
     it('discriminates errors that share a tRPC code', () => {
-        const forbidden = useDomainError(
+        const forbidden = getDomainError(
             makeClientError({ code: 'FORBIDDEN', domainCode: 'FORBIDDEN' })
         );
-        const trialExpired = useDomainError(
+        const trialExpired = getDomainError(
             makeClientError({ code: 'FORBIDDEN', domainCode: 'TRIAL_EXPIRED' })
         );
 

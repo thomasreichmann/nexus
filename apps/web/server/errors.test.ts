@@ -169,7 +169,7 @@ describe('TrialExpiredError', () => {
     it('uses default message when none provided', () => {
         const error = new TrialExpiredError();
 
-        expect(error.message).toBe('Your trial has expired');
+        expect(error.message).toBe('Trial has expired');
     });
 
     it('uses custom message when provided', () => {

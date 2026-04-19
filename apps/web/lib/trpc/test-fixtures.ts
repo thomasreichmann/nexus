@@ -19,10 +19,12 @@ export function makeClientError(opts: {
     httpStatus?: number;
 }): ClientError {
     const message = opts.message ?? 'test';
+    // JSON-RPC outer `code` is arbitrary for client-side tests — consumers
+    // read `data.code` / `data.domainCode`, not the jsonrpc envelope.
     return new TRPCClientError<AppRouter>(message, {
         result: {
             error: {
-                code: -32003,
+                code: -32600,
                 message,
                 data: {
                     code: opts.code,

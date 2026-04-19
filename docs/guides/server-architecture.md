@@ -189,7 +189,7 @@ and a separate `errorFormatter` surfaces `code` on the wire as
 `data.domainCode` so the frontend can discriminate errors that share a tRPC
 code (e.g. `FORBIDDEN` vs `TRIAL_EXPIRED`). See
 [[../conventions/error-handling|Error Handling]] for the client-side
-`useDomainError` pattern.
+`getDomainError` pattern.
 
 ### Error Definitions
 
@@ -210,6 +210,8 @@ export type DomainErrorCode =
 
 /** Base class for all domain errors. */
 export abstract class DomainError extends Error {
+    abstract readonly code: DomainErrorCode;
+
     constructor(
         message: string,
         public readonly trpcCode: TRPC_ERROR_CODE_KEY
@@ -217,15 +219,12 @@ export abstract class DomainError extends Error {
         super(message);
         this.name = this.constructor.name;
     }
-
-    get code(): DomainErrorCode {
-        return (this.constructor as { code: DomainErrorCode }).code;
-    }
 }
 
 /** Resource not found. */
 export class NotFoundError extends DomainError {
     static readonly code = DOMAIN_ERROR_CODES.NOT_FOUND;
+    readonly code = NotFoundError.code;
     constructor(entity: string, id?: string) {
         super(
             id ? `${entity} not found: ${id}` : `${entity} not found`,

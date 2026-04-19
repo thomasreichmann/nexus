@@ -64,7 +64,7 @@ export class QuotaExceededError extends DomainError {
 export class TrialExpiredError extends DomainError {
     static readonly code = DOMAIN_ERROR_CODES.TRIAL_EXPIRED;
     readonly code = TrialExpiredError.code;
-    constructor(message = 'Your trial has expired') {
+    constructor(message = 'Trial has expired') {
         super(message, 'FORBIDDEN');
     }
 }

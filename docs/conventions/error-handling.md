@@ -47,7 +47,7 @@ const mutation = useMutation(
     trpc.files.delete.mutationOptions({
         trpc: { context: { skipToast: true } },
         onError(error) {
-            const domain = useDomainError(error);
+            const domain = getDomainError(error);
             if (domain?.code === 'NOT_FOUND') {
                 toast.info('File was already deleted');
             } else {
@@ -62,16 +62,16 @@ const mutation = useMutation(
 
 `DomainError` subclasses carry a machine-readable `code` that is serialized onto `err.data.domainCode`. The frontend uses this to distinguish errors that share a tRPC code (e.g. a generic `FORBIDDEN` vs. a `TRIAL_EXPIRED`), so components can branch exhaustively without fragile message-string matching.
 
-**Recommended: `useDomainError`**
+**Recommended: `getDomainError`**
 
 ```typescript
-import { useDomainError } from '@/lib/trpc/use-domain-error';
+import { getDomainError } from '@/lib/trpc/get-domain-error';
 
 const mutation = useMutation(
     trpc.files.delete.mutationOptions({
         trpc: { context: { skipToast: true } },
         onError(error) {
-            const domain = useDomainError(error);
+            const domain = getDomainError(error);
             switch (domain?.code) {
                 case 'NOT_FOUND':
                     toast.info('File was already deleted');
@@ -91,7 +91,7 @@ Adding a new entry to `DOMAIN_ERROR_CODES` (in `apps/web/server/errors.ts`) with
 
 **Fallback: bare `error.data?.code`**
 
-Some server throws are bare `TRPCError` instances (e.g. admin gates) without a `domainCode`. In that case `useDomainError` returns `null` and callers can fall back to `error.data?.code` (the tRPC code) for coarse branching:
+Some server throws are bare `TRPCError` instances (e.g. admin gates) without a `domainCode`. In that case `getDomainError` returns `null` and callers can fall back to `error.data?.code` (the tRPC code) for coarse branching:
 
 ```typescript
 if (error.data?.code === 'UNAUTHORIZED') {
@@ -101,7 +101,7 @@ if (error.data?.code === 'UNAUTHORIZED') {
 
 **Composes with `skipToast`**
 
-`useDomainError` makes no assumptions about toast behavior — pair it with `context: { skipToast: true }` when you want custom per-component handling, or leave the global toast in place and let the hook drive an auxiliary UI (e.g. a banner) alongside it.
+`getDomainError` makes no assumptions about toast behavior — pair it with `context: { skipToast: true }` when you want custom per-component handling, or leave the global toast in place and let it drive an auxiliary UI (e.g. a banner) alongside it.
 
 ## Error Boundaries
 

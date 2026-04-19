@@ -4,7 +4,7 @@ import { AlertTriangle } from 'lucide-react';
 import type { TRPCClientErrorLike } from '@trpc/client';
 
 import { cn } from '@/lib/cn';
-import { useDomainError } from '@/lib/trpc/useDomainError';
+import { getDomainError } from '@/lib/trpc/get-domain-error';
 import type { AppRouter } from '@/server/trpc/router';
 
 interface TrialExpiredBannerProps {
@@ -21,7 +21,7 @@ export function TrialExpiredBanner({
     error,
     className,
 }: TrialExpiredBannerProps) {
-    const domainError = useDomainError(error);
+    const domainError = getDomainError(error);
     if (domainError?.code !== 'TRIAL_EXPIRED') return null;
 
     return (
