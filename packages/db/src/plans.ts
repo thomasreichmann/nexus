@@ -4,8 +4,8 @@ export type PlanTier = (typeof planTierEnum.enumValues)[number];
 
 /** Storage limits by plan tier in bytes. */
 export const PLAN_LIMITS: Record<PlanTier, number> = {
-    starter: 10 * 1024 ** 3, //    10 GB
-    pro: 100 * 1024 ** 3, //   100 GB
-    max: 1024 * 1024 ** 3, // 1,024 GB (1 TB)
-    enterprise: 10 * 1024 ** 4, //  10 TB
+    starter: 1024 ** 4, //      1 TB
+    pro: 5 * 1024 ** 4, //      5 TB
+    max: 10 * 1024 ** 4, //    10 TB
+    enterprise: 100 * 1024 ** 4, // 100 TB (custom; "20TB+" marketed)
 };

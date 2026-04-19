@@ -15,6 +15,7 @@ import {
     TrialExpiredError,
 } from '@/server/errors';
 import { fileService } from './files';
+import { PLAN_LIMITS } from './constants';
 
 vi.mock('@/lib/storage', () => ({
     s3: mockS3,
@@ -55,9 +56,7 @@ describe('files service', () => {
         });
 
         it('throws QuotaExceededError when storage limit exceeded', async () => {
-            // Mock sumStorageBytesByUser to return near max (10GB - 1 byte)
-            const tenGBMinus1 = 10 * 1024 * 1024 * 1024 - 1;
-            mocks.where.mockResolvedValue([{ total: tenGBMinus1 }]);
+            mocks.where.mockResolvedValue([{ total: PLAN_LIMITS.starter - 1 }]);
 
             await expect(
                 fileService.initiateUpload(db, TEST_USER_ID, {
@@ -68,14 +67,13 @@ describe('files service', () => {
         });
 
         it('allows upload exactly at quota limit', async () => {
-            // Mock sumStorageBytesByUser to return 9GB
-            const nineGB = 9 * 1024 * 1024 * 1024;
-            mocks.where.mockResolvedValue([{ total: nineGB }]);
+            const oneGB = 1024 ** 3;
+            mocks.where.mockResolvedValue([
+                { total: PLAN_LIMITS.starter - oneGB },
+            ]);
             const insertedFile = createFileFixture({ status: 'uploading' });
             mocks.returning.mockResolvedValue([insertedFile]);
 
-            // 1GB file should fit exactly at 10GB limit
-            const oneGB = 1 * 1024 * 1024 * 1024;
             const result = await fileService.initiateUpload(db, TEST_USER_ID, {
                 name: 'test.pdf',
                 sizeBytes: oneGB,
@@ -132,24 +130,24 @@ describe('files service', () => {
 
     describe('quota enforcement with subscription', () => {
         const oneGB = 1024 ** 3;
-        const hundredGB = 100 * 1024 ** 3;
+        const oneTB = 1024 ** 4;
 
         it('uses subscription storageLimit instead of starter default', async () => {
-            // Pro subscription with 100 GB limit — user is already at 50 GB
             mocks.subscriptions.findFirst.mockResolvedValue(
                 createSubscriptionFixture({
                     planTier: 'pro',
                     status: 'active',
-                    storageLimit: hundredGB,
+                    storageLimit: PLAN_LIMITS.pro,
                 })
             );
-            mocks.where.mockResolvedValue([{ total: 50 * oneGB }]);
+            // 2 TB used — already exceeds starter's 1 TB default
+            mocks.where.mockResolvedValue([{ total: 2 * oneTB }]);
             mocks.returning.mockResolvedValue([createFileFixture()]);
 
-            // 40 GB upload would exceed starter (10 GB) but fits in pro (100 GB)
+            // +1 TB upload → 3 TB, still under pro's 5 TB limit
             const result = await fileService.initiateUpload(db, TEST_USER_ID, {
                 name: 'big.bin',
-                sizeBytes: 40 * oneGB,
+                sizeBytes: oneTB,
             });
 
             expect(result).toHaveProperty('fileId');
@@ -160,11 +158,11 @@ describe('files service', () => {
                 createSubscriptionFixture({
                     planTier: 'pro',
                     status: 'active',
-                    storageLimit: hundredGB,
+                    storageLimit: PLAN_LIMITS.pro,
                 })
             );
-            // At 99 GB, a 2 GB upload would exceed the 100 GB limit
-            mocks.where.mockResolvedValue([{ total: 99 * oneGB }]);
+            // 1 byte below pro limit — a 2 GB upload overflows
+            mocks.where.mockResolvedValue([{ total: PLAN_LIMITS.pro - 1 }]);
 
             await expect(
                 fileService.initiateUpload(db, TEST_USER_ID, {
@@ -429,8 +427,7 @@ describe('files service', () => {
         });
 
         it('throws QuotaExceededError when storage limit exceeded', async () => {
-            const tenGBMinus1 = 10 * 1024 * 1024 * 1024 - 1;
-            mocks.where.mockResolvedValue([{ total: tenGBMinus1 }]);
+            mocks.where.mockResolvedValue([{ total: PLAN_LIMITS.starter - 1 }]);
 
             await expect(
                 fileService.initiateMultipartUpload(db, TEST_USER_ID, {
