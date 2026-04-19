@@ -5,6 +5,8 @@ import {
     createUserFixture,
     type User,
 } from '@nexus/db/testing';
+import { lazyAsync } from '@/lib/async/lazy';
+import { createSubscriptionRepo } from '@nexus/db/repo/subscriptions';
 import type { Context, LoggedContext } from './init';
 
 /**
@@ -126,6 +128,11 @@ export function createMockContext(
     const baseContext: Context = {
         db,
         session,
+        getSubscription: lazyAsync(() =>
+            session
+                ? createSubscriptionRepo(db).findByUserId(session.user.id)
+                : Promise.resolve(undefined)
+        ),
     };
 
     const ctx: LoggedContext = {

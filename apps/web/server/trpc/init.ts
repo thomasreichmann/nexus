@@ -17,6 +17,14 @@ export async function createTRPCContext() {
     return {
         db,
         session,
+        // Request-scoped: one DB fetch per HTTP request, shared across every
+        // procedure in a tRPC batch. Returns undefined for unauthenticated
+        // callers; protected services receive it as-is.
+        getSubscription: lazyAsync(() =>
+            session
+                ? createSubscriptionRepo(db).findByUserId(session.user.id)
+                : Promise.resolve(undefined)
+        ),
     };
 }
 
@@ -87,17 +95,10 @@ export const protectedProcedure = baseProcedure.use(({ ctx, next }) => {
         throw new TRPCError({ code: 'UNAUTHORIZED' });
     }
 
-    const userId = ctx.session.user.id;
-
     return next({
         ctx: {
             ...ctx,
             session: ctx.session,
-            // Bulk uploads call services that each need the subscription;
-            // this lazy getter ensures one DB query per request, not per file.
-            getSubscription: lazyAsync(() =>
-                createSubscriptionRepo(ctx.db).findByUserId(userId)
-            ),
         },
     });
 });
