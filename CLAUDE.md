@@ -25,6 +25,10 @@ pnpm -F db db:studio           # Open Drizzle Studio
 pnpm -F db db:custom <name>    # Empty migration for RLS/functions
 ```
 
+## Stripe
+
+Stripe CLI is installed and authenticated to the sandbox (test-mode only; live mode pending).
+
 ## Required Reading
 
 - **Before writing code:** `docs/ai/conventions.md` — naming, structure, style
