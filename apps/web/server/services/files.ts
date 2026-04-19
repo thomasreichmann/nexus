@@ -1,6 +1,6 @@
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
-import { createSubscriptionRepo } from '@nexus/db/repo/subscriptions';
+import type { Subscription } from '@nexus/db/repo/subscriptions';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
 import { assertUploadAllowed } from './quota';
@@ -46,18 +46,13 @@ interface ConfirmUploadResult {
 async function assertWithinQuota(
     db: DB,
     userId: string,
-    additionalBytes: number
+    additionalBytes: number,
+    sub: Subscription | undefined
 ): Promise<void> {
     const fileRepo = createFileRepo(db);
-    const subscriptionRepo = createSubscriptionRepo(db);
-
-    const [currentUsage, subscription] = await Promise.all([
-        fileRepo.sumStorageByUser(userId),
-        subscriptionRepo.findByUserId(userId),
-    ]);
-
+    const currentUsage = await fileRepo.sumStorageByUser(userId);
     assertUploadAllowed(
-        { currentUsage, subscription: subscription ?? null },
+        { currentUsage, subscription: sub ?? null },
         additionalBytes
     );
 }
@@ -65,9 +60,10 @@ async function assertWithinQuota(
 async function initiateUpload(
     db: DB,
     userId: string,
-    input: UploadInput
+    input: UploadInput,
+    sub: Subscription | undefined
 ): Promise<InitiateUploadResult> {
-    await assertWithinQuota(db, userId, input.sizeBytes);
+    await assertWithinQuota(db, userId, input.sizeBytes, sub);
 
     const fileRepo = createFileRepo(db);
     const fileId = crypto.randomUUID();
@@ -125,9 +121,10 @@ async function confirmUpload(
 async function initiateMultipartUpload(
     db: DB,
     userId: string,
-    input: UploadInput
+    input: UploadInput,
+    sub: Subscription | undefined
 ): Promise<InitiateMultipartResult> {
-    await assertWithinQuota(db, userId, input.sizeBytes);
+    await assertWithinQuota(db, userId, input.sizeBytes, sub);
 
     const fileRepo = createFileRepo(db);
     const fileId = crypto.randomUUID();

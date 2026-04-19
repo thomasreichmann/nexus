@@ -5,7 +5,7 @@ import {
     createUserFixture,
     type User,
 } from '@nexus/db/testing';
-import type { Context, LoggedContext } from './init';
+import { buildContext, type LoggedContext } from './init';
 
 /**
  * Options for creating a mock tRPC context
@@ -123,13 +123,8 @@ export function createMockContext(
         log,
     };
 
-    const baseContext: Context = {
-        db,
-        session,
-    };
-
     const ctx: LoggedContext = {
-        ...baseContext,
+        ...buildContext({ db, session }),
         ...loggingContext,
     };
 

@@ -55,11 +55,12 @@ export const filesRouter = router({
 
     upload: protectedProcedure
         .input(uploadInputSchema)
-        .mutation(({ ctx, input }) => {
+        .mutation(async ({ ctx, input }) => {
             return fileService.initiateUpload(
                 ctx.db,
                 ctx.session.user.id,
-                input
+                input,
+                await ctx.getSubscription()
             );
         }),
 
@@ -138,11 +139,12 @@ export const filesRouter = router({
     multipart: router({
         init: protectedProcedure
             .input(uploadInputSchema)
-            .mutation(({ ctx, input }) => {
+            .mutation(async ({ ctx, input }) => {
                 return fileService.initiateMultipartUpload(
                     ctx.db,
                     ctx.session.user.id,
-                    input
+                    input,
+                    await ctx.getSubscription()
                 );
             }),
 

@@ -2,8 +2,12 @@ import { storageService } from '@/server/services/storage';
 import { protectedProcedure, router } from '../init';
 
 export const storageRouter = router({
-    getUsage: protectedProcedure.query(({ ctx }) => {
-        return storageService.getUsage(ctx.db, ctx.session.user.id);
+    getUsage: protectedProcedure.query(async ({ ctx }) => {
+        return storageService.getUsage(
+            ctx.db,
+            ctx.session.user.id,
+            await ctx.getSubscription()
+        );
     }),
 
     getByType: protectedProcedure.query(({ ctx }) => {

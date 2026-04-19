@@ -38,11 +38,16 @@ describe('files service', () => {
             const insertedFile = createFileFixture({ status: 'uploading' });
             mocks.returning.mockResolvedValue([insertedFile]);
 
-            const result = await fileService.initiateUpload(db, TEST_USER_ID, {
-                name: 'test.pdf',
-                sizeBytes: 1024,
-                mimeType: 'application/pdf',
-            });
+            const result = await fileService.initiateUpload(
+                db,
+                TEST_USER_ID,
+                {
+                    name: 'test.pdf',
+                    sizeBytes: 1024,
+                    mimeType: 'application/pdf',
+                },
+                undefined
+            );
 
             expect(result).toHaveProperty('fileId');
             expect(result).toHaveProperty('uploadUrl');
@@ -59,10 +64,15 @@ describe('files service', () => {
             mocks.where.mockResolvedValue([{ total: PLAN_LIMITS.starter }]);
 
             await expect(
-                fileService.initiateUpload(db, TEST_USER_ID, {
-                    name: 'test.pdf',
-                    sizeBytes: 1,
-                })
+                fileService.initiateUpload(
+                    db,
+                    TEST_USER_ID,
+                    {
+                        name: 'test.pdf',
+                        sizeBytes: 1,
+                    },
+                    undefined
+                )
             ).rejects.toThrow(QuotaExceededError);
         });
 
@@ -71,11 +81,16 @@ describe('files service', () => {
             const insertedFile = createFileFixture({ status: 'uploading' });
             mocks.returning.mockResolvedValue([insertedFile]);
 
-            await fileService.initiateUpload(db, TEST_USER_ID, {
-                name: 'test.pdf',
-                sizeBytes: 1024,
-                mimeType: 'application/pdf',
-            });
+            await fileService.initiateUpload(
+                db,
+                TEST_USER_ID,
+                {
+                    name: 'test.pdf',
+                    sizeBytes: 1024,
+                    mimeType: 'application/pdf',
+                },
+                undefined
+            );
 
             expect(mocks.insert).toHaveBeenCalledOnce();
             expect(mocks.values).toHaveBeenCalledWith(
@@ -94,10 +109,15 @@ describe('files service', () => {
             const insertedFile = createFileFixture({ status: 'uploading' });
             mocks.returning.mockResolvedValue([insertedFile]);
 
-            await fileService.initiateUpload(db, TEST_USER_ID, {
-                name: 'document.pdf',
-                sizeBytes: 1024,
-            });
+            await fileService.initiateUpload(
+                db,
+                TEST_USER_ID,
+                {
+                    name: 'document.pdf',
+                    sizeBytes: 1024,
+                },
+                undefined
+            );
 
             // S3 key format: {userId}/{fileId}/{filename}
             expect(mocks.values).toHaveBeenCalledWith(
@@ -278,7 +298,8 @@ describe('files service', () => {
                     name: 'large-file.zip',
                     sizeBytes: 50 * 1024 * 1024, // 50MB = 5 parts
                     mimeType: 'application/zip',
-                }
+                },
+                undefined
             );
 
             expect(result).toHaveProperty('fileId');
@@ -293,10 +314,15 @@ describe('files service', () => {
             mocks.where.mockResolvedValue([{ total: PLAN_LIMITS.starter }]);
 
             await expect(
-                fileService.initiateMultipartUpload(db, TEST_USER_ID, {
-                    name: 'large-file.zip',
-                    sizeBytes: 1,
-                })
+                fileService.initiateMultipartUpload(
+                    db,
+                    TEST_USER_ID,
+                    {
+                        name: 'large-file.zip',
+                        sizeBytes: 1,
+                    },
+                    undefined
+                )
             ).rejects.toThrow(QuotaExceededError);
         });
 
@@ -305,10 +331,15 @@ describe('files service', () => {
             const insertedFile = createFileFixture({ status: 'uploading' });
             mocks.returning.mockResolvedValue([insertedFile]);
 
-            await fileService.initiateMultipartUpload(db, TEST_USER_ID, {
-                name: 'large-file.zip',
-                sizeBytes: 50 * 1024 * 1024,
-            });
+            await fileService.initiateMultipartUpload(
+                db,
+                TEST_USER_ID,
+                {
+                    name: 'large-file.zip',
+                    sizeBytes: 50 * 1024 * 1024,
+                },
+                undefined
+            );
 
             expect(mocks.insert).toHaveBeenCalledOnce();
             expect(mocks.values).toHaveBeenCalledWith(
@@ -331,7 +362,8 @@ describe('files service', () => {
                 {
                     name: 'exact.bin',
                     sizeBytes: 20 * 1024 * 1024, // exactly 2 chunks
-                }
+                },
+                undefined
             );
 
             expect(result.partUrls).toHaveLength(2);
