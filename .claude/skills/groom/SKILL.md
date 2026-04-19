@@ -1,20 +1,13 @@
 ---
 name: groom
-description: Groom GitHub issues from needs-details to ready
-argument-hint: [issue-number] (optional)
-allowed-tools: Bash, Task, Read, Grep, Glob
+description: Groom a GitHub issue from needs-details to ready
+argument-hint: <issue-number>
 disable-model-invocation: true
-agent: groom-agent
 ---
 
 # Issue Grooming Command
 
-This command helps transform draft issues (labeled `needs-details`) into implementation-ready issues (labeled `ready`).
-
-## Dynamic Context
-
-**Current issues needing grooming:**
-!`gh issue list --label needs-details --json number,title --limit 10 2>/dev/null || echo "Could not fetch issues"`
+Transform a draft issue (labeled `needs-details`) into an implementation-ready issue (labeled `ready`).
 
 ## Templates Reference
 
@@ -35,108 +28,25 @@ This command helps transform draft issues (labeled `needs-details`) into impleme
 
 ## Instructions
 
-### Step 1: Determine Mode
+If no issue number was provided, stop and tell the user: `Pass an issue number, e.g. /groom 42`. Do not attempt to list or pick an issue.
 
-If an issue number was provided above (not empty):
+Then verify the issue is actually a draft before spending tokens on research:
 
-- Skip to Step 3 with that issue number
+```bash
+gh issue view <number> --json state,labels --jq '{state, labels: [.labels[].name]}'
+```
 
-If no issue number was provided:
+If the issue is closed, or its labels don't include `needs-details` (e.g. it's already `ready`), stop and tell the user the issue's current state. Do not re-groom an already-groomed issue without explicit instruction.
 
-1. Fetch issues with `needs-details` label:
+Otherwise, proceed to Phase 1.
 
-    ```bash
-    gh issue list --label needs-details --json number,title,labels,milestone --limit 20
-    ```
+### Phase 1: Research & Discovery (REQUIRED)
 
-2. If no issues found, inform the user and exit.
+1. **Spawn the research subagent** with `subagent_type: "groom-research"` (do NOT use `run_in_background`). Pass it the issue number. It fetches the issue, researches the codebase, and returns findings including `KEY DECISIONS NEEDED`, `CLARIFYING QUESTIONS`, and `ASSUMPTIONS I'M MAKING`.
 
-3. Ask the user to select a mode:
-    - **Single**: "I'll pick one issue to work on" - Ask which issue number
-    - **Multiple**: "Let me select specific issues" - Ask for comma-separated issue numbers
-    - **Auto-select**: "You pick the highest priority issues (max 3)" - Claude selects based on labels/milestones
-    - **Preview & Pick**: "Rank all issues by priority, then I'll choose" - Claude analyzes and ranks all issues, shows rankings with reasoning, user picks which to groom
+2. **Ask the user** about each decision, question, and assumption the agent surfaced. Present alternatives where the agent identified them. Do not proceed until the user has resolved all open points.
 
-### Step 2: Execute Based on Mode
-
-**For Single mode:**
-
-- Proceed to Step 3 with the selected issue
-
-**For Preview & Pick mode:**
-
-1. Analyze all issues considering:
-    - Labels (priority, type, area)
-    - Milestone assignment
-    - Dependencies on other issues
-    - Complexity vs value
-    - Blocking status (does this unblock other work?)
-
-2. Present a ranked list to the user showing:
-
-    ```
-    PRIORITY RANKING:
-
-    1. #42 - User authentication flow
-       Priority: HIGH | Reason: Blocks #43, #44; milestone: MVP
-
-    2. #38 - File upload validation
-       Priority: HIGH | Reason: Security-critical; no dependencies
-
-    3. #35 - Dashboard layout
-       Priority: MEDIUM | Reason: User-facing; straightforward scope
-
-    ... (show all issues with rankings)
-    ```
-
-3. Present the ranked list and ask the user to select which issues to groom:
-    - Show all issues with their priority ranking
-    - User can select multiple issues
-    - Sort by highest-priority
-
-4. Proceed to Multiple mode with selected issues
-
-**For Multiple/Auto-select mode:**
-
-- Spawn one Task per issue using `subagent_type: "groom-research"` — make all Task calls in the **same message** so they run concurrently. Do NOT use `run_in_background`.
-- Each agent returns research findings and key decisions — NOT final drafts
-- After all Tasks return, compile decisions and present them to the user
-- THEN drafts are created incorporating user decisions
-
-### Step 3: Groom Issue (per issue)
-
-This is a TWO-PHASE process. Do NOT skip the first phase.
-
-#### Phase 1: Research & Discovery (REQUIRED)
-
-1. **Fetch issue details:**
-
-    ```bash
-    gh issue view <number> --json number,title,body,labels
-    ```
-
-2. **Research codebase context** by spawning a Task with `subagent_type: "groom-research"` (do NOT use `run_in_background`). Pass it the issue number and details. The agent will return structured research findings.
-
-3. **Identify decisions and alternatives:**
-    - What architectural choices exist?
-    - Are there multiple valid approaches?
-    - What trade-offs should the user consider?
-    - What assumptions are you making that the user should validate?
-    - What scope boundaries are ambiguous?
-
-4. **Ask the user** for input on findings:
-    - Show what you learned from the codebase
-    - Present key decisions that need user input
-    - Offer alternatives where they exist
-    - Ask clarifying questions about ambiguous requirements
-
-    Example questions to surface:
-    - "Should this use the existing X pattern or introduce Y?"
-    - "The scope could include A or exclude it - which do you prefer?"
-    - "I found two approaches: [approach 1] vs [approach 2]. Which fits better?"
-    - "This might affect [related feature]. Should we account for that?"
-
-#### Phase 2: Draft & Finalize
+### Phase 2: Draft & Finalize
 
 Only proceed here AFTER getting user input on key decisions.
 
@@ -158,161 +68,48 @@ Only proceed here AFTER getting user input on key decisions.
     - [Scope boundaries the user confirmed]
     ```
 
-2. **Present draft to user:**
-    - Show the original issue content
-    - Show the proposed new body
-    - Highlight how user decisions were incorporated
-    - Ask for final approval or modifications
+2. **Proceed to Self-Review.** Do not apply the draft yet.
 
-3. **If approved, update the issue:**
+## Self-Review (REQUIRED)
+
+Before applying the draft, review it for quality, codebase alignment, and related-issue relationships.
+
+1. **Review draft quality inline.** Check the draft against `.claude/skills/groom/templates/review-criteria.md` yourself — the draft is already in context and no tool use is required. Verify description clarity, acceptance criteria specificity, scope boundaries, absence of ambiguous language, and appropriate labels (type, area). Fix any quality issues directly in the draft before spawning subagents.
+
+2. **Spawn two review agents in the same message** (do NOT use `run_in_background` — make both Task calls in one message so they run concurrently and return results directly). Pass each the drafted issue body and the issue number:
+    - `subagent_type: "groom-alignment-review"` — verifies referenced files/patterns exist, checks convention alignment, flags conflicts.
+    - `subagent_type: "groom-related-issues"` — surfaces blocked-by, blocks, references, and overlapping-scope relationships across open issues.
+
+3. **Collect results from both agents** (each Task's return value contains the agent's final structured output directly).
+
+4. **Process findings:**
+    - **Fix directly** in the draft: references to non-existent files/patterns.
+    - **Collect for the user gate** (next step): convention divergence, potential conflicts with existing features, architectural trade-offs, discovered complexity that may affect scope, suggested issue relationships (blocked-by, blocks, duplicates), overlapping open issues.
+
+5. **Surface concerns to the user before applying.** If the alignment review flagged convention concerns or potential conflicts, OR the related-issues review surfaced blocking/overlapping issues, present these and ask the user to confirm before proceeding. If nothing material was flagged, skip this step.
+
+6. **Proceed to Apply.**
+
+## Apply
+
+1. **Write the new body and flip the label** to `ready`:
+
     ```bash
     gh issue edit <number> --body "<new body>"
     gh issue edit <number> --remove-label needs-details --add-label ready
     ```
 
-### Step 4: Summary
+2. **Report to the user:**
+    - Link to the updated issue
+    - Key decisions reflected in the draft
+    - Any flagged concerns collected during Self-Review (for awareness — not blocking)
 
-After all issues are processed, provide a summary:
+## References
 
-- Number of issues groomed
-- Key decisions made (for reference)
-- Links to updated issues
-- Any issues that were skipped or need follow-up
-
-## After Subagents Return
-
-When subagents return their research:
-
-1. **Compile all decisions and questions** from all issues
-2. **Ask the user** for each decision point, grouped by issue
-3. **Collect user decisions** before proceeding to draft
-4. **Draft issues** incorporating the decisions
-5. **Proceed to Self-Review**
-
-## Self-Review (REQUIRED)
-
-Before presenting drafts to the user, review them for quality and codebase alignment using parallel subagents.
-
-### For Each Draft:
-
-1. **Spawn three review agents in the same message** (do NOT use `run_in_background` — make all three Task calls in one message so they run concurrently and return results directly). **Use `model: "opus"` for all review agents** — do not let them default to haiku:
-
-    **Issue Quality Review** (subagent_type: "general-purpose"):
-    - Review the draft against `.claude/skills/groom/templates/review-criteria.md`
-    - Check description clarity, acceptance criteria specificity, scope boundaries
-    - Identify ambiguous language or undefined terms
-    - Verify appropriate labels are set (type, area)
-    - Return list of issues found, suggested fixes, and missing labels
-
-    **Codebase Alignment Review** (subagent_type: "general-purpose"):
-    - Confirm referenced files/patterns actually exist
-    - Check that the approach matches codebase conventions
-    - Identify any conflicts with existing features
-    - Return list of alignment issues and concerns
-
-    **Related Issues Review** (subagent_type: "general-purpose"):
-    - Fetch open issues: `gh issue list --state open --json number,title,body,labels --limit 50`
-    - Identify issues that should be updated as a result of this draft:
-        - Issues that block or are blocked by this one
-        - Issues that reference the same files/features
-        - Issues that overlap in scope (potential duplicates or related work)
-    - Return list of suggested relationship updates (blocked-by, blocks, references)
-
-2. **Collect results from all three agents** (each Task's return value contains the agent's final structured output directly)
-
-3. **Process findings:**
-    - Fix obvious issues (unclear wording, missing criteria, non-existent references)
-    - Note concerns to raise with user during Final Review
-
-4. **Proceed to Final Review** with any flagged concerns
-
-### What to Fix vs. Flag
-
-**Fix directly:**
-
-- Vague or untestable acceptance criteria
-- Missing out of scope items
-- Ambiguous language
-- References to non-existent files/patterns
-
-**Flag for user discussion:**
-
-- Potential conflicts with existing features
-- Architectural trade-offs
-- Discovered complexity that may affect scope
-- Suggested issue relationships (blocked-by, blocks)
-- Related issues that may need updates
-- Missing or suggested labels (type, area)
-
-## Final Review (REQUIRED)
-
-After all drafts are ready, you MUST review each issue individually with the user.
-
-1. **Present all drafts** with a summary showing each issue's title and key changes
-
-2. **Ask the user about each issue**. Each question should have these options (in this order):
-    - **Approve as AI-drafted** (default): Issue content is good but mark as `ai-drafted` for later human review
-    - **Approve as ready**: Issue is fully reviewed and ready for implementation
-    - **Request changes**: User provides feedback, you revise the draft
-    - **Skip**: Leave issue as `needs-details` for now
-
-3. **Apply updates based on responses:**
-    - "Approve as ready": `--remove-label needs-details --add-label ready`
-    - "Approve as AI-drafted": `--remove-label needs-details --add-label ready --add-label ai-drafted`
-    - "Request changes": Revise draft based on feedback, then ask again
-    - "Skip": No changes, remains `needs-details`
-
-4. **Handle "Request changes"** responses:
-    - Show the specific feedback
-    - Revise the draft accordingly
-    - Present the revised version
-    - Ask for approval again (same options)
-
-## Labels Reference
-
-| Label           | Meaning                                               |
-| --------------- | ----------------------------------------------------- |
-| `needs-details` | Draft issue, not ready for implementation             |
-| `ready`         | Fully detailed, ready for implementation              |
-| `ai-drafted`    | Content generated/groomed by AI, pending human review |
-
-Note: `ai-drafted` is used WITH `ready` - the issue is detailed enough to work on, but a human hasn't verified the AI's decisions yet.
-
-### Priority Labels
-
-Issues should have a priority label for triage and backlog prioritization:
-
-| Label                | Color  | When to Use                             |
-| -------------------- | ------ | --------------------------------------- |
-| `priority: critical` | Red    | Must be addressed immediately           |
-| `priority: high`     | Orange | Important, should be addressed soon     |
-| `priority: medium`   | Yellow | Normal priority                         |
-| `priority: low`      | Green  | Nice to have, address when time permits |
-
-During grooming, suggest an appropriate priority label based on:
-
-- Business impact and user-facing visibility
-- Blocking status (does this unblock other work?)
-- Security or stability implications
-- Milestone deadlines
-
-## Creating Follow-up Issues
-
-During grooming, you may identify work that should be separate issues (prerequisites, follow-ups, discovered scope). When creating these:
-
-1. **Get user approval** before creating any new issues
-2. **Create as draft** with `needs-details` label
-3. **Link related issues** using GitHub's native relationships
-
-**For issue relationships (sub-issues, blocking):** Read `docs/ai/github-workflow.md` for the GraphQL commands and decision guide on when to use parent/child vs blocking relationships.
+- **Priority labels, type/area labels, and follow-up issue creation:** load `.claude/skills/groom/templates/labels-reference.md` when you need to suggest a priority label or create a follow-up issue.
+- **Issue-relationship GraphQL (sub-issues, blocking):** `docs/ai/github-workflow.md`.
 
 ## Notes
 
-- NEVER skip the Research & Discovery phase
-- ALWAYS surface architectural decisions to the user
-- Subagents research and identify - they don't decide
-- Present alternatives, don't just pick one
-- User decisions should be reflected in the final draft
-- Preserve existing context from the original issue
-- Make acceptance criteria specific and testable based on agreed approach
-- Link related issues using GitHub's relationship APIs (see `docs/ai/github-workflow.md`)
+- Preserve existing context from the original issue body in the new draft.
+- If you identify work that should be separate (prerequisites, follow-ups, discovered scope), propose it as a new draft issue rather than expanding this one — see the labels reference for the process.
