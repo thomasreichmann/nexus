@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { initTRPC, TRPCError } from '@trpc/server';
+import type { TRPCDefaultErrorShape } from '@trpc/server';
 import {
     isDomainError,
     NotFoundError,
     ForbiddenError,
     InvalidStateError,
     QuotaExceededError,
+    TrialExpiredError,
 } from '@/server/errors';
+import { domainErrorFormatter } from '../error-formatter';
 
 // Minimal tRPC setup for testing the middleware
 const t = initTRPC.create();
@@ -170,5 +173,102 @@ describe('errorHandlerMiddleware', () => {
         const result = await caller.test();
 
         expect(result).toEqual({ success: true, data: 'test' });
+    });
+});
+
+describe('domainErrorFormatter', () => {
+    function makeShape(
+        overrides: Partial<TRPCDefaultErrorShape> = {}
+    ): TRPCDefaultErrorShape {
+        return {
+            code: -32000,
+            message: 'test',
+            data: {
+                code: 'INTERNAL_SERVER_ERROR',
+                httpStatus: 500,
+                path: 'test',
+            },
+            ...overrides,
+        } as TRPCDefaultErrorShape;
+    }
+
+    it('adds domainCode when error.cause is a DomainError', () => {
+        const cause = new TrialExpiredError();
+        const error = new TRPCError({
+            code: 'FORBIDDEN',
+            message: cause.message,
+            cause,
+        });
+
+        const shaped = domainErrorFormatter({ shape: makeShape(), error });
+
+        expect(shaped.data.domainCode).toBe('TRIAL_EXPIRED');
+    });
+
+    it('preserves all original shape fields', () => {
+        const cause = new NotFoundError('File', 'abc');
+        const error = new TRPCError({
+            code: 'NOT_FOUND',
+            message: cause.message,
+            cause,
+        });
+        const shape = makeShape({
+            data: {
+                code: 'NOT_FOUND',
+                httpStatus: 404,
+                path: 'files.get',
+            } as TRPCDefaultErrorShape['data'],
+        });
+
+        const shaped = domainErrorFormatter({ shape, error });
+
+        expect(shaped.code).toBe(shape.code);
+        expect(shaped.message).toBe(shape.message);
+        expect(shaped.data.code).toBe('NOT_FOUND');
+        expect(shaped.data.httpStatus).toBe(404);
+        expect(shaped.data.path).toBe('files.get');
+        expect(shaped.data.domainCode).toBe('NOT_FOUND');
+    });
+
+    it('omits domainCode for non-DomainError causes (bare TRPCError)', () => {
+        const error = new TRPCError({ code: 'UNAUTHORIZED' });
+
+        const shaped = domainErrorFormatter({ shape: makeShape(), error });
+
+        expect(shaped.data.domainCode).toBeUndefined();
+    });
+
+    it('omits domainCode for generic Error causes', () => {
+        const error = new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            cause: new Error('boom'),
+        });
+
+        const shaped = domainErrorFormatter({ shape: makeShape(), error });
+
+        expect(shaped.data.domainCode).toBeUndefined();
+    });
+
+    it('distinguishes TrialExpiredError from generic ForbiddenError (same tRPC code)', () => {
+        const forbidden = new TRPCError({
+            code: 'FORBIDDEN',
+            cause: new ForbiddenError(),
+        });
+        const trialExpired = new TRPCError({
+            code: 'FORBIDDEN',
+            cause: new TrialExpiredError(),
+        });
+
+        const a = domainErrorFormatter({
+            shape: makeShape(),
+            error: forbidden,
+        });
+        const b = domainErrorFormatter({
+            shape: makeShape(),
+            error: trialExpired,
+        });
+
+        expect(a.data.domainCode).toBe('FORBIDDEN');
+        expect(b.data.domainCode).toBe('TRIAL_EXPIRED');
     });
 });

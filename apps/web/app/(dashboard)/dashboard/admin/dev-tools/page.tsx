@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { CleanupControls } from './cleanup-controls';
 import { CustomSeedForm } from './custom-seed-form';
+import { ErrorControls } from './error-controls';
 import { getTargetLabel, ME_VALUE } from './presets';
 import { ScenarioList } from './scenario-list';
 
@@ -60,6 +61,7 @@ export default function AdminDevToolsPage() {
                             targetUser={targetUser}
                             targetLabel={targetLabel}
                         />
+                        <ErrorControls />
                     </div>
                 </div>
             </div>

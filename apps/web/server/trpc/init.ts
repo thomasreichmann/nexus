@@ -4,6 +4,7 @@ import { isDomainError } from '@/server/errors';
 import { initTRPC, TRPCError } from '@trpc/server';
 import { headers } from 'next/headers';
 import superjson from 'superjson';
+import { domainErrorFormatter } from './error-formatter';
 import { logRequest, type LoggingContext } from './middleware/logging';
 
 export async function createTRPCContext() {
@@ -24,6 +25,7 @@ export type LoggedContext = Context & LoggingContext;
 
 const t = initTRPC.context<Context>().create({
     transformer: superjson,
+    errorFormatter: domainErrorFormatter,
 });
 
 export const router = t.router;

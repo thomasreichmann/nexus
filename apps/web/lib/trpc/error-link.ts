@@ -13,7 +13,7 @@ const fallbackMessages: Record<string, string> = {
     INTERNAL_SERVER_ERROR: 'Something went wrong. Please try again',
 };
 
-function getErrorMessage(err: TRPCClientError<AppRouter>): string {
+export function getErrorMessage(err: TRPCClientError<AppRouter>): string {
     const code = (err.data?.code as string) ?? 'INTERNAL_SERVER_ERROR';
     const fallback =
         fallbackMessages[code] ?? fallbackMessages.INTERNAL_SERVER_ERROR!;
@@ -22,6 +22,17 @@ function getErrorMessage(err: TRPCClientError<AppRouter>): string {
     if (code === 'INTERNAL_SERVER_ERROR') return fallback;
 
     return err.message || fallback;
+}
+
+/**
+ * Toast id includes both tRPC code and `domainCode` so two DomainErrors
+ * sharing a tRPC code (e.g. FORBIDDEN vs TRIAL_EXPIRED) surface as distinct
+ * toasts instead of collapsing into one.
+ */
+export function getToastId(err: TRPCClientError<AppRouter>): string {
+    const code = (err.data?.code as string) ?? 'INTERNAL_SERVER_ERROR';
+    const domainCode = err.data?.domainCode ?? '';
+    return `trpc-${code}-${domainCode}`;
 }
 
 export function errorLink(): TRPCLink<AppRouter> {
@@ -37,11 +48,8 @@ export function errorLink(): TRPCLink<AppRouter> {
                             !op.context.skipToast &&
                             err instanceof TRPCClientError
                         ) {
-                            const code =
-                                (err.data?.code as string) ??
-                                'INTERNAL_SERVER_ERROR';
                             toast.error(getErrorMessage(err), {
-                                id: `trpc-${code}`,
+                                id: getToastId(err),
                             });
                         }
                         observer.error(err);

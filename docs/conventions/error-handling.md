@@ -47,7 +47,8 @@ const mutation = useMutation(
     trpc.files.delete.mutationOptions({
         trpc: { context: { skipToast: true } },
         onError(error) {
-            if (error.data?.code === 'NOT_FOUND') {
+            const domain = getDomainError(error);
+            if (domain?.code === 'NOT_FOUND') {
                 toast.info('File was already deleted');
             } else {
                 toast.error('Failed to delete file');
@@ -56,6 +57,51 @@ const mutation = useMutation(
     })
 );
 ```
+
+## Discriminating Domain Errors (`domainCode`)
+
+`DomainError` subclasses carry a machine-readable `code` that is serialized onto `err.data.domainCode`. The frontend uses this to distinguish errors that share a tRPC code (e.g. a generic `FORBIDDEN` vs. a `TRIAL_EXPIRED`), so components can branch exhaustively without fragile message-string matching.
+
+**Recommended: `getDomainError`**
+
+```typescript
+import { getDomainError } from '@/lib/trpc/get-domain-error';
+
+const mutation = useMutation(
+    trpc.files.delete.mutationOptions({
+        trpc: { context: { skipToast: true } },
+        onError(error) {
+            const domain = getDomainError(error);
+            switch (domain?.code) {
+                case 'NOT_FOUND':
+                    toast.info('File was already deleted');
+                    return;
+                case 'TRIAL_EXPIRED':
+                    // handled elsewhere (e.g. <TrialExpiredBanner />)
+                    return;
+                default:
+                    toast.error('Failed to delete file');
+            }
+        },
+    })
+);
+```
+
+Adding a new entry to `DOMAIN_ERROR_CODES` (in `apps/web/server/errors.ts`) without updating a `switch` over `DomainErrorCode` surfaces as a TypeScript error.
+
+**Fallback: bare `error.data?.code`**
+
+Some server throws are bare `TRPCError` instances (e.g. admin gates) without a `domainCode`. In that case `getDomainError` returns `null` and callers can fall back to `error.data?.code` (the tRPC code) for coarse branching:
+
+```typescript
+if (error.data?.code === 'UNAUTHORIZED') {
+    // redirect to sign in
+}
+```
+
+**Composes with `skipToast`**
+
+`getDomainError` makes no assumptions about toast behavior — pair it with `context: { skipToast: true }` when you want custom per-component handling, or leave the global toast in place and let it drive an auxiliary UI (e.g. a banner) alongside it.
 
 ## Error Boundaries
 

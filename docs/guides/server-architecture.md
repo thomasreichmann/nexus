@@ -181,7 +181,15 @@ const file = await fileRepo.findById(id);
 
 ## Domain Errors
 
-Services throw domain-specific errors. Each error passes its tRPC code to the base class, and middleware handles the mapping.
+Services throw domain-specific errors. Each subclass declares both a tRPC
+transport code (`trpcCode`) and a machine-readable `DomainErrorCode` from the
+central `DOMAIN_ERROR_CODES` registry. The `errorHandlerMiddleware` maps the
+thrown `DomainError` onto a `TRPCError` (preserving the original as `cause`),
+and a separate `errorFormatter` surfaces `code` on the wire as
+`data.domainCode` so the frontend can discriminate errors that share a tRPC
+code (e.g. `FORBIDDEN` vs `TRIAL_EXPIRED`). See
+[[../conventions/error-handling|Error Handling]] for the client-side
+`getDomainError` pattern.
 
 ### Error Definitions
 
@@ -189,8 +197,21 @@ Services throw domain-specific errors. Each error passes its tRPC code to the ba
 // server/errors.ts
 import type { TRPC_ERROR_CODE_KEY } from '@trpc/server/rpc';
 
+export const DOMAIN_ERROR_CODES = {
+    NOT_FOUND: 'NOT_FOUND',
+    INVALID_STATE: 'INVALID_STATE',
+    FORBIDDEN: 'FORBIDDEN',
+    QUOTA_EXCEEDED: 'QUOTA_EXCEEDED',
+    TRIAL_EXPIRED: 'TRIAL_EXPIRED',
+} as const;
+
+export type DomainErrorCode =
+    (typeof DOMAIN_ERROR_CODES)[keyof typeof DOMAIN_ERROR_CODES];
+
 /** Base class for all domain errors. */
 export abstract class DomainError extends Error {
+    abstract readonly code: DomainErrorCode;
+
     constructor(
         message: string,
         public readonly trpcCode: TRPC_ERROR_CODE_KEY
@@ -202,6 +223,8 @@ export abstract class DomainError extends Error {
 
 /** Resource not found. */
 export class NotFoundError extends DomainError {
+    static readonly code = DOMAIN_ERROR_CODES.NOT_FOUND;
+    readonly code = NotFoundError.code;
     constructor(entity: string, id?: string) {
         super(
             id ? `${entity} not found: ${id}` : `${entity} not found`,
@@ -210,57 +233,45 @@ export class NotFoundError extends DomainError {
     }
 }
 
-/** User doesn't have permission. */
-export class ForbiddenError extends DomainError {
-    constructor(message = 'You do not have permission to perform this action') {
-        super(message, 'FORBIDDEN');
-    }
-}
-
-/** Operation not allowed in current state. */
-export class InvalidStateError extends DomainError {
-    constructor(message: string) {
-        super(message, 'BAD_REQUEST');
-    }
-}
-
-/** Quota or limit exceeded. */
-export class QuotaExceededError extends DomainError {
-    constructor(message = 'Quota exceeded') {
-        super(message, 'PRECONDITION_FAILED');
-    }
-}
+// ForbiddenError, InvalidStateError, QuotaExceededError, TrialExpiredError
+// follow the same pattern — see apps/web/server/errors.ts.
 ```
 
-### Error Handler Middleware
+### Error Handler Middleware + Formatter
 
-Add to `server/trpc/init.ts`:
+`server/trpc/init.ts` splits error plumbing across two concerns:
 
 ```typescript
 import { TRPCError } from '@trpc/server';
-import { DomainError } from '@/server/errors';
+import { DomainError, isDomainError } from '@/server/errors';
 
+// 1. Formatter surfaces the machine-readable code on the wire.
+export function domainErrorFormatter({ shape, error }) {
+    const domainCode = isDomainError(error.cause)
+        ? error.cause.code
+        : undefined;
+    return { ...shape, data: { ...shape.data, domainCode } };
+}
+
+const t = initTRPC
+    .context<Context>()
+    .create({ transformer: superjson, errorFormatter: domainErrorFormatter });
+
+// 2. Middleware maps thrown DomainErrors onto TRPCErrors.
 const errorHandlerMiddleware = t.middleware(async ({ next }) => {
-    try {
-        return await next();
-    } catch (error) {
-        if (error instanceof DomainError) {
-            throw new TRPCError({
-                code: error.trpcCode,
-                message: error.message,
-                cause: error,
-            });
-        }
-        throw error;
+    const result = await next();
+    if (!result.ok && isDomainError(result.error.cause)) {
+        throw new TRPCError({
+            code: result.error.cause.trpcCode,
+            message: result.error.cause.message,
+            cause: result.error.cause,
+        });
     }
+    return result;
 });
-
-// Apply to all procedures
-export const publicProcedure = t.procedure.use(errorHandlerMiddleware);
-export const protectedProcedure = t.procedure
-    .use(authMiddleware)
-    .use(errorHandlerMiddleware);
 ```
+
+The middleware preserves the original `DomainError` as `cause`, which the formatter then reads to populate `data.domainCode`. Bare `TRPCError` throws and `ZodError`s go untouched — the formatter yields `domainCode: undefined` in those cases.
 
 ---
 

@@ -13,6 +13,7 @@ import {
     cleanupFiles,
     cleanupSeedDataForUser,
 } from '@nexus/db/seed';
+import { TrialExpiredError } from '@/server/errors';
 import { devToolsProcedure, router } from '../init';
 
 const scenarioNames = Object.keys(SCENARIO_DEFINITIONS) as [
@@ -141,6 +142,11 @@ export const devToolsRouter = router({
         forMe: devToolsProcedure.mutation(async ({ ctx }) => {
             return cleanupSeedDataForUser(ctx.db, ctx.session.user.id);
         }),
+    }),
+
+    /** Throws TrialExpiredError — used to exercise the DomainErrorCode → UI banner wiring. */
+    throwTrialExpired: devToolsProcedure.mutation(() => {
+        throw new TrialExpiredError();
     }),
 
     custom: devToolsProcedure
