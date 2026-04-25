@@ -19,30 +19,38 @@ export const filesRouter = router({
                     limit: z.number().min(1).max(100).default(50),
                     offset: z.number().min(0).default(0),
                     includeHidden: z.boolean().default(false),
+                    search: z.string().trim().optional(),
+                    sortKey: z
+                        .enum(['name', 'size', 'uploadedAt'])
+                        .default('uploadedAt'),
+                    sortOrder: z.enum(['asc', 'desc']).default('desc'),
                 })
-                .optional()
+                .prefault({})
         )
         .query(async ({ ctx, input }) => {
             const fileRepo = createFileRepo(ctx.db);
-            const limit = input?.limit ?? 50;
-            const offset = input?.offset ?? 0;
-            const includeHidden = input?.includeHidden ?? false;
+            const { limit, offset, includeHidden, search, sortKey, sortOrder } =
+                input;
+            const userId = ctx.session.user.id;
 
-            const [files, total] = await Promise.all([
-                fileRepo.findByUser(ctx.session.user.id, {
+            const [files, total, counts] = await Promise.all([
+                fileRepo.findByUser(userId, {
                     limit,
                     offset,
                     includeHidden,
+                    search,
+                    sortKey,
+                    sortOrder,
                 }),
-                fileRepo.countByUser(ctx.session.user.id, {
-                    includeHidden,
-                }),
+                fileRepo.countByUser(userId, { includeHidden, search }),
+                fileRepo.countStatusesByUser(userId, { includeHidden }),
             ]);
 
             return {
                 files,
                 total,
                 hasMore: offset + files.length < total,
+                counts,
             };
         }),
 

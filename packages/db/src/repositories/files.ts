@@ -1,4 +1,15 @@
-import { eq, and, desc, sql, notInArray, inArray, ne, gte } from 'drizzle-orm';
+import {
+    eq,
+    and,
+    asc,
+    desc,
+    sql,
+    notInArray,
+    inArray,
+    ne,
+    gte,
+    ilike,
+} from 'drizzle-orm';
 import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
@@ -6,11 +17,34 @@ import { createRepository } from './create';
 export type File = typeof schema.files.$inferSelect;
 export type NewFile = typeof schema.files.$inferInsert;
 
+export type FileSortKey = 'name' | 'size' | 'uploadedAt';
+export type FileSortOrder = 'asc' | 'desc';
+
 export interface FindByUserOptions {
     limit: number;
     offset: number;
     includeHidden?: boolean;
+    search?: string;
+    sortKey?: FileSortKey;
+    sortOrder?: FileSortOrder;
 }
+
+export interface CountByUserOptions {
+    includeHidden?: boolean;
+    search?: string;
+}
+
+export interface StatusCategoryCounts {
+    archived: number;
+    retrieving: number;
+    available: number;
+}
+
+const SORT_COLUMNS = {
+    name: schema.files.name,
+    size: schema.files.size,
+    uploadedAt: schema.files.createdAt,
+} as const;
 
 function findById(db: DB, id: string): Promise<File | undefined> {
     return db.query.files.findFirst({
@@ -56,23 +90,37 @@ const hiddenStatuses: (typeof schema.files.status.enumValues)[number][] = [
     'deleted',
 ];
 
-function buildUserFilesWhereClause(userId: string, includeHidden: boolean) {
-    return includeHidden
-        ? eq(schema.files.userId, userId)
-        : and(
-              eq(schema.files.userId, userId),
-              notInArray(schema.files.status, hiddenStatuses)
-          );
+function buildUserFilesWhereClause(
+    userId: string,
+    includeHidden: boolean,
+    search?: string
+) {
+    const trimmed = search?.trim();
+    const conditions = [eq(schema.files.userId, userId)];
+    if (!includeHidden) {
+        conditions.push(notInArray(schema.files.status, hiddenStatuses));
+    }
+    if (trimmed) {
+        conditions.push(ilike(schema.files.name, `%${trimmed}%`));
+    }
+    return and(...conditions);
 }
 
 function findByUser(
     db: DB,
     userId: string,
-    opts: FindByUserOptions = { limit: 50, offset: 0 }
+    opts: FindByUserOptions
 ): Promise<File[]> {
+    const direction = opts.sortOrder === 'asc' ? asc : desc;
+    const sortColumn = SORT_COLUMNS[opts.sortKey ?? 'uploadedAt'];
     return db.query.files.findMany({
-        where: buildUserFilesWhereClause(userId, opts.includeHidden ?? false),
-        orderBy: desc(schema.files.createdAt),
+        where: buildUserFilesWhereClause(
+            userId,
+            opts.includeHidden ?? false,
+            opts.search
+        ),
+        // Tiebreak on id to guarantee stable paging when sort values tie.
+        orderBy: [direction(sortColumn), direction(schema.files.id)],
         limit: opts.limit,
         offset: opts.offset,
     });
@@ -81,14 +129,57 @@ function findByUser(
 async function countByUser(
     db: DB,
     userId: string,
-    opts: { includeHidden?: boolean } = {}
+    opts: CountByUserOptions = {}
 ): Promise<number> {
     const [result] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(schema.files)
-        .where(buildUserFilesWhereClause(userId, opts.includeHidden ?? false));
+        .where(
+            buildUserFilesWhereClause(
+                userId,
+                opts.includeHidden ?? false,
+                opts.search
+            )
+        );
 
     return result?.count ?? 0;
+}
+
+/**
+ * Library-wide status bucket counts for a user. Mirrors deriveStatus in
+ * apps/web/components/dashboard/file-browser.tsx — keep the two in lockstep
+ * or UI counts will disagree with per-row status dots.
+ */
+async function countStatusesByUser(
+    db: DB,
+    userId: string,
+    opts: { includeHidden?: boolean } = {}
+): Promise<StatusCategoryCounts> {
+    const rows = await db
+        .select({
+            category: sql<keyof StatusCategoryCounts>`
+                CASE
+                    WHEN ${schema.files.status} = 'restoring' THEN 'retrieving'
+                    WHEN ${schema.files.status} = 'available'
+                        AND ${schema.files.storageTier} IN ('glacier', 'deep_archive') THEN 'archived'
+                    WHEN ${schema.files.status} = 'available'
+                        AND ${schema.files.storageTier} = 'standard' THEN 'available'
+                END`.as('category'),
+            count: sql<number>`count(*)::int`.as('count'),
+        })
+        .from(schema.files)
+        .where(buildUserFilesWhereClause(userId, opts.includeHidden ?? false))
+        .groupBy(sql`category`);
+
+    const counts: StatusCategoryCounts = {
+        archived: 0,
+        retrieving: 0,
+        available: 0,
+    };
+    for (const row of rows) {
+        counts[row.category] = row.count;
+    }
+    return counts;
 }
 
 async function sumStorageByUser(db: DB, userId: string): Promise<number> {
@@ -276,6 +367,7 @@ export const createFileRepo = createRepository({
     findManyByUserAndIds,
     findByUser,
     countByUser,
+    countStatusesByUser,
     sumStorageByUser,
     insert,
     update,

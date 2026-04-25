@@ -64,6 +64,13 @@
       "when": 1771153902419,
       "tag": "0008_orange_centennial",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1776562429200,
+      "tag": "0009_tiny_warstar",
+      "breakpoints": true
     }
   ]
 }
