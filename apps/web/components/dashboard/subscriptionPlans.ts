@@ -104,11 +104,6 @@ export type PlanActionDecision =
  * has an active subscription creates a *second* subscription rather than
  * modifying the first — the portal is the only path that swaps the existing
  * subscription's price in place.
- *
- * Disabled covers three cases: the action is firing, another card's checkout
- * is firing (would create two pending sessions), or the action would route to
- * the portal but there's no Stripe subscription to manage (rare — only hits
- * for tiers provisioned outside Checkout, e.g. enterprise).
  */
 export function decidePlanAction(input: PlanActionInput): PlanActionDecision {
     if (input.comparison === 'current') return { kind: 'current' };
@@ -118,10 +113,9 @@ export function decidePlanAction(input: PlanActionInput): PlanActionDecision {
     const isPending = useCheckout
         ? input.isPendingThisCheckout
         : input.isOpeningPortal;
-    const disabled =
-        isPending ||
-        (useCheckout && input.isAnyCheckoutPending) ||
-        (!useCheckout && !input.hasActiveSub);
+    // Sibling-card lockout: while one checkout is firing, the others must
+    // disable so a rapid double-click can't open two checkout sessions.
+    const disabled = isPending || (useCheckout && input.isAnyCheckoutPending);
 
     return {
         kind: 'button',

@@ -8,11 +8,12 @@ import {
 
 test.use({ userRole: 'user' });
 
-// Tier-change behavior tests share the seeded user and mutate its
-// subscription row. Serializing avoids races between this file's tests; other
-// smoke files don't read subscription state, so cross-file races aren't an
-// issue.
-test.describe.serial('Subscription tier change', () => {
+test.describe('Subscription tier change', () => {
+    // Tier-change tests share the seeded user and mutate its subscription
+    // row. Serializing avoids races within this file; other smoke files
+    // don't read subscription state, so cross-file races aren't an issue.
+    test.describe.configure({ mode: 'serial' });
+
     let userId: string;
 
     test.beforeAll(async () => {
@@ -27,6 +28,7 @@ test.describe.serial('Subscription tier change', () => {
 
     test('starter trial user sees Current badge on Starter card', async ({
         page,
+        consoleErrors,
     }) => {
         await page.goto('/dashboard/settings');
 
@@ -34,6 +36,8 @@ test.describe.serial('Subscription tier change', () => {
             .getByRole('heading', { name: 'Starter', exact: true })
             .locator('..');
         await expect(starterCard.getByText('Current')).toBeVisible();
+
+        expect(consoleErrors).toEqual([]);
     });
 
     // Regression guard for the duplicate-subscription bug: clicking Upgrade
@@ -45,25 +49,23 @@ test.describe.serial('Subscription tier change', () => {
     }) => {
         await markSubscriptionPaid(userId, { tier: 'pro' });
 
+        // Record which mutation fired then abort so neither hits Stripe nor
+        // triggers a real navigation. The handler observes before aborting,
+        // so a single instrumentation point covers both concerns.
         const trpcCalls: string[] = [];
-        page.on('request', (req) => {
-            const url = req.url();
-            if (url.includes('subscriptions.createCheckoutSession')) {
-                trpcCalls.push('checkout');
-            } else if (url.includes('subscriptions.createPortalSession')) {
-                trpcCalls.push('portal');
-            }
-        });
-
-        // Abort both mutations so neither hits Stripe nor triggers a real
-        // navigation; we only care which one the UI tried to fire.
         await page.route(
             '**/api/trpc/subscriptions.createCheckoutSession**',
-            (route) => route.abort()
+            (route) => {
+                trpcCalls.push('checkout');
+                return route.abort();
+            }
         );
         await page.route(
             '**/api/trpc/subscriptions.createPortalSession**',
-            (route) => route.abort()
+            (route) => {
+                trpcCalls.push('portal');
+                return route.abort();
+            }
         );
 
         await page.goto('/dashboard/settings');
@@ -75,5 +77,7 @@ test.describe.serial('Subscription tier change', () => {
 
         await expect.poll(() => trpcCalls).toContain('portal');
         expect(trpcCalls).not.toContain('checkout');
+        // No `consoleErrors` assertion: the aborted mutation surfaces a
+        // network error in the console by design.
     });
 });

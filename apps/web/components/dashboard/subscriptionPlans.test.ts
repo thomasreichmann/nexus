@@ -123,22 +123,6 @@ describe('decidePlanAction', () => {
         });
     });
 
-    // Edge case: enterprise (or any tier provisioned outside Checkout) lands a
-    // user on a high tier without a Stripe subscription. Portal can't manage
-    // them — disable the button rather than open a portal that 404s.
-    it('disables downgrade when the user has no Stripe subscription', () => {
-        const decision = decidePlanAction({
-            ...base,
-            comparison: 'downgrade',
-            hasActiveSub: false,
-        });
-        expect(decision).toMatchObject({
-            kind: 'button',
-            target: 'portal',
-            disabled: true,
-        });
-    });
-
     it('disables and shows pending while this card is checking out', () => {
         expect(
             decidePlanAction({

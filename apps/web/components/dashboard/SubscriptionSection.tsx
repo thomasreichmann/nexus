@@ -193,13 +193,15 @@ function SubscriptionMeta({ subscription }: { subscription: Subscription }) {
     return null;
 }
 
+interface BillingIntervalToggleProps {
+    value: BillingInterval;
+    onChange: (next: BillingInterval) => void;
+}
+
 function BillingIntervalToggle({
     value,
     onChange,
-}: {
-    value: BillingInterval;
-    onChange: (next: BillingInterval) => void;
-}) {
+}: BillingIntervalToggleProps) {
     return (
         <div
             role="group"
@@ -283,6 +285,16 @@ function PlanCard({
     );
 }
 
+interface PlanActionProps {
+    comparison: 'current' | 'upgrade' | 'downgrade';
+    hasActiveSub: boolean;
+    isPendingThisCheckout: boolean;
+    isAnyCheckoutPending: boolean;
+    isOpeningPortal: boolean;
+    onCheckout: () => void;
+    onPortal: () => void;
+}
+
 function PlanAction({
     comparison,
     hasActiveSub,
@@ -291,15 +303,7 @@ function PlanAction({
     isOpeningPortal,
     onCheckout,
     onPortal,
-}: {
-    comparison: 'current' | 'upgrade' | 'downgrade';
-    hasActiveSub: boolean;
-    isPendingThisCheckout: boolean;
-    isAnyCheckoutPending: boolean;
-    isOpeningPortal: boolean;
-    onCheckout: () => void;
-    onPortal: () => void;
-}) {
+}: PlanActionProps) {
     const decision = decidePlanAction({
         comparison,
         hasActiveSub,

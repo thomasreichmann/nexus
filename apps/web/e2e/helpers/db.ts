@@ -1,6 +1,6 @@
 import postgres from 'postgres';
 import { config } from 'dotenv';
-import { PLAN_LIMITS } from '@nexus/db/plans';
+import { PLAN_LIMITS, type PlanTier } from '@nexus/db/plans';
 
 config({ path: '.env.local' });
 
@@ -172,7 +172,7 @@ export async function ensureTrialSubscription(userId: string): Promise<void> {
  */
 export async function markSubscriptionPaid(
     userId: string,
-    options?: { tier?: 'starter' | 'pro' | 'max' }
+    options?: { tier?: PlanTier }
 ): Promise<void> {
     const sql = getDb();
     const tier = options?.tier ?? 'pro';
