@@ -22,6 +22,7 @@ import {
     decidePlanAction,
     getStatusBadge,
     type BillingInterval,
+    type PlanActionDecision,
     type PlanDisplay,
 } from './subscriptionPlans';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
@@ -258,6 +259,13 @@ function PlanCard({
 }: PlanCardProps) {
     const comparison = comparePlans(currentTier, plan.tier);
     const price = plan.prices[interval];
+    const decision = decidePlanAction({
+        comparison,
+        hasActiveSub,
+        isPendingThisCheckout: pendingCheckoutTier === plan.tier,
+        isAnyCheckoutPending: pendingCheckoutTier !== undefined,
+        isOpeningPortal,
+    });
 
     return (
         <div
@@ -280,11 +288,7 @@ function PlanCard({
                 </span>
             </p>
             <PlanAction
-                comparison={comparison}
-                hasActiveSub={hasActiveSub}
-                isPendingThisCheckout={pendingCheckoutTier === plan.tier}
-                isAnyCheckoutPending={pendingCheckoutTier !== undefined}
-                isOpeningPortal={isOpeningPortal}
+                decision={decision}
                 onCheckout={() => onCheckout(plan.tier)}
                 onPortal={onPortal}
             />
@@ -293,33 +297,13 @@ function PlanCard({
 }
 
 interface PlanActionProps {
-    comparison: 'current' | 'upgrade' | 'downgrade';
-    hasActiveSub: boolean;
-    isPendingThisCheckout: boolean;
-    isAnyCheckoutPending: boolean;
-    isOpeningPortal: boolean;
+    decision: PlanActionDecision | null;
     onCheckout: () => void;
     onPortal: () => void;
 }
 
-function PlanAction({
-    comparison,
-    hasActiveSub,
-    isPendingThisCheckout,
-    isAnyCheckoutPending,
-    isOpeningPortal,
-    onCheckout,
-    onPortal,
-}: PlanActionProps) {
-    const decision = decidePlanAction({
-        comparison,
-        hasActiveSub,
-        isPendingThisCheckout,
-        isAnyCheckoutPending,
-        isOpeningPortal,
-    });
-
-    if (decision.kind === 'current') {
+function PlanAction({ decision, onCheckout, onPortal }: PlanActionProps) {
+    if (decision === null) {
         return (
             <div className="mt-3 flex items-center gap-1 text-sm text-primary">
                 <Check className="h-4 w-4" />

@@ -63,21 +63,20 @@ export interface StatusBadge {
     variant: BadgeVariant;
 }
 
+// `Record<…enum…>` forces every enum value to have an entry — the runtime
+// test in `subscriptionPlans.test.ts` is a belt-and-braces guard against
+// adding a status without updating the map.
+const STATUS_BADGES: Record<Subscription['status'], StatusBadge> = {
+    active: { label: 'Active', variant: 'default' },
+    trialing: { label: 'Trial', variant: 'secondary' },
+    past_due: { label: 'Past due', variant: 'destructive' },
+    canceled: { label: 'Canceled', variant: 'destructive' },
+    unpaid: { label: 'Unpaid', variant: 'destructive' },
+    incomplete: { label: 'Incomplete', variant: 'secondary' },
+};
+
 export function getStatusBadge(status: Subscription['status']): StatusBadge {
-    switch (status) {
-        case 'active':
-            return { label: 'Active', variant: 'default' };
-        case 'trialing':
-            return { label: 'Trial', variant: 'secondary' };
-        case 'past_due':
-            return { label: 'Past due', variant: 'destructive' };
-        case 'canceled':
-            return { label: 'Canceled', variant: 'destructive' };
-        case 'unpaid':
-            return { label: 'Unpaid', variant: 'destructive' };
-        case 'incomplete':
-            return { label: 'Incomplete', variant: 'secondary' };
-    }
+    return STATUS_BADGES[status];
 }
 
 export interface PlanActionInput {
@@ -88,15 +87,12 @@ export interface PlanActionInput {
     isOpeningPortal: boolean;
 }
 
-export type PlanActionDecision =
-    | { kind: 'current' }
-    | {
-          kind: 'button';
-          label: 'Upgrade' | 'Downgrade';
-          target: 'checkout' | 'portal';
-          isPending: boolean;
-          disabled: boolean;
-      };
+export interface PlanActionDecision {
+    label: 'Upgrade' | 'Downgrade';
+    target: 'checkout' | 'portal';
+    isPending: boolean;
+    disabled: boolean;
+}
 
 /**
  * Routes paid users (any non-null `stripeSubscriptionId`) through the portal
@@ -104,9 +100,13 @@ export type PlanActionDecision =
  * has an active subscription creates a *second* subscription rather than
  * modifying the first — the portal is the only path that swaps the existing
  * subscription's price in place.
+ *
+ * Returns `null` for the current tier (no button rendered).
  */
-export function decidePlanAction(input: PlanActionInput): PlanActionDecision {
-    if (input.comparison === 'current') return { kind: 'current' };
+export function decidePlanAction(
+    input: PlanActionInput
+): PlanActionDecision | null {
+    if (input.comparison === 'current') return null;
 
     const isUpgrade = input.comparison === 'upgrade';
     const useCheckout = isUpgrade && !input.hasActiveSub;
@@ -118,7 +118,6 @@ export function decidePlanAction(input: PlanActionInput): PlanActionDecision {
     const disabled = isPending || (useCheckout && input.isAnyCheckoutPending);
 
     return {
-        kind: 'button',
         label: isUpgrade ? 'Upgrade' : 'Downgrade',
         target: useCheckout ? 'checkout' : 'portal',
         isPending,
