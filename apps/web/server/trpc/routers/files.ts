@@ -19,24 +19,30 @@ export const filesRouter = router({
                     limit: z.number().min(1).max(100).default(50),
                     offset: z.number().min(0).default(0),
                     includeHidden: z.boolean().default(false),
+                    search: z.string().trim().optional(),
+                    sortKey: z
+                        .enum(['name', 'size', 'uploadedAt'])
+                        .default('uploadedAt'),
+                    sortOrder: z.enum(['asc', 'desc']).default('desc'),
                 })
-                .optional()
+                .prefault({})
         )
         .query(async ({ ctx, input }) => {
             const fileRepo = createFileRepo(ctx.db);
-            const limit = input?.limit ?? 50;
-            const offset = input?.offset ?? 0;
-            const includeHidden = input?.includeHidden ?? false;
+            const { limit, offset, includeHidden, search, sortKey, sortOrder } =
+                input;
+            const userId = ctx.session.user.id;
 
             const [files, total] = await Promise.all([
-                fileRepo.findByUser(ctx.session.user.id, {
+                fileRepo.findByUser(userId, {
                     limit,
                     offset,
                     includeHidden,
+                    search,
+                    sortKey,
+                    sortOrder,
                 }),
-                fileRepo.countByUser(ctx.session.user.id, {
-                    includeHidden,
-                }),
+                fileRepo.countByUser(userId, { includeHidden, search }),
             ]);
 
             return {
@@ -45,6 +51,14 @@ export const filesRouter = router({
                 hasMore: offset + files.length < total,
             };
         }),
+
+    // Library-wide status bucket counts. Split from `list` so paging/search/
+    // sort don't trigger this scan, and so the dashboard preview (which only
+    // wants the file list) doesn't pay for it on every load.
+    statusCounts: protectedProcedure.query(({ ctx }) => {
+        const fileRepo = createFileRepo(ctx.db);
+        return fileRepo.countStatusesByUser(ctx.session.user.id);
+    }),
 
     get: protectedProcedure
         .input(z.object({ id: z.string().uuid() }))

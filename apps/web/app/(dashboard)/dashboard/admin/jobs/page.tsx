@@ -16,8 +16,9 @@ import { cn } from '@/lib/cn';
 import { useTRPC } from '@/lib/trpc/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
-import { ChevronLeft, ChevronRight, Loader2, RotateCw } from 'lucide-react';
+import { Loader2, RotateCw } from 'lucide-react';
 import type { Job } from '@nexus/db/repo/jobs';
+import { TablePagination } from '@/components/ui/table-pagination';
 
 type JobStatus = Job['status'];
 
@@ -67,8 +68,6 @@ export default function AdminJobsPage() {
         queryClient.invalidateQueries({ queryKey: countsOptions.queryKey });
     }
 
-    const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 0;
-
     return (
         <div className="mx-auto max-w-6xl space-y-6">
             <div>
@@ -107,10 +106,7 @@ export default function AdminJobsPage() {
                     className="ml-auto"
                 >
                     <RotateCw
-                        className={cn(
-                            'h-4 w-4',
-                            isRefreshing && 'animate-spin'
-                        )}
+                        className={cn('size-4', isRefreshing && 'animate-spin')}
                     />
                 </Button>
             </div>
@@ -192,36 +188,12 @@ export default function AdminJobsPage() {
                 )}
             </Card>
 
-            {totalPages > 1 && (
-                <div className="flex items-center justify-between">
-                    <p className="text-sm text-muted-foreground">
-                        Showing {page * PAGE_SIZE + 1}–
-                        {Math.min((page + 1) * PAGE_SIZE, data?.total ?? 0)} of{' '}
-                        {data?.total ?? 0}
-                    </p>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => setPage((p) => p - 1)}
-                            disabled={page === 0}
-                        >
-                            <ChevronLeft className="h-4 w-4" />
-                        </Button>
-                        <span className="text-sm text-muted-foreground">
-                            Page {page + 1} of {totalPages}
-                        </span>
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => setPage((p) => p + 1)}
-                            disabled={!data?.hasMore}
-                        >
-                            <ChevronRight className="h-4 w-4" />
-                        </Button>
-                    </div>
-                </div>
-            )}
+            <TablePagination
+                page={page}
+                pageSize={PAGE_SIZE}
+                total={data?.total ?? 0}
+                onPageChange={setPage}
+            />
         </div>
     );
 }

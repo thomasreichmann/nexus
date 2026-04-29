@@ -102,6 +102,8 @@ describe('files repository', () => {
     });
 
     describe('findByUser', () => {
+        const DEFAULT_OPTS = { limit: 50, offset: 0 } as const;
+
         it('returns array of files for user', async () => {
             const files = [
                 createFileFixture({ id: 'file1' }),
@@ -109,23 +111,10 @@ describe('files repository', () => {
             ];
             mocks.files.findMany.mockResolvedValue(files);
 
-            const result = await repo.findByUser(TEST_USER_ID);
+            const result = await repo.findByUser(TEST_USER_ID, DEFAULT_OPTS);
 
             expect(result).toEqual(files);
             expect(result).toHaveLength(2);
-        });
-
-        it('uses default pagination (limit: 50, offset: 0)', async () => {
-            mocks.files.findMany.mockResolvedValue([]);
-
-            await repo.findByUser(TEST_USER_ID);
-
-            expect(mocks.files.findMany).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    limit: 50,
-                    offset: 0,
-                })
-            );
         });
 
         it('respects custom pagination options', async () => {
@@ -144,7 +133,7 @@ describe('files repository', () => {
         it('returns empty array when user has no files', async () => {
             mocks.files.findMany.mockResolvedValue([]);
 
-            const result = await repo.findByUser(TEST_USER_ID);
+            const result = await repo.findByUser(TEST_USER_ID, DEFAULT_OPTS);
 
             expect(result).toEqual([]);
         });
