@@ -438,3 +438,59 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
         expect(mocks.insert).not.toHaveBeenCalled();
     });
 });
+
+// Pins the Stripe redirect URLs to `/dashboard/settings`. The original PR
+// shipped with `/settings` (a 404), and a string-only regression has no
+// other guard — neither typecheck nor smoke catches a wrong path.
+describe('subscriptionService Stripe redirect URLs', () => {
+    let db: ReturnType<typeof createMockDb>['db'];
+    let mocks: ReturnType<typeof createMockDb>['mocks'];
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        const mockDb = createMockDb();
+        db = mockDb.db;
+        mocks = mockDb.mocks;
+        mocks.subscriptions.findFirst.mockResolvedValue(
+            createSubscriptionFixture({ status: 'trialing' })
+        );
+        hoisted.stripe.prices.resolvePriceId.mockResolvedValue('price_test');
+        hoisted.stripe.checkout.createCheckoutSession.mockResolvedValue({
+            url: 'https://checkout.stripe.test/abc',
+        });
+        hoisted.stripe.checkout.createBillingPortalSession.mockResolvedValue({
+            url: 'https://billing.stripe.test/xyz',
+        });
+    });
+
+    it('createCheckoutSession success/cancel URLs target /dashboard/settings', async () => {
+        await subscriptionService.createCheckoutSession(
+            db,
+            'user-test',
+            'pro',
+            'month'
+        );
+
+        expect(
+            hoisted.stripe.checkout.createCheckoutSession
+        ).toHaveBeenCalledWith(
+            expect.objectContaining({
+                successUrl:
+                    'https://test.example/dashboard/settings?checkout=success',
+                cancelUrl:
+                    'https://test.example/dashboard/settings?checkout=canceled',
+            })
+        );
+    });
+
+    it('createPortalSession return URL targets /dashboard/settings', async () => {
+        await subscriptionService.createPortalSession(db, 'user-test');
+
+        expect(
+            hoisted.stripe.checkout.createBillingPortalSession
+        ).toHaveBeenCalledWith(
+            expect.any(String),
+            'https://test.example/dashboard/settings'
+        );
+    });
+});

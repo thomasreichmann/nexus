@@ -1,9 +1,9 @@
 import { test, expect } from '../../fixtures/authenticated';
 import { REGULAR_USER } from '../../helpers/auth';
 import {
+    ensureTrialSubscription,
     findUserByEmail,
     markSubscriptionPaid,
-    resetSubscriptionToTrial,
 } from '../../helpers/db';
 
 test.use({ userRole: 'user' });
@@ -23,7 +23,7 @@ test.describe('Subscription tier change', () => {
     });
 
     test.afterEach(async () => {
-        await resetSubscriptionToTrial(userId);
+        await ensureTrialSubscription(userId);
     });
 
     test('starter trial user sees Current badge on Starter card', async ({
@@ -51,17 +51,19 @@ test.describe('Subscription tier change', () => {
 
         // Record which mutation fired then abort so neither hits Stripe nor
         // triggers a real navigation. The handler observes before aborting,
-        // so a single instrumentation point covers both concerns.
+        // so a single instrumentation point covers both concerns. Match the
+        // path segment exactly (not a substring) so an httpBatchLink-batched
+        // URL containing both procedure names can't satisfy both routes.
         const trpcCalls: string[] = [];
         await page.route(
-            '**/api/trpc/subscriptions.createCheckoutSession**',
+            /\/api\/trpc\/subscriptions\.createCheckoutSession(\?|$)/,
             (route) => {
                 trpcCalls.push('checkout');
                 return route.abort();
             }
         );
         await page.route(
-            '**/api/trpc/subscriptions.createPortalSession**',
+            /\/api\/trpc\/subscriptions\.createPortalSession(\?|$)/,
             (route) => {
                 trpcCalls.push('portal');
                 return route.abort();
@@ -75,8 +77,7 @@ test.describe('Subscription tier change', () => {
             .locator('..');
         await maxCard.getByRole('button', { name: 'Upgrade' }).click();
 
-        await expect.poll(() => trpcCalls).toContain('portal');
-        expect(trpcCalls).not.toContain('checkout');
+        await expect.poll(() => trpcCalls).toEqual(['portal']);
         // No `consoleErrors` assertion: the aborted mutation surfaces a
         // network error in the console by design.
     });

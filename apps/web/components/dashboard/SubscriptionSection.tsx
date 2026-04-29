@@ -32,9 +32,11 @@ export function SubscriptionSection() {
     const [billingInterval, setBillingInterval] =
         useState<BillingInterval>('month');
 
-    const { data: subscription, isLoading } = useQuery(
-        trpc.subscriptions.current.queryOptions()
-    );
+    const {
+        data: subscription,
+        isLoading,
+        isError,
+    } = useQuery(trpc.subscriptions.current.queryOptions());
 
     const checkout = useMutation(
         trpc.subscriptions.createCheckoutSession.mutationOptions({
@@ -64,6 +66,11 @@ export function SubscriptionSection() {
             <CardContent className="space-y-6">
                 {isLoading ? (
                     <SubscriptionSkeleton />
+                ) : isError ? (
+                    <p className="text-sm text-muted-foreground">
+                        Couldn&apos;t load your subscription. Try refreshing the
+                        page.
+                    </p>
                 ) : !subscription ? (
                     <p className="text-sm text-muted-foreground">
                         Your subscription isn&apos;t provisioned yet. Contact
