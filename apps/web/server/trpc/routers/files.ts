@@ -33,7 +33,7 @@ export const filesRouter = router({
                 input;
             const userId = ctx.session.user.id;
 
-            const [files, total, counts] = await Promise.all([
+            const [files, total] = await Promise.all([
                 fileRepo.findByUser(userId, {
                     limit,
                     offset,
@@ -43,16 +43,22 @@ export const filesRouter = router({
                     sortOrder,
                 }),
                 fileRepo.countByUser(userId, { includeHidden, search }),
-                fileRepo.countStatusesByUser(userId),
             ]);
 
             return {
                 files,
                 total,
                 hasMore: offset + files.length < total,
-                counts,
             };
         }),
+
+    // Library-wide status bucket counts. Split from `list` so paging/search/
+    // sort don't trigger this scan, and so the dashboard preview (which only
+    // wants the file list) doesn't pay for it on every load.
+    statusCounts: protectedProcedure.query(({ ctx }) => {
+        const fileRepo = createFileRepo(ctx.db);
+        return fileRepo.countStatusesByUser(ctx.session.user.id);
+    }),
 
     get: protectedProcedure
         .input(z.object({ id: z.string().uuid() }))

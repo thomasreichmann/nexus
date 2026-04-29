@@ -55,7 +55,12 @@ import {
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDate } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+    keepPreviousData,
+    useMutation,
+    useQuery,
+    useQueryClient,
+} from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
@@ -294,23 +299,34 @@ export function FileBrowser() {
         setPage(next);
     };
 
-    const listOptions = trpc.files.list.queryOptions({
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-        search: debouncedSearch || undefined,
-        sortKey,
-        sortOrder,
-    });
-    const { data, isLoading, isFetching } = useQuery(listOptions);
+    const { data, isLoading, isFetching } = useQuery(
+        trpc.files.list.queryOptions(
+            {
+                limit: PAGE_SIZE,
+                offset: page * PAGE_SIZE,
+                search: debouncedSearch || undefined,
+                sortKey,
+                sortOrder,
+            },
+            // Keep previous page visible while the next page fetches; also
+            // prevents the page-clamp below from snapping to 0 when `data`
+            // briefly goes undefined on a new query key.
+            { placeholderData: keepPreviousData }
+        )
+    );
+    const { data: countsData } = useQuery(
+        trpc.files.statusCounts.queryOptions()
+    );
 
     const files = data?.files ?? [];
     const total = data?.total ?? 0;
-    const counts = data?.counts ?? { archived: 0, retrieving: 0, available: 0 };
+    const counts = countsData ?? { archived: 0, retrieving: 0, available: 0 };
 
     // Clamp page when total shrinks (e.g. after a bulk delete) so the user
-    // doesn't land on an empty page past the end. Render-time adjustment.
+    // doesn't land on an empty page past the end. Guarded on `data` to skip
+    // the loading/refetching states where `total` is unknown.
     const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-    if (page >= totalPages) {
+    if (data && page >= totalPages) {
         setPage(totalPages - 1);
     }
 
@@ -493,7 +509,7 @@ export function FileBrowser() {
                         <Button
                             variant="ghost"
                             size="icon-sm"
-                            onClick={invalidateFileList}
+                            onClick={() => invalidateFileList()}
                             title="Refresh"
                         >
                             <RotateCw className="size-4" />
