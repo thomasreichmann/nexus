@@ -137,18 +137,15 @@ export async function deleteFile(id: string): Promise<void> {
 }
 
 /**
- * Guarantees the user has a trial subscription row for tests that exercise
- * the Settings subscription UI. `provisionTrialSubscription` runs on sign-up,
- * but the e2e user is created once and reused — users created before that
- * hook landed won't have a row. Safe to call repeatedly.
+ * Upserts the user's subscription row to a fresh trial state. Used by global
+ * setup (the seeded e2e user is reused across test runs and may pre-date the
+ * `provisionTrialSubscription` signup hook) and as the `afterEach` reset for
+ * tests that mutate state via `markSubscriptionPaid`. Forcing the columns
+ * back means a previous test that crashed before `afterEach` can't leak paid
+ * state into the next run.
  */
 export async function ensureTrialSubscription(userId: string): Promise<void> {
     const sql = getDb();
-    const existing = await sql<{ id: string }[]>`
-        SELECT id FROM subscriptions WHERE user_id = ${userId}
-    `;
-    if (existing.length > 0) return;
-
     await sql`
         INSERT INTO subscriptions (
             id, user_id, stripe_customer_id, plan_tier, status,
@@ -162,13 +159,22 @@ export async function ensureTrialSubscription(userId: string): Promise<void> {
             ${PLAN_LIMITS.starter},
             NOW() + INTERVAL '30 days'
         )
+        ON CONFLICT (user_id) DO UPDATE SET
+            status = EXCLUDED.status,
+            plan_tier = EXCLUDED.plan_tier,
+            storage_limit = EXCLUDED.storage_limit,
+            trial_end = EXCLUDED.trial_end,
+            stripe_subscription_id = NULL,
+            current_period_start = NULL,
+            current_period_end = NULL,
+            cancel_at_period_end = FALSE
     `;
 }
 
 /**
  * Promotes a seeded trial subscription to an active paid one. Tests that
  * exercise the paid-user code paths (e.g. Upgrade-routes-to-portal) flip the
- * row before the test and call `resetSubscriptionToTrial` after.
+ * row before the test and call `ensureTrialSubscription` after.
  */
 export async function markSubscriptionPaid(
     userId: string,
@@ -186,23 +192,6 @@ export async function markSubscriptionPaid(
             trial_end = NULL,
             cancel_at_period_end = FALSE,
             storage_limit = ${PLAN_LIMITS[tier]}
-        WHERE user_id = ${userId}
-    `;
-}
-
-/** Inverse of `markSubscriptionPaid`. Restores the shared seed user's trial state. */
-export async function resetSubscriptionToTrial(userId: string): Promise<void> {
-    const sql = getDb();
-    await sql`
-        UPDATE subscriptions
-        SET status = 'trialing',
-            plan_tier = 'starter',
-            stripe_subscription_id = NULL,
-            current_period_start = NULL,
-            current_period_end = NULL,
-            trial_end = NOW() + INTERVAL '30 days',
-            cancel_at_period_end = FALSE,
-            storage_limit = ${PLAN_LIMITS.starter}
         WHERE user_id = ${userId}
     `;
 }
