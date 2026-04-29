@@ -69,10 +69,8 @@ describe('decidePlanAction', () => {
         isOpeningPortal: false,
     };
 
-    it('returns current for the active tier (no button rendered)', () => {
-        expect(decidePlanAction({ ...base, comparison: 'current' })).toEqual({
-            kind: 'current',
-        });
+    it('returns null for the active tier (no button rendered)', () => {
+        expect(decidePlanAction({ ...base, comparison: 'current' })).toBeNull();
     });
 
     // The Bug 2 case: an active paying customer clicking "Upgrade" must NOT
@@ -86,7 +84,6 @@ describe('decidePlanAction', () => {
                 hasActiveSub: true,
             })
         ).toMatchObject({
-            kind: 'button',
             label: 'Upgrade',
             target: 'portal',
             disabled: false,
@@ -101,7 +98,6 @@ describe('decidePlanAction', () => {
                 hasActiveSub: false,
             })
         ).toMatchObject({
-            kind: 'button',
             label: 'Upgrade',
             target: 'checkout',
             disabled: false,
@@ -116,7 +112,6 @@ describe('decidePlanAction', () => {
                 hasActiveSub: true,
             })
         ).toMatchObject({
-            kind: 'button',
             label: 'Downgrade',
             target: 'portal',
             disabled: false,
@@ -133,7 +128,6 @@ describe('decidePlanAction', () => {
                 isAnyCheckoutPending: true,
             })
         ).toMatchObject({
-            kind: 'button',
             target: 'checkout',
             isPending: true,
             disabled: true,
@@ -153,7 +147,6 @@ describe('decidePlanAction', () => {
                 isAnyCheckoutPending: true,
             })
         ).toMatchObject({
-            kind: 'button',
             target: 'checkout',
             isPending: false,
             disabled: true,
@@ -161,14 +154,14 @@ describe('decidePlanAction', () => {
     });
 
     it('disables and shows pending while the portal is opening', () => {
-        const decision = decidePlanAction({
-            ...base,
-            comparison: 'downgrade',
-            hasActiveSub: true,
-            isOpeningPortal: true,
-        });
-        expect(decision).toMatchObject({
-            kind: 'button',
+        expect(
+            decidePlanAction({
+                ...base,
+                comparison: 'downgrade',
+                hasActiveSub: true,
+                isOpeningPortal: true,
+            })
+        ).toMatchObject({
             target: 'portal',
             isPending: true,
             disabled: true,
