@@ -23,6 +23,11 @@ const log = logger.child({ service: 'subscriptions' });
 const VALID_STATUSES = new Set<string>(subscriptionStatusEnum.enumValues);
 const VALID_TIERS = new Set<string>(planTierEnum.enumValues);
 
+// Where Stripe sends the user back after Checkout / portal. Centralized so
+// a missed update can't drift one URL off (the original PR shipped with
+// `/settings`, a 404, in three places).
+const SETTINGS_URL = `${env.NEXT_PUBLIC_APP_URL}/dashboard/settings`;
+
 type SubscriptionStatus = (typeof subscriptionStatusEnum.enumValues)[number];
 
 // Terminal or severe statuses that should not be overwritten by past_due
@@ -147,8 +152,8 @@ async function createCheckoutSession(
     const session = await stripe.checkout.createCheckoutSession({
         customerId: sub.stripeCustomerId,
         priceId,
-        successUrl: `${env.NEXT_PUBLIC_APP_URL}/settings?checkout=success`,
-        cancelUrl: `${env.NEXT_PUBLIC_APP_URL}/settings?checkout=canceled`,
+        successUrl: `${SETTINGS_URL}?checkout=success`,
+        cancelUrl: `${SETTINGS_URL}?checkout=canceled`,
     });
 
     if (!session.url) {
@@ -176,7 +181,7 @@ async function createPortalSession(
 
     const session = await stripe.checkout.createBillingPortalSession(
         sub.stripeCustomerId,
-        `${env.NEXT_PUBLIC_APP_URL}/settings`
+        SETTINGS_URL
     );
 
     return { url: session.url };
