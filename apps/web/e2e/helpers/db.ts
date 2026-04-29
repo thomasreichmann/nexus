@@ -165,6 +165,48 @@ export async function ensureTrialSubscription(userId: string): Promise<void> {
     `;
 }
 
+/**
+ * Promotes a seeded trial subscription to an active paid one. Tests that
+ * exercise the paid-user code paths (e.g. Upgrade-routes-to-portal) flip the
+ * row before the test and call `resetSubscriptionToTrial` after.
+ */
+export async function markSubscriptionPaid(
+    userId: string,
+    options?: { tier?: 'starter' | 'pro' | 'max' }
+): Promise<void> {
+    const sql = getDb();
+    const tier = options?.tier ?? 'pro';
+    await sql`
+        UPDATE subscriptions
+        SET status = 'active',
+            plan_tier = ${tier},
+            stripe_subscription_id = ${`sub_test_${userId}`},
+            current_period_start = NOW(),
+            current_period_end = NOW() + INTERVAL '30 days',
+            trial_end = NULL,
+            cancel_at_period_end = FALSE,
+            storage_limit = ${PLAN_LIMITS[tier]}
+        WHERE user_id = ${userId}
+    `;
+}
+
+/** Inverse of `markSubscriptionPaid`. Restores the shared seed user's trial state. */
+export async function resetSubscriptionToTrial(userId: string): Promise<void> {
+    const sql = getDb();
+    await sql`
+        UPDATE subscriptions
+        SET status = 'trialing',
+            plan_tier = 'starter',
+            stripe_subscription_id = NULL,
+            current_period_start = NULL,
+            current_period_end = NULL,
+            trial_end = NOW() + INTERVAL '30 days',
+            cancel_at_period_end = FALSE,
+            storage_limit = ${PLAN_LIMITS.starter}
+        WHERE user_id = ${userId}
+    `;
+}
+
 export async function countJobsByStatus(): Promise<JobCounts> {
     const sql = getDb();
     const rows = await sql<{ status: string; count: number }[]>`

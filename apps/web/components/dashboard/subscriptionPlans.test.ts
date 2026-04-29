@@ -3,7 +3,9 @@ import { subscriptionStatusEnum } from '@nexus/db/schema';
 import {
     PLAN_DISPLAY,
     comparePlans,
+    decidePlanAction,
     getStatusBadge,
+    type PlanActionInput,
 } from './subscriptionPlans';
 
 describe('comparePlans', () => {
@@ -55,5 +57,137 @@ describe('PLAN_DISPLAY', () => {
             'pro',
             'max',
         ]);
+    });
+});
+
+describe('decidePlanAction', () => {
+    const base: PlanActionInput = {
+        comparison: 'upgrade',
+        hasActiveSub: false,
+        isPendingThisCheckout: false,
+        isAnyCheckoutPending: false,
+        isOpeningPortal: false,
+    };
+
+    it('returns current for the active tier (no button rendered)', () => {
+        expect(decidePlanAction({ ...base, comparison: 'current' })).toEqual({
+            kind: 'current',
+        });
+    });
+
+    // The Bug 2 case: an active paying customer clicking "Upgrade" must NOT
+    // route to Stripe Checkout — that creates a duplicate active subscription
+    // on the same customer instead of swapping the price.
+    it('routes paid users to the portal for upgrades', () => {
+        expect(
+            decidePlanAction({
+                ...base,
+                comparison: 'upgrade',
+                hasActiveSub: true,
+            })
+        ).toMatchObject({
+            kind: 'button',
+            label: 'Upgrade',
+            target: 'portal',
+            disabled: false,
+        });
+    });
+
+    it('routes trial users to checkout for upgrades', () => {
+        expect(
+            decidePlanAction({
+                ...base,
+                comparison: 'upgrade',
+                hasActiveSub: false,
+            })
+        ).toMatchObject({
+            kind: 'button',
+            label: 'Upgrade',
+            target: 'checkout',
+            disabled: false,
+        });
+    });
+
+    it('routes downgrades to the portal when the user has an active sub', () => {
+        expect(
+            decidePlanAction({
+                ...base,
+                comparison: 'downgrade',
+                hasActiveSub: true,
+            })
+        ).toMatchObject({
+            kind: 'button',
+            label: 'Downgrade',
+            target: 'portal',
+            disabled: false,
+        });
+    });
+
+    // Edge case: enterprise (or any tier provisioned outside Checkout) lands a
+    // user on a high tier without a Stripe subscription. Portal can't manage
+    // them — disable the button rather than open a portal that 404s.
+    it('disables downgrade when the user has no Stripe subscription', () => {
+        const decision = decidePlanAction({
+            ...base,
+            comparison: 'downgrade',
+            hasActiveSub: false,
+        });
+        expect(decision).toMatchObject({
+            kind: 'button',
+            target: 'portal',
+            disabled: true,
+        });
+    });
+
+    it('disables and shows pending while this card is checking out', () => {
+        expect(
+            decidePlanAction({
+                ...base,
+                comparison: 'upgrade',
+                hasActiveSub: false,
+                isPendingThisCheckout: true,
+                isAnyCheckoutPending: true,
+            })
+        ).toMatchObject({
+            kind: 'button',
+            target: 'checkout',
+            isPending: true,
+            disabled: true,
+        });
+    });
+
+    // Two trial-user upgrade cards exist (Pro and Max). When one is firing,
+    // the other must lock so a rapid double-click can't open two checkout
+    // sessions in parallel.
+    it('disables sibling cards while any checkout is pending', () => {
+        expect(
+            decidePlanAction({
+                ...base,
+                comparison: 'upgrade',
+                hasActiveSub: false,
+                isPendingThisCheckout: false,
+                isAnyCheckoutPending: true,
+            })
+        ).toMatchObject({
+            kind: 'button',
+            target: 'checkout',
+            isPending: false,
+            disabled: true,
+        });
+    });
+
+    it('disables and shows pending while the portal is opening', () => {
+        const decision = decidePlanAction({
+            ...base,
+            comparison: 'downgrade',
+            hasActiveSub: true,
+            isOpeningPortal: true,
+        });
+        expect(decision).toMatchObject({
+            kind: 'button',
+            target: 'portal',
+            isPending: true,
+            disabled: true,
+        });
     });
 });

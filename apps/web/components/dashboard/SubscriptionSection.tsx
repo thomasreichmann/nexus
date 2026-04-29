@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
     PLAN_DISPLAY,
     comparePlans,
+    decidePlanAction,
     getStatusBadge,
     type BillingInterval,
     type PlanDisplay,
@@ -282,12 +283,6 @@ function PlanCard({
     );
 }
 
-/**
- * Routes paid users through the portal for any tier change. Calling Stripe
- * Checkout for a customer that already has an active subscription creates a
- * duplicate subscription rather than modifying the existing one — the portal
- * is the only path that swaps the existing subscription's price in place.
- */
 function PlanAction({
     comparison,
     hasActiveSub,
@@ -305,7 +300,15 @@ function PlanAction({
     onCheckout: () => void;
     onPortal: () => void;
 }) {
-    if (comparison === 'current') {
+    const decision = decidePlanAction({
+        comparison,
+        hasActiveSub,
+        isPendingThisCheckout,
+        isAnyCheckoutPending,
+        isOpeningPortal,
+    });
+
+    if (decision.kind === 'current') {
         return (
             <div className="mt-3 flex items-center gap-1 text-sm text-primary">
                 <Check className="h-4 w-4" />
@@ -314,29 +317,16 @@ function PlanAction({
         );
     }
 
-    const isUpgrade = comparison === 'upgrade';
-    const label = isUpgrade ? 'Upgrade' : 'Downgrade';
-    const useCheckout = isUpgrade && !hasActiveSub;
-    const onClick = useCheckout ? onCheckout : onPortal;
-    const isPending = useCheckout ? isPendingThisCheckout : isOpeningPortal;
-    // Disabled when: this action is firing, another card's checkout is firing,
-    // or we'd need to open the portal but have no Stripe subscription to manage
-    // (rare — would only hit for a non-self-serve tier provisioned outside checkout).
-    const disabled =
-        isPending ||
-        (useCheckout && isAnyCheckoutPending) ||
-        (!useCheckout && !hasActiveSub);
-
     return (
         <Button
             variant="outline"
             size="sm"
             className="mt-3 w-full"
-            onClick={onClick}
-            disabled={disabled}
+            onClick={decision.target === 'checkout' ? onCheckout : onPortal}
+            disabled={decision.disabled}
         >
-            {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {label}
+            {decision.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {decision.label}
         </Button>
     );
 }

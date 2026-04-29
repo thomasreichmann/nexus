@@ -79,3 +79,55 @@ export function getStatusBadge(status: Subscription['status']): StatusBadge {
             return { label: 'Incomplete', variant: 'secondary' };
     }
 }
+
+export interface PlanActionInput {
+    comparison: PlanComparison;
+    hasActiveSub: boolean;
+    isPendingThisCheckout: boolean;
+    isAnyCheckoutPending: boolean;
+    isOpeningPortal: boolean;
+}
+
+export type PlanActionDecision =
+    | { kind: 'current' }
+    | {
+          kind: 'button';
+          label: 'Upgrade' | 'Downgrade';
+          target: 'checkout' | 'portal';
+          isPending: boolean;
+          disabled: boolean;
+      };
+
+/**
+ * Routes paid users (any non-null `stripeSubscriptionId`) through the portal
+ * for every tier change. Calling Stripe Checkout for a customer that already
+ * has an active subscription creates a *second* subscription rather than
+ * modifying the first — the portal is the only path that swaps the existing
+ * subscription's price in place.
+ *
+ * Disabled covers three cases: the action is firing, another card's checkout
+ * is firing (would create two pending sessions), or the action would route to
+ * the portal but there's no Stripe subscription to manage (rare — only hits
+ * for tiers provisioned outside Checkout, e.g. enterprise).
+ */
+export function decidePlanAction(input: PlanActionInput): PlanActionDecision {
+    if (input.comparison === 'current') return { kind: 'current' };
+
+    const isUpgrade = input.comparison === 'upgrade';
+    const useCheckout = isUpgrade && !input.hasActiveSub;
+    const isPending = useCheckout
+        ? input.isPendingThisCheckout
+        : input.isOpeningPortal;
+    const disabled =
+        isPending ||
+        (useCheckout && input.isAnyCheckoutPending) ||
+        (!useCheckout && !input.hasActiveSub);
+
+    return {
+        kind: 'button',
+        label: isUpgrade ? 'Upgrade' : 'Downgrade',
+        target: useCheckout ? 'checkout' : 'portal',
+        isPending,
+        disabled,
+    };
+}
