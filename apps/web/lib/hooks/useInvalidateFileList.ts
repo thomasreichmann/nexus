@@ -18,8 +18,12 @@ export function useInvalidateFileList() {
         () => trpc.files.statusCounts.queryFilter(),
         [trpc]
     );
-    return useCallback(() => {
-        queryClient.invalidateQueries(listFilter);
-        queryClient.invalidateQueries(countsFilter);
-    }, [queryClient, listFilter, countsFilter]);
+    return useCallback(
+        () =>
+            Promise.all([
+                queryClient.invalidateQueries(listFilter),
+                queryClient.invalidateQueries(countsFilter),
+            ]),
+        [queryClient, listFilter, countsFilter]
+    );
 }

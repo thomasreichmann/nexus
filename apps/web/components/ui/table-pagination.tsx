@@ -48,7 +48,7 @@ export function TablePagination({
                 <PaginationContent>
                     <PaginationItem>
                         <PaginationPrevious
-                            href="#"
+                            role="button"
                             aria-label="Previous page"
                             aria-disabled={isFirst}
                             data-disabled={isFirst || undefined}
@@ -68,7 +68,7 @@ export function TablePagination({
                     </PaginationItem>
                     <PaginationItem>
                         <PaginationNext
-                            href="#"
+                            role="button"
                             aria-label="Next page"
                             aria-disabled={isLast}
                             data-disabled={isLast || undefined}
