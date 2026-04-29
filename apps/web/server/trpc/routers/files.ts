@@ -43,7 +43,7 @@ export const filesRouter = router({
                     sortOrder,
                 }),
                 fileRepo.countByUser(userId, { includeHidden, search }),
-                fileRepo.countStatusesByUser(userId, { includeHidden }),
+                fileRepo.countStatusesByUser(userId),
             ]);
 
             return {

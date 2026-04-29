@@ -90,6 +90,12 @@ const hiddenStatuses: (typeof schema.files.status.enumValues)[number][] = [
     'deleted',
 ];
 
+// Escape LIKE/ILIKE wildcards so a search for "100%" or "foo_bar" is treated
+// as a literal substring, not a pattern. Postgres' default escape char is `\`.
+function escapeLikePattern(s: string): string {
+    return s.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 function buildUserFilesWhereClause(
     userId: string,
     includeHidden: boolean,
@@ -101,7 +107,9 @@ function buildUserFilesWhereClause(
         conditions.push(notInArray(schema.files.status, hiddenStatuses));
     }
     if (trimmed) {
-        conditions.push(ilike(schema.files.name, `%${trimmed}%`));
+        conditions.push(
+            ilike(schema.files.name, `%${escapeLikePattern(trimmed)}%`)
+        );
     }
     return and(...conditions);
 }
@@ -148,27 +156,29 @@ async function countByUser(
 /**
  * Library-wide status bucket counts for a user. Mirrors deriveStatus in
  * apps/web/components/dashboard/file-browser.tsx — keep the two in lockstep
- * or UI counts will disagree with per-row status dots.
+ * or UI counts will disagree with per-row status dots. Hidden statuses
+ * (`uploading`, `deleted`) are always excluded since they don't fit any
+ * bucket and would produce a NULL category from the CASE below.
  */
 async function countStatusesByUser(
     db: DB,
-    userId: string,
-    opts: { includeHidden?: boolean } = {}
+    userId: string
 ): Promise<StatusCategoryCounts> {
     const rows = await db
         .select({
-            category: sql<keyof StatusCategoryCounts>`
+            category: sql<keyof StatusCategoryCounts | null>`
                 CASE
                     WHEN ${schema.files.status} = 'restoring' THEN 'retrieving'
                     WHEN ${schema.files.status} = 'available'
                         AND ${schema.files.storageTier} IN ('glacier', 'deep_archive') THEN 'archived'
                     WHEN ${schema.files.status} = 'available'
                         AND ${schema.files.storageTier} = 'standard' THEN 'available'
+                    ELSE NULL
                 END`.as('category'),
             count: sql<number>`count(*)::int`.as('count'),
         })
         .from(schema.files)
-        .where(buildUserFilesWhereClause(userId, opts.includeHidden ?? false))
+        .where(buildUserFilesWhereClause(userId, false))
         .groupBy(sql`category`);
 
     const counts: StatusCategoryCounts = {
@@ -177,7 +187,7 @@ async function countStatusesByUser(
         available: 0,
     };
     for (const row of rows) {
-        counts[row.category] = row.count;
+        if (row.category) counts[row.category] = row.count;
     }
     return counts;
 }

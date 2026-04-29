@@ -276,10 +276,16 @@ export function FileBrowser() {
 
     const debouncedSearch = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
 
-    const handleSearchChange = (value: string) => {
-        setSearchQuery(value);
+    // Reset to page 0 when the *debounced* search takes effect (not on every
+    // keystroke — that would cause an extra fetch at page 0 with the old
+    // search before the new search fetches). Render-time state adjustment
+    // per https://react.dev/reference/react/useState#storing-information-from-previous-renders
+    const [prevDebouncedSearch, setPrevDebouncedSearch] =
+        useState(debouncedSearch);
+    if (prevDebouncedSearch !== debouncedSearch) {
+        setPrevDebouncedSearch(debouncedSearch);
         setPage(0);
-    };
+    }
 
     const handlePageChange = (next: number) => {
         // Page-scoped selection: clear on navigation.
@@ -300,6 +306,13 @@ export function FileBrowser() {
     const files = data?.files ?? [];
     const total = data?.total ?? 0;
     const counts = data?.counts ?? { archived: 0, retrieving: 0, available: 0 };
+
+    // Clamp page when total shrinks (e.g. after a bulk delete) so the user
+    // doesn't land on an empty page past the end. Render-time adjustment.
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (page >= totalPages) {
+        setPage(totalPages - 1);
+    }
 
     const deleteManyMutation = useMutation(
         trpc.files.deleteMany.mutationOptions({
@@ -471,7 +484,7 @@ export function FileBrowser() {
                     <Input
                         placeholder="Search files..."
                         value={searchQuery}
-                        onChange={(e) => handleSearchChange(e.target.value)}
+                        onChange={(e) => setSearchQuery(e.target.value)}
                         className="pl-9"
                     />
                 </div>
@@ -521,7 +534,8 @@ export function FileBrowser() {
                     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16">
                         <Search className="mb-3 size-5 text-muted-foreground/60" />
                         <p className="text-sm text-muted-foreground">
-                            No files match &ldquo;{debouncedSearch}&rdquo;
+                            No files match &ldquo;{debouncedSearch.trim()}
+                            &rdquo;
                         </p>
                     </div>
                 ) : viewMode === 'list' ? (
