@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTRPC } from '@/lib/trpc/client';
 
@@ -13,17 +13,14 @@ import { useTRPC } from '@/lib/trpc/client';
 export function useInvalidateFileList() {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
-    const listFilter = useMemo(() => trpc.files.list.queryFilter(), [trpc]);
-    const countsFilter = useMemo(
-        () => trpc.files.statusCounts.queryFilter(),
-        [trpc]
-    );
     return useCallback(
         () =>
             Promise.all([
-                queryClient.invalidateQueries(listFilter),
-                queryClient.invalidateQueries(countsFilter),
+                queryClient.invalidateQueries(trpc.files.list.queryFilter()),
+                queryClient.invalidateQueries(
+                    trpc.files.statusCounts.queryFilter()
+                ),
             ]),
-        [queryClient, listFilter, countsFilter]
+        [trpc, queryClient]
     );
 }
