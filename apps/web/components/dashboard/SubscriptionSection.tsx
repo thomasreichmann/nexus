@@ -177,28 +177,29 @@ function SubscriptionView({
 }
 
 function SubscriptionMeta({ subscription }: { subscription: Subscription }) {
-    if (subscription.cancelAtPeriodEnd && subscription.currentPeriodEnd) {
-        return (
-            <span className="text-sm text-muted-foreground">
-                Subscription ends on {formatDate(subscription.currentPeriodEnd)}
-            </span>
-        );
-    }
-    if (subscription.status === 'trialing' && subscription.trialEnd) {
-        return (
-            <span className="text-sm text-muted-foreground">
-                Trial ends on {formatDate(subscription.trialEnd)}
-            </span>
-        );
-    }
-    if (subscription.currentPeriodEnd) {
-        return (
-            <span className="text-sm text-muted-foreground">
-                Next billing on {formatDate(subscription.currentPeriodEnd)}
-            </span>
-        );
-    }
-    return null;
+    // Priority order: pending cancellation > trial > next billing.
+    const meta =
+        subscription.cancelAtPeriodEnd && subscription.currentPeriodEnd
+            ? {
+                  label: 'Subscription ends on',
+                  date: subscription.currentPeriodEnd,
+              }
+            : subscription.status === 'trialing' && subscription.trialEnd
+              ? { label: 'Trial ends on', date: subscription.trialEnd }
+              : subscription.currentPeriodEnd
+                ? {
+                      label: 'Next billing on',
+                      date: subscription.currentPeriodEnd,
+                  }
+                : null;
+
+    if (!meta) return null;
+
+    return (
+        <span className="text-sm text-muted-foreground">
+            {meta.label} {formatDate(meta.date)}
+        </span>
+    );
 }
 
 interface BillingIntervalToggleProps {
