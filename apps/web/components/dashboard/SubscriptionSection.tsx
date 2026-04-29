@@ -137,7 +137,9 @@ function SubscriptionView({
                         plan={plan}
                         interval={interval}
                         currentTier={subscription.planTier}
+                        hasActiveSub={canManageBilling}
                         pendingCheckoutTier={pendingCheckoutTier}
+                        isOpeningPortal={isOpeningPortal}
                         onCheckout={onCheckout}
                         onPortal={onPortal}
                     />
@@ -227,7 +229,9 @@ interface PlanCardProps {
     plan: PlanDisplay;
     interval: BillingInterval;
     currentTier: Subscription['planTier'];
+    hasActiveSub: boolean;
     pendingCheckoutTier: CheckoutTier | undefined;
+    isOpeningPortal: boolean;
     onCheckout: (tier: CheckoutTier) => void;
     onPortal: () => void;
 }
@@ -236,12 +240,13 @@ function PlanCard({
     plan,
     interval,
     currentTier,
+    hasActiveSub,
     pendingCheckoutTier,
+    isOpeningPortal,
     onCheckout,
     onPortal,
 }: PlanCardProps) {
     const comparison = comparePlans(currentTier, plan.tier);
-    const isPending = pendingCheckoutTier === plan.tier;
     const price = plan.prices[interval];
 
     return (
@@ -266,7 +271,10 @@ function PlanCard({
             </p>
             <PlanAction
                 comparison={comparison}
-                isPending={isPending}
+                hasActiveSub={hasActiveSub}
+                isPendingThisCheckout={pendingCheckoutTier === plan.tier}
+                isAnyCheckoutPending={pendingCheckoutTier !== undefined}
+                isOpeningPortal={isOpeningPortal}
                 onCheckout={() => onCheckout(plan.tier)}
                 onPortal={onPortal}
             />
@@ -274,14 +282,26 @@ function PlanCard({
     );
 }
 
+/**
+ * Routes paid users through the portal for any tier change. Calling Stripe
+ * Checkout for a customer that already has an active subscription creates a
+ * duplicate subscription rather than modifying the existing one — the portal
+ * is the only path that swaps the existing subscription's price in place.
+ */
 function PlanAction({
     comparison,
-    isPending,
+    hasActiveSub,
+    isPendingThisCheckout,
+    isAnyCheckoutPending,
+    isOpeningPortal,
     onCheckout,
     onPortal,
 }: {
     comparison: 'current' | 'upgrade' | 'downgrade';
-    isPending: boolean;
+    hasActiveSub: boolean;
+    isPendingThisCheckout: boolean;
+    isAnyCheckoutPending: boolean;
+    isOpeningPortal: boolean;
     onCheckout: () => void;
     onPortal: () => void;
 }) {
@@ -293,15 +313,27 @@ function PlanAction({
             </div>
         );
     }
-    const label = comparison === 'upgrade' ? 'Upgrade' : 'Downgrade';
-    const onClick = comparison === 'upgrade' ? onCheckout : onPortal;
+
+    const isUpgrade = comparison === 'upgrade';
+    const label = isUpgrade ? 'Upgrade' : 'Downgrade';
+    const useCheckout = isUpgrade && !hasActiveSub;
+    const onClick = useCheckout ? onCheckout : onPortal;
+    const isPending = useCheckout ? isPendingThisCheckout : isOpeningPortal;
+    // Disabled when: this action is firing, another card's checkout is firing,
+    // or we'd need to open the portal but have no Stripe subscription to manage
+    // (rare — would only hit for a non-self-serve tier provisioned outside checkout).
+    const disabled =
+        isPending ||
+        (useCheckout && isAnyCheckoutPending) ||
+        (!useCheckout && !hasActiveSub);
+
     return (
         <Button
             variant="outline"
             size="sm"
             className="mt-3 w-full"
             onClick={onClick}
-            disabled={isPending}
+            disabled={disabled}
         >
             {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             {label}
@@ -320,6 +352,10 @@ function SubscriptionSkeleton() {
                 {Array.from({ length: 3 }).map((_, i) => (
                     <Skeleton key={i} className="h-36 w-full rounded-lg" />
                 ))}
+            </div>
+            <div className="flex items-center justify-between border-t pt-4">
+                <Skeleton className="h-4 w-72" />
+                <Skeleton className="h-8 w-32" />
             </div>
         </>
     );

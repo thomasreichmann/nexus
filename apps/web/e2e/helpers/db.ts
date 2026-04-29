@@ -1,5 +1,6 @@
 import postgres from 'postgres';
 import { config } from 'dotenv';
+import { PLAN_LIMITS } from '@nexus/db/plans';
 
 config({ path: '.env.local' });
 
@@ -158,7 +159,7 @@ export async function ensureTrialSubscription(userId: string): Promise<void> {
             ${`cus_test_${userId}`},
             'starter',
             'trialing',
-            ${1024 ** 4},
+            ${PLAN_LIMITS.starter},
             NOW() + INTERVAL '30 days'
         )
     `;

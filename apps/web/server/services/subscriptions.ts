@@ -147,8 +147,8 @@ async function createCheckoutSession(
     const session = await stripe.checkout.createCheckoutSession({
         customerId: sub.stripeCustomerId,
         priceId,
-        successUrl: `${env.NEXT_PUBLIC_APP_URL}/settings?checkout=success`,
-        cancelUrl: `${env.NEXT_PUBLIC_APP_URL}/settings?checkout=canceled`,
+        successUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/settings?checkout=success`,
+        cancelUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/settings?checkout=canceled`,
     });
 
     if (!session.url) {
@@ -176,7 +176,7 @@ async function createPortalSession(
 
     const session = await stripe.checkout.createBillingPortalSession(
         sub.stripeCustomerId,
-        `${env.NEXT_PUBLIC_APP_URL}/settings`
+        `${env.NEXT_PUBLIC_APP_URL}/dashboard/settings`
     );
 
     return { url: session.url };
