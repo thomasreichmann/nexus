@@ -40,6 +40,7 @@ export function createMockDb() {
     const files = createQueryMock();
     const backgroundJobs = createQueryMock();
     const retrievals = createQueryMock();
+    const storageUsage = createQueryMock();
     const subscriptions = createQueryMock();
     const uploadBatches = createQueryMock();
     const webhookEvents = createQueryMock();
@@ -49,6 +50,7 @@ export function createMockDb() {
             files,
             backgroundJobs,
             retrievals,
+            storageUsage,
             subscriptions,
             uploadBatches,
             webhookEvents,
@@ -83,6 +85,7 @@ export function createMockDb() {
             files,
             backgroundJobs,
             retrievals,
+            storageUsage,
             subscriptions,
             uploadBatches,
             webhookEvents,

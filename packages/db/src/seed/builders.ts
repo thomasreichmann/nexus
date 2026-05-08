@@ -1,4 +1,4 @@
-import { eq, sum, count } from 'drizzle-orm';
+import { and, eq, notInArray, sum, count } from 'drizzle-orm';
 import * as schema from '../schema';
 import type { DB } from '../connection';
 import type {
@@ -195,13 +195,22 @@ export async function buildStorageUsage(
     db: DB,
     userId: string
 ): Promise<StorageUsage> {
+    // Match the runtime "what counts toward usage" filter so seed-derived
+    // snapshots agree with what `confirmUpload`/`deleteUserFile` and the
+    // 0010_storage_usage_backfill migration produce. Excludes `uploading`
+    // (not yet confirmed) and `deleted` (already subtracted).
     const [stats] = await db
         .select({
             totalBytes: sum(schema.files.size).mapWith(Number),
             fileCount: count(schema.files.id),
         })
         .from(schema.files)
-        .where(eq(schema.files.userId, userId));
+        .where(
+            and(
+                eq(schema.files.userId, userId),
+                notInArray(schema.files.status, ['uploading', 'deleted'])
+            )
+        );
 
     const [usage] = await db
         .insert(schema.storageUsage)

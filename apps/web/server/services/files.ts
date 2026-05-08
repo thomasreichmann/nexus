@@ -1,10 +1,11 @@
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
+import { createStorageUsageRepo } from '@nexus/db/repo/storage-usage';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
 import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
-import { assertUploadAllowed } from './quota';
+import { quotaService } from './quota';
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 900; // 15 minutes
 const MULTIPART_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
@@ -77,27 +78,13 @@ interface ConfirmUploadResult {
     file: File;
 }
 
-async function assertWithinQuota(
-    db: DB,
-    userId: string,
-    additionalBytes: number,
-    sub: Subscription | undefined
-): Promise<void> {
-    const fileRepo = createFileRepo(db);
-    const currentUsage = await fileRepo.sumStorageByUser(userId);
-    assertUploadAllowed(
-        { currentUsage, subscription: sub ?? null },
-        additionalBytes
-    );
-}
-
 async function initiateUpload(
     db: DB,
     userId: string,
     input: UploadInput,
     sub: Subscription | undefined
 ): Promise<InitiateUploadResult> {
-    await assertWithinQuota(db, userId, input.sizeBytes, sub);
+    await quotaService.checkQuota(db, userId, input.sizeBytes, sub);
 
     const batchId = await resolveBatchId(db, userId, input);
     const fileRepo = createFileRepo(db);
@@ -137,21 +124,31 @@ async function confirmUpload(
     userId: string,
     fileId: string
 ): Promise<ConfirmUploadResult> {
-    const fileRepo = createFileRepo(db);
-    const file = await fileRepo.findByUserAndId(userId, fileId);
-    if (!file) {
-        throw new NotFoundError('File', fileId);
-    }
+    return db.transaction(async (tx) => {
+        const fileRepo = createFileRepo(tx);
+        const usageRepo = createStorageUsageRepo(tx);
 
-    const updated = await fileRepo.update(fileId, {
-        status: 'available',
+        const file = await fileRepo.findByUserAndId(userId, fileId);
+        if (!file) {
+            throw new NotFoundError('File', fileId);
+        }
+        // Idempotency: a duplicate confirm shouldn't double-count usage.
+        // Only flip state and increment when the file is still uploading.
+        if (file.status !== 'uploading') {
+            return { file };
+        }
+
+        const updated = await fileRepo.update(fileId, {
+            status: 'available',
+        });
+        if (!updated) {
+            throw new NotFoundError('File', fileId);
+        }
+
+        await usageRepo.incrementUsage(userId, file.size);
+
+        return { file: updated };
     });
-
-    if (!updated) {
-        throw new NotFoundError('File', fileId);
-    }
-
-    return { file: updated };
 }
 
 async function initiateMultipartUpload(
@@ -160,7 +157,7 @@ async function initiateMultipartUpload(
     input: UploadInput,
     sub: Subscription | undefined
 ): Promise<InitiateMultipartResult> {
-    await assertWithinQuota(db, userId, input.sizeBytes, sub);
+    await quotaService.checkQuota(db, userId, input.sizeBytes, sub);
 
     const batchId = await resolveBatchId(db, userId, input);
     const fileRepo = createFileRepo(db);
@@ -217,17 +214,37 @@ async function completeMultipartUpload(
         );
     }
 
+    // S3 completion happens outside the transaction because it's slow,
+    // network-bound, and not rollback-friendly. The DB write that follows
+    // covers status flip and usage bump atomically.
     await s3.multipart.complete(file.s3Key, input.uploadId, input.parts);
 
-    const updated = await fileRepo.update(input.fileId, {
-        status: 'available',
+    return db.transaction(async (tx) => {
+        const txFileRepo = createFileRepo(tx);
+        const txUsageRepo = createStorageUsageRepo(tx);
+
+        // Idempotency guard inside the txn: a retry after S3 success could
+        // re-enter here with the file already 'available'. Re-fetch under the
+        // tx and short-circuit so we don't double-increment usage.
+        const current = await txFileRepo.findByUserAndId(userId, input.fileId);
+        if (!current) {
+            throw new NotFoundError('File', input.fileId);
+        }
+        if (current.status !== 'uploading') {
+            return { file: current };
+        }
+
+        const updated = await txFileRepo.update(input.fileId, {
+            status: 'available',
+        });
+        if (!updated) {
+            throw new NotFoundError('File', input.fileId);
+        }
+
+        await txUsageRepo.incrementUsage(userId, file.size);
+
+        return { file: updated };
     });
-
-    if (!updated) {
-        throw new NotFoundError('File', input.fileId);
-    }
-
-    return { file: updated };
 }
 
 async function abortMultipartUpload(
@@ -244,6 +261,8 @@ async function abortMultipartUpload(
 
     await s3.multipart.abort(file.s3Key, uploadId);
 
+    // Aborted uploads never made it to `available`, so usage was never
+    // incremented — no decrement needed here.
     await fileRepo.update(fileId, {
         status: 'deleted',
         deletedAt: new Date(),
@@ -266,6 +285,13 @@ async function deleteUserFile(
 
     const deleted = await db.transaction(async (tx) => {
         const fileRepo = createFileRepo(tx);
+        const usageRepo = createStorageUsageRepo(tx);
+
+        // Pre-fetch so we know each file's pre-delete status. Only files that
+        // ever reached `available` (or beyond) were counted in storage_usage —
+        // decrementing for `uploading` files would drift usage negative.
+        const before = await fileRepo.findManyByUserAndIds(userId, fileIds);
+
         const result = await fileRepo.softDeleteForUser(userId, fileIds);
 
         // If count doesn't match, some files were missing or not owned
@@ -273,6 +299,14 @@ async function deleteUserFile(
             const deletedIds = new Set(result.map((f) => f.id));
             const missingId = fileIds.find((id) => !deletedIds.has(id));
             throw new NotFoundError('File', missingId!);
+        }
+
+        // Aggregate counted bytes/count and issue a single UPDATE so a
+        // batch delete (up to 100 files) doesn't fan out into N round-trips.
+        const counted = before.filter((f) => f.status !== 'uploading');
+        if (counted.length > 0) {
+            const totalBytes = counted.reduce((sum, f) => sum + f.size, 0);
+            await usageRepo.decrementUsage(userId, totalBytes, counted.length);
         }
 
         return result;

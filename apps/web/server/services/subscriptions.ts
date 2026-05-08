@@ -191,7 +191,7 @@ async function createPortalSession(
 
 /**
  * Provisions a local-only trial: creates a Stripe Customer but no Stripe
- * Subscription. Expiry is enforced soft by `assertWithinQuota` in files.ts —
+ * Subscription. Expiry is enforced soft by `quotaService.checkQuota` —
  * the row stays `status: 'trialing'` until a real subscription replaces it.
  */
 async function provisionTrialSubscription(
