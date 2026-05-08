@@ -1,7 +1,7 @@
 'use client';
 
 import { log } from '@/lib/logger/client';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 export default function GlobalError({
     error,
@@ -10,7 +10,14 @@ export default function GlobalError({
     error: Error & { digest?: string };
     reset: () => void;
 }) {
+    // Dedupe against React.StrictMode's dev-mode double-invocation of
+    // effects: without this, a single boundary error writes two `.dev.log`
+    // entries.
+    const logged = useRef(new Set<string | Error>());
     useEffect(() => {
+        const key = error.digest ?? error;
+        if (logged.current.has(key)) return;
+        logged.current.add(key);
         log.error(
             { err: error, digest: error.digest },
             error.message || 'global error boundary'

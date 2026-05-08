@@ -13,9 +13,15 @@ export function ClientErrorReporter(): null {
 
     // Update during render (not in useEffect) so an error thrown by a
     // sibling's first render — the case error.tsx is here to handle — still
-    // transmits with the right userId/page bindings. The setter is
-    // idempotent, so StrictMode double-renders are harmless.
-    setClientLogContext({ userId, page: pathname });
+    // transmits with the right userId/page bindings. Guard for SSR: this
+    // file is also rendered on the server for initial HTML, and the
+    // singleton in `lib/logger/client` is shared across concurrent
+    // requests in the same Node process — mutating it server-side would
+    // leak the most recent request's user across requests if anything
+    // ever reads `context` on the server.
+    if (typeof window !== 'undefined') {
+        setClientLogContext({ userId, page: pathname });
+    }
 
     useEffect(() => {
         function handleError(event: ErrorEvent): void {

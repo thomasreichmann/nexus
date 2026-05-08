@@ -54,4 +54,10 @@ export const log = pino({
         transmit: { send: transmitToDevServer },
     },
     level: process.env.NODE_ENV === 'development' ? 'debug' : 'warn',
+    // Silences pino's Node transport during SSR / vitest. Under Node,
+    // pino's package.json `browser` redirect doesn't apply, so the server
+    // build is loaded and `log.error(...)` would otherwise write JSON to
+    // stdout. Browser transmit is not affected by this flag — that's
+    // gated by the `NODE_ENV` check inside `transmitToDevServer`.
+    enabled: typeof window !== 'undefined',
 });
