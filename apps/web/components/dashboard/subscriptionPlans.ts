@@ -80,10 +80,10 @@ const UNKNOWN_STATUS_BADGE: StatusBadge = {
     variant: 'secondary',
 };
 
-// Accepts `string` rather than the enum so a DB row whose status no longer
-// matches the schema (migration drift, Stripe-emitted values like
-// `incomplete_expired` / `paused`) renders a fallback badge instead of
-// crashing the page.
+// Tolerates statuses outside our enum (Stripe periodically adds new ones,
+// e.g. `incomplete_expired`, `paused`) rather than crashing the settings
+// page. Type-level coverage of the enum itself is enforced by the
+// `Record<…enum…>` declaration above.
 export function getStatusBadge(status: string): StatusBadge {
     return (
         STATUS_BADGES[status as Subscription['status']] ?? UNKNOWN_STATUS_BADGE
