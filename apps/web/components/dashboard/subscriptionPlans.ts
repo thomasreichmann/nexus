@@ -75,8 +75,19 @@ const STATUS_BADGES: Record<Subscription['status'], StatusBadge> = {
     incomplete: { label: 'Incomplete', variant: 'secondary' },
 };
 
-export function getStatusBadge(status: Subscription['status']): StatusBadge {
-    return STATUS_BADGES[status];
+const UNKNOWN_STATUS_BADGE: StatusBadge = {
+    label: 'Unknown',
+    variant: 'secondary',
+};
+
+// Accepts `string` rather than the enum so a DB row whose status no longer
+// matches the schema (migration drift, Stripe-emitted values like
+// `incomplete_expired` / `paused`) renders a fallback badge instead of
+// crashing the page.
+export function getStatusBadge(status: string): StatusBadge {
+    return (
+        STATUS_BADGES[status as Subscription['status']] ?? UNKNOWN_STATUS_BADGE
+    );
 }
 
 export interface PlanActionInput {

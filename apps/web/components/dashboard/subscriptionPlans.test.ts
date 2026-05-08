@@ -48,6 +48,19 @@ describe('getStatusBadge', () => {
             expect(badge.variant).toBeTruthy();
         }
     });
+
+    it('returns a fallback badge for runtime values not in the enum', () => {
+        // Real Stripe-emitted statuses we don't list (yet); also covers
+        // migration drift where a removed enum value lingers on existing rows.
+        expect(getStatusBadge('incomplete_expired')).toEqual({
+            label: 'Unknown',
+            variant: 'secondary',
+        });
+        expect(getStatusBadge('paused')).toEqual({
+            label: 'Unknown',
+            variant: 'secondary',
+        });
+    });
 });
 
 describe('PLAN_DISPLAY', () => {
