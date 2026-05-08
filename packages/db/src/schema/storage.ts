@@ -52,6 +52,22 @@ export const retrievalStatusEnum = pgEnum('retrieval_status', [
 
 export const retrievalTierEnum = pgEnum('retrieval_tier', RESTORE_TIERS);
 
+// Groups files uploaded together in a single session. The natural unit of
+// work for photographers is "a shoot" — one wedding/event = one batch. Batch
+// FK is nullable on files/retrievals so legacy rows (pre-batch) keep working.
+export const uploadBatches = pgTable(
+    'upload_batches',
+    {
+        id: text('id').primaryKey(),
+        userId: text('user_id')
+            .notNull()
+            .references(() => user.id, { onDelete: 'cascade' }),
+        name: text('name').notNull(),
+        ...timestamps(),
+    },
+    (table) => [index('upload_batches_user_id_idx').on(table.userId)]
+);
+
 export const files = pgTable(
     'files',
     {
@@ -59,6 +75,11 @@ export const files = pgTable(
         userId: text('user_id')
             .notNull()
             .references(() => user.id, { onDelete: 'cascade' }),
+        // Nullable: legacy files predate batches; `set null` preserves the
+        // file row when a batch is removed (rare; prevents data loss).
+        batchId: text('batch_id').references(() => uploadBatches.id, {
+            onDelete: 'set null',
+        }),
         name: text('name').notNull(),
         size: bigint('size', { mode: 'number' }).notNull(),
         mimeType: text('mime_type'),
@@ -75,6 +96,7 @@ export const files = pgTable(
         index('files_user_id_idx').on(table.userId),
         index('files_status_idx').on(table.status),
         index('files_storage_tier_idx').on(table.storageTier),
+        index('files_batch_id_idx').on(table.batchId),
         index('files_user_id_created_at_idx').on(
             table.userId,
             table.createdAt.desc()
@@ -109,6 +131,11 @@ export const retrievals = pgTable(
         userId: text('user_id')
             .notNull()
             .references(() => user.id, { onDelete: 'cascade' }),
+        // Set when the retrieval was initiated as part of a batch restore.
+        // `set null` so deleting a batch row doesn't wipe retrieval history.
+        batchId: text('batch_id').references(() => uploadBatches.id, {
+            onDelete: 'set null',
+        }),
         status: retrievalStatusEnum('status').notNull().default('pending'),
         tier: retrievalTierEnum('tier').notNull().default('standard'),
         initiatedAt: timestamp('initiated_at'), // When AWS restore was started
@@ -122,6 +149,7 @@ export const retrievals = pgTable(
         index('retrievals_file_id_idx').on(table.fileId),
         index('retrievals_user_id_idx').on(table.userId),
         index('retrievals_status_idx').on(table.status),
+        index('retrievals_batch_id_idx').on(table.batchId),
         index('retrievals_expires_at_idx').on(table.expiresAt),
     ]
 );

@@ -85,6 +85,19 @@ function findManyByUserAndIds(
     });
 }
 
+function findByUserAndBatch(
+    db: DB,
+    userId: string,
+    batchId: string
+): Promise<File[]> {
+    return db.query.files.findMany({
+        where: and(
+            eq(schema.files.batchId, batchId),
+            eq(schema.files.userId, userId)
+        ),
+    });
+}
+
 const hiddenStatuses: (typeof schema.files.status.enumValues)[number][] = [
     'uploading',
     'deleted',
@@ -335,6 +348,60 @@ export interface DailyUploadVolume {
     totalBytes: number;
 }
 
+export interface FileBatchGroup {
+    // `null` when the group holds legacy files with no batch — the UI
+    // synthesizes the "Ungrouped" label so presentation stays in the UI.
+    batchId: string | null;
+    batchName: string | null;
+    batchCreatedAt: Date | null;
+    files: File[];
+}
+
+// Postgres defaults DESC to NULLS FIRST; we want orphan (null-batch) rows
+// to land at the end of the result, hence the explicit `NULLS LAST`.
+async function findByUserGroupedByBatch(
+    db: DB,
+    userId: string,
+    opts: { includeHidden?: boolean } = {}
+): Promise<FileBatchGroup[]> {
+    const rows = await db
+        .select({
+            file: schema.files,
+            batchName: schema.uploadBatches.name,
+            batchCreatedAt: schema.uploadBatches.createdAt,
+        })
+        .from(schema.files)
+        .leftJoin(
+            schema.uploadBatches,
+            eq(schema.files.batchId, schema.uploadBatches.id)
+        )
+        .where(buildUserFilesWhereClause(userId, opts.includeHidden ?? false))
+        .orderBy(
+            sql`${schema.uploadBatches.createdAt} DESC NULLS LAST`,
+            desc(schema.files.createdAt),
+            desc(schema.files.id)
+        );
+
+    const NULL_KEY = '\0';
+    const groups = new Map<string, FileBatchGroup>();
+    for (const row of rows) {
+        const key = row.file.batchId ?? NULL_KEY;
+        let group = groups.get(key);
+        if (!group) {
+            group = {
+                batchId: row.file.batchId,
+                batchName: row.batchName,
+                batchCreatedAt: row.batchCreatedAt,
+                files: [],
+            };
+            groups.set(key, group);
+        }
+        group.files.push(row.file);
+    }
+
+    return Array.from(groups.values());
+}
+
 async function uploadHistoryByDay(
     db: DB,
     userId: string,
@@ -375,7 +442,9 @@ export const createFileRepo = createRepository({
     findByS3Key,
     findByUserAndId,
     findManyByUserAndIds,
+    findByUserAndBatch,
     findByUser,
+    findByUserGroupedByBatch,
     countByUser,
     countStatusesByUser,
     sumStorageByUser,

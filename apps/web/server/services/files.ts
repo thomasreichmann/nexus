@@ -1,6 +1,7 @@
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
+import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
 import { assertUploadAllowed } from './quota';
@@ -13,6 +14,39 @@ interface UploadInput {
     name: string;
     sizeBytes: number;
     mimeType?: string;
+    // When supplied, the file joins an existing batch (validated for ownership).
+    // When absent, the service creates a single-file batch with a fallback name
+    // so every new file has a batchId — keeps the s3Key shape uniform.
+    batchId?: string;
+    // Optional folder/session label. Falls back to a timestamp when omitted.
+    batchName?: string;
+}
+
+// UTC and minute-precision so labels are deterministic across timezones.
+export function formatFallbackBatchName(date: Date): string {
+    const iso = date.toISOString();
+    return `Upload ${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
+}
+
+async function resolveBatchId(
+    db: DB,
+    userId: string,
+    input: UploadInput
+): Promise<string> {
+    const batchRepo = createUploadBatchRepo(db);
+    if (input.batchId) {
+        const existing = await batchRepo.findByUserAndId(userId, input.batchId);
+        if (!existing) {
+            throw new NotFoundError('UploadBatch', input.batchId);
+        }
+        return existing.id;
+    }
+    const batch = await batchRepo.insert({
+        id: crypto.randomUUID(),
+        userId,
+        name: input.batchName ?? formatFallbackBatchName(new Date()),
+    });
+    return batch.id;
 }
 
 interface InitiateUploadResult {
@@ -65,9 +99,10 @@ async function initiateUpload(
 ): Promise<InitiateUploadResult> {
     await assertWithinQuota(db, userId, input.sizeBytes, sub);
 
+    const batchId = await resolveBatchId(db, userId, input);
     const fileRepo = createFileRepo(db);
     const fileId = crypto.randomUUID();
-    const s3Key = `${userId}/${fileId}/${input.name}`;
+    const s3Key = `${userId}/${batchId}/${fileId}/${input.name}`;
 
     const uploadUrl = await s3.presigned.put(s3Key, {
         contentType: input.mimeType,
@@ -78,6 +113,7 @@ async function initiateUpload(
     await fileRepo.insert({
         id: fileId,
         userId,
+        batchId,
         name: input.name,
         size: input.sizeBytes,
         mimeType: input.mimeType ?? null,
@@ -126,9 +162,10 @@ async function initiateMultipartUpload(
 ): Promise<InitiateMultipartResult> {
     await assertWithinQuota(db, userId, input.sizeBytes, sub);
 
+    const batchId = await resolveBatchId(db, userId, input);
     const fileRepo = createFileRepo(db);
     const fileId = crypto.randomUUID();
-    const s3Key = `${userId}/${fileId}/${input.name}`;
+    const s3Key = `${userId}/${batchId}/${fileId}/${input.name}`;
     const partCount = Math.ceil(input.sizeBytes / MULTIPART_CHUNK_SIZE);
 
     const { uploadId } = await s3.multipart.create(s3Key, input.mimeType);
@@ -143,6 +180,7 @@ async function initiateMultipartUpload(
     await fileRepo.insert({
         id: fileId,
         userId,
+        batchId,
         name: input.name,
         size: input.sizeBytes,
         mimeType: input.mimeType ?? null,

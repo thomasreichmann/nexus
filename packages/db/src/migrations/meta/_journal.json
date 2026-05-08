@@ -71,6 +71,13 @@
       "when": 1776562429200,
       "tag": "0009_tiny_warstar",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1778228198443,
+      "tag": "0010_married_pandemic",
+      "breakpoints": true
     }
   ]
 }

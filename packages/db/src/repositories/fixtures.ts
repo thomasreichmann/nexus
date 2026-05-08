@@ -4,6 +4,7 @@ import type { File, NewFile } from './files';
 import type { Job, NewJob } from './jobs';
 import type { Retrieval } from './retrievals';
 import type { Subscription } from './subscriptions';
+import type { UploadBatch } from './uploadBatches';
 import type { WebhookEvent } from './webhooks';
 
 export const TEST_USER_ID = 'user_test123';
@@ -14,6 +15,7 @@ export const TEST_RETRIEVAL_ID = 'retrieval_test202';
 export const TEST_SUBSCRIPTION_ID = 'sub_test303';
 export const TEST_STRIPE_CUSTOMER_ID = 'cus_test303';
 export const TEST_WEBHOOK_EVENT_ID = 'wh_test404';
+export const TEST_BATCH_ID = 'batch_test505';
 
 export type User = typeof schema.user.$inferSelect;
 export type StorageUsage = typeof schema.storageUsage.$inferSelect;
@@ -23,6 +25,7 @@ export function createFileFixture(overrides: Partial<File> = {}): File {
     return {
         id: TEST_FILE_ID,
         userId: TEST_USER_ID,
+        batchId: null,
         name: 'test-document.pdf',
         size: 1024000,
         mimeType: 'application/pdf',
@@ -47,6 +50,20 @@ export function createNewFileFixture(
         size: 1024000,
         mimeType: 'application/pdf',
         s3Key: `${TEST_USER_ID}/${TEST_FILE_ID}`,
+        ...overrides,
+    };
+}
+
+export function createUploadBatchFixture(
+    overrides: Partial<UploadBatch> = {}
+): UploadBatch {
+    const now = new Date();
+    return {
+        id: TEST_BATCH_ID,
+        userId: TEST_USER_ID,
+        name: 'Test Batch',
+        createdAt: now,
+        updatedAt: now,
         ...overrides,
     };
 }
@@ -155,6 +172,7 @@ export function createRetrievalFixture(
         id: TEST_RETRIEVAL_ID,
         fileId: TEST_FILE_ID,
         userId: TEST_USER_ID,
+        batchId: null,
         status: 'pending',
         tier: 'standard',
         initiatedAt: null,

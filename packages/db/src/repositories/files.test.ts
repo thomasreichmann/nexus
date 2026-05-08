@@ -3,6 +3,8 @@ import { createMockDb, type MockDbMocks } from './mocks';
 import {
     createFileFixture,
     createNewFileFixture,
+    createUploadBatchFixture,
+    TEST_BATCH_ID,
     TEST_USER_ID,
     TEST_FILE_ID,
 } from './fixtures';
@@ -358,6 +360,109 @@ describe('files repository', () => {
             ]);
 
             expect(result).toEqual([]);
+        });
+    });
+
+    describe('findByUserAndBatch', () => {
+        it('returns files in the batch owned by user', async () => {
+            const files = [
+                createFileFixture({ id: 'f1', batchId: TEST_BATCH_ID }),
+                createFileFixture({ id: 'f2', batchId: TEST_BATCH_ID }),
+            ];
+            mocks.files.findMany.mockResolvedValue(files);
+
+            const result = await repo.findByUserAndBatch(
+                TEST_USER_ID,
+                TEST_BATCH_ID
+            );
+
+            expect(result).toEqual(files);
+            expect(mocks.files.findMany).toHaveBeenCalledOnce();
+        });
+
+        it('returns empty array when batch has no files for user', async () => {
+            mocks.files.findMany.mockResolvedValue([]);
+
+            const result = await repo.findByUserAndBatch(
+                TEST_USER_ID,
+                TEST_BATCH_ID
+            );
+
+            expect(result).toEqual([]);
+        });
+    });
+
+    describe('findByUserGroupedByBatch', () => {
+        it('groups files by batch and emits a null-batchId group for legacy files', async () => {
+            const batch = createUploadBatchFixture({
+                id: 'batch-1',
+                name: 'Silva Wedding',
+            });
+            const fileInBatch = createFileFixture({
+                id: 'f-batched',
+                batchId: 'batch-1',
+            });
+            const orphanFile = createFileFixture({
+                id: 'f-legacy',
+                batchId: null,
+            });
+            mocks.orderBy.mockResolvedValue([
+                {
+                    file: fileInBatch,
+                    batchName: batch.name,
+                    batchCreatedAt: batch.createdAt,
+                },
+                {
+                    file: orphanFile,
+                    batchName: null,
+                    batchCreatedAt: null,
+                },
+            ]);
+
+            const result = await repo.findByUserGroupedByBatch(TEST_USER_ID);
+
+            expect(result).toHaveLength(2);
+            const named = result.find((g) => g.batchId === 'batch-1');
+            expect(named).toBeDefined();
+            expect(named!.batchName).toBe('Silva Wedding');
+            expect(named!.files).toEqual([fileInBatch]);
+
+            const orphan = result.find((g) => g.batchId === null);
+            expect(orphan).toBeDefined();
+            expect(orphan!.batchName).toBeNull();
+            expect(orphan!.batchCreatedAt).toBeNull();
+            expect(orphan!.files).toEqual([orphanFile]);
+        });
+
+        it('returns empty array when user has no files', async () => {
+            mocks.orderBy.mockResolvedValue([]);
+
+            const result = await repo.findByUserGroupedByBatch(TEST_USER_ID);
+
+            expect(result).toEqual([]);
+        });
+
+        it('keeps multiple files in a single batch under one group', async () => {
+            const batch = createUploadBatchFixture({ id: 'b' });
+            const f1 = createFileFixture({ id: 'f1', batchId: 'b' });
+            const f2 = createFileFixture({ id: 'f2', batchId: 'b' });
+            mocks.orderBy.mockResolvedValue([
+                {
+                    file: f1,
+                    batchName: batch.name,
+                    batchCreatedAt: batch.createdAt,
+                },
+                {
+                    file: f2,
+                    batchName: batch.name,
+                    batchCreatedAt: batch.createdAt,
+                },
+            ]);
+
+            const result = await repo.findByUserGroupedByBatch(TEST_USER_ID);
+
+            expect(result).toHaveLength(1);
+            expect(result[0].files).toEqual([f1, f2]);
         });
     });
 });
