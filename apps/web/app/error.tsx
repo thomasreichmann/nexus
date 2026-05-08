@@ -8,14 +8,24 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { log } from '@/lib/logger/client';
 import Link from 'next/link';
+import { useEffect } from 'react';
 
 export default function Error({
+    error,
     reset,
 }: {
     error: Error & { digest?: string };
     reset: () => void;
 }) {
+    useEffect(() => {
+        log.error(
+            { err: error, digest: error.digest },
+            error.message || 'route error boundary'
+        );
+    }, [error]);
+
     return (
         <div className="flex min-h-[50vh] items-center justify-center p-4">
             <Card className="w-full max-w-md">
