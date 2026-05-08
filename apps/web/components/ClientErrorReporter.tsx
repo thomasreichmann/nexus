@@ -11,9 +11,11 @@ export function ClientErrorReporter(): null {
     const pathname = usePathname();
     const userId = session?.user?.id;
 
-    useEffect(() => {
-        setClientLogContext({ userId, page: pathname });
-    }, [userId, pathname]);
+    // Update during render (not in useEffect) so an error thrown by a
+    // sibling's first render — the case error.tsx is here to handle — still
+    // transmits with the right userId/page bindings. The setter is
+    // idempotent, so StrictMode double-renders are harmless.
+    setClientLogContext({ userId, page: pathname });
 
     useEffect(() => {
         function handleError(event: ErrorEvent): void {
@@ -30,16 +32,18 @@ export function ClientErrorReporter(): null {
 
         function handleRejection(event: PromiseRejectionEvent): void {
             const reason = event.reason;
+            if (reason instanceof Error) {
+                log.error(
+                    { err: reason },
+                    reason.message || 'unhandled promise rejection'
+                );
+                return;
+            }
             const message =
-                reason instanceof Error
-                    ? reason.message
-                    : typeof reason === 'string'
-                      ? reason
-                      : 'unhandled promise rejection';
-            log.error(
-                { err: reason instanceof Error ? reason : undefined, reason },
-                message
-            );
+                typeof reason === 'string'
+                    ? reason
+                    : 'unhandled promise rejection';
+            log.error({ reason }, message);
         }
 
         window.addEventListener('error', handleError);

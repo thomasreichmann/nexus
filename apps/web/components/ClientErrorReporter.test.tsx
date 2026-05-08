@@ -33,7 +33,7 @@ describe('ClientErrorReporter', () => {
         cleanup();
     });
 
-    it('updates client log context with userId and page on mount', () => {
+    it('updates client log context with userId and page during render', () => {
         hoisted.useSessionMock.mockReturnValue({
             data: { user: { id: 'user-7' } },
         });
@@ -44,6 +44,24 @@ describe('ClientErrorReporter', () => {
         expect(hoisted.setClientLogContextMock).toHaveBeenCalledWith({
             userId: 'user-7',
             page: '/dashboard/files',
+        });
+    });
+
+    it('re-fires setClientLogContext when session or pathname changes', () => {
+        hoisted.useSessionMock.mockReturnValue({ data: null });
+        hoisted.usePathnameMock.mockReturnValue('/');
+        const { rerender } = render(<ClientErrorReporter />);
+
+        hoisted.setClientLogContextMock.mockClear();
+        hoisted.useSessionMock.mockReturnValue({
+            data: { user: { id: 'user-9' } },
+        });
+        hoisted.usePathnameMock.mockReturnValue('/dashboard');
+        rerender(<ClientErrorReporter />);
+
+        expect(hoisted.setClientLogContextMock).toHaveBeenCalledWith({
+            userId: 'user-9',
+            page: '/dashboard',
         });
     });
 
@@ -76,17 +94,38 @@ describe('ClientErrorReporter', () => {
         render(<ClientErrorReporter />);
 
         const err = new Error('rejected');
-        const event = new Event('unhandledrejection') as PromiseRejectionEvent;
-        Object.defineProperty(event, 'reason', { value: err });
-        Object.defineProperty(event, 'promise', {
-            value: Promise.reject(err).catch(() => {}),
-        });
-        window.dispatchEvent(event);
+        dispatchRejection(err);
 
         expect(hoisted.logErrorMock).toHaveBeenCalledOnce();
         const [meta, msg] = hoisted.logErrorMock.mock.calls[0]!;
-        expect(meta).toMatchObject({ err, reason: err });
+        expect(meta).toMatchObject({ err });
+        expect(meta.reason).toBeUndefined();
         expect(msg).toBe('rejected');
+    });
+
+    it('logs unhandled promise rejections with a string reason', () => {
+        render(<ClientErrorReporter />);
+
+        dispatchRejection('quota exceeded');
+
+        expect(hoisted.logErrorMock).toHaveBeenCalledOnce();
+        const [meta, msg] = hoisted.logErrorMock.mock.calls[0]!;
+        expect(meta).toMatchObject({ reason: 'quota exceeded' });
+        expect(meta.err).toBeUndefined();
+        expect(msg).toBe('quota exceeded');
+    });
+
+    it('logs unhandled promise rejections with a non-Error object reason', () => {
+        render(<ClientErrorReporter />);
+
+        const reason = { code: 'INVALID', detail: 'nope' };
+        dispatchRejection(reason);
+
+        expect(hoisted.logErrorMock).toHaveBeenCalledOnce();
+        const [meta, msg] = hoisted.logErrorMock.mock.calls[0]!;
+        expect(meta).toMatchObject({ reason });
+        expect(meta.err).toBeUndefined();
+        expect(msg).toBe('unhandled promise rejection');
     });
 
     it('removes listeners on unmount', () => {
@@ -100,3 +139,12 @@ describe('ClientErrorReporter', () => {
         expect(hoisted.logErrorMock).not.toHaveBeenCalled();
     });
 });
+
+function dispatchRejection(reason: unknown): void {
+    const event = new Event('unhandledrejection') as PromiseRejectionEvent;
+    Object.defineProperty(event, 'reason', { value: reason });
+    Object.defineProperty(event, 'promise', {
+        value: Promise.reject(reason).catch(() => {}),
+    });
+    window.dispatchEvent(event);
+}
