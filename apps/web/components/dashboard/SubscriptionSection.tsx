@@ -34,7 +34,7 @@ export function SubscriptionSection() {
         useState<BillingInterval>('month');
 
     const {
-        data: subscription,
+        data: state,
         isLoading,
         isError,
     } = useQuery(trpc.subscriptions.current.queryOptions());
@@ -65,21 +65,21 @@ export function SubscriptionSection() {
                 <CreditCard className="h-5 w-5 text-muted-foreground" />
             </CardHeader>
             <CardContent className="space-y-6">
-                {isLoading ? (
+                {isLoading || !state ? (
                     <SubscriptionSkeleton />
                 ) : isError ? (
                     <p className="text-sm text-muted-foreground">
                         Couldn&apos;t load your subscription. Try refreshing the
                         page.
                     </p>
-                ) : !subscription ? (
+                ) : state.kind === 'unprovisioned' ? (
                     <p className="text-sm text-muted-foreground">
                         Your subscription isn&apos;t provisioned yet. Contact
                         support if this persists.
                     </p>
                 ) : (
                     <SubscriptionView
-                        subscription={subscription}
+                        subscription={state.subscription}
                         interval={billingInterval}
                         onIntervalChange={setBillingInterval}
                         onCheckout={(tier) =>
