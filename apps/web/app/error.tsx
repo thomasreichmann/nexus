@@ -1,5 +1,8 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
+import Link from 'next/link';
+
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -8,14 +11,30 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import Link from 'next/link';
+import { log } from '@/lib/logger/client';
 
-export default function Error({
-    reset,
-}: {
+interface ErrorBoundaryProps {
     error: Error & { digest?: string };
     reset: () => void;
-}) {
+}
+
+export default function Error({
+    error,
+    reset,
+}: ErrorBoundaryProps): React.ReactElement {
+    // React.StrictMode double-invokes effects in dev — dedupe so a single
+    // boundary error doesn't write twice.
+    const logged = useRef(new Set<string | Error>());
+    useEffect(() => {
+        const key = error.digest ?? error;
+        if (logged.current.has(key)) return;
+        logged.current.add(key);
+        log.error(
+            { err: error, digest: error.digest },
+            error.message || 'route error boundary'
+        );
+    }, [error]);
+
     return (
         <div className="flex min-h-[50vh] items-center justify-center p-4">
             <Card className="w-full max-w-md">

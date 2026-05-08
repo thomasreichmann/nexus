@@ -1,3 +1,4 @@
+import { ClientErrorReporter } from '@/components/ClientErrorReporter';
 import { ThemeProvider } from '@/components/theme-provider';
 import { TRPCReactProvider } from '@/lib/trpc/client';
 import { Analytics } from '@vercel/analytics/next';
@@ -39,7 +40,10 @@ export default function RootLayout({
                     enableSystem
                     disableTransitionOnChange
                 >
-                    <TRPCReactProvider>{children}</TRPCReactProvider>
+                    <TRPCReactProvider>
+                        <ClientErrorReporter />
+                        {children}
+                    </TRPCReactProvider>
                 </ThemeProvider>
                 <Toaster />
                 <Analytics />
