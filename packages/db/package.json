@@ -29,6 +29,11 @@
             "import": "./src/repositories/retrievals.ts",
             "default": "./src/repositories/retrievals.ts"
         },
+        "./repo/storage-usage": {
+            "types": "./src/repositories/storage-usage.ts",
+            "import": "./src/repositories/storage-usage.ts",
+            "default": "./src/repositories/storage-usage.ts"
+        },
         "./repo/subscriptions": {
             "types": "./src/repositories/subscriptions.ts",
             "import": "./src/repositories/subscriptions.ts",
