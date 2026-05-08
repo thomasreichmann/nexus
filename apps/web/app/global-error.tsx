@@ -10,9 +10,8 @@ export default function GlobalError({
     error: Error & { digest?: string };
     reset: () => void;
 }) {
-    // Dedupe against React.StrictMode's dev-mode double-invocation of
-    // effects: without this, a single boundary error writes two `.dev.log`
-    // entries.
+    // React.StrictMode double-invokes effects in dev — dedupe so a single
+    // boundary error doesn't write twice.
     const logged = useRef(new Set<string | Error>());
     useEffect(() => {
         const key = error.digest ?? error;

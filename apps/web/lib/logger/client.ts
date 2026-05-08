@@ -9,10 +9,9 @@ type ClientLogContext = {
 
 let context: ClientLogContext = {};
 
-// Singleton + setter rather than pino's `child()` because the four call
-// sites (cache.onError, error.tsx, global-error.tsx, window listeners)
-// span render and effect boundaries and can't all hold a React-bound
-// logger reference reaching session/pathname hooks.
+// Singleton + setter rather than pino `child()` so non-React call sites
+// (cache hooks, window listeners) can read context without holding a
+// React-bound logger reference.
 export function setClientLogContext(next: ClientLogContext): void {
     const merged: ClientLogContext = { ...context };
     for (const key of Object.keys(next) as (keyof ClientLogContext)[]) {
@@ -30,9 +29,8 @@ export function resetClientLogContext(): void {
     context = {};
 }
 
-// Exported so tests can drive it directly: pino's `browser` config is ignored
-// when this module is imported under Node (vitest), so we can't observe
-// transmit through the `log` instance.
+// Exported for tests: pino's `browser` config is ignored when this
+// module is imported under Node, so transmit can't be driven via `log`.
 export function transmitToDevServer(_level: string, logEvent: LogEvent): void {
     if (process.env.NODE_ENV !== 'development') return;
 
@@ -54,10 +52,9 @@ export const log = pino({
         transmit: { send: transmitToDevServer },
     },
     level: process.env.NODE_ENV === 'development' ? 'debug' : 'warn',
-    // Silences pino's Node transport during SSR / vitest. Under Node,
-    // pino's package.json `browser` redirect doesn't apply, so the server
-    // build is loaded and `log.error(...)` would otherwise write JSON to
-    // stdout. Browser transmit is not affected by this flag — that's
-    // gated by the `NODE_ENV` check inside `transmitToDevServer`.
+    // Silences pino's Node transport (loaded under SSR/vitest because
+    // pino's `browser` redirect only applies in the browser bundle).
+    // Does NOT gate browser transmit — that's handled by the `NODE_ENV`
+    // check inside `transmitToDevServer`.
     enabled: typeof window !== 'undefined',
 });

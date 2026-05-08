@@ -11,14 +11,10 @@ export function ClientErrorReporter(): null {
     const pathname = usePathname();
     const userId = session?.user?.id;
 
-    // Update during render (not in useEffect) so an error thrown by a
-    // sibling's first render — the case error.tsx is here to handle — still
-    // transmits with the right userId/page bindings. Guard for SSR: this
-    // file is also rendered on the server for initial HTML, and the
-    // singleton in `lib/logger/client` is shared across concurrent
-    // requests in the same Node process — mutating it server-side would
-    // leak the most recent request's user across requests if anything
-    // ever reads `context` on the server.
+    // Set during render so first-render errors still transmit with
+    // bindings — useEffect would fire too late. SSR-guarded because the
+    // singleton is shared across concurrent server requests in the same
+    // Node process.
     if (typeof window !== 'undefined') {
         setClientLogContext({ userId, page: pathname });
     }
