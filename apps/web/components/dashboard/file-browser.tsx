@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -30,6 +30,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Card, CardContent } from '@/components/ui/card';
+import { TablePagination } from '@/components/ui/table-pagination';
 import {
     Search,
     LayoutGrid,
@@ -54,15 +55,25 @@ import {
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDate } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+    keepPreviousData,
+    useMutation,
+    useQuery,
+    useQueryClient,
+} from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { File } from '@nexus/db/repo/files';
+import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
+import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
+import type { File, FileSortKey, FileSortOrder } from '@nexus/db/repo/files';
 
 type DerivedStatus = 'archived' | 'retrieving' | 'available';
 
-type SortKey = 'name' | 'size' | 'uploadedAt';
-type SortOrder = 'asc' | 'desc';
+const PAGE_SIZE = 24;
+const SEARCH_DEBOUNCE_MS = 300;
 
+// Keep in lockstep with countStatusesByUser in
+// packages/db/src/repositories/files.ts — the library-wide stats bar bucket
+// counts must match the per-row status dots derived here.
 function deriveStatus(file: File): DerivedStatus {
     if (file.status === 'restoring') return 'retrieving';
     if (
@@ -258,22 +269,66 @@ function SelectableIcon({
 
 export function FileBrowser() {
     const trpc = useTRPC();
-    const queryClient = useQueryClient();
+    const invalidateFileList = useInvalidateFileList();
 
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
-    const [sortKey, setSortKey] = useState<SortKey>('uploadedAt');
-    const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+    const [sortKey, setSortKey] = useState<FileSortKey>('uploadedAt');
+    const [sortOrder, setSortOrder] = useState<FileSortOrder>('desc');
+    const [page, setPage] = useState(0);
     const lastSelectedIndex = useRef<number | null>(null);
 
-    const listOptions = trpc.files.list.queryOptions();
-    const { data, isLoading } = useQuery(listOptions);
+    const debouncedSearch = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
+
+    // Reset to page 0 when the *debounced* search takes effect (not on every
+    // keystroke — that would cause an extra fetch at page 0 with the old
+    // search before the new search fetches). Render-time state adjustment
+    // per https://react.dev/reference/react/useState#storing-information-from-previous-renders
+    const [prevDebouncedSearch, setPrevDebouncedSearch] =
+        useState(debouncedSearch);
+    if (prevDebouncedSearch !== debouncedSearch) {
+        setPrevDebouncedSearch(debouncedSearch);
+        setPage(0);
+    }
+
+    const handlePageChange = (next: number) => {
+        // Page-scoped selection: clear on navigation.
+        setSelectedFiles([]);
+        lastSelectedIndex.current = null;
+        setPage(next);
+    };
+
+    const { data, isLoading, isFetching } = useQuery(
+        trpc.files.list.queryOptions(
+            {
+                limit: PAGE_SIZE,
+                offset: page * PAGE_SIZE,
+                search: debouncedSearch || undefined,
+                sortKey,
+                sortOrder,
+            },
+            // Keep previous page visible while the next page fetches; also
+            // prevents the page-clamp below from snapping to 0 when `data`
+            // briefly goes undefined on a new query key.
+            { placeholderData: keepPreviousData }
+        )
+    );
+    const { data: countsData } = useQuery(
+        trpc.files.statusCounts.queryOptions()
+    );
 
     const files = data?.files ?? [];
+    const total = data?.total ?? 0;
+    const counts = countsData ?? { archived: 0, retrieving: 0, available: 0 };
 
-    const invalidateFileList = () =>
-        queryClient.invalidateQueries({ queryKey: listOptions.queryKey });
+    // Clamp page when total shrinks (e.g. after a bulk delete) so the user
+    // doesn't land on an empty page past the end. Guarded on `data` to skip
+    // the loading/refetching states where `total` is unknown.
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (data && page >= totalPages) {
+        setPage(totalPages - 1);
+    }
 
     const deleteManyMutation = useMutation(
         trpc.files.deleteMany.mutationOptions({
@@ -294,31 +349,7 @@ export function FileBrowser() {
         })
     );
 
-    const filteredFiles = files.filter((file) =>
-        file.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    const sortedFiles = [...filteredFiles].sort((a, b) => {
-        let comparison = 0;
-        switch (sortKey) {
-            case 'name':
-                comparison = a.name.localeCompare(b.name);
-                break;
-            case 'size':
-                comparison = a.size - b.size;
-                break;
-            case 'uploadedAt':
-                comparison =
-                    new Date(a.createdAt).getTime() -
-                    new Date(b.createdAt).getTime();
-                break;
-        }
-        return sortOrder === 'asc' ? comparison : -comparison;
-    });
-
-    const hasRestoringFiles = filteredFiles.some(
-        (f) => f.status === 'restoring'
-    );
+    const hasRestoringFiles = counts.retrieving > 0;
 
     const hasSelection = selectedFiles.length > 0;
 
@@ -329,54 +360,43 @@ export function FileBrowser() {
         (f) => deriveStatus(f) === 'archived'
     );
 
-    const statusCounts = {
-        archived: files.filter((f) => deriveStatus(f) === 'archived').length,
-        retrieving: files.filter((f) => deriveStatus(f) === 'retrieving')
-            .length,
-        available: files.filter((f) => deriveStatus(f) === 'available').length,
-    };
-
-    const toggleSort = (key: SortKey) => {
+    const toggleSort = (key: FileSortKey) => {
         if (sortKey === key) {
             setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
         } else {
             setSortKey(key);
             setSortOrder('desc');
         }
+        setPage(0);
     };
 
     const toggleSelectAll = () => {
-        if (selectedFiles.length === sortedFiles.length) {
+        if (selectedFiles.length === files.length) {
             setSelectedFiles([]);
         } else {
-            setSelectedFiles(sortedFiles.map((f) => f.id));
+            setSelectedFiles(files.map((f) => f.id));
         }
     };
 
-    const handleSelect = useCallback(
-        (id: string, index: number, shiftKey: boolean) => {
-            setSelectedFiles((prev) => {
-                if (
-                    shiftKey &&
-                    lastSelectedIndex.current !== null &&
-                    lastSelectedIndex.current !== index
-                ) {
-                    const start = Math.min(lastSelectedIndex.current, index);
-                    const end = Math.max(lastSelectedIndex.current, index);
-                    const rangeIds = sortedFiles
-                        .slice(start, end + 1)
-                        .map((f) => f.id);
-                    const merged = new Set([...prev, ...rangeIds]);
-                    return Array.from(merged);
-                }
-                return prev.includes(id)
-                    ? prev.filter((f) => f !== id)
-                    : [...prev, id];
-            });
-            lastSelectedIndex.current = index;
-        },
-        [sortedFiles]
-    );
+    const handleSelect = (id: string, index: number, shiftKey: boolean) => {
+        setSelectedFiles((prev) => {
+            if (
+                shiftKey &&
+                lastSelectedIndex.current !== null &&
+                lastSelectedIndex.current !== index
+            ) {
+                const start = Math.min(lastSelectedIndex.current, index);
+                const end = Math.max(lastSelectedIndex.current, index);
+                const rangeIds = files.slice(start, end + 1).map((f) => f.id);
+                const merged = new Set([...prev, ...rangeIds]);
+                return Array.from(merged);
+            }
+            return prev.includes(id)
+                ? prev.filter((f) => f !== id)
+                : [...prev, id];
+        });
+        lastSelectedIndex.current = index;
+    };
 
     function handleBulkDelete() {
         deleteManyMutation.reset();
@@ -407,7 +427,8 @@ export function FileBrowser() {
         );
     }
 
-    const isEmpty = filteredFiles.length === 0 && searchQuery === '';
+    const hasActiveSearch = debouncedSearch.trim() !== '';
+    const isEmpty = total === 0 && !hasActiveSearch;
 
     if (isEmpty) {
         return (
@@ -438,39 +459,39 @@ export function FileBrowser() {
         );
     }
 
+    const libraryTotal = counts.archived + counts.retrieving + counts.available;
+
     return (
         <div className="space-y-4">
-            {/* Stats bar */}
-            {files.length > 0 && (
-                <div className="flex items-center gap-4 text-sm">
-                    <span className="font-medium tabular-nums">
-                        {files.length} file{files.length !== 1 ? 's' : ''}
-                    </span>
-                    <span className="h-3.5 w-px bg-border" />
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                        {statusCounts.archived > 0 && (
-                            <span className="flex items-center gap-1.5">
-                                <span className="size-1.5 rounded-full bg-muted-foreground/50" />
-                                {statusCounts.archived} archived
+            {/* Stats bar — counts are library-wide, not page-scoped */}
+            <div className="flex items-center gap-4 text-sm">
+                <span className="font-medium tabular-nums">
+                    {libraryTotal} file{libraryTotal !== 1 ? 's' : ''}
+                </span>
+                <span className="h-3.5 w-px bg-border" />
+                <div className="flex items-center gap-3 text-muted-foreground">
+                    {counts.archived > 0 && (
+                        <span className="flex items-center gap-1.5">
+                            <span className="size-1.5 rounded-full bg-muted-foreground/50" />
+                            {counts.archived} archived
+                        </span>
+                    )}
+                    {counts.retrieving > 0 && (
+                        <span className="flex items-center gap-1.5">
+                            <span className="relative size-1.5 rounded-full bg-blue-500">
+                                <span className="absolute inset-0 animate-ping rounded-full bg-blue-500/60" />
                             </span>
-                        )}
-                        {statusCounts.retrieving > 0 && (
-                            <span className="flex items-center gap-1.5">
-                                <span className="relative size-1.5 rounded-full bg-blue-500">
-                                    <span className="absolute inset-0 animate-ping rounded-full bg-blue-500/60" />
-                                </span>
-                                {statusCounts.retrieving} retrieving
-                            </span>
-                        )}
-                        {statusCounts.available > 0 && (
-                            <span className="flex items-center gap-1.5">
-                                <span className="size-1.5 rounded-full bg-emerald-500" />
-                                {statusCounts.available} available
-                            </span>
-                        )}
-                    </div>
+                            {counts.retrieving} retrieving
+                        </span>
+                    )}
+                    {counts.available > 0 && (
+                        <span className="flex items-center gap-1.5">
+                            <span className="size-1.5 rounded-full bg-emerald-500" />
+                            {counts.available} available
+                        </span>
+                    )}
                 </div>
-            )}
+            </div>
 
             {/* Toolbar */}
             <div className="flex items-center justify-between gap-3">
@@ -488,7 +509,7 @@ export function FileBrowser() {
                         <Button
                             variant="ghost"
                             size="icon-sm"
-                            onClick={invalidateFileList}
+                            onClick={() => invalidateFileList()}
                             title="Refresh"
                         >
                             <RotateCw className="size-4" />
@@ -524,99 +545,124 @@ export function FileBrowser() {
             </div>
 
             {/* Content */}
-            {filteredFiles.length === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16">
-                    <Search className="mb-3 size-5 text-muted-foreground/60" />
-                    <p className="text-sm text-muted-foreground">
-                        No files match &ldquo;{searchQuery}&rdquo;
-                    </p>
-                </div>
-            ) : viewMode === 'list' ? (
-                <Card className="py-0">
-                    <Table>
-                        <TableHeader>
-                            <TableRow className="hover:bg-transparent">
-                                <TableHead className="w-[52px] pl-4">
-                                    <div className="flex size-8 items-center justify-center">
-                                        <Checkbox
-                                            checked={
-                                                hasSelection &&
-                                                selectedFiles.length ===
-                                                    sortedFiles.length
+            <div className="relative">
+                {total === 0 && hasActiveSearch ? (
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16">
+                        <Search className="mb-3 size-5 text-muted-foreground/60" />
+                        <p className="text-sm text-muted-foreground">
+                            No files match &ldquo;{debouncedSearch.trim()}
+                            &rdquo;
+                        </p>
+                    </div>
+                ) : viewMode === 'list' ? (
+                    <Card className="py-0">
+                        <Table>
+                            <TableHeader>
+                                <TableRow className="hover:bg-transparent">
+                                    <TableHead className="w-[52px] pl-4">
+                                        <div className="flex size-8 items-center justify-center">
+                                            <Checkbox
+                                                checked={
+                                                    hasSelection &&
+                                                    selectedFiles.length ===
+                                                        files.length
+                                                }
+                                                onCheckedChange={
+                                                    toggleSelectAll
+                                                }
+                                                aria-label="Select all"
+                                            />
+                                        </div>
+                                    </TableHead>
+                                    <TableHead>
+                                        <button
+                                            type="button"
+                                            className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                                            onClick={() => toggleSort('name')}
+                                        >
+                                            Name
+                                            <ArrowUpDown className="size-3" />
+                                        </button>
+                                    </TableHead>
+                                    <TableHead>
+                                        <button
+                                            type="button"
+                                            className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                                            onClick={() => toggleSort('size')}
+                                        >
+                                            Size
+                                            <ArrowUpDown className="size-3" />
+                                        </button>
+                                    </TableHead>
+                                    <TableHead>
+                                        <button
+                                            type="button"
+                                            className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+                                            onClick={() =>
+                                                toggleSort('uploadedAt')
                                             }
-                                            onCheckedChange={toggleSelectAll}
-                                            aria-label="Select all"
-                                        />
-                                    </div>
-                                </TableHead>
-                                <TableHead>
-                                    <button
-                                        type="button"
-                                        className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-                                        onClick={() => toggleSort('name')}
-                                    >
-                                        Name
-                                        <ArrowUpDown className="size-3" />
-                                    </button>
-                                </TableHead>
-                                <TableHead>
-                                    <button
-                                        type="button"
-                                        className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-                                        onClick={() => toggleSort('size')}
-                                    >
-                                        Size
-                                        <ArrowUpDown className="size-3" />
-                                    </button>
-                                </TableHead>
-                                <TableHead>
-                                    <button
-                                        type="button"
-                                        className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-                                        onClick={() => toggleSort('uploadedAt')}
-                                    >
-                                        Uploaded
-                                        <ArrowUpDown className="size-3" />
-                                    </button>
-                                </TableHead>
-                                <TableHead>
-                                    <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                        Status
-                                    </span>
-                                </TableHead>
-                                <TableHead className="w-12" />
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {sortedFiles.map((file, index) => (
-                                <FileRow
-                                    key={file.id}
-                                    file={file}
-                                    isSelected={selectedFiles.includes(file.id)}
-                                    hasSelection={hasSelection}
-                                    onSelect={(shiftKey) =>
-                                        handleSelect(file.id, index, shiftKey)
-                                    }
-                                />
-                            ))}
-                        </TableBody>
-                    </Table>
-                </Card>
-            ) : (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {sortedFiles.map((file, index) => (
-                        <FileCard
-                            key={file.id}
-                            file={file}
-                            isSelected={selectedFiles.includes(file.id)}
-                            hasSelection={hasSelection}
-                            onSelect={(shiftKey) =>
-                                handleSelect(file.id, index, shiftKey)
-                            }
-                        />
-                    ))}
-                </div>
-            )}
+                                        >
+                                            Uploaded
+                                            <ArrowUpDown className="size-3" />
+                                        </button>
+                                    </TableHead>
+                                    <TableHead>
+                                        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                            Status
+                                        </span>
+                                    </TableHead>
+                                    <TableHead className="w-12" />
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {files.map((file, index) => (
+                                    <FileRow
+                                        key={file.id}
+                                        file={file}
+                                        isSelected={selectedFiles.includes(
+                                            file.id
+                                        )}
+                                        hasSelection={hasSelection}
+                                        onSelect={(shiftKey) =>
+                                            handleSelect(
+                                                file.id,
+                                                index,
+                                                shiftKey
+                                            )
+                                        }
+                                    />
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </Card>
+                ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        {files.map((file, index) => (
+                            <FileCard
+                                key={file.id}
+                                file={file}
+                                isSelected={selectedFiles.includes(file.id)}
+                                hasSelection={hasSelection}
+                                onSelect={(shiftKey) =>
+                                    handleSelect(file.id, index, shiftKey)
+                                }
+                            />
+                        ))}
+                    </div>
+                )}
+                {isFetching && !isLoading && (
+                    <div className="pointer-events-none absolute inset-0 flex items-start justify-center pt-6">
+                        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                    </div>
+                )}
+            </div>
+
+            <TablePagination
+                page={page}
+                pageSize={PAGE_SIZE}
+                total={total}
+                onPageChange={handlePageChange}
+            />
 
             {/* Floating selection bar */}
             {hasSelection && (
@@ -707,10 +753,7 @@ interface FileItemProps {
 function useFileActions(file: File) {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
-    const listQueryKey = trpc.files.list.queryOptions().queryKey;
-
-    const invalidateFileList = () =>
-        queryClient.invalidateQueries({ queryKey: listQueryKey });
+    const invalidateFileList = useInvalidateFileList();
 
     const deleteMutation = useMutation(
         trpc.files.delete.mutationOptions({

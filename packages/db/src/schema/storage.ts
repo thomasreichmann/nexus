@@ -75,6 +75,10 @@ export const files = pgTable(
         index('files_user_id_idx').on(table.userId),
         index('files_status_idx').on(table.status),
         index('files_storage_tier_idx').on(table.storageTier),
+        index('files_user_id_created_at_idx').on(
+            table.userId,
+            table.createdAt.desc()
+        ),
     ]
 );
 
