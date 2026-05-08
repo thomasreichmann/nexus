@@ -1,5 +1,6 @@
 import postgres from 'postgres';
 import { config } from 'dotenv';
+import { PLAN_LIMITS, type PlanTier } from '@nexus/db/plans';
 
 config({ path: '.env.local' });
 
@@ -133,6 +134,66 @@ export async function insertFile(data: InsertFileData): Promise<DbFile> {
 export async function deleteFile(id: string): Promise<void> {
     const sql = getDb();
     await sql`DELETE FROM files WHERE id = ${id}`;
+}
+
+/**
+ * Upserts the user's subscription row to a fresh trial state. Used by global
+ * setup (the seeded e2e user is reused across test runs and may pre-date the
+ * `provisionTrialSubscription` signup hook) and as the `afterEach` reset for
+ * tests that mutate state via `markSubscriptionPaid`. Forcing the columns
+ * back means a previous test that crashed before `afterEach` can't leak paid
+ * state into the next run.
+ */
+export async function ensureTrialSubscription(userId: string): Promise<void> {
+    const sql = getDb();
+    await sql`
+        INSERT INTO subscriptions (
+            id, user_id, stripe_customer_id, plan_tier, status,
+            storage_limit, trial_end
+        ) VALUES (
+            gen_random_uuid()::text,
+            ${userId},
+            ${`cus_test_${userId}`},
+            'starter',
+            'trialing',
+            ${PLAN_LIMITS.starter},
+            NOW() + INTERVAL '30 days'
+        )
+        ON CONFLICT (user_id) DO UPDATE SET
+            status = EXCLUDED.status,
+            plan_tier = EXCLUDED.plan_tier,
+            storage_limit = EXCLUDED.storage_limit,
+            trial_end = EXCLUDED.trial_end,
+            stripe_subscription_id = NULL,
+            current_period_start = NULL,
+            current_period_end = NULL,
+            cancel_at_period_end = FALSE
+    `;
+}
+
+/**
+ * Promotes a seeded trial subscription to an active paid one. Tests that
+ * exercise the paid-user code paths (e.g. Upgrade-routes-to-portal) flip the
+ * row before the test and call `ensureTrialSubscription` after.
+ */
+export async function markSubscriptionPaid(
+    userId: string,
+    options?: { tier?: PlanTier }
+): Promise<void> {
+    const sql = getDb();
+    const tier = options?.tier ?? 'pro';
+    await sql`
+        UPDATE subscriptions
+        SET status = 'active',
+            plan_tier = ${tier},
+            stripe_subscription_id = ${`sub_test_${userId}`},
+            current_period_start = NOW(),
+            current_period_end = NOW() + INTERVAL '30 days',
+            trial_end = NULL,
+            cancel_at_period_end = FALSE,
+            storage_limit = ${PLAN_LIMITS[tier]}
+        WHERE user_id = ${userId}
+    `;
 }
 
 export async function countJobsByStatus(): Promise<JobCounts> {
