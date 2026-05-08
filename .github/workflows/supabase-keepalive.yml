@@ -1,0 +1,18 @@
+name: Supabase Keepalive
+
+on:
+    schedule:
+        # Mon and Thu at 12:00 UTC — keep within Supabase's ~7-day inactivity window
+        - cron: '0 12 * * 1,4'
+    workflow_dispatch:
+
+jobs:
+    ping:
+        name: Ping database
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Run trivial query
+              env:
+                  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+              run: psql "$DATABASE_URL" -c 'select 1' -v ON_ERROR_STOP=1
