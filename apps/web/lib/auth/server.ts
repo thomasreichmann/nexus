@@ -38,6 +38,11 @@ export const auth = betterAuth({
     databaseHooks: {
         user: {
             create: {
+                // Rethrow on failure: a half-provisioned account (user row
+                // without a subscription row) is worse than a loud signup
+                // failure. The user row may persist as an orphan if the hook
+                // throws — the `backfill-trial-subscriptions` script
+                // recovers those by inserting the missing subscription.
                 after: async (user) => {
                     try {
                         await subscriptionService.provisionTrialSubscription(
@@ -51,6 +56,7 @@ export const auth = betterAuth({
                             { err, userId: user.id },
                             'Failed to provision trial subscription on signup'
                         );
+                        throw err;
                     }
                 },
             },
