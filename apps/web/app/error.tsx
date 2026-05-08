@@ -1,5 +1,8 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
+import Link from 'next/link';
+
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -9,16 +12,16 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { log } from '@/lib/logger/client';
-import Link from 'next/link';
-import { useEffect, useRef } from 'react';
+
+interface ErrorBoundaryProps {
+    error: Error & { digest?: string };
+    reset: () => void;
+}
 
 export default function Error({
     error,
     reset,
-}: {
-    error: Error & { digest?: string };
-    reset: () => void;
-}) {
+}: ErrorBoundaryProps): React.ReactElement {
     // React.StrictMode double-invokes effects in dev — dedupe so a single
     // boundary error doesn't write twice.
     const logged = useRef(new Set<string | Error>());

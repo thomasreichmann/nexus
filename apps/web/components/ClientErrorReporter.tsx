@@ -1,7 +1,7 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
 import { useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 
 import { useSession } from '@/lib/auth/client';
 import { log, setClientLogContext } from '@/lib/logger/client';

@@ -1,15 +1,18 @@
 'use client';
 
-import { log } from '@/lib/logger/client';
 import { useEffect, useRef } from 'react';
+
+import { log } from '@/lib/logger/client';
+
+interface GlobalErrorProps {
+    error: Error & { digest?: string };
+    reset: () => void;
+}
 
 export default function GlobalError({
     error,
     reset,
-}: {
-    error: Error & { digest?: string };
-    reset: () => void;
-}) {
+}: GlobalErrorProps): React.ReactElement {
     // React.StrictMode double-invokes effects in dev — dedupe so a single
     // boundary error doesn't write twice.
     const logged = useRef(new Set<string | Error>());
