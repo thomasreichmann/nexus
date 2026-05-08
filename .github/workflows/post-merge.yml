@@ -3,10 +3,44 @@ name: Post-Merge
 on:
     push:
         branches: [main]
+    workflow_dispatch:
+
+concurrency:
+    group: post-merge-main
+    cancel-in-progress: false
 
 jobs:
+    migrate:
+        name: Apply DB migrations
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Read Node version
+              id: node-version
+              run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: ${{ steps.node-version.outputs.version }}
+                  cache: 'pnpm'
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Apply migrations
+              run: pnpm -F db db:migrate
+              env:
+                  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
     smoke-tests:
         name: Smoke Tests
+        needs: migrate
         runs-on: ubuntu-latest
 
         steps:

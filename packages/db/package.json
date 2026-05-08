@@ -50,6 +50,7 @@
         "db:migrate": "drizzle-kit migrate",
         "db:studio": "drizzle-kit studio",
         "db:custom": "drizzle-kit generate --custom --name",
+        "db:drift": "node scripts/check-drift.mjs",
         "db:seed": "npx tsx src/seed/cli.ts",
         "test": "vitest",
         "test:run": "vitest run",
