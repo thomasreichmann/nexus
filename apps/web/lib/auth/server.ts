@@ -7,11 +7,19 @@ import { logger } from '@/server/lib/logger';
 
 const log = logger.child({ module: 'auth' });
 
+// In dev, allow access from any device on the local network (e.g. phone testing)
+// across the RFC1918 private ranges. Production stays restricted to baseURL.
+const devLanOrigins =
+    process.env.NODE_ENV === 'development'
+        ? ['http://192.168.*:3000', 'http://10.*:3000', 'http://172.*:3000']
+        : [];
+
 export const auth = betterAuth({
     database: drizzleAdapter(db, {
         provider: 'pg',
         schema,
     }),
+    trustedOrigins: devLanOrigins,
     emailAndPassword: {
         enabled: true,
     },
