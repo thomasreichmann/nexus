@@ -1,0 +1,35 @@
+name: Migration Drift Check
+
+on:
+    schedule:
+        - cron: '0 4 * * *'
+    workflow_dispatch:
+
+jobs:
+    drift-check:
+        name: Check migration drift
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Read Node version
+              id: node-version
+              run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: ${{ steps.node-version.outputs.version }}
+                  cache: 'pnpm'
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Check migration drift
+              run: pnpm -F db db:drift
+              env:
+                  DATABASE_URL: ${{ secrets.DATABASE_URL }}

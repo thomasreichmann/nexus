@@ -2,7 +2,7 @@ name: PR Check
 
 on:
     pull_request:
-        types: [opened, edited, synchronize]
+        types: [opened, edited, synchronize, reopened]
 
 jobs:
     check-issue-reference:
@@ -24,3 +24,107 @@ jobs:
 
                       Valid no-issue reasons: typo, docs only, ci config, deps, hotfix`);
                       }
+
+    flag-migrations:
+        name: Flag migrations
+        runs-on: ubuntu-latest
+        permissions:
+            pull-requests: write
+            contents: read
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Detect migrations and post sticky comment
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      const { execSync } = require('child_process');
+                      const fs = require('fs');
+
+                      const base = context.payload.pull_request.base.sha;
+                      const head = context.payload.pull_request.head.sha;
+                      const diff = execSync(
+                        `git diff --name-only --diff-filter=AM ${base}...${head} -- 'packages/db/src/migrations/*.sql'`,
+                        { encoding: 'utf8' }
+                      ).trim();
+
+                      const MARKER = '<!-- migration-bot -->';
+                      const { data: comments } = await github.rest.issues.listComments({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        issue_number: context.issue.number,
+                      });
+                      const existing = comments.find(c => c.body.includes(MARKER));
+
+                      if (!diff) {
+                        if (existing) {
+                          await github.rest.issues.deleteComment({
+                            owner: context.repo.owner,
+                            repo: context.repo.repo,
+                            comment_id: existing.id,
+                          });
+                          console.log('Removed stale migration-bot comment.');
+                        }
+                        try {
+                          await github.rest.issues.removeLabel({
+                            owner: context.repo.owner,
+                            repo: context.repo.repo,
+                            issue_number: context.issue.number,
+                            name: 'has-migration',
+                          });
+                          console.log('Removed has-migration label.');
+                        } catch (e) {
+                          // Label not present — fine.
+                        }
+                        return;
+                      }
+
+                      const files = diff.split('\n');
+                      const sqlBlocks = files.map(f => {
+                        const content = fs.readFileSync(f, 'utf8').trim();
+                        return `### \`${f}\`\n\n\`\`\`sql\n${content}\n\`\`\``;
+                      }).join('\n\n');
+
+                      const body = [
+                        MARKER,
+                        '## :warning: This PR contains DB migration(s)',
+                        '',
+                        'On merge, `post-merge.yml` applies these to production before smoke tests run. If apply fails, the workflow fails loudly.',
+                        '',
+                        sqlBlocks,
+                        '',
+                        '**Reviewer checklist:**',
+                        '- [ ] Migration is additive, or paired with a code change that tolerates pre-migration state',
+                        '- [ ] No `ALTER TABLE ... ADD COLUMN ... NOT NULL` without a default or backfill',
+                        '- [ ] Indexes use `CONCURRENTLY` if the table has meaningful row count',
+                        '- [ ] If perf-only, justify with a query plan in the PR description',
+                      ].join('\n');
+
+                      if (existing) {
+                        await github.rest.issues.updateComment({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          comment_id: existing.id,
+                          body,
+                        });
+                        console.log('Updated existing migration-bot comment.');
+                      } else {
+                        await github.rest.issues.createComment({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          issue_number: context.issue.number,
+                          body,
+                        });
+                        console.log('Posted migration-bot comment.');
+                      }
+
+                      await github.rest.issues.addLabels({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        issue_number: context.issue.number,
+                        labels: ['has-migration'],
+                      });
+                      console.log('Added has-migration label.');
