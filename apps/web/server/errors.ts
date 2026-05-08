@@ -51,12 +51,25 @@ export class InvalidStateError extends DomainError {
     }
 }
 
-/** Quota or limit exceeded. */
+/** Quota or limit exceeded. Carries the bytes context the client uses to
+ *  render usage state (e.g. "1.05 TB of 1 TB"). */
+export interface QuotaDetails {
+    usedBytes: number;
+    limitBytes: number;
+    requestedBytes: number;
+}
+
 export class QuotaExceededError extends DomainError {
     static readonly code = DOMAIN_ERROR_CODES.QUOTA_EXCEEDED;
     readonly code = QuotaExceededError.code;
-    constructor(message = 'Quota exceeded') {
-        super(message, 'PRECONDITION_FAILED');
+    readonly details: QuotaDetails;
+
+    constructor(details: QuotaDetails) {
+        super(
+            `Storage quota exceeded: ${details.usedBytes}/${details.limitBytes} used, ${details.requestedBytes} requested`,
+            'PRECONDITION_FAILED'
+        );
+        this.details = details;
     }
 }
 

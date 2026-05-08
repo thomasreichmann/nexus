@@ -4,6 +4,7 @@ import {
     type StorageByCategory,
     type DailyUploadVolume,
 } from '@nexus/db/repo/files';
+import { createStorageUsageRepo } from '@nexus/db/repo/storage-usage';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
 import { resolvePlan, type PlanTier } from './constants';
 
@@ -20,12 +21,10 @@ async function getUsage(
     userId: string,
     sub: Subscription | undefined
 ): Promise<StorageUsage> {
-    const fileRepo = createFileRepo(db);
-
-    const [usedBytes, fileCount] = await Promise.all([
-        fileRepo.sumStorageByUser(userId),
-        fileRepo.countByUser(userId),
-    ]);
+    const usageRepo = createStorageUsageRepo(db);
+    // Reads from the storage_usage table (the single source of truth used by
+    // checkQuota); falls back to a zero snapshot for users with no row yet.
+    const { usedBytes, fileCount } = await usageRepo.getUsage(userId);
 
     const { quotaBytes, planTier } = resolvePlan(sub);
     const percentage = quotaBytes > 0 ? (usedBytes / quotaBytes) * 100 : 0;

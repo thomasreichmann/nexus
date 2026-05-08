@@ -4,6 +4,7 @@ import {
     type MockDb,
     type MockDbMocks,
     createFileFixture,
+    createStorageUsageFixture,
     TEST_USER_ID,
 } from '@nexus/db/testing';
 import { mockS3 } from '@/lib/storage/testing';
@@ -30,11 +31,15 @@ describe('files service', () => {
         mocks = mockDb.mocks;
     });
 
+    function mockUsage(usedBytes = 0) {
+        mocks.storageUsage.findFirst.mockResolvedValue(
+            createStorageUsageFixture({ usedBytes })
+        );
+    }
+
     describe('initiateUpload', () => {
         it('returns fileId, uploadUrl, and expiresAt on success', async () => {
-            // Mock sumStorageBytesByUser to return 0 (under quota)
-            mocks.where.mockResolvedValue([{ total: 0 }]);
-            // Mock insertFile to succeed
+            mockUsage(0);
             const insertedFile = createFileFixture({ status: 'uploading' });
             mocks.returning.mockResolvedValue([insertedFile]);
 
@@ -61,7 +66,8 @@ describe('files service', () => {
         // Smoke test that quota rejection wires through — full branch
         // coverage lives in quota.test.ts.
         it('surfaces QuotaExceededError from the quota check', async () => {
-            mocks.where.mockResolvedValue([{ total: PLAN_LIMITS.starter }]);
+            // Already at 110% of the starter limit — well past the 105% soft cap.
+            mockUsage(Math.floor(PLAN_LIMITS.starter * 1.1));
 
             await expect(
                 fileService.initiateUpload(
@@ -77,7 +83,7 @@ describe('files service', () => {
         });
 
         it('creates file record with status uploading', async () => {
-            mocks.where.mockResolvedValue([{ total: 0 }]);
+            mockUsage(0);
             const insertedFile = createFileFixture({ status: 'uploading' });
             mocks.returning.mockResolvedValue([insertedFile]);
 
@@ -105,7 +111,7 @@ describe('files service', () => {
         });
 
         it('generates S3 key in correct format', async () => {
-            mocks.where.mockResolvedValue([{ total: 0 }]);
+            mockUsage(0);
             const insertedFile = createFileFixture({ status: 'uploading' });
             mocks.returning.mockResolvedValue([insertedFile]);
 
@@ -133,11 +139,22 @@ describe('files service', () => {
     });
 
     describe('confirmUpload', () => {
-        it('returns file with status available', async () => {
-            const uploadingFile = createFileFixture({ status: 'uploading' });
-            const availableFile = createFileFixture({ status: 'available' });
+        it('returns file with status available and increments usage', async () => {
+            const uploadingFile = createFileFixture({
+                status: 'uploading',
+                size: 4096,
+            });
+            const availableFile = createFileFixture({
+                ...uploadingFile,
+                status: 'available',
+            });
             mocks.files.findFirst.mockResolvedValue(uploadingFile);
-            mocks.returning.mockResolvedValue([availableFile]);
+            // Two .returning() calls: file update, then usage upsert.
+            mocks.returning
+                .mockResolvedValueOnce([availableFile])
+                .mockResolvedValueOnce([
+                    createStorageUsageFixture({ usedBytes: 4096 }),
+                ]);
 
             const result = await fileService.confirmUpload(
                 db,
@@ -147,6 +164,30 @@ describe('files service', () => {
 
             expect(result.file).toEqual(availableFile);
             expect(mocks.set).toHaveBeenCalledWith({ status: 'available' });
+            // Increment usage upserts via `insert + onConflictDoUpdate`.
+            expect(mocks.onConflictDoUpdate).toHaveBeenCalledOnce();
+            expect(mocks.values).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    userId: TEST_USER_ID,
+                    usedBytes: 4096,
+                    fileCount: 1,
+                })
+            );
+        });
+
+        it('is a no-op when the file is already available (no double-count)', async () => {
+            const availableFile = createFileFixture({ status: 'available' });
+            mocks.files.findFirst.mockResolvedValue(availableFile);
+
+            const result = await fileService.confirmUpload(
+                db,
+                TEST_USER_ID,
+                availableFile.id
+            );
+
+            expect(result.file).toEqual(availableFile);
+            expect(mocks.update).not.toHaveBeenCalled();
+            expect(mocks.onConflictDoUpdate).not.toHaveBeenCalled();
         });
 
         it('throws NotFoundError when file does not exist', async () => {
@@ -158,7 +199,7 @@ describe('files service', () => {
         });
 
         it('throws NotFoundError when file belongs to different user', async () => {
-            // findUserFile returns undefined when user doesn't own file
+            // findByUserAndId scopes by both ids, so a wrong user returns undefined
             mocks.files.findFirst.mockResolvedValue(undefined);
 
             await expect(
@@ -169,13 +210,23 @@ describe('files service', () => {
 
     describe('deleteUserFile', () => {
         describe('single file', () => {
-            it('returns soft-deleted file on success', async () => {
+            it('returns soft-deleted file and decrements usage', async () => {
+                const file = createFileFixture({
+                    status: 'available',
+                    size: 2048,
+                });
                 const deletedFile = createFileFixture({
+                    ...file,
                     status: 'deleted',
                     deletedAt: new Date(),
                 });
 
-                mocks.returning.mockResolvedValue([deletedFile]);
+                mocks.files.findMany.mockResolvedValue([file]);
+                mocks.returning
+                    .mockResolvedValueOnce([deletedFile])
+                    .mockResolvedValueOnce([
+                        createStorageUsageFixture({ usedBytes: 0 }),
+                    ]);
 
                 const result = await fileService.deleteUserFile(
                     db,
@@ -184,7 +235,7 @@ describe('files service', () => {
                 );
 
                 expect(result.status).toBe('deleted');
-                expect(mocks.update).toHaveBeenCalledOnce();
+                expect(mocks.update).toHaveBeenCalledTimes(2); // file + usage
                 expect(mocks.set).toHaveBeenCalledWith(
                     expect.objectContaining({
                         status: 'deleted',
@@ -193,7 +244,32 @@ describe('files service', () => {
                 );
             });
 
+            it('skips usage decrement for files still in `uploading`', async () => {
+                const uploadingFile = createFileFixture({
+                    status: 'uploading',
+                    size: 2048,
+                });
+                const deletedFile = createFileFixture({
+                    ...uploadingFile,
+                    status: 'deleted',
+                    deletedAt: new Date(),
+                });
+
+                mocks.files.findMany.mockResolvedValue([uploadingFile]);
+                mocks.returning.mockResolvedValueOnce([deletedFile]);
+
+                await fileService.deleteUserFile(
+                    db,
+                    TEST_USER_ID,
+                    deletedFile.id
+                );
+
+                // Only the file update — no usage decrement.
+                expect(mocks.update).toHaveBeenCalledTimes(1);
+            });
+
             it('throws NotFoundError when file does not exist', async () => {
+                mocks.files.findMany.mockResolvedValue([]);
                 mocks.returning.mockResolvedValue([]);
 
                 await expect(
@@ -206,6 +282,7 @@ describe('files service', () => {
             });
 
             it('throws NotFoundError when user does not own file', async () => {
+                mocks.files.findMany.mockResolvedValue([]);
                 mocks.returning.mockResolvedValue([]);
 
                 await expect(
@@ -215,6 +292,7 @@ describe('files service', () => {
 
             it('throws NotFoundError when file is already deleted', async () => {
                 // WHERE clause excludes status='deleted', so update returns 0 rows
+                mocks.files.findMany.mockResolvedValue([]);
                 mocks.returning.mockResolvedValue([]);
 
                 await expect(
@@ -229,11 +307,26 @@ describe('files service', () => {
 
         describe('multiple files', () => {
             it('returns soft-deleted files on success', async () => {
-                const deletedFiles = [
-                    createFileFixture({ id: 'file1', status: 'deleted' }),
-                    createFileFixture({ id: 'file2', status: 'deleted' }),
+                const beforeFiles = [
+                    createFileFixture({
+                        id: 'file1',
+                        status: 'available',
+                        size: 100,
+                    }),
+                    createFileFixture({
+                        id: 'file2',
+                        status: 'available',
+                        size: 200,
+                    }),
                 ];
-                mocks.returning.mockResolvedValue(deletedFiles);
+                const deletedFiles = beforeFiles.map((f) =>
+                    createFileFixture({ ...f, status: 'deleted' })
+                );
+
+                mocks.files.findMany.mockResolvedValue(beforeFiles);
+                mocks.returning
+                    .mockResolvedValueOnce(deletedFiles)
+                    .mockResolvedValueOnce([createStorageUsageFixture()]);
 
                 const result = await fileService.deleteUserFile(
                     db,
@@ -244,7 +337,8 @@ describe('files service', () => {
                 expect(result).toHaveLength(2);
                 expect(result[0].status).toBe('deleted');
                 expect(result[1].status).toBe('deleted');
-                expect(mocks.update).toHaveBeenCalledOnce();
+                // softDelete + a single batched usage decrement.
+                expect(mocks.update).toHaveBeenCalledTimes(2);
             });
 
             it('returns empty array when given empty ids', async () => {
@@ -259,11 +353,15 @@ describe('files service', () => {
             });
 
             it('throws NotFoundError when any file is not owned by user', async () => {
-                // Only file1 is deleted (file2 not owned by user)
-                const deletedFiles = [
+                // Only file1 was deleted (file2 not owned by user)
+                const file1 = createFileFixture({
+                    id: 'file1',
+                    status: 'available',
+                });
+                mocks.files.findMany.mockResolvedValue([file1]);
+                mocks.returning.mockResolvedValue([
                     createFileFixture({ id: 'file1', status: 'deleted' }),
-                ];
-                mocks.returning.mockResolvedValue(deletedFiles);
+                ]);
 
                 await expect(
                     fileService.deleteUserFile(db, TEST_USER_ID, [
@@ -274,6 +372,7 @@ describe('files service', () => {
             });
 
             it('throws NotFoundError when any file does not exist', async () => {
+                mocks.files.findMany.mockResolvedValue([]);
                 mocks.returning.mockResolvedValue([]);
 
                 await expect(
@@ -287,7 +386,7 @@ describe('files service', () => {
 
     describe('initiateMultipartUpload', () => {
         it('returns fileId, uploadId, partUrls, chunkSize, and expiresAt', async () => {
-            mocks.where.mockResolvedValue([{ total: 0 }]);
+            mockUsage(0);
             const insertedFile = createFileFixture({ status: 'uploading' });
             mocks.returning.mockResolvedValue([insertedFile]);
 
@@ -311,7 +410,7 @@ describe('files service', () => {
 
         // Smoke test — quota logic itself is covered in quota.test.ts.
         it('surfaces QuotaExceededError from the quota check', async () => {
-            mocks.where.mockResolvedValue([{ total: PLAN_LIMITS.starter }]);
+            mockUsage(Math.floor(PLAN_LIMITS.starter * 1.1));
 
             await expect(
                 fileService.initiateMultipartUpload(
@@ -327,7 +426,7 @@ describe('files service', () => {
         });
 
         it('creates file record with status uploading', async () => {
-            mocks.where.mockResolvedValue([{ total: 0 }]);
+            mockUsage(0);
             const insertedFile = createFileFixture({ status: 'uploading' });
             mocks.returning.mockResolvedValue([insertedFile]);
 
@@ -352,7 +451,7 @@ describe('files service', () => {
         });
 
         it('calculates correct part count for exact chunk boundary', async () => {
-            mocks.where.mockResolvedValue([{ total: 0 }]);
+            mockUsage(0);
             const insertedFile = createFileFixture({ status: 'uploading' });
             mocks.returning.mockResolvedValue([insertedFile]);
 
@@ -371,11 +470,21 @@ describe('files service', () => {
     });
 
     describe('completeMultipartUpload', () => {
-        it('transitions file to available status', async () => {
-            const uploadingFile = createFileFixture({ status: 'uploading' });
-            const availableFile = createFileFixture({ status: 'available' });
+        it('transitions file to available status and increments usage', async () => {
+            const uploadingFile = createFileFixture({
+                status: 'uploading',
+                size: 1000,
+            });
+            const availableFile = createFileFixture({
+                ...uploadingFile,
+                status: 'available',
+            });
             mocks.files.findFirst.mockResolvedValue(uploadingFile);
-            mocks.returning.mockResolvedValue([availableFile]);
+            mocks.returning
+                .mockResolvedValueOnce([availableFile])
+                .mockResolvedValueOnce([
+                    createStorageUsageFixture({ usedBytes: 1000 }),
+                ]);
 
             const result = await fileService.completeMultipartUpload(
                 db,
@@ -389,6 +498,7 @@ describe('files service', () => {
 
             expect(result.file.status).toBe('available');
             expect(mocks.set).toHaveBeenCalledWith({ status: 'available' });
+            expect(mocks.onConflictDoUpdate).toHaveBeenCalledOnce();
         });
 
         it('throws NotFoundError when file does not exist', async () => {

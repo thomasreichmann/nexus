@@ -105,7 +105,11 @@ describe('errorHandlerMiddleware', () => {
     it('maps QuotaExceededError to PRECONDITION_FAILED TRPCError', async () => {
         const router = t.router({
             test: baseProcedure.query(() => {
-                throw new QuotaExceededError('Storage quota exceeded');
+                throw new QuotaExceededError({
+                    usedBytes: 100,
+                    limitBytes: 50,
+                    requestedBytes: 10,
+                });
             }),
         });
 
@@ -117,7 +121,9 @@ describe('errorHandlerMiddleware', () => {
         } catch (error) {
             expect(error).toBeInstanceOf(TRPCError);
             expect((error as TRPCError).code).toBe('PRECONDITION_FAILED');
-            expect((error as TRPCError).message).toBe('Storage quota exceeded');
+            expect((error as TRPCError).message).toContain(
+                'Storage quota exceeded'
+            );
         }
     });
 

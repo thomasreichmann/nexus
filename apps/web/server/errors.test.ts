@@ -53,7 +53,13 @@ describe('DomainError', () => {
         expect(new NotFoundError('File').name).toBe('NotFoundError');
         expect(new ForbiddenError().name).toBe('ForbiddenError');
         expect(new InvalidStateError('msg').name).toBe('InvalidStateError');
-        expect(new QuotaExceededError().name).toBe('QuotaExceededError');
+        expect(
+            new QuotaExceededError({
+                usedBytes: 0,
+                limitBytes: 0,
+                requestedBytes: 0,
+            }).name
+        ).toBe('QuotaExceededError');
         expect(new TrialExpiredError().name).toBe('TrialExpiredError');
     });
 });
@@ -130,27 +136,34 @@ describe('InvalidStateError', () => {
 });
 
 describe('QuotaExceededError', () => {
+    const details = {
+        usedBytes: 1000,
+        limitBytes: 2000,
+        requestedBytes: 1500,
+    };
+
     it('declares a static code matching the registry', () => {
         expect(QuotaExceededError.code).toBe(DOMAIN_ERROR_CODES.QUOTA_EXCEEDED);
     });
 
     it('maps to PRECONDITION_FAILED tRPC code and QUOTA_EXCEEDED domain code', () => {
-        const error = new QuotaExceededError();
+        const error = new QuotaExceededError(details);
 
         expect(error.trpcCode).toBe('PRECONDITION_FAILED');
         expect(error.code).toBe('QUOTA_EXCEEDED');
     });
 
-    it('uses default message when none provided', () => {
-        const error = new QuotaExceededError();
+    it('exposes the QuotaDetails as a structured field', () => {
+        const error = new QuotaExceededError(details);
 
-        expect(error.message).toBe('Quota exceeded');
+        expect(error.details).toEqual(details);
     });
 
-    it('uses custom message when provided', () => {
-        const error = new QuotaExceededError('Storage quota exceeded');
+    it('renders a message containing all three byte counts', () => {
+        const error = new QuotaExceededError(details);
 
-        expect(error.message).toBe('Storage quota exceeded');
+        expect(error.message).toContain('1000/2000');
+        expect(error.message).toContain('1500');
     });
 });
 
@@ -184,7 +197,15 @@ describe('isDomainError', () => {
         expect(isDomainError(new NotFoundError('File'))).toBe(true);
         expect(isDomainError(new ForbiddenError())).toBe(true);
         expect(isDomainError(new InvalidStateError('msg'))).toBe(true);
-        expect(isDomainError(new QuotaExceededError())).toBe(true);
+        expect(
+            isDomainError(
+                new QuotaExceededError({
+                    usedBytes: 0,
+                    limitBytes: 0,
+                    requestedBytes: 0,
+                })
+            )
+        ).toBe(true);
         expect(isDomainError(new TrialExpiredError())).toBe(true);
     });
 
