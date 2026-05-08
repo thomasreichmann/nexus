@@ -34,7 +34,7 @@ export function SubscriptionSection() {
         useState<BillingInterval>('month');
 
     const {
-        data: state,
+        data: subscription,
         isLoading,
         isError,
     } = useQuery(trpc.subscriptions.current.queryOptions());
@@ -70,16 +70,11 @@ export function SubscriptionSection() {
                         Couldn&apos;t load your subscription. Try refreshing the
                         page.
                     </p>
-                ) : isLoading || !state ? (
+                ) : isLoading || !subscription ? (
                     <SubscriptionSkeleton />
-                ) : state.kind === 'unprovisioned' ? (
-                    <p className="text-sm text-muted-foreground">
-                        Your subscription isn&apos;t provisioned yet. Contact
-                        support if this persists.
-                    </p>
                 ) : (
                     <SubscriptionView
-                        subscription={state.subscription}
+                        subscription={subscription}
                         interval={billingInterval}
                         onIntervalChange={setBillingInterval}
                         onCheckout={(tier) =>

@@ -126,18 +126,14 @@ async function resolveTierFromItem(
 
 // ─── tRPC-facing service methods ────────────────────────────────────────
 
-export type SubscriptionState =
-    | { kind: 'active'; subscription: Subscription }
-    | { kind: 'unprovisioned' };
-
 async function getCurrentSubscription(
     db: DB,
     userId: string
-): Promise<SubscriptionState> {
+): Promise<Subscription> {
     const repo = createSubscriptionRepo(db);
     const subscription = await repo.findByUserId(userId);
-    if (!subscription) return { kind: 'unprovisioned' };
-    return { kind: 'active', subscription };
+    if (!subscription) throw new NotFoundError('Subscription');
+    return subscription;
 }
 
 async function createCheckoutSession(
