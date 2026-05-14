@@ -13,6 +13,7 @@
         "test:e2e": "playwright test",
         "test:e2e:smoke": "playwright test --project=setup --project=smoke",
         "test:e2e:admin": "playwright test --project=setup --project=admin",
+        "test:e2e:validate": "playwright test --project=setup --project=validate --workers=1",
         "test:e2e:ui": "playwright test --ui",
         "test:coverage": "vitest run --coverage",
         "test:integration": "vitest run --config vitest.integration.config.ts",
