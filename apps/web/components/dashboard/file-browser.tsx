@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -30,7 +30,6 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Card, CardContent } from '@/components/ui/card';
-import { TablePagination } from '@/components/ui/table-pagination';
 import {
     Search,
     LayoutGrid,
@@ -46,7 +45,7 @@ import {
     FileAudio,
     FileArchive,
     FileCode,
-    ArrowUpDown,
+    ChevronRight,
     RotateCw,
     Loader2,
     X,
@@ -55,20 +54,15 @@ import {
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDate } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
-import {
-    keepPreviousData,
-    useMutation,
-    useQuery,
-    useQueryClient,
-} from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
-import type { File, FileSortKey, FileSortOrder } from '@nexus/db/repo/files';
+import type { File } from '@nexus/db/repo/files';
+import type { FileBatchGroup } from '@nexus/db/repo/files';
 
 type DerivedStatus = 'archived' | 'retrieving' | 'available';
 
-const PAGE_SIZE = 24;
 const SEARCH_DEBOUNCE_MS = 300;
 
 // Keep in lockstep with countStatusesByUser in
@@ -274,61 +268,49 @@ export function FileBrowser() {
     const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
-    const [sortKey, setSortKey] = useState<FileSortKey>('uploadedAt');
-    const [sortOrder, setSortOrder] = useState<FileSortOrder>('desc');
-    const [page, setPage] = useState(0);
+    // Inverted: store collapsed keys so a brand-new batch (no entry yet) reads
+    // as expanded. Default empty set → everything expanded on first render.
+    const [collapsedBatches, setCollapsedBatches] = useState<Set<string>>(
+        () => new Set()
+    );
     const lastSelectedIndex = useRef<number | null>(null);
 
     const debouncedSearch = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
 
-    // Reset to page 0 when the *debounced* search takes effect (not on every
-    // keystroke — that would cause an extra fetch at page 0 with the old
-    // search before the new search fetches). Render-time state adjustment
-    // per https://react.dev/reference/react/useState#storing-information-from-previous-renders
-    const [prevDebouncedSearch, setPrevDebouncedSearch] =
-        useState(debouncedSearch);
-    if (prevDebouncedSearch !== debouncedSearch) {
-        setPrevDebouncedSearch(debouncedSearch);
-        setPage(0);
-    }
-
-    const handlePageChange = (next: number) => {
-        // Page-scoped selection: clear on navigation.
-        setSelectedFiles([]);
-        lastSelectedIndex.current = null;
-        setPage(next);
-    };
-
-    const { data, isLoading, isFetching } = useQuery(
-        trpc.files.list.queryOptions(
-            {
-                limit: PAGE_SIZE,
-                offset: page * PAGE_SIZE,
-                search: debouncedSearch || undefined,
-                sortKey,
-                sortOrder,
-            },
-            // Keep previous page visible while the next page fetches; also
-            // prevents the page-clamp below from snapping to 0 when `data`
-            // briefly goes undefined on a new query key.
-            { placeholderData: keepPreviousData }
-        )
+    const { data: groupsData, isLoading } = useQuery(
+        trpc.files.listGrouped.queryOptions({})
     );
     const { data: countsData } = useQuery(
         trpc.files.statusCounts.queryOptions()
     );
 
-    const files = data?.files ?? [];
-    const total = data?.total ?? 0;
+    const groups = useMemo(() => groupsData ?? [], [groupsData]);
     const counts = countsData ?? { archived: 0, retrieving: 0, available: 0 };
 
-    // Clamp page when total shrinks (e.g. after a bulk delete) so the user
-    // doesn't land on an empty page past the end. Guarded on `data` to skip
-    // the loading/refetching states where `total` is unknown.
-    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-    if (data && page >= totalPages) {
-        setPage(totalPages - 1);
-    }
+    // Search filters files inside each group and drops groups that empty out.
+    // Client-side is fine for the validation cohort; revisit when datasets grow.
+    const filteredGroups = useMemo(() => {
+        if (!debouncedSearch.trim()) return groups;
+        const q = debouncedSearch.trim().toLowerCase();
+        return groups
+            .map((g) => ({
+                ...g,
+                files: g.files.filter((f) => f.name.toLowerCase().includes(q)),
+            }))
+            .filter((g) => g.files.length > 0);
+    }, [groups, debouncedSearch]);
+
+    // Flat visible-file ordering — the index space for shift-click range
+    // selection across batches. Rebuilds when filter or groups change.
+    const visibleFiles = useMemo(
+        () => filteredGroups.flatMap((g) => g.files),
+        [filteredGroups]
+    );
+    const fileIndexMap = useMemo(() => {
+        const m = new Map<string, number>();
+        visibleFiles.forEach((f, i) => m.set(f.id, i));
+        return m;
+    }, [visibleFiles]);
 
     const deleteManyMutation = useMutation(
         trpc.files.deleteMany.mutationOptions({
@@ -350,31 +332,19 @@ export function FileBrowser() {
     );
 
     const hasRestoringFiles = counts.retrieving > 0;
-
     const hasSelection = selectedFiles.length > 0;
-
-    const selectedFileObjects = files.filter((f) =>
+    const selectedFileObjects = visibleFiles.filter((f) =>
         selectedFiles.includes(f.id)
     );
     const hasArchivedSelected = selectedFileObjects.some(
         (f) => deriveStatus(f) === 'archived'
     );
 
-    const toggleSort = (key: FileSortKey) => {
-        if (sortKey === key) {
-            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortKey(key);
-            setSortOrder('desc');
-        }
-        setPage(0);
-    };
-
     const toggleSelectAll = () => {
-        if (selectedFiles.length === files.length) {
+        if (selectedFiles.length === visibleFiles.length) {
             setSelectedFiles([]);
         } else {
-            setSelectedFiles(files.map((f) => f.id));
+            setSelectedFiles(visibleFiles.map((f) => f.id));
         }
     };
 
@@ -387,9 +357,10 @@ export function FileBrowser() {
             ) {
                 const start = Math.min(lastSelectedIndex.current, index);
                 const end = Math.max(lastSelectedIndex.current, index);
-                const rangeIds = files.slice(start, end + 1).map((f) => f.id);
-                const merged = new Set([...prev, ...rangeIds]);
-                return Array.from(merged);
+                const rangeIds = visibleFiles
+                    .slice(start, end + 1)
+                    .map((f) => f.id);
+                return Array.from(new Set([...prev, ...rangeIds]));
             }
             return prev.includes(id)
                 ? prev.filter((f) => f !== id)
@@ -413,6 +384,15 @@ export function FileBrowser() {
         }
     }
 
+    const isExpanded = (key: string) => !collapsedBatches.has(key);
+    const toggleExpanded = (key: string) =>
+        setCollapsedBatches((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+        });
+
     if (isLoading) {
         return (
             <div className="flex flex-col items-center justify-center py-24">
@@ -428,7 +408,8 @@ export function FileBrowser() {
     }
 
     const hasActiveSearch = debouncedSearch.trim() !== '';
-    const isEmpty = total === 0 && !hasActiveSearch;
+    const totalFiles = groups.reduce((sum, g) => sum + g.files.length, 0);
+    const isEmpty = totalFiles === 0 && !hasActiveSearch;
 
     if (isEmpty) {
         return (
@@ -546,7 +527,7 @@ export function FileBrowser() {
 
             {/* Content */}
             <div className="relative">
-                {total === 0 && hasActiveSearch ? (
+                {filteredGroups.length === 0 && hasActiveSearch ? (
                     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16">
                         <Search className="mb-3 size-5 text-muted-foreground/60" />
                         <p className="text-sm text-muted-foreground">
@@ -565,7 +546,7 @@ export function FileBrowser() {
                                                 checked={
                                                     hasSelection &&
                                                     selectedFiles.length ===
-                                                        files.length
+                                                        visibleFiles.length
                                                 }
                                                 onCheckedChange={
                                                     toggleSelectAll
@@ -575,36 +556,19 @@ export function FileBrowser() {
                                         </div>
                                     </TableHead>
                                     <TableHead>
-                                        <button
-                                            type="button"
-                                            className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-                                            onClick={() => toggleSort('name')}
-                                        >
+                                        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                                             Name
-                                            <ArrowUpDown className="size-3" />
-                                        </button>
+                                        </span>
                                     </TableHead>
                                     <TableHead>
-                                        <button
-                                            type="button"
-                                            className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-                                            onClick={() => toggleSort('size')}
-                                        >
+                                        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                                             Size
-                                            <ArrowUpDown className="size-3" />
-                                        </button>
+                                        </span>
                                     </TableHead>
                                     <TableHead>
-                                        <button
-                                            type="button"
-                                            className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-                                            onClick={() =>
-                                                toggleSort('uploadedAt')
-                                            }
-                                        >
+                                        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                                             Uploaded
-                                            <ArrowUpDown className="size-3" />
-                                        </button>
+                                        </span>
                                     </TableHead>
                                     <TableHead>
                                         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -615,54 +579,100 @@ export function FileBrowser() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {files.map((file, index) => (
-                                    <FileRow
-                                        key={file.id}
-                                        file={file}
-                                        isSelected={selectedFiles.includes(
-                                            file.id
-                                        )}
-                                        hasSelection={hasSelection}
-                                        onSelect={(shiftKey) =>
-                                            handleSelect(
-                                                file.id,
-                                                index,
-                                                shiftKey
-                                            )
-                                        }
-                                    />
-                                ))}
+                                {filteredGroups.map((group) => {
+                                    const key =
+                                        group.batchId ?? '__ungrouped__';
+                                    const expanded = isExpanded(key);
+                                    return (
+                                        <Fragment key={key}>
+                                            <BatchHeaderRow
+                                                group={group}
+                                                expanded={expanded}
+                                                onToggle={() =>
+                                                    toggleExpanded(key)
+                                                }
+                                                colSpan={6}
+                                            />
+                                            {expanded &&
+                                                group.files.map((file) => (
+                                                    <FileRow
+                                                        key={file.id}
+                                                        file={file}
+                                                        isSelected={selectedFiles.includes(
+                                                            file.id
+                                                        )}
+                                                        hasSelection={
+                                                            hasSelection
+                                                        }
+                                                        onSelect={(shiftKey) =>
+                                                            handleSelect(
+                                                                file.id,
+                                                                fileIndexMap.get(
+                                                                    file.id
+                                                                ) ?? 0,
+                                                                shiftKey
+                                                            )
+                                                        }
+                                                    />
+                                                ))}
+                                        </Fragment>
+                                    );
+                                })}
                             </TableBody>
                         </Table>
                     </Card>
                 ) : (
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                        {files.map((file, index) => (
-                            <FileCard
-                                key={file.id}
-                                file={file}
-                                isSelected={selectedFiles.includes(file.id)}
-                                hasSelection={hasSelection}
-                                onSelect={(shiftKey) =>
-                                    handleSelect(file.id, index, shiftKey)
-                                }
-                            />
-                        ))}
-                    </div>
-                )}
-                {isFetching && !isLoading && (
-                    <div className="pointer-events-none absolute inset-0 flex items-start justify-center pt-6">
-                        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                    <div className="space-y-6">
+                        {filteredGroups.map((group) => {
+                            const key = group.batchId ?? '__ungrouped__';
+                            const expanded = isExpanded(key);
+                            return (
+                                <section key={key}>
+                                    <BatchHeader
+                                        group={group}
+                                        expanded={expanded}
+                                        onToggle={() => toggleExpanded(key)}
+                                    />
+                                    <div
+                                        className={cn(
+                                            'grid transition-[grid-template-rows] duration-300 ease-out',
+                                            expanded
+                                                ? 'grid-rows-[1fr]'
+                                                : 'grid-rows-[0fr]'
+                                        )}
+                                    >
+                                        <div className="overflow-hidden">
+                                            <div className="grid gap-3 pt-3 pl-9 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                                {group.files.map((file) => (
+                                                    <FileCard
+                                                        key={file.id}
+                                                        file={file}
+                                                        isSelected={selectedFiles.includes(
+                                                            file.id
+                                                        )}
+                                                        hasSelection={
+                                                            hasSelection
+                                                        }
+                                                        onSelect={(shiftKey) =>
+                                                            handleSelect(
+                                                                file.id,
+                                                                fileIndexMap.get(
+                                                                    file.id
+                                                                ) ?? 0,
+                                                                shiftKey
+                                                            )
+                                                        }
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
+                            );
+                        })}
                     </div>
                 )}
             </div>
-
-            <TablePagination
-                page={page}
-                pageSize={PAGE_SIZE}
-                total={total}
-                onPageChange={handlePageChange}
-            />
 
             {/* Floating selection bar */}
             {hasSelection && (
@@ -740,6 +750,150 @@ export function FileBrowser() {
                 </div>
             )}
         </div>
+    );
+}
+
+function formatBatchDate(date: Date | null): string | null {
+    if (!date) return null;
+    const d = new Date(date);
+    const sameYear = d.getFullYear() === new Date().getFullYear();
+    return d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: sameYear ? undefined : 'numeric',
+    });
+}
+
+interface BatchHeaderProps {
+    group: FileBatchGroup;
+    expanded: boolean;
+    onToggle: () => void;
+}
+
+function BatchHeader({ group, expanded, onToggle }: BatchHeaderProps) {
+    const isUngrouped = group.batchId === null;
+    const fileCount = group.files.length;
+    const totalBytes = group.files.reduce((s, f) => s + (f.size ?? 0), 0);
+    const dateLabel = formatBatchDate(group.batchCreatedAt);
+
+    return (
+        <div className="flex w-full items-center gap-2">
+            <button
+                type="button"
+                onClick={onToggle}
+                aria-expanded={expanded}
+                className="group flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-md px-2 py-2.5 text-left transition-colors hover:bg-muted/50"
+            >
+                <ChevronRight
+                    className={cn(
+                        'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
+                        expanded && 'rotate-90'
+                    )}
+                />
+                <div className="min-w-0 flex-1">
+                    <h3
+                        className={cn(
+                            'truncate font-semibold tracking-tight',
+                            isUngrouped
+                                ? 'text-muted-foreground'
+                                : 'text-foreground'
+                        )}
+                    >
+                        {isUngrouped ? 'Ungrouped' : group.batchName}
+                    </h3>
+                    <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
+                        {fileCount} {fileCount === 1 ? 'file' : 'files'}
+                        {' · '}
+                        {formatBytes(totalBytes)}
+                        {dateLabel && ` · ${dateLabel}`}
+                    </p>
+                </div>
+            </button>
+            {!isUngrouped && group.batchId && (
+                <BatchRestoreSlot batchId={group.batchId} files={group.files} />
+            )}
+        </div>
+    );
+}
+
+function BatchHeaderRow({
+    group,
+    expanded,
+    onToggle,
+    colSpan,
+}: BatchHeaderProps & { colSpan: number }) {
+    return (
+        <TableRow className="border-b-0 hover:bg-transparent">
+            <TableCell colSpan={colSpan} className="p-0">
+                <BatchHeader
+                    group={group}
+                    expanded={expanded}
+                    onToggle={onToggle}
+                />
+            </TableCell>
+        </TableRow>
+    );
+}
+
+interface BatchRestoreSlotProps {
+    batchId: string;
+    files: File[];
+}
+
+function BatchRestoreSlot({ batchId, files }: BatchRestoreSlotProps) {
+    const trpc = useTRPC();
+    const invalidateFileList = useInvalidateFileList();
+    const mutation = useMutation(
+        trpc.files.requestBatchRetrieval.mutationOptions({
+            onSuccess() {
+                invalidateFileList();
+                toast.success('Batch retrieval submitted');
+            },
+            onError(err) {
+                toast.error(err.message || 'Failed to request batch retrieval');
+            },
+        })
+    );
+
+    const fileCount = files.length;
+    const restoringCount = files.filter((f) => f.status === 'restoring').length;
+    const eligibleCount = files.filter(
+        (f) => deriveStatus(f) === 'archived'
+    ).length;
+
+    if (restoringCount === fileCount && fileCount > 0) {
+        return (
+            <span className="shrink-0 pr-2 text-xs tabular-nums text-muted-foreground">
+                Restoring {restoringCount}/{fileCount}
+            </span>
+        );
+    }
+    if (restoringCount > 0) {
+        return (
+            <span className="flex shrink-0 items-center gap-1.5 pr-2 text-xs tabular-nums text-muted-foreground">
+                <RotateCw className="h-3.5 w-3.5 animate-spin" />
+                Restoring {restoringCount} of {fileCount}
+            </span>
+        );
+    }
+    if (eligibleCount === 0) return null;
+
+    return (
+        <Button
+            variant="outline"
+            size="sm"
+            onClick={() => mutation.mutate({ batchId, tier: 'standard' })}
+            disabled={mutation.isPending}
+            className="shrink-0"
+        >
+            <RotateCw
+                className={cn(
+                    'mr-1.5 h-3.5 w-3.5',
+                    mutation.isPending && 'animate-spin'
+                )}
+            />
+            {mutation.isPending ? 'Requesting…' : 'Restore batch'}
+        </Button>
     );
 }
 

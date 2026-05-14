@@ -148,6 +148,29 @@ test.describe('upload batches + storage quota', () => {
         });
     });
 
+    test('grouped files page shows the auto-created batch from the upload', async ({
+        page,
+    }) => {
+        // Depends on the fresh-upload test having created the batch.
+        await page.goto('/dashboard/files');
+        await expect(
+            page.getByRole('heading', { name: /files/i, exact: false })
+        ).toBeVisible();
+
+        // The auto-created batch uses the fallback name format
+        // `Upload YYYY-MM-DD HH:MM`. Match heading by that pattern.
+        await expect(
+            page.getByRole('heading', { name: /^Upload \d{4}-\d{2}-\d{2}/ })
+        ).toBeVisible();
+        // The single uploaded file should be visible (default expanded).
+        await expect(page.getByText('validate-')).toBeVisible();
+
+        await page.screenshot({
+            path: `${SCREENSHOTS}/05-grouped-files-page.png`,
+            fullPage: true,
+        });
+    });
+
     test('quota soft cap: UI surfaces upload error when over 105%', async ({
         page,
     }) => {
