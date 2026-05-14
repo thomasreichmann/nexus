@@ -1,6 +1,7 @@
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
 import { createRetrievalRepo, type Retrieval } from '@nexus/db/repo/retrievals';
+import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
 import type { RestoreTier } from '@/lib/storage';
@@ -10,35 +11,20 @@ const DOWNLOAD_URL_EXPIRY_SECONDS = 3600; // 1 hour
 // Only objects stored in Glacier-class tiers can be restored
 const GLACIER_TIERS: File['storageTier'][] = ['glacier', 'deep_archive'];
 
-async function requestRetrieval(
+// `batchId` is stamped on every new row so batch-level progress can be
+// queried later; bulk callers pass null.
+async function restoreFiles(
     db: DB,
     userId: string,
-    fileId: string,
-    tier: RestoreTier = 'standard'
-): Promise<Retrieval> {
-    const retrievals = await requestBulkRetrieval(db, userId, [fileId], tier);
-    return retrievals[0];
-}
-
-async function requestBulkRetrieval(
-    db: DB,
-    userId: string,
-    fileIds: string[],
-    tier: RestoreTier = 'standard'
+    files: File[],
+    tier: RestoreTier,
+    batchId: string | null
 ): Promise<Retrieval[]> {
-    const fileRepo = createFileRepo(db);
     const retrievalRepo = createRetrievalRepo(db);
-
-    const files = await fileRepo.findManyByUserAndIds(userId, fileIds);
-    if (files.length !== fileIds.length) {
-        const foundIds = new Set(files.map((f) => f.id));
-        const missingId = fileIds.find((id) => !foundIds.has(id));
-        throw new NotFoundError('File', missingId!);
-    }
+    const fileIds = files.map((f) => f.id);
 
     const existingRetrievals = await retrievalRepo.findByFileIds(fileIds);
     const existingFileIds = new Set(existingRetrievals.map((r) => r.fileId));
-
     const filesToRestore = files.filter((f) => !existingFileIds.has(f.id));
 
     const nonGlacierFile = filesToRestore.find(
@@ -62,6 +48,7 @@ async function requestBulkRetrieval(
                 id: crypto.randomUUID(),
                 fileId: f.id,
                 userId,
+                batchId,
                 tier,
                 status: 'pending' as const,
                 initiatedAt: now,
@@ -72,6 +59,55 @@ async function requestBulkRetrieval(
     }
 
     return existingRetrievals;
+}
+
+async function requestRetrieval(
+    db: DB,
+    userId: string,
+    fileId: string,
+    tier: RestoreTier = 'standard'
+): Promise<Retrieval> {
+    const retrievals = await requestBulkRetrieval(db, userId, [fileId], tier);
+    return retrievals[0];
+}
+
+async function requestBulkRetrieval(
+    db: DB,
+    userId: string,
+    fileIds: string[],
+    tier: RestoreTier = 'standard'
+): Promise<Retrieval[]> {
+    const fileRepo = createFileRepo(db);
+
+    const files = await fileRepo.findManyByUserAndIds(userId, fileIds);
+    if (files.length !== fileIds.length) {
+        const foundIds = new Set(files.map((f) => f.id));
+        const missingId = fileIds.find((id) => !foundIds.has(id));
+        throw new NotFoundError('File', missingId!);
+    }
+
+    return restoreFiles(db, userId, files, tier, null);
+}
+
+async function requestBatchRetrieval(
+    db: DB,
+    userId: string,
+    batchId: string,
+    tier: RestoreTier = 'standard'
+): Promise<Retrieval[]> {
+    const batchRepo = createUploadBatchRepo(db);
+    const batch = await batchRepo.findByUserAndId(userId, batchId);
+    if (!batch) {
+        throw new NotFoundError('UploadBatch', batchId);
+    }
+
+    const fileRepo = createFileRepo(db);
+    const files = await fileRepo.findByUserAndBatch(userId, batchId);
+    if (files.length === 0) {
+        throw new InvalidStateError('Batch contains no files');
+    }
+
+    return restoreFiles(db, userId, files, tier, batchId);
 }
 
 interface DownloadUrlResult {
@@ -110,5 +146,6 @@ async function getDownloadUrl(
 export const retrievalService = {
     requestRetrieval,
     requestBulkRetrieval,
+    requestBatchRetrieval,
     getDownloadUrl,
 } as const;

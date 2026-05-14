@@ -5,6 +5,8 @@ import {
     type MockDbMocks,
     createFileFixture,
     createRetrievalFixture,
+    createUploadBatchFixture,
+    TEST_BATCH_ID,
     TEST_USER_ID,
     TEST_FILE_ID,
 } from '@nexus/db/testing';
@@ -238,6 +240,104 @@ describe('retrieval service', () => {
 
             expect(result).toEqual([existingRetrieval]);
             expect(mocks.insert).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('requestBatchRetrieval', () => {
+        it('creates retrievals for all files in the batch with shared batchId', async () => {
+            const batch = createUploadBatchFixture();
+            const files = [
+                createFileFixture({
+                    id: 'f1',
+                    batchId: batch.id,
+                    storageTier: 'glacier',
+                }),
+                createFileFixture({
+                    id: 'f2',
+                    batchId: batch.id,
+                    storageTier: 'glacier',
+                }),
+            ];
+            const newRetrievals = [
+                createRetrievalFixture({
+                    id: 'r1',
+                    fileId: 'f1',
+                    batchId: batch.id,
+                }),
+                createRetrievalFixture({
+                    id: 'r2',
+                    fileId: 'f2',
+                    batchId: batch.id,
+                }),
+            ];
+
+            mocks.uploadBatches.findFirst.mockResolvedValue(batch);
+            mocks.files.findMany
+                // First call: findByUserAndBatch
+                .mockResolvedValueOnce(files)
+                // Second call (if any): retrievalRepo.findByFileIds is on retrievals, not files
+                .mockResolvedValue([]);
+            mocks.retrievals.findMany.mockResolvedValue([]);
+            mocks.returning.mockResolvedValue(newRetrievals);
+
+            const result = await retrievalService.requestBatchRetrieval(
+                db,
+                TEST_USER_ID,
+                batch.id,
+                'standard'
+            );
+
+            expect(result).toHaveLength(2);
+            expect(mocks.values).toHaveBeenCalledWith(
+                expect.arrayContaining([
+                    expect.objectContaining({ batchId: batch.id }),
+                ])
+            );
+        });
+
+        it('throws NotFoundError when batch missing or not owned', async () => {
+            mocks.uploadBatches.findFirst.mockResolvedValue(undefined);
+
+            await expect(
+                retrievalService.requestBatchRetrieval(
+                    db,
+                    TEST_USER_ID,
+                    TEST_BATCH_ID
+                )
+            ).rejects.toThrow(NotFoundError);
+        });
+
+        it('throws InvalidStateError when batch contains no files', async () => {
+            const batch = createUploadBatchFixture();
+            mocks.uploadBatches.findFirst.mockResolvedValue(batch);
+            mocks.files.findMany.mockResolvedValue([]);
+
+            await expect(
+                retrievalService.requestBatchRetrieval(
+                    db,
+                    TEST_USER_ID,
+                    batch.id
+                )
+            ).rejects.toThrow(InvalidStateError);
+        });
+
+        it('throws InvalidStateError when any file is not in a Glacier tier', async () => {
+            const batch = createUploadBatchFixture();
+            const files = [
+                createFileFixture({ id: 'f1', storageTier: 'glacier' }),
+                createFileFixture({ id: 'f2', storageTier: 'standard' }),
+            ];
+            mocks.uploadBatches.findFirst.mockResolvedValue(batch);
+            mocks.files.findMany.mockResolvedValue(files);
+            mocks.retrievals.findMany.mockResolvedValue([]);
+
+            await expect(
+                retrievalService.requestBatchRetrieval(
+                    db,
+                    TEST_USER_ID,
+                    batch.id
+                )
+            ).rejects.toThrow(InvalidStateError);
         });
     });
 

@@ -19,11 +19,19 @@ export function createMockDb() {
     // specific value override with `mocks.returning.mockResolvedValue([row])`.
     const returning: AnyMock = vi.fn().mockResolvedValue([]);
     const groupBy: AnyMock = vi.fn();
+    const orderBy: AnyMock = vi.fn();
     const where: AnyMock = vi.fn(() => ({ returning, groupBy }));
     const set: AnyMock = vi.fn(() => ({ where }));
     const onConflictDoUpdate: AnyMock = vi.fn(() => ({ returning }));
     const values: AnyMock = vi.fn(() => ({ returning, onConflictDoUpdate }));
-    const from: AnyMock = vi.fn(() => ({ where, groupBy }));
+    // leftJoin has its own `where` so the `.where().orderBy()` terminal here
+    // doesn't collide with the awaitable `where` used by simpler chains.
+    const leftJoinWhere: AnyMock = vi.fn(() => ({ orderBy }));
+    const leftJoin: AnyMock = vi.fn(() => ({
+        where: leftJoinWhere,
+        orderBy,
+    }));
+    const from: AnyMock = vi.fn(() => ({ where, groupBy, leftJoin }));
     const select: AnyMock = vi.fn(() => ({ from }));
     const insert: AnyMock = vi.fn(() => ({ values }));
     const update: AnyMock = vi.fn(() => ({ set }));
@@ -34,6 +42,7 @@ export function createMockDb() {
     const retrievals = createQueryMock();
     const storageUsage = createQueryMock();
     const subscriptions = createQueryMock();
+    const uploadBatches = createQueryMock();
     const webhookEvents = createQueryMock();
 
     const db = {
@@ -43,6 +52,7 @@ export function createMockDb() {
             retrievals,
             storageUsage,
             subscriptions,
+            uploadBatches,
             webhookEvents,
         },
         select,
@@ -59,6 +69,8 @@ export function createMockDb() {
             // Insert/update/delete pipeline mocks
             select,
             from,
+            leftJoin,
+            leftJoinWhere,
             where,
             insert,
             values,
@@ -68,12 +80,14 @@ export function createMockDb() {
             delete: deleteFn,
             returning,
             groupBy,
+            orderBy,
             // Per-table query mocks (db.query.<table>.findFirst/findMany)
             files,
             backgroundJobs,
             retrievals,
             storageUsage,
             subscriptions,
+            uploadBatches,
             webhookEvents,
         },
     };

@@ -39,6 +39,11 @@
             "import": "./src/repositories/subscriptions.ts",
             "default": "./src/repositories/subscriptions.ts"
         },
+        "./repo/uploadBatches": {
+            "types": "./src/repositories/uploadBatches.ts",
+            "import": "./src/repositories/uploadBatches.ts",
+            "default": "./src/repositories/uploadBatches.ts"
+        },
         "./repo/webhooks": {
             "types": "./src/repositories/webhooks.ts",
             "import": "./src/repositories/webhooks.ts",

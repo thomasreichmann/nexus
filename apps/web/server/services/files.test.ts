@@ -5,6 +5,8 @@ import {
     type MockDbMocks,
     createFileFixture,
     createStorageUsageFixture,
+    createUploadBatchFixture,
+    TEST_BATCH_ID,
     TEST_USER_ID,
 } from '@nexus/db/testing';
 import { mockS3 } from '@/lib/storage/testing';
@@ -13,7 +15,7 @@ import {
     QuotaExceededError,
     InvalidStateError,
 } from '@/server/errors';
-import { fileService } from './files';
+import { fileService, formatFallbackBatchName } from './files';
 import { PLAN_LIMITS } from './constants';
 
 vi.mock('@/lib/storage', () => ({
@@ -23,6 +25,18 @@ vi.mock('@/lib/storage', () => ({
 describe('files service', () => {
     let db: MockDb;
     let mocks: MockDbMocks;
+
+    // Returning mock is shared across .returning() calls. Without an explicit
+    // batchId the service inserts the batch row first, then the file row, so
+    // each insert gets the next mocked result.
+    function mockBatchAndFileInserts() {
+        const batch = createUploadBatchFixture();
+        const insertedFile = createFileFixture({ status: 'uploading' });
+        mocks.returning
+            .mockResolvedValueOnce([batch])
+            .mockResolvedValueOnce([insertedFile]);
+        return { batch, insertedFile };
+    }
 
     beforeEach(() => {
         vi.clearAllMocks();
@@ -40,8 +54,7 @@ describe('files service', () => {
     describe('initiateUpload', () => {
         it('returns fileId, uploadUrl, and expiresAt on success', async () => {
             mockUsage(0);
-            const insertedFile = createFileFixture({ status: 'uploading' });
-            mocks.returning.mockResolvedValue([insertedFile]);
+            mockBatchAndFileInserts();
 
             const result = await fileService.initiateUpload(
                 db,
@@ -84,8 +97,7 @@ describe('files service', () => {
 
         it('creates file record with status uploading', async () => {
             mockUsage(0);
-            const insertedFile = createFileFixture({ status: 'uploading' });
-            mocks.returning.mockResolvedValue([insertedFile]);
+            mockBatchAndFileInserts();
 
             await fileService.initiateUpload(
                 db,
@@ -98,7 +110,8 @@ describe('files service', () => {
                 undefined
             );
 
-            expect(mocks.insert).toHaveBeenCalledOnce();
+            // Two inserts now: one for the auto-created batch, one for the file.
+            expect(mocks.insert).toHaveBeenCalledTimes(2);
             expect(mocks.values).toHaveBeenCalledWith(
                 expect.objectContaining({
                     userId: TEST_USER_ID,
@@ -112,8 +125,7 @@ describe('files service', () => {
 
         it('generates S3 key in correct format', async () => {
             mockUsage(0);
-            const insertedFile = createFileFixture({ status: 'uploading' });
-            mocks.returning.mockResolvedValue([insertedFile]);
+            mockBatchAndFileInserts();
 
             await fileService.initiateUpload(
                 db,
@@ -125,15 +137,111 @@ describe('files service', () => {
                 undefined
             );
 
-            // S3 key format: {userId}/{fileId}/{filename}
+            // S3 key format: {userId}/{batchId}/{fileId}/{filename}
             expect(mocks.values).toHaveBeenCalledWith(
                 expect.objectContaining({
                     s3Key: expect.stringMatching(
                         new RegExp(
-                            `^${TEST_USER_ID}/[0-9a-f-]+/document\\.pdf$`
+                            `^${TEST_USER_ID}/[^/]+/[^/]+/document\\.pdf$`
                         )
                     ),
                 })
+            );
+        });
+
+        it('auto-creates a batch with fallback name when batchId omitted', async () => {
+            mockUsage(0);
+            mockBatchAndFileInserts();
+
+            await fileService.initiateUpload(
+                db,
+                TEST_USER_ID,
+                { name: 'a.pdf', sizeBytes: 1 },
+                undefined
+            );
+
+            // First values() call is the batch insert; the name should be the
+            // fallback formatter output ("Upload <date> <time>").
+            expect(mocks.values).toHaveBeenNthCalledWith(
+                1,
+                expect.objectContaining({
+                    userId: TEST_USER_ID,
+                    name: expect.stringMatching(/^Upload \d{4}-\d{2}-\d{2}/),
+                })
+            );
+        });
+
+        it('uses caller-supplied batchName when batchId omitted', async () => {
+            mockUsage(0);
+            mockBatchAndFileInserts();
+
+            await fileService.initiateUpload(
+                db,
+                TEST_USER_ID,
+                { name: 'a.pdf', sizeBytes: 1, batchName: 'Silva Wedding' },
+                undefined
+            );
+
+            expect(mocks.values).toHaveBeenNthCalledWith(
+                1,
+                expect.objectContaining({ name: 'Silva Wedding' })
+            );
+        });
+
+        it('reuses an existing batch when batchId provided and owned', async () => {
+            const batch = createUploadBatchFixture();
+            mockUsage(0);
+            mocks.uploadBatches.findFirst.mockResolvedValue(batch);
+            mocks.returning.mockResolvedValueOnce([
+                createFileFixture({ status: 'uploading' }),
+            ]);
+
+            await fileService.initiateUpload(
+                db,
+                TEST_USER_ID,
+                { name: 'a.pdf', sizeBytes: 1, batchId: batch.id },
+                undefined
+            );
+
+            // No second batch insert — only the file insert.
+            expect(mocks.insert).toHaveBeenCalledTimes(1);
+            expect(mocks.values).toHaveBeenCalledWith(
+                expect.objectContaining({ batchId: batch.id })
+            );
+        });
+
+        it('throws NotFoundError when batchId not owned by user', async () => {
+            mockUsage(0);
+            mocks.uploadBatches.findFirst.mockResolvedValue(undefined);
+
+            await expect(
+                fileService.initiateUpload(
+                    db,
+                    TEST_USER_ID,
+                    {
+                        name: 'a.pdf',
+                        sizeBytes: 1,
+                        batchId: TEST_BATCH_ID,
+                    },
+                    undefined
+                )
+            ).rejects.toThrow(NotFoundError);
+        });
+    });
+
+    describe('formatFallbackBatchName', () => {
+        it('formats UTC timestamp at minute precision', () => {
+            // 2026-05-08T14:32:11.000Z
+            const date = new Date(Date.UTC(2026, 4, 8, 14, 32, 11));
+            expect(formatFallbackBatchName(date)).toBe(
+                'Upload 2026-05-08 14:32'
+            );
+        });
+
+        it('is locale-free (always UTC)', () => {
+            const date = new Date(Date.UTC(2026, 0, 1, 0, 0, 0));
+            expect(formatFallbackBatchName(date)).toBe(
+                'Upload 2026-01-01 00:00'
             );
         });
     });
@@ -387,8 +495,7 @@ describe('files service', () => {
     describe('initiateMultipartUpload', () => {
         it('returns fileId, uploadId, partUrls, chunkSize, and expiresAt', async () => {
             mockUsage(0);
-            const insertedFile = createFileFixture({ status: 'uploading' });
-            mocks.returning.mockResolvedValue([insertedFile]);
+            mockBatchAndFileInserts();
 
             const result = await fileService.initiateMultipartUpload(
                 db,
@@ -427,8 +534,7 @@ describe('files service', () => {
 
         it('creates file record with status uploading', async () => {
             mockUsage(0);
-            const insertedFile = createFileFixture({ status: 'uploading' });
-            mocks.returning.mockResolvedValue([insertedFile]);
+            mockBatchAndFileInserts();
 
             await fileService.initiateMultipartUpload(
                 db,
@@ -440,7 +546,8 @@ describe('files service', () => {
                 undefined
             );
 
-            expect(mocks.insert).toHaveBeenCalledOnce();
+            // Two inserts: batch + file
+            expect(mocks.insert).toHaveBeenCalledTimes(2);
             expect(mocks.values).toHaveBeenCalledWith(
                 expect.objectContaining({
                     userId: TEST_USER_ID,
@@ -452,8 +559,7 @@ describe('files service', () => {
 
         it('calculates correct part count for exact chunk boundary', async () => {
             mockUsage(0);
-            const insertedFile = createFileFixture({ status: 'uploading' });
-            mocks.returning.mockResolvedValue([insertedFile]);
+            mockBatchAndFileInserts();
 
             const result = await fileService.initiateMultipartUpload(
                 db,

@@ -9,6 +9,10 @@ const uploadInputSchema = z.object({
     name: z.string().min(1).max(255),
     sizeBytes: z.number().positive(),
     mimeType: z.string().optional(),
+    // Join an existing batch by id, or seed a new one with a custom name.
+    // Omit both to get an auto-named single-file batch.
+    batchId: z.string().uuid().optional(),
+    batchName: z.string().min(1).max(255).optional(),
 });
 
 export const filesRouter = router({
@@ -59,6 +63,24 @@ export const filesRouter = router({
         const fileRepo = createFileRepo(ctx.db);
         return fileRepo.countStatusesByUser(ctx.session.user.id);
     }),
+
+    // Files grouped by upload batch, with a synthetic "Ungrouped" group for
+    // legacy null-batch files. Separate procedure (not a `list` shape change)
+    // so the existing flat-list UI keeps working until the grouped UI lands.
+    listGrouped: protectedProcedure
+        .input(
+            z
+                .object({
+                    includeHidden: z.boolean().default(false),
+                })
+                .prefault({})
+        )
+        .query(({ ctx, input }) => {
+            const fileRepo = createFileRepo(ctx.db);
+            return fileRepo.findByUserGroupedByBatch(ctx.session.user.id, {
+                includeHidden: input.includeHidden,
+            });
+        }),
 
     get: protectedProcedure
         .input(z.object({ id: z.string().uuid() }))
@@ -136,6 +158,22 @@ export const filesRouter = router({
                 ctx.db,
                 ctx.session.user.id,
                 input.fileIds,
+                input.tier
+            );
+        }),
+
+    requestBatchRetrieval: protectedProcedure
+        .input(
+            z.object({
+                batchId: z.string().uuid(),
+                tier: z.enum(RESTORE_TIERS).default('standard'),
+            })
+        )
+        .mutation(({ ctx, input }) => {
+            return retrievalService.requestBatchRetrieval(
+                ctx.db,
+                ctx.session.user.id,
+                input.batchId,
                 input.tier
             );
         }),
