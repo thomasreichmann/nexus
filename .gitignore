@@ -57,3 +57,5 @@ scripts/run.log
 scripts/events.log
 AGENTS.md
 .devcontainer/
+.openclaude-profile.json
+.pnpm-store/
