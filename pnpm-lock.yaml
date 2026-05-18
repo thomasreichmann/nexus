@@ -98,9 +98,6 @@ importers:
       tailwind-merge:
         specifier: ^3.4.0
         version: 3.4.0
-      trpc-devtools:
-        specifier: workspace:*
-        version: link:../../packages/trpc-devtools
       zod:
         specifier: ^4.2.1
         version: 4.2.1
@@ -159,6 +156,9 @@ importers:
       tailwindcss:
         specifier: ^4
         version: 4.1.18
+      trpc-devtools:
+        specifier: workspace:*
+        version: link:../../packages/trpc-devtools
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0

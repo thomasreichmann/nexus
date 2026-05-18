@@ -40,3 +40,20 @@ docs/.obsidian/plugins/
 docs/.obsidian/cache
 .vercel
 .env*.local
+
+# Ralph loop (local only)
+scripts/gate.sh
+scripts/ralph.sh
+scripts/prd.json
+scripts/ralph/
+scripts/.current-provider
+scripts/.last-story
+scripts/.last-message.md
+scripts/.story-attempts
+scripts/.prompt.md
+scripts/.model-check.log
+scripts/.iter.log
+scripts/run.log
+scripts/events.log
+AGENTS.md
+.devcontainer/
