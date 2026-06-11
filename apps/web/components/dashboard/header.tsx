@@ -13,7 +13,7 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { signOut, useSession } from '@/lib/auth/client';
 import { cn } from '@/lib/cn';
 import { getNavItems } from '@/lib/dashboard/navigation';
-import { Archive, LogOut, Menu, Settings, User } from 'lucide-react';
+import { LogOut, Menu, Settings, User } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -31,7 +31,7 @@ export function DashboardHeader() {
     }
 
     return (
-        <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-border bg-background px-4 md:px-6">
+        <header className="sticky top-0 z-40 flex h-16 items-center justify-between border-b border-(--hairline) bg-(--background) px-4 md:px-6">
             <div className="flex items-center gap-4 md:hidden">
                 <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
                     <SheetTrigger
@@ -40,12 +40,17 @@ export function DashboardHeader() {
                         <Menu className="h-5 w-5" />
                         <span className="sr-only">Toggle menu</span>
                     </SheetTrigger>
-                    <SheetContent side="left" className="w-64 p-0">
-                        <div className="flex h-16 items-center gap-2 border-b border-border px-6">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                                <Archive className="h-4 w-4 text-primary-foreground" />
-                            </div>
-                            <span className="text-xl font-semibold">Nexus</span>
+                    <SheetContent side="left" className="descent w-64 p-0">
+                        <div className="flex h-16 items-center gap-2.5 border-b border-(--hairline) px-6">
+                            <span
+                                aria-hidden
+                                className="flex h-7 w-7 items-center justify-center border border-(--ice) font-mono text-[13px] leading-none text-(--ice)"
+                            >
+                                ▽
+                            </span>
+                            <span className="font-display text-2xl tracking-tight text-(--foam)">
+                                Nexus
+                            </span>
                         </div>
                         <nav className="p-4">
                             <ul className="space-y-1">
@@ -59,13 +64,16 @@ export function DashboardHeader() {
                                                     setMobileMenuOpen(false)
                                                 }
                                                 className={cn(
-                                                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                                                    'flex items-center gap-3 border-l-2 px-3 py-2.5 font-mono text-[11px] uppercase tracking-[0.2em] transition-colors',
                                                     isActive
-                                                        ? 'bg-accent text-accent-foreground'
-                                                        : 'text-foreground hover:bg-accent/50'
+                                                        ? 'border-(--ice) bg-accent text-(--ice)'
+                                                        : 'border-transparent text-(--faint) hover:bg-accent/50 hover:text-(--mist)'
                                                 )}
                                             >
-                                                <item.icon className="h-5 w-5" />
+                                                <item.icon
+                                                    className="h-4 w-4"
+                                                    strokeWidth={1.5}
+                                                />
                                                 {item.name}
                                             </Link>
                                         </li>
@@ -76,26 +84,25 @@ export function DashboardHeader() {
                     </SheetContent>
                 </Sheet>
             </div>
-            <div className="hidden md:block" />
+            <p
+                aria-hidden
+                className="hidden font-mono text-[10px] uppercase tracking-[0.35em] text-(--faint) md:block"
+            >
+                Vault control
+            </p>
 
             <div className="flex items-center">
                 <DropdownMenu>
                     <DropdownMenuTrigger
-                        render={
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="rounded-full"
-                            />
-                        }
+                        render={<Button variant="ghost" size="icon" />}
                     >
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-                            <User className="h-4 w-4 text-primary" />
+                        <div className="flex h-8 w-8 items-center justify-center border border-(--hairline)">
+                            <User className="h-4 w-4 text-(--ice)" />
                         </div>
                         <span className="sr-only">User menu</span>
                     </DropdownMenuTrigger>
                     <DropdownMenuPositioner align="end">
-                        <DropdownMenuContent className="w-56">
+                        <DropdownMenuContent className="descent w-56">
                             <div className="px-2 py-1.5">
                                 <p className="text-sm font-medium">
                                     {session?.user?.name ?? 'User'}

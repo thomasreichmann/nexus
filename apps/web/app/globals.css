@@ -125,9 +125,11 @@
     }
 }
 
-/* Landing page "descent" theme — scoped so the marketing page can run its own
-   palette without touching the app-wide light/dark tokens. */
-.landing {
+/* "Descent" theme palette — shared by the marketing page (.landing) and the
+   dashboard (.descent), scoped so neither touches the app-wide light/dark
+   tokens. */
+.landing,
+.descent {
     --surface: oklch(0.33 0.055 235);
     --shallows: oklch(0.24 0.05 242);
     --midwater: oklch(0.18 0.04 248);
@@ -138,7 +140,48 @@
     --faint: oklch(0.62 0.035 235);
     --ice: oklch(0.87 0.095 210);
     --ice-deep: oklch(0.16 0.04 245);
+    --kelp: oklch(0.78 0.13 165);
     --hairline: oklch(0.97 0.012 220 / 14%);
+}
+
+/* Dashboard variant: re-map the shadcn tokens so every existing component
+   (buttons, tables, dialogs, dropdowns) picks up the descent look. Portaled
+   popups need the class repeated on their content element. --radius: 0 makes
+   the whole surface square-edged to match the landing page. */
+.descent {
+    --radius: 0rem;
+    --background: oklch(0.15 0.03 250);
+    --foreground: var(--foam);
+    --card: oklch(0.18 0.035 248);
+    --card-foreground: var(--foam);
+    --popover: oklch(0.17 0.035 249);
+    --popover-foreground: var(--foam);
+    --primary: var(--ice);
+    --primary-foreground: var(--ice-deep);
+    --secondary: oklch(0.23 0.04 246);
+    --secondary-foreground: var(--foam);
+    --muted: oklch(0.22 0.035 247);
+    --muted-foreground: var(--mist);
+    --accent: oklch(0.24 0.045 244);
+    --accent-foreground: var(--foam);
+    --destructive: oklch(0.66 0.18 25);
+    --border: var(--hairline);
+    --input: oklch(0.97 0.012 220 / 18%);
+    --ring: var(--ice);
+    --sidebar: oklch(0.13 0.028 252);
+    --sidebar-foreground: var(--mist);
+    --sidebar-primary: var(--ice);
+    --sidebar-primary-foreground: var(--ice-deep);
+    --sidebar-accent: oklch(0.2 0.04 247);
+    --sidebar-accent-foreground: var(--foam);
+    --sidebar-border: var(--hairline);
+    --sidebar-ring: var(--ice);
+    background-color: var(--background);
+    color: var(--foreground);
+    color-scheme: dark;
+}
+
+.landing {
     background: linear-gradient(
         to bottom,
         var(--surface) 0%,

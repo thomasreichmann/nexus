@@ -8,7 +8,6 @@ import { getNavItems } from '@/lib/dashboard/navigation';
 import { formatBytes } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
 import { useQuery } from '@tanstack/react-query';
-import { Archive } from 'lucide-react';
 
 export function DashboardSidebar() {
     const pathname = usePathname();
@@ -18,12 +17,17 @@ export function DashboardSidebar() {
     const { data: usage } = useQuery(trpc.storage.getUsage.queryOptions());
 
     return (
-        <aside className="hidden w-64 flex-col border-r border-border bg-sidebar md:flex">
-            <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-6">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                    <Archive className="h-4 w-4 text-primary-foreground" />
-                </div>
-                <span className="text-xl font-semibold">Nexus</span>
+        <aside className="hidden w-64 flex-col border-r border-(--hairline) bg-sidebar md:flex">
+            <div className="flex h-16 items-center gap-2.5 border-b border-(--hairline) px-6">
+                <span
+                    aria-hidden
+                    className="flex h-7 w-7 items-center justify-center border border-(--ice) font-mono text-[13px] leading-none text-(--ice)"
+                >
+                    ▽
+                </span>
+                <span className="font-display text-2xl tracking-tight text-(--foam)">
+                    Nexus
+                </span>
             </div>
             <nav className="flex-1 overflow-y-auto p-4">
                 <ul className="space-y-1">
@@ -34,13 +38,16 @@ export function DashboardSidebar() {
                                 <Link
                                     href={item.href}
                                     className={cn(
-                                        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                                        'flex items-center gap-3 border-l-2 px-3 py-2.5 font-mono text-[11px] uppercase tracking-[0.2em] transition-colors',
                                         isActive
-                                            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                                            : 'text-sidebar-foreground hover:bg-sidebar-accent/50'
+                                            ? 'border-(--ice) bg-sidebar-accent text-(--ice)'
+                                            : 'border-transparent text-(--faint) hover:bg-sidebar-accent/50 hover:text-(--mist)'
                                     )}
                                 >
-                                    <item.icon className="h-5 w-5" />
+                                    <item.icon
+                                        className="h-4 w-4"
+                                        strokeWidth={1.5}
+                                    />
                                     {item.name}
                                 </Link>
                             </li>
@@ -48,23 +55,23 @@ export function DashboardSidebar() {
                     })}
                 </ul>
             </nav>
-            <div className="border-t border-sidebar-border p-4">
-                <div className="rounded-lg bg-sidebar-accent/50 p-4">
-                    <p className="text-xs font-medium text-sidebar-foreground">
-                        Storage used
+            <div className="border-t border-(--hairline) p-4">
+                <div className="border border-(--hairline) p-4">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-(--faint)">
+                        Hold capacity
                     </p>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-sidebar-border">
+                    <div className="mt-3 h-1.5 overflow-hidden bg-(--hairline)">
                         <div
-                            className="h-full rounded-full bg-primary transition-all"
+                            className="h-full bg-(--ice) transition-all"
                             style={{
                                 width: `${usage?.percentage ?? 0}%`,
                             }}
                         />
                     </div>
-                    <p className="mt-2 text-xs text-muted-foreground">
+                    <p className="mt-2.5 font-mono text-[11px] tabular-nums text-(--mist)">
                         {usage
-                            ? `${formatBytes(usage.usedBytes)} of ${formatBytes(usage.quotaBytes)}`
-                            : 'Loading...'}
+                            ? `${formatBytes(usage.usedBytes)} / ${formatBytes(usage.quotaBytes)}`
+                            : 'Sounding…'}
                     </p>
                 </div>
             </div>

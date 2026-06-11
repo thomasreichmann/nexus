@@ -1,8 +1,9 @@
 /**
  * Grouped files page (issue #217 PR 2). Seeds one batch + one ungrouped file
  * for the regular user so we can assert the batch header, the synthetic
- * "Ungrouped" section, and the "Restore batch" button all render — instead of
- * a smoke-test that only checks the page heading.
+ * ungrouped ("Loose cargo") section, and the batch restore ("Surface batch")
+ * button all render — instead of a smoke-test that only checks the page
+ * heading.
  */
 import { test, expect } from '../../fixtures/authenticated';
 import { findUserByEmail, getDb } from '../../helpers/db';
@@ -26,7 +27,7 @@ async function seedBatchAndFiles(userId: string) {
             (gen_random_uuid()::text, ${userId}, ${batchId}, 'batched-a.txt', 100, ${`${userId}/${batchId}/a/batched-a.txt`}, 'glacier', 'available'),
             (gen_random_uuid()::text, ${userId}, ${batchId}, 'batched-b.txt', 200, ${`${userId}/${batchId}/b/batched-b.txt`}, 'glacier', 'available')
     `;
-    // One legacy file with no batch_id → renders under "Ungrouped".
+    // One legacy file with no batch_id → renders under "Loose cargo".
     await sql`
         INSERT INTO files (id, user_id, batch_id, name, size, s3_key, storage_tier, status)
         VALUES (gen_random_uuid()::text, ${userId}, NULL, 'legacy-orphan.txt', 50, ${`${userId}/legacy/legacy-orphan.txt`}, 'standard', 'available')
@@ -67,9 +68,9 @@ test.describe('grouped files page', () => {
             // Metadata line shows "2 files · 300 Bytes · ..."
             await expect(page.getByText(/2 files · 300 Bytes/)).toBeVisible();
 
-            // Restore batch button is visible (both files are glacier+available).
+            // Batch restore button is visible (both files are glacier+available).
             await expect(
-                page.getByRole('button', { name: /Restore batch/i })
+                page.getByRole('button', { name: /Surface batch/i })
             ).toBeVisible();
 
             // Files inside the batch are visible by default (expanded).
@@ -78,7 +79,7 @@ test.describe('grouped files page', () => {
 
             // Ungrouped section renders for the legacy file.
             await expect(
-                page.getByRole('heading', { name: 'Ungrouped' })
+                page.getByRole('heading', { name: 'Loose cargo' })
             ).toBeVisible();
             await expect(page.getByText('legacy-orphan.txt')).toBeVisible();
 

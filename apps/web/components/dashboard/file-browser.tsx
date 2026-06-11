@@ -29,7 +29,6 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { Card, CardContent } from '@/components/ui/card';
 import {
     Search,
     LayoutGrid,
@@ -37,7 +36,6 @@ import {
     MoreHorizontal,
     Download,
     Trash2,
-    Clock,
     FileIcon,
     FileText,
     FileImage,
@@ -49,7 +47,7 @@ import {
     RotateCw,
     Loader2,
     X,
-    Snowflake,
+    ArrowUpFromLine,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDate } from '@/lib/format';
@@ -64,6 +62,14 @@ import type { FileBatchGroup } from '@nexus/db/repo/files';
 type DerivedStatus = 'archived' | 'retrieving' | 'available';
 
 const SEARCH_DEBOUNCE_MS = 300;
+
+// Descent vocabulary: where a file sits in the water column. Internal status
+// values stay aligned with the backend; only the display labels are themed.
+const STATUS_LABELS: Record<DerivedStatus, string> = {
+    archived: 'in the deep',
+    retrieving: 'surfacing',
+    available: 'at surface',
+};
 
 // Keep in lockstep with countStatusesByUser in
 // packages/db/src/repositories/files.ts — the library-wide stats bar bucket
@@ -83,10 +89,9 @@ function getFileExtension(name: string): string {
     return parts.length > 1 ? parts.pop()!.toLowerCase() : '';
 }
 
-function getFileTypeInfo(name: string): {
-    icon: typeof FileIcon;
-    colorClass: string;
-} {
+// Monochrome on purpose — type is signaled by icon shape and the ext column,
+// keeping the manifest's palette discipline.
+function getFileTypeInfo(name: string): { icon: typeof FileIcon } {
     const ext = getFileExtension(name);
 
     const imageExts = [
@@ -138,59 +143,39 @@ function getFileTypeInfo(name: string): {
         'pptx',
     ];
 
-    if (imageExts.includes(ext))
-        return { icon: FileImage, colorClass: 'text-rose-500 bg-rose-500/10' };
-    if (videoExts.includes(ext))
-        return {
-            icon: FileVideo,
-            colorClass: 'text-purple-500 bg-purple-500/10',
-        };
-    if (audioExts.includes(ext))
-        return {
-            icon: FileAudio,
-            colorClass: 'text-amber-500 bg-amber-500/10',
-        };
-    if (archiveExts.includes(ext))
-        return {
-            icon: FileArchive,
-            colorClass: 'text-orange-500 bg-orange-500/10',
-        };
-    if (codeExts.includes(ext))
-        return {
-            icon: FileCode,
-            colorClass: 'text-emerald-500 bg-emerald-500/10',
-        };
-    if (docExts.includes(ext))
-        return { icon: FileText, colorClass: 'text-blue-500 bg-blue-500/10' };
-    return { icon: FileIcon, colorClass: 'text-muted-foreground bg-muted' };
+    if (imageExts.includes(ext)) return { icon: FileImage };
+    if (videoExts.includes(ext)) return { icon: FileVideo };
+    if (audioExts.includes(ext)) return { icon: FileAudio };
+    if (archiveExts.includes(ext)) return { icon: FileArchive };
+    if (codeExts.includes(ext)) return { icon: FileCode };
+    if (docExts.includes(ext)) return { icon: FileText };
+    return { icon: FileIcon };
 }
 
-function StatusDot({ status }: { status: DerivedStatus }) {
+function StatusGlyph({ status }: { status: DerivedStatus }) {
     return (
-        <span className="inline-flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-2">
             <span
                 className={cn(
-                    'relative inline-block size-2 rounded-full',
-                    status === 'archived' && 'bg-muted-foreground/50',
-                    status === 'retrieving' && 'bg-blue-500',
-                    status === 'available' && 'bg-emerald-500'
+                    'relative inline-block size-2',
+                    status === 'archived' && 'border border-(--faint)',
+                    status === 'retrieving' && 'bg-(--ice)',
+                    status === 'available' && 'bg-(--kelp)'
                 )}
             >
                 {status === 'retrieving' && (
-                    <span className="absolute inset-0 animate-ping rounded-full bg-blue-500/60" />
+                    <span className="absolute inset-0 animate-ping bg-(--ice)/60" />
                 )}
             </span>
             <span
                 className={cn(
-                    'text-xs capitalize',
-                    status === 'archived' && 'text-muted-foreground',
-                    status === 'retrieving' &&
-                        'text-blue-600 dark:text-blue-400',
-                    status === 'available' &&
-                        'text-emerald-600 dark:text-emerald-400'
+                    'font-mono text-[10px] uppercase tracking-[0.2em]',
+                    status === 'archived' && 'text-(--faint)',
+                    status === 'retrieving' && 'text-(--ice)',
+                    status === 'available' && 'text-(--kelp)'
                 )}
             >
-                {status}
+                {STATUS_LABELS[status]}
             </span>
         </span>
     );
@@ -213,7 +198,7 @@ function SelectableIcon({
     showCheckbox: boolean;
     size?: 'sm' | 'md';
 }) {
-    const { icon: TypeIcon, colorClass } = getFileTypeInfo(name);
+    const { icon: TypeIcon } = getFileTypeInfo(name);
     const isSmall = size === 'sm';
     const containerClass = isSmall ? 'size-8' : 'size-10';
     const iconClass = isSmall ? 'size-4' : 'size-5';
@@ -223,9 +208,11 @@ function SelectableIcon({
         <button
             type="button"
             className={cn(
-                'group/icon relative flex shrink-0 items-center justify-center rounded-lg transition-colors',
+                'group/icon relative flex shrink-0 items-center justify-center border transition-colors',
                 containerClass,
-                reveal ? 'bg-primary/10' : colorClass
+                reveal
+                    ? 'border-(--ice)/40 bg-(--ice)/10'
+                    : 'border-(--hairline) bg-(--foam)/4'
             )}
             onClick={(e) => {
                 e.stopPropagation();
@@ -234,9 +221,10 @@ function SelectableIcon({
             aria-label={`Select ${name}`}
         >
             <TypeIcon
+                strokeWidth={1.5}
                 className={cn(
                     iconClass,
-                    'transition-opacity',
+                    'text-(--mist) transition-opacity',
                     reveal
                         ? 'opacity-0'
                         : 'opacity-100 group-hover/icon:opacity-0'
@@ -396,12 +384,14 @@ export function FileBrowser() {
     if (isLoading) {
         return (
             <div className="flex flex-col items-center justify-center py-24">
-                <div className="relative">
-                    <div className="size-12 rounded-xl bg-muted" />
-                    <Loader2 className="absolute inset-0 m-auto size-5 animate-spin text-muted-foreground" />
-                </div>
-                <p className="mt-4 text-sm text-muted-foreground">
-                    Loading vault...
+                <span
+                    aria-hidden
+                    className="animate-pulse font-mono text-2xl text-(--ice)"
+                >
+                    ▽
+                </span>
+                <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.3em] text-(--faint)">
+                    Sounding the vault…
                 </p>
             </div>
         );
@@ -413,28 +403,26 @@ export function FileBrowser() {
 
     if (isEmpty) {
         return (
-            <div className="flex flex-col items-center justify-center py-24">
-                <div className="relative mb-6">
-                    <div className="flex size-20 items-center justify-center rounded-2xl border border-dashed border-border bg-muted/50">
-                        <Snowflake
-                            className="size-8 text-muted-foreground/60"
-                            strokeWidth={1.5}
-                        />
-                    </div>
-                </div>
-                <h3 className="text-lg font-semibold tracking-tight">
-                    Your vault is empty
+            <div className="flex flex-col items-center justify-center border border-(--hairline) py-24">
+                <span
+                    aria-hidden
+                    className="mb-6 flex size-16 items-center justify-center border border-dashed border-(--hairline) font-mono text-2xl text-(--faint)"
+                >
+                    ▽
+                </span>
+                <h3 className="font-display text-2xl tracking-tight text-(--foam)">
+                    Nothing down here yet.
                 </h3>
-                <p className="mt-1.5 max-w-xs text-center text-sm text-muted-foreground">
-                    Upload files to archive them in deep cold storage. Retrieval
-                    takes 3-12 hours when you need them.
+                <p className="mt-2 max-w-xs text-center text-sm text-(--faint)">
+                    Send files into deep cold storage. They surface within 12–48
+                    hours whenever you ask.
                 </p>
                 <Button
                     nativeButton={false}
                     render={<a href="/dashboard/upload" />}
-                    className="mt-6"
+                    className="mt-8 font-mono text-[11px] uppercase tracking-[0.2em]"
                 >
-                    Upload files
+                    Send something down
                 </Button>
             </div>
         );
@@ -443,46 +431,43 @@ export function FileBrowser() {
     const libraryTotal = counts.archived + counts.retrieving + counts.available;
 
     return (
-        <div className="space-y-4">
-            {/* Stats bar — counts are library-wide, not page-scoped */}
-            <div className="flex items-center gap-4 text-sm">
-                <span className="font-medium tabular-nums">
-                    {libraryTotal} file{libraryTotal !== 1 ? 's' : ''}
+        <div className="space-y-5">
+            {/* Instrument strip — counts are library-wide, not page-scoped */}
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-y border-(--hairline) py-3 font-mono text-[11px] uppercase tracking-[0.2em]">
+                <span className="tabular-nums text-(--foam)">
+                    {libraryTotal} object{libraryTotal !== 1 ? 's' : ''}
                 </span>
-                <span className="h-3.5 w-px bg-border" />
-                <div className="flex items-center gap-3 text-muted-foreground">
-                    {counts.archived > 0 && (
-                        <span className="flex items-center gap-1.5">
-                            <span className="size-1.5 rounded-full bg-muted-foreground/50" />
-                            {counts.archived} archived
+                {counts.archived > 0 && (
+                    <span className="flex items-center gap-2 text-(--faint)">
+                        <span className="size-1.5 border border-(--faint)" />
+                        {counts.archived} {STATUS_LABELS.archived}
+                    </span>
+                )}
+                {counts.retrieving > 0 && (
+                    <span className="flex items-center gap-2 text-(--ice)">
+                        <span className="relative size-1.5 bg-(--ice)">
+                            <span className="absolute inset-0 animate-ping bg-(--ice)/60" />
                         </span>
-                    )}
-                    {counts.retrieving > 0 && (
-                        <span className="flex items-center gap-1.5">
-                            <span className="relative size-1.5 rounded-full bg-blue-500">
-                                <span className="absolute inset-0 animate-ping rounded-full bg-blue-500/60" />
-                            </span>
-                            {counts.retrieving} retrieving
-                        </span>
-                    )}
-                    {counts.available > 0 && (
-                        <span className="flex items-center gap-1.5">
-                            <span className="size-1.5 rounded-full bg-emerald-500" />
-                            {counts.available} available
-                        </span>
-                    )}
-                </div>
+                        {counts.retrieving} {STATUS_LABELS.retrieving}
+                    </span>
+                )}
+                {counts.available > 0 && (
+                    <span className="flex items-center gap-2 text-(--kelp)">
+                        <span className="size-1.5 bg-(--kelp)" />
+                        {counts.available} {STATUS_LABELS.available}
+                    </span>
+                )}
             </div>
 
             {/* Toolbar */}
             <div className="flex items-center justify-between gap-3">
                 <div className="relative w-full max-w-xs">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-(--faint)" />
                     <Input
-                        placeholder="Search files..."
+                        placeholder="Search the manifest…"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-9"
+                        className="pl-9 font-mono text-sm placeholder:text-(--faint)"
                     />
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -496,13 +481,13 @@ export function FileBrowser() {
                             <RotateCw className="size-4" />
                         </Button>
                     )}
-                    <div className="flex items-center rounded-lg border border-border p-0.5">
+                    <div className="flex items-center border border-(--hairline) p-0.5">
                         <button
                             type="button"
                             className={cn(
-                                'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors',
+                                'inline-flex size-7 items-center justify-center text-(--faint) transition-colors',
                                 viewMode === 'list' &&
-                                    'bg-muted text-foreground shadow-sm'
+                                    'bg-(--ice)/15 text-(--ice)'
                             )}
                             onClick={() => setViewMode('list')}
                         >
@@ -512,9 +497,9 @@ export function FileBrowser() {
                         <button
                             type="button"
                             className={cn(
-                                'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors',
+                                'inline-flex size-7 items-center justify-center text-(--faint) transition-colors',
                                 viewMode === 'grid' &&
-                                    'bg-muted text-foreground shadow-sm'
+                                    'bg-(--ice)/15 text-(--ice)'
                             )}
                             onClick={() => setViewMode('grid')}
                         >
@@ -528,15 +513,15 @@ export function FileBrowser() {
             {/* Content */}
             <div className="relative">
                 {filteredGroups.length === 0 && hasActiveSearch ? (
-                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16">
-                        <Search className="mb-3 size-5 text-muted-foreground/60" />
-                        <p className="text-sm text-muted-foreground">
-                            No files match &ldquo;{debouncedSearch.trim()}
-                            &rdquo;
+                    <div className="flex flex-col items-center justify-center border border-dashed border-(--hairline) py-16">
+                        <Search className="mb-3 size-5 text-(--faint)" />
+                        <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-(--faint)">
+                            Nothing in the manifest matches &ldquo;
+                            {debouncedSearch.trim()}&rdquo;
                         </p>
                     </div>
                 ) : viewMode === 'list' ? (
-                    <Card className="py-0">
+                    <div className="border border-(--hairline)">
                         <Table>
                             <TableHeader>
                                 <TableRow className="hover:bg-transparent">
@@ -556,23 +541,23 @@ export function FileBrowser() {
                                         </div>
                                     </TableHead>
                                     <TableHead>
-                                        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                        <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-(--faint)">
                                             Name
                                         </span>
                                     </TableHead>
                                     <TableHead>
-                                        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                        <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-(--faint)">
                                             Size
                                         </span>
                                     </TableHead>
                                     <TableHead>
-                                        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                            Uploaded
+                                        <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-(--faint)">
+                                            Sent down
                                         </span>
                                     </TableHead>
                                     <TableHead>
-                                        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                            Status
+                                        <span className="font-mono text-[10px] uppercase tracking-[0.25em] text-(--faint)">
+                                            Position
                                         </span>
                                     </TableHead>
                                     <TableHead className="w-12" />
@@ -620,7 +605,7 @@ export function FileBrowser() {
                                 })}
                             </TableBody>
                         </Table>
-                    </Card>
+                    </div>
                 ) : (
                     <div className="space-y-6">
                         {filteredGroups.map((group) => {
@@ -677,14 +662,15 @@ export function FileBrowser() {
             {/* Floating selection bar */}
             {hasSelection && (
                 <div className="fixed inset-x-0 bottom-6 z-50 mx-auto w-fit animate-in fade-in slide-in-from-bottom-4">
-                    <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 shadow-lg">
-                        <span className="text-sm font-medium tabular-nums">
+                    <div className="flex items-center gap-3 border border-(--hairline) bg-(--floor)/90 px-4 py-2.5 shadow-[0_8px_40px_oklch(0.1_0.02_258_/_0.8)] backdrop-blur-md">
+                        <span className="font-mono text-[11px] uppercase tracking-[0.2em] tabular-nums text-(--foam)">
                             {selectedFiles.length} selected
                         </span>
-                        <span className="h-4 w-px bg-border" />
+                        <span className="h-4 w-px bg-(--hairline)" />
                         <Button
                             variant="ghost"
                             size="sm"
+                            className="font-mono text-[11px] uppercase tracking-[0.15em] text-(--ice)"
                             onClick={handleBulkRetrieval}
                             disabled={
                                 !hasArchivedSelected ||
@@ -694,9 +680,9 @@ export function FileBrowser() {
                             {bulkRetrievalMutation.isPending ? (
                                 <Loader2 className="mr-1.5 size-3.5 animate-spin" />
                             ) : (
-                                <RotateCw className="mr-1.5 size-3.5" />
+                                <ArrowUpFromLine className="mr-1.5 size-3.5" />
                             )}
-                            Retrieve
+                            Surface
                         </Button>
                         <AlertDialog>
                             <AlertDialogTrigger
@@ -704,7 +690,7 @@ export function FileBrowser() {
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="text-destructive hover:text-destructive"
+                                        className="font-mono text-[11px] uppercase tracking-[0.15em] text-destructive hover:text-destructive"
                                     />
                                 }
                                 disabled={deleteManyMutation.isPending}
@@ -716,7 +702,7 @@ export function FileBrowser() {
                                 )}
                                 Delete
                             </AlertDialogTrigger>
-                            <AlertDialogPopup>
+                            <AlertDialogPopup className="descent">
                                 <AlertDialogTitle>
                                     Delete {selectedFiles.length} file
                                     {selectedFiles.length > 1 ? 's' : ''}?
@@ -737,7 +723,7 @@ export function FileBrowser() {
                                 </div>
                             </AlertDialogPopup>
                         </AlertDialog>
-                        <span className="h-4 w-px bg-border" />
+                        <span className="h-4 w-px bg-(--hairline)" />
                         <Button
                             variant="ghost"
                             size="icon-sm"
@@ -782,26 +768,24 @@ function BatchHeader({ group, expanded, onToggle }: BatchHeaderProps) {
                 type="button"
                 onClick={onToggle}
                 aria-expanded={expanded}
-                className="group flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-md px-2 py-2.5 text-left transition-colors hover:bg-muted/50"
+                className="group flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-2 py-2.5 text-left transition-colors hover:bg-(--foam)/3"
             >
                 <ChevronRight
                     className={cn(
-                        'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
+                        'h-4 w-4 shrink-0 text-(--faint) transition-transform duration-200',
                         expanded && 'rotate-90'
                     )}
                 />
                 <div className="min-w-0 flex-1">
                     <h3
                         className={cn(
-                            'truncate font-semibold tracking-tight',
-                            isUngrouped
-                                ? 'text-muted-foreground'
-                                : 'text-foreground'
+                            'truncate font-display text-lg tracking-tight',
+                            isUngrouped ? 'text-(--faint)' : 'text-(--foam)'
                         )}
                     >
-                        {isUngrouped ? 'Ungrouped' : group.batchName}
+                        {isUngrouped ? 'Loose cargo' : group.batchName}
                     </h3>
-                    <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
+                    <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.2em] tabular-nums text-(--faint)">
                         {fileCount} {fileCount === 1 ? 'file' : 'files'}
                         {' · '}
                         {formatBytes(totalBytes)}
@@ -863,16 +847,16 @@ function BatchRestoreSlot({ batchId, files }: BatchRestoreSlotProps) {
 
     if (restoringCount === fileCount && fileCount > 0) {
         return (
-            <span className="shrink-0 pr-2 text-xs tabular-nums text-muted-foreground">
-                Restoring {restoringCount}/{fileCount}
+            <span className="shrink-0 pr-2 font-mono text-[10px] uppercase tracking-[0.2em] tabular-nums text-(--ice)">
+                Surfacing {restoringCount}/{fileCount}
             </span>
         );
     }
     if (restoringCount > 0) {
         return (
-            <span className="flex shrink-0 items-center gap-1.5 pr-2 text-xs tabular-nums text-muted-foreground">
+            <span className="flex shrink-0 items-center gap-1.5 pr-2 font-mono text-[10px] uppercase tracking-[0.2em] tabular-nums text-(--ice)">
                 <RotateCw className="h-3.5 w-3.5 animate-spin" />
-                Restoring {restoringCount} of {fileCount}
+                Surfacing {restoringCount} of {fileCount}
             </span>
         );
     }
@@ -884,15 +868,15 @@ function BatchRestoreSlot({ batchId, files }: BatchRestoreSlotProps) {
             size="sm"
             onClick={() => mutation.mutate({ batchId, tier: 'standard' })}
             disabled={mutation.isPending}
-            className="shrink-0"
+            className="shrink-0 font-mono text-[11px] uppercase tracking-[0.15em]"
         >
-            <RotateCw
+            <ArrowUpFromLine
                 className={cn(
                     'mr-1.5 h-3.5 w-3.5',
-                    mutation.isPending && 'animate-spin'
+                    mutation.isPending && 'animate-pulse'
                 )}
             />
-            {mutation.isPending ? 'Requesting…' : 'Restore batch'}
+            {mutation.isPending ? 'Requesting…' : 'Surface batch'}
         </Button>
     );
 }
@@ -953,9 +937,8 @@ function FileRow({ file, isSelected, hasSelection, onSelect }: FileItemProps) {
         <TableRow
             data-state={isSelected ? 'selected' : undefined}
             className={cn(
-                'cursor-pointer transition-colors',
-                isSelected &&
-                    'bg-primary/4 hover:bg-primary/6 dark:bg-primary/8 dark:hover:bg-primary/10'
+                'cursor-pointer transition-colors hover:bg-(--foam)/3',
+                isSelected && 'bg-(--ice)/8 hover:bg-(--ice)/10'
             )}
             onClick={(e) => onSelect(e.shiftKey)}
         >
@@ -970,24 +953,24 @@ function FileRow({ file, isSelected, hasSelection, onSelect }: FileItemProps) {
             </TableCell>
             <TableCell>
                 <div className="min-w-0">
-                    <p className="truncate font-medium leading-tight">
+                    <p className="truncate font-medium leading-tight text-(--foam)">
                         {file.name}
                     </p>
                     {ext && (
-                        <p className="text-xs uppercase text-muted-foreground">
+                        <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-(--faint)">
                             {ext}
                         </p>
                     )}
                 </div>
             </TableCell>
-            <TableCell className="tabular-nums text-muted-foreground">
+            <TableCell className="font-mono text-xs tabular-nums text-(--mist)">
                 {formatBytes(file.size)}
             </TableCell>
-            <TableCell className="text-muted-foreground">
+            <TableCell className="font-mono text-xs text-(--mist)">
                 {formatDate(file.createdAt)}
             </TableCell>
             <TableCell>
-                <StatusDot status={status} />
+                <StatusGlyph status={status} />
             </TableCell>
             <TableCell onClick={(e) => e.stopPropagation()}>
                 <FileActions status={status} {...actions} />
@@ -1002,53 +985,51 @@ function FileCard({ file, isSelected, hasSelection, onSelect }: FileItemProps) {
     const ext = getFileExtension(file.name);
 
     return (
-        <Card
+        <div
             className={cn(
-                'group relative cursor-pointer py-0 transition-all',
+                'group relative cursor-pointer border p-4 transition-colors',
                 isSelected
-                    ? 'ring-2 ring-primary/30 bg-primary/2 dark:bg-primary/6'
-                    : 'hover:border-border/80'
+                    ? 'border-(--ice)/50 bg-(--ice)/8'
+                    : 'border-(--hairline) bg-(--card) hover:border-(--ice)/30'
             )}
             onClick={(e) => onSelect(e.shiftKey)}
         >
-            <CardContent className="p-4">
-                <div className="mb-3 flex items-start justify-between">
-                    <SelectableIcon
-                        name={file.name}
-                        checked={isSelected}
-                        onCheckedChange={() => onSelect(false)}
-                        showCheckbox={hasSelection}
-                        size="md"
-                    />
-                    <div
-                        className={cn(
-                            'transition-opacity',
-                            hasSelection
-                                ? 'opacity-100'
-                                : 'opacity-0 group-hover:opacity-100 [&:has([data-state=open])]:opacity-100'
-                        )}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <FileActions status={status} {...actions} />
-                    </div>
+            <div className="mb-3 flex items-start justify-between">
+                <SelectableIcon
+                    name={file.name}
+                    checked={isSelected}
+                    onCheckedChange={() => onSelect(false)}
+                    showCheckbox={hasSelection}
+                    size="md"
+                />
+                <div
+                    className={cn(
+                        'transition-opacity',
+                        hasSelection
+                            ? 'opacity-100'
+                            : 'opacity-0 group-hover:opacity-100 [&:has([data-state=open])]:opacity-100'
+                    )}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <FileActions status={status} {...actions} />
                 </div>
-                <p className="truncate text-sm/tight font-medium">
-                    {file.name}
-                </p>
-                <div className="mt-1.5 flex items-center justify-between">
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                        {formatBytes(file.size)}
-                        {ext && (
-                            <>
-                                <span className="mx-1 text-border">/</span>
-                                <span className="uppercase">{ext}</span>
-                            </>
-                        )}
-                    </span>
-                    <StatusDot status={status} />
-                </div>
-            </CardContent>
-        </Card>
+            </div>
+            <p className="truncate text-sm/tight font-medium text-(--foam)">
+                {file.name}
+            </p>
+            <div className="mt-2 flex items-center justify-between">
+                <span className="font-mono text-[10px] uppercase tracking-[0.15em] tabular-nums text-(--faint)">
+                    {formatBytes(file.size)}
+                    {ext && (
+                        <>
+                            <span className="mx-1">/</span>
+                            <span>{ext}</span>
+                        </>
+                    )}
+                </span>
+                <StatusGlyph status={status} />
+            </div>
+        </div>
     );
 }
 
@@ -1078,7 +1059,7 @@ function FileActions({
                 <span className="sr-only">Actions</span>
             </DropdownMenuTrigger>
             <DropdownMenuPositioner align="end">
-                <DropdownMenuContent>
+                <DropdownMenuContent className="descent">
                     {status === 'archived' && (
                         <DropdownMenuItem
                             onClick={onRetrieval}
@@ -1087,9 +1068,9 @@ function FileActions({
                             {isRetrieving ? (
                                 <Loader2 className="mr-2 size-4 animate-spin" />
                             ) : (
-                                <Clock className="mr-2 size-4" />
+                                <ArrowUpFromLine className="mr-2 size-4" />
                             )}
-                            Request retrieval
+                            Surface this file
                         </DropdownMenuItem>
                     )}
                     {status === 'available' && (
@@ -1101,7 +1082,7 @@ function FileActions({
                     {status === 'retrieving' && (
                         <DropdownMenuItem disabled>
                             <RotateCw className="mr-2 size-4" />
-                            Retrieving...
+                            Surfacing…
                         </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />
