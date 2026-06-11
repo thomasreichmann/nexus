@@ -1,11 +1,14 @@
 'use client';
 
+import * as React from 'react';
+import { Menu } from 'lucide-react';
+import { Drawer } from '@/components/ui/drawer';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useIsMobile } from '@/lib/use-is-mobile';
 import { cn } from '@/lib/utils';
 import type { HistoryItem } from '@/lib/storage';
 import type { TRPCResponse } from '@/lib/request';
 import type { ProcedureSchema, RouterSchema } from '@/server/types';
-import * as React from 'react';
 import { ProcedureList, ProcedureListSkeleton } from './procedure-list';
 import { ProcedureView, ProcedureViewSkeleton } from './procedure-view';
 import { RequestHistoryPanel } from './request-history';
@@ -35,6 +38,22 @@ export function TRPCDevtools({
         response: TRPCResponse | null;
     } | null>(null);
 
+    const isMobile = useIsMobile();
+    const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
+
+    const closeDrawer = React.useCallback(() => setIsDrawerOpen(false), []);
+
+    // Reset drawer state when the viewport expands past the mobile breakpoint
+    React.useEffect(() => {
+        if (!isMobile) setIsDrawerOpen(false);
+    }, [isMobile]);
+
+    // Selecting a procedure closes the drawer and reveals the procedure view
+    const handleSelect = React.useCallback((path: string) => {
+        setSelectedPath(path);
+        setIsDrawerOpen(false);
+    }, []);
+
     const handleHistoryReplay = React.useCallback((item: HistoryItem) => {
         setSelectedPath(item.request.path);
         setHistoryReplay({
@@ -44,6 +63,7 @@ export function TRPCDevtools({
                     : '',
             response: item.response,
         });
+        setIsDrawerOpen(false);
     }, []);
 
     // Fetch schema on mount
@@ -81,7 +101,7 @@ export function TRPCDevtools({
         return (
             <div
                 className={cn(
-                    'trpc-devtools flex items-center justify-center h-screen bg-background',
+                    'trpc-devtools flex items-center justify-center h-dvh bg-background',
                     className
                 )}
             >
@@ -99,20 +119,25 @@ export function TRPCDevtools({
         return (
             <div
                 className={cn(
-                    'trpc-devtools flex h-screen bg-background text-foreground',
+                    'trpc-devtools flex flex-col md:flex-row h-dvh bg-background text-foreground',
                     className
                 )}
             >
-                {/* Sidebar skeleton */}
-                <div className="w-64 border-r border-border flex flex-col">
-                    <div className="p-4 border-b border-border">
-                        <h1 className="text-lg font-semibold">tRPC Devtools</h1>
-                        <Skeleton className="h-3 w-20 mt-1" />
+                {isMobile ? (
+                    <MobileHeader />
+                ) : (
+                    <div className="w-64 border-r border-border flex flex-col">
+                        <div className="p-4 border-b border-border">
+                            <h1 className="text-lg font-semibold">
+                                tRPC Devtools
+                            </h1>
+                            <Skeleton className="h-3 w-20 mt-1" />
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                            <ProcedureListSkeleton />
+                        </div>
                     </div>
-                    <div className="flex-1 overflow-hidden">
-                        <ProcedureListSkeleton />
-                    </div>
-                </div>
+                )}
 
                 {/* Main content skeleton */}
                 <div className="flex-1 overflow-hidden">
@@ -122,30 +147,38 @@ export function TRPCDevtools({
         );
     }
 
+    const sidebarContent = (
+        <SidebarContent
+            schema={schema}
+            selectedPath={selectedPath}
+            onSelect={handleSelect}
+            onReplay={handleHistoryReplay}
+        />
+    );
+
     return (
         <div
             className={cn(
-                'trpc-devtools flex h-screen bg-background text-foreground',
+                'trpc-devtools flex flex-col md:flex-row h-dvh bg-background text-foreground',
                 className
             )}
         >
-            {/* Sidebar */}
-            <div className="w-64 border-r border-border flex flex-col">
-                <div className="p-4 border-b border-border">
-                    <h1 className="text-lg font-semibold">tRPC Devtools</h1>
-                    <p className="text-xs text-muted-foreground">
-                        {schema.procedures.length} procedures
-                    </p>
+            {isMobile ? (
+                <>
+                    <MobileHeader onOpenMenu={() => setIsDrawerOpen(true)} />
+                    <Drawer
+                        isOpen={isDrawerOpen}
+                        onClose={closeDrawer}
+                        label="Procedure navigation"
+                    >
+                        {sidebarContent}
+                    </Drawer>
+                </>
+            ) : (
+                <div className="w-64 border-r border-border flex flex-col">
+                    {sidebarContent}
                 </div>
-                <div className="flex-1 overflow-hidden">
-                    <ProcedureList
-                        procedures={schema.procedures}
-                        selectedPath={selectedPath}
-                        onSelect={setSelectedPath}
-                    />
-                </div>
-                <RequestHistoryPanel onReplay={handleHistoryReplay} />
-            </div>
+            )}
 
             {/* Main content */}
             <div className="flex-1 overflow-hidden">
@@ -164,5 +197,63 @@ export function TRPCDevtools({
                 )}
             </div>
         </div>
+    );
+}
+
+interface MobileHeaderProps {
+    onOpenMenu?: () => void;
+}
+
+function MobileHeader({ onOpenMenu }: MobileHeaderProps) {
+    return (
+        <header className="flex items-center gap-1 px-2 py-1 border-b border-border shrink-0">
+            <button
+                type="button"
+                aria-label="Open navigation menu"
+                onClick={onOpenMenu}
+                disabled={!onOpenMenu}
+                className={cn(
+                    'flex h-11 w-11 items-center justify-center rounded-md transition-colors',
+                    'hover:bg-accent/50 disabled:opacity-50',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
+                )}
+            >
+                <Menu className="h-5 w-5" />
+            </button>
+            <h1 className="text-base font-semibold">tRPC Devtools</h1>
+        </header>
+    );
+}
+
+interface SidebarContentProps {
+    schema: RouterSchema;
+    selectedPath: string | null;
+    onSelect: (path: string) => void;
+    onReplay: (item: HistoryItem) => void;
+}
+
+function SidebarContent({
+    schema,
+    selectedPath,
+    onSelect,
+    onReplay,
+}: SidebarContentProps) {
+    return (
+        <>
+            <div className="p-4 border-b border-border">
+                <h1 className="text-lg font-semibold">tRPC Devtools</h1>
+                <p className="text-xs text-muted-foreground">
+                    {schema.procedures.length} procedures
+                </p>
+            </div>
+            <div className="flex-1 overflow-hidden">
+                <ProcedureList
+                    procedures={schema.procedures}
+                    selectedPath={selectedPath}
+                    onSelect={onSelect}
+                />
+            </div>
+            <RequestHistoryPanel onReplay={onReplay} />
+        </>
     );
 }

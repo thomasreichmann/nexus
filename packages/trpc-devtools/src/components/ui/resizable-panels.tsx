@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useIsMobile } from '@/lib/use-is-mobile';
 import { cn } from '@/lib/utils';
 import { loadPanelSizes, savePanelSizes, type PanelSizes } from '@/lib/storage';
 
@@ -22,7 +23,7 @@ export function ResizablePanels({
     const containerRef = React.useRef<HTMLDivElement>(null);
     const sizesRef = React.useRef<PanelSizes>(DEFAULT_SIZES);
     const [sizes, setSizes] = React.useState<PanelSizes>(DEFAULT_SIZES);
-    const [isHorizontal, setIsHorizontal] = React.useState(true);
+    const isHorizontal = !useIsMobile();
     const [isDragging, setIsDragging] = React.useState(false);
 
     // Keep ref in sync for use in pointer up handler
@@ -33,17 +34,6 @@ export function ResizablePanels({
     // Load persisted sizes on mount
     React.useEffect(() => {
         setSizes(loadPanelSizes());
-    }, []);
-
-    // Handle responsive layout switching
-    React.useEffect(() => {
-        const checkWidth = () => {
-            setIsHorizontal(window.innerWidth >= 768);
-        };
-
-        checkWidth();
-        window.addEventListener('resize', checkWidth);
-        return () => window.removeEventListener('resize', checkWidth);
     }, []);
 
     // Get the current size based on layout direction

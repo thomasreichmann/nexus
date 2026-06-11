@@ -24,7 +24,11 @@ function getDevtoolsHtml(config: {
     trpcUrl: string;
     headers?: Record<string, string>;
 }): string {
-    const js = getStandaloneJs();
+    // Escape closing script tags inside the bundle (e.g. react-dom contains
+    // an innerHTML="<script></script>" string) so the HTML parser doesn't
+    // terminate the inline <script> block early. "<\/script" is equivalent
+    // inside JS string literals.
+    const js = getStandaloneJs().replace(/<\/(script)/gi, '<\\/$1');
     const css = getStandaloneCss();
 
     return `<!DOCTYPE html>
