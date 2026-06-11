@@ -1,6 +1,5 @@
 import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import { Check } from 'lucide-react';
+import { DepthMarker } from './depth-marker';
 
 const plans = [
     {
@@ -71,68 +70,70 @@ const plans = [
 
 export function Pricing() {
     return (
-        <section id="pricing" className="py-20 md:py-28">
-            <div className="container mx-auto px-4">
-                <div className="mx-auto mb-16 max-w-2xl text-center">
-                    <h2 className="mb-4 text-3xl font-bold tracking-tight md:text-4xl">
-                        Simple, transparent pricing
-                    </h2>
-                    <p className="text-lg text-muted-foreground">
-                        No hidden fees. No surprises. Just affordable archival
-                        storage.
-                    </p>
-                </div>
-                <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <section id="pricing" className="scroll-mt-20 py-24 md:py-32">
+            <div className="mx-auto max-w-6xl px-6">
+                <DepthMarker depth="−4,800 m" name="Abyssal plain" />
+                <h2 className="mt-8 font-display text-4xl tracking-tight md:text-5xl">
+                    Pressure-tested pricing.
+                </h2>
+                <p className="mt-4 max-w-md text-lg leading-relaxed text-(--mist)">
+                    No hidden fees. No egress surprises. Storage that costs what
+                    cold storage should.
+                </p>
+                <div className="mt-14 grid gap-px border border-(--hairline) bg-(--hairline) md:grid-cols-2 lg:grid-cols-4">
                     {plans.map((plan) => (
                         <div
                             key={plan.name}
-                            className={`relative rounded-xl border bg-card p-8 shadow-sm ${
+                            className={`relative flex flex-col p-8 ${
                                 plan.popular
-                                    ? 'border-primary shadow-md'
-                                    : 'border-border'
+                                    ? 'bg-(--foam)/6'
+                                    : 'bg-(--abyss)/40'
                             }`}
                         >
                             {plan.popular && (
-                                <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">
-                                    Most popular
-                                </div>
+                                <span className="absolute top-0 right-8 -translate-y-1/2 bg-(--ice) px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-(--ice-deep)">
+                                    Most chosen
+                                </span>
                             )}
-                            <div className="mb-6">
-                                <h3 className="mb-1 text-lg font-semibold">
-                                    {plan.name}
-                                </h3>
-                                <p className="text-sm text-muted-foreground">
-                                    {plan.description}
-                                </p>
-                            </div>
-                            <div className="mb-6">
-                                <span className="text-4xl font-bold">
+                            <h3 className="font-mono text-[11px] uppercase tracking-[0.3em] text-(--ice)">
+                                {plan.name}
+                            </h3>
+                            <p className="mt-2 text-sm text-(--faint)">
+                                {plan.description}
+                            </p>
+                            <div className="mt-6 flex items-baseline gap-1">
+                                <span className="font-display text-5xl tracking-tight text-(--foam)">
                                     {plan.price}
                                 </span>
-                                <span className="text-muted-foreground">
+                                <span className="text-sm text-(--faint)">
                                     {plan.period}
                                 </span>
                             </div>
-                            <ul className="mb-8 space-y-3">
+                            <ul className="mt-8 mb-10 space-y-3">
                                 {plan.features.map((feature) => (
                                     <li
                                         key={feature}
-                                        className="flex items-center gap-3 text-sm"
+                                        className="flex items-start gap-3 text-sm text-(--mist)"
                                     >
-                                        <Check className="h-4 w-4 text-primary" />
-                                        <span>{feature}</span>
+                                        <span
+                                            aria-hidden
+                                            className="mt-0.5 text-(--ice)"
+                                        >
+                                            ▪
+                                        </span>
+                                        {feature}
                                     </li>
                                 ))}
                             </ul>
-                            <Link href="/sign-up" className="w-full">
-                                <Button
-                                    className="w-full"
-                                    variant={
-                                        plan.popular ? 'default' : 'outline'
-                                    }
-                                >
-                                    {plan.cta}
-                                </Button>
+                            <Link
+                                href="/sign-up"
+                                className={`mt-auto inline-flex justify-center px-4 py-3 font-mono text-[11px] uppercase tracking-[0.2em] transition-colors ${
+                                    plan.popular
+                                        ? 'bg-(--ice) text-(--ice-deep) hover:brightness-110'
+                                        : 'border border-(--hairline) text-(--mist) hover:border-(--ice) hover:text-(--ice)'
+                                }`}
+                            >
+                                {plan.cta}
                             </Link>
                         </div>
                     ))}

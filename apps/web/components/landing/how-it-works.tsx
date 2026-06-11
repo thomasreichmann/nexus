@@ -1,54 +1,59 @@
-import { Upload, Database, Download } from 'lucide-react';
+import { DepthMarker } from './depth-marker';
 
 const steps = [
     {
-        icon: Upload,
-        title: 'Upload',
+        id: '01',
+        title: 'Drop',
         description:
-            'Drag and drop your files. We accept any file type, any size.',
+            'Drag in anything — any file type, any size, straight from the browser. No clients, no command line.',
     },
     {
-        icon: Database,
-        title: 'We archive',
+        id: '02',
+        title: 'Descend',
         description:
-            'Your files are automatically stored in cold storage with 11 nines durability.',
+            'We sink your files through storage tiers into archival cold storage. Eleven nines of durability, encrypted the whole way down.',
     },
     {
-        icon: Download,
-        title: 'Retrieve',
-        description: "Request your files anytime. They're ready in 3-12 hours.",
+        id: '03',
+        title: 'Surface',
+        description:
+            'Ask for anything back, anytime. Your files rise to meet you within 12–48 hours.',
     },
 ];
 
 export function HowItWorks() {
     return (
-        <section id="how-it-works" className="py-20 md:py-28">
-            <div className="container mx-auto px-4">
-                <div className="mx-auto mb-16 max-w-2xl text-center">
-                    <h2 className="mb-4 text-3xl font-bold tracking-tight md:text-4xl">
-                        How it works
-                    </h2>
-                    <p className="text-lg text-muted-foreground">
-                        Three simple steps to secure, affordable storage.
-                    </p>
-                </div>
-                <div className="mx-auto grid max-w-4xl gap-8 md:grid-cols-3">
-                    {steps.map((step, index) => (
-                        <div key={step.title} className="relative text-center">
-                            <div className="mb-6 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
-                                <step.icon className="h-8 w-8 text-primary" />
-                            </div>
-                            <div className="absolute -top-2 left-1/2 -translate-x-1/2 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                                {index + 1}
-                            </div>
-                            <h3 className="mb-2 text-xl font-semibold">
-                                {step.title}
-                            </h3>
-                            <p className="text-muted-foreground">
-                                {step.description}
-                            </p>
-                        </div>
-                    ))}
+        <section id="how-it-works" className="scroll-mt-20 py-24 md:py-32">
+            <div className="mx-auto max-w-6xl px-6">
+                <DepthMarker depth="−1,800 m" name="Midwater" />
+                <h2 className="mt-8 font-display text-4xl tracking-tight md:text-5xl">
+                    Three moves. That&apos;s the whole product.
+                </h2>
+                <div className="mt-16 max-w-3xl">
+                    <ol className="relative border-l border-(--hairline) pl-10 md:pl-14">
+                        {steps.map((step, index) => (
+                            <li
+                                key={step.id}
+                                className={`group relative ${
+                                    index < steps.length - 1 ? 'pb-16' : ''
+                                }`}
+                            >
+                                <span
+                                    aria-hidden
+                                    className="absolute top-1.5 -left-10 h-px w-6 bg-(--hairline) transition-colors group-hover:bg-(--ice) md:-left-14 md:w-9"
+                                />
+                                <span className="font-mono text-[11px] uppercase tracking-[0.3em] text-(--ice)">
+                                    {step.id}
+                                </span>
+                                <h3 className="mt-2 font-display text-3xl tracking-tight md:text-4xl">
+                                    {step.title}
+                                </h3>
+                                <p className="mt-3 max-w-md leading-relaxed text-(--mist)">
+                                    {step.description}
+                                </p>
+                            </li>
+                        ))}
+                    </ol>
                 </div>
             </div>
         </section>

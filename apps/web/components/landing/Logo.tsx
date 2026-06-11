@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { Archive } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 interface LogoProps {
@@ -8,11 +7,22 @@ interface LogoProps {
 
 export function Logo({ className }: LogoProps) {
     return (
-        <Link href="/" className={cn('flex items-center gap-2', className)}>
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                <Archive className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-semibold">Nexus</span>
+        <Link
+            href="/"
+            className={cn('group flex items-baseline gap-2.5', className)}
+        >
+            <span
+                aria-hidden
+                className="flex h-7 w-7 translate-y-0.5 items-center justify-center border border-(--ice) font-mono text-[13px] leading-none text-(--ice) transition-colors group-hover:bg-(--ice) group-hover:text-(--ice-deep)"
+            >
+                ▽
+            </span>
+            <span className="font-display text-2xl tracking-tight text-(--foam)">
+                Nexus
+            </span>
+            <span className="hidden font-mono text-[10px] uppercase tracking-[0.3em] text-(--faint) sm:inline">
+                Deep storage
+            </span>
         </Link>
     );
 }

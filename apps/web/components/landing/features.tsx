@@ -1,39 +1,40 @@
-import { Shield, Wallet, Clock, Lock, Globe, Headphones } from 'lucide-react';
+import { DepthMarker } from './depth-marker';
 
 const features = [
     {
-        icon: Wallet,
+        id: '01',
         title: 'Up to 60% cheaper',
         description:
-            'Starting at $3/month for 1TB. Pay less than traditional cloud storage.',
+            'Starting at $3/month for a full terabyte. Cold files at cold prices.',
     },
     {
-        icon: Shield,
+        id: '02',
         title: '11 nines durability',
         description:
             "99.999999999% durability. Your files aren't going anywhere.",
     },
     {
-        icon: Clock,
-        title: '12-48 hour retrieval',
+        id: '03',
+        title: '12–48 hour retrieval',
         description:
-            "Request your files anytime. They're available within hours.",
+            'Request anything, anytime. It surfaces within hours, not weeks.',
     },
     {
-        icon: Lock,
+        id: '04',
         title: 'End-to-end encryption',
-        description: 'Your files are encrypted at rest and in transit. Always.',
+        description:
+            'Encrypted at rest and in transit. Always, with no setting to forget.',
     },
     {
-        icon: Globe,
+        id: '05',
         title: 'No technical setup',
         description:
-            'We handle all the complexity. You just upload and download.',
+            'No lifecycle policies, no egress math. Upload, and we handle the rest.',
     },
     {
-        icon: Headphones,
+        id: '06',
         title: 'Human support',
-        description: 'Real people ready to help when you need it.',
+        description: 'Real people who answer, ready when something matters.',
     },
 ];
 
@@ -41,35 +42,37 @@ export function Features() {
     return (
         <section
             id="features"
-            className="border-t border-border bg-muted/30 py-20 md:py-28"
+            className="scroll-mt-20 border-t border-(--hairline) py-24 md:py-32"
         >
-            <div className="container mx-auto px-4">
-                <div className="mx-auto mb-16 max-w-2xl text-center">
-                    <h2 className="mb-4 text-3xl font-bold tracking-tight md:text-4xl">
-                        Everything you need
+            <div className="mx-auto max-w-6xl px-6">
+                <DepthMarker depth="−3,200 m" name="The deep" />
+                <div className="mt-8 flex flex-wrap items-end justify-between gap-6">
+                    <h2 className="font-display text-4xl tracking-tight md:text-5xl">
+                        Built to keep,{' '}
+                        <em className="italic text-(--ice)">not to browse.</em>
                     </h2>
-                    <p className="text-lg text-muted-foreground">
-                        Enterprise-grade archival storage, made simple.
+                    <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-(--faint)">
+                        The manifest
                     </p>
                 </div>
-                <div className="mx-auto grid max-w-5xl gap-8 md:grid-cols-2 lg:grid-cols-3">
+                <ul className="mt-14 border-t border-(--hairline)">
                     {features.map((feature) => (
-                        <div
-                            key={feature.title}
-                            className="rounded-xl border border-border bg-card p-6 shadow-sm transition-shadow hover:shadow-md"
+                        <li
+                            key={feature.id}
+                            className="group grid gap-2 border-b border-(--hairline) py-6 transition-colors hover:bg-(--foam)/3 md:grid-cols-12 md:items-baseline md:gap-6"
                         >
-                            <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-                                <feature.icon className="h-6 w-6 text-primary" />
-                            </div>
-                            <h3 className="mb-2 text-lg font-semibold">
+                            <span className="font-mono text-[11px] text-(--ice) md:col-span-1">
+                                {feature.id}
+                            </span>
+                            <h3 className="text-xl font-medium text-(--foam) transition-transform duration-300 group-hover:translate-x-1 md:col-span-5 md:text-2xl">
                                 {feature.title}
                             </h3>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="leading-relaxed text-(--faint) transition-colors group-hover:text-(--mist) md:col-span-6">
                                 {feature.description}
                             </p>
-                        </div>
+                        </li>
                     ))}
-                </div>
+                </ul>
             </div>
         </section>
     );

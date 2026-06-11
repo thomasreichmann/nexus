@@ -1,49 +1,37 @@
-import { Archive, Users, HardDrive } from 'lucide-react';
+import { DepthMarker } from './depth-marker';
 
-const stats = [
+const ledger = [
     {
-        icon: Users,
-        value: '10,000+',
-        label: 'Active users',
+        value: '99.999999999%',
+        label: 'Designed durability — eleven nines',
     },
     {
-        icon: HardDrive,
-        value: '50+ PB',
-        label: 'Data stored',
+        value: '12–48 h',
+        label: 'From request to retrieval, any file',
     },
     {
-        icon: Archive,
-        value: '99.99%',
-        label: 'Uptime',
+        value: 'AES-256',
+        label: 'Encryption at rest and in transit',
     },
 ];
 
 export function Trust() {
     return (
-        <section className="border-t border-border bg-muted/30 py-16">
-            <div className="container mx-auto px-4">
-                <div className="mx-auto max-w-4xl">
-                    <div className="mb-12 text-center">
-                        <p className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-                            Trusted by thousands
-                        </p>
-                    </div>
-                    <div className="grid gap-8 md:grid-cols-3">
-                        {stats.map((stat) => (
-                            <div key={stat.label} className="text-center">
-                                <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
-                                    <stat.icon className="h-6 w-6 text-primary" />
-                                </div>
-                                <div className="text-3xl font-bold">
-                                    {stat.value}
-                                </div>
-                                <div className="text-sm text-muted-foreground">
-                                    {stat.label}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+        <section className="border-t border-(--hairline) py-20 md:py-24">
+            <div className="mx-auto max-w-6xl px-6">
+                <DepthMarker depth="−5,900 m" name="The trench" />
+                <dl className="mt-12 grid gap-12 md:grid-cols-3 md:gap-8">
+                    {ledger.map((entry) => (
+                        <div key={entry.value}>
+                            <dt className="order-last mt-3 font-mono text-[11px] uppercase tracking-[0.25em] text-(--faint)">
+                                {entry.label}
+                            </dt>
+                            <dd className="font-display text-4xl tracking-tight text-(--ice) md:text-5xl">
+                                {entry.value}
+                            </dd>
+                        </div>
+                    ))}
+                </dl>
             </div>
         </section>
     );
