@@ -6,7 +6,15 @@ export function createDb(
     url: string,
     options?: Options<Record<string, never>>
 ) {
-    const client = postgres(url, options);
+    const client = postgres(url, {
+        // Supabase's transaction-mode pooler (port 6543) does not support
+        // prepared statements: statements can land on different pooled
+        // backends, which intermittently loses transactions (observed as
+        // confirmUpload's status flip returning success but never
+        // committing). Callers on a direct connection can override.
+        prepare: false,
+        ...options,
+    });
     return drizzle(client, { schema });
 }
 

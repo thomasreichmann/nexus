@@ -54,6 +54,14 @@ Don't write E2E tests for:
 
 Smoke tests already verify these pages render without console errors. For authenticated pages, use the `authenticated` fixture in `e2e/smoke/authenticated/` (see [[../conventions/testing|Testing Conventions]]).
 
+## Coverage Tracking
+
+Every page and user-facing use-case is enumerated in
+`apps/web/e2e/coverage/manifest.ts`, and tests claim coverage via
+`@page:`/`@uc:` tags. `pnpm -F web e2e:coverage --check` verifies 100%
+coverage; the `/dev/coverage` dashboard visualizes it. New features must add
+manifest entries + tagged tests. See [[../conventions/testing|Testing Conventions]].
+
 ## Writing & Running Tests
 
 See [[../conventions/testing|Testing Conventions]] for test structure patterns, helpers, gotchas, and run commands.

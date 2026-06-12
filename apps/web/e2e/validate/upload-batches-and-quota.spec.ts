@@ -63,159 +63,175 @@ test.describe('upload batches + storage quota', () => {
         await getDb().end({ timeout: 5 });
     });
 
-    test('fresh upload creates batch, new-format s3Key, increments storage_usage', async ({
-        page,
-    }) => {
-        const userId = await getUserId();
-        const sql = getDb();
+    test(
+        'fresh upload creates batch, new-format s3Key, increments storage_usage',
+        { tag: ['@page:/dashboard/upload', '@uc:upload-single-file-flow'] },
+        async ({ page }) => {
+            const userId = await getUserId();
+            const sql = getDb();
 
-        await page.goto('/dashboard/upload');
-        await expect(
-            page.getByRole('heading', { name: 'Upload Files', exact: true })
-        ).toBeVisible();
+            await page.goto('/dashboard/upload');
+            await expect(
+                page.getByRole('heading', { name: 'Upload Files', exact: true })
+            ).toBeVisible();
 
-        const fileBuf = Buffer.from('hello upload batches validate\n');
-        const fileName = `validate-${Date.now()}.txt`;
+            const fileBuf = Buffer.from('hello upload batches validate\n');
+            const fileName = `validate-${Date.now()}.txt`;
 
-        await page.setInputFiles('input[type="file"]', {
-            name: fileName,
-            mimeType: 'text/plain',
-            buffer: fileBuf,
-        });
-        await page.screenshot({
-            path: `${SCREENSHOTS}/01-after-select.png`,
-            fullPage: true,
-        });
+            await page.setInputFiles('input[type="file"]', {
+                name: fileName,
+                mimeType: 'text/plain',
+                buffer: fileBuf,
+            });
+            await page.screenshot({
+                path: `${SCREENSHOTS}/01-after-select.png`,
+                fullPage: true,
+            });
 
-        await page.getByRole('button', { name: /^Upload \d+ files?$/ }).click();
-        await expect(page.getByText('Uploaded', { exact: true })).toBeVisible({
-            timeout: 30_000,
-        });
-        await page.screenshot({
-            path: `${SCREENSHOTS}/02-after-upload.png`,
-            fullPage: true,
-        });
+            await page
+                .getByRole('button', { name: /^Upload \d+ files?$/ })
+                .click();
+            await expect(
+                page.getByText('Uploaded', { exact: true })
+            ).toBeVisible({
+                timeout: 30_000,
+            });
+            await page.screenshot({
+                path: `${SCREENSHOTS}/02-after-upload.png`,
+                fullPage: true,
+            });
 
-        // ---- DB assertions ----
-        const batches = await sql<{ id: string; name: string }[]>`
+            // ---- DB assertions ----
+            const batches = await sql<{ id: string; name: string }[]>`
             SELECT id, name FROM upload_batches WHERE user_id = ${userId}
         `;
-        expect(batches).toHaveLength(1);
-        const batch = batches[0];
-        // Fallback name shape: `Upload YYYY-MM-DD HH:MM`.
-        expect(batch.name).toMatch(/^Upload \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+            expect(batches).toHaveLength(1);
+            const batch = batches[0];
+            // Fallback name shape: `Upload YYYY-MM-DD HH:MM`.
+            expect(batch.name).toMatch(
+                /^Upload \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/
+            );
 
-        const files = await sql<
-            {
-                id: string;
-                size: number;
-                s3_key: string;
-                status: string;
-                batch_id: string | null;
-            }[]
-        >`
+            const files = await sql<
+                {
+                    id: string;
+                    size: number;
+                    s3_key: string;
+                    status: string;
+                    batch_id: string | null;
+                }[]
+            >`
             SELECT id, size, s3_key, status, batch_id
             FROM files
             WHERE user_id = ${userId} AND name = ${fileName}
         `;
-        expect(files).toHaveLength(1);
-        const file = files[0];
-        expect(file.status).toBe('available');
-        expect(file.batch_id).toBe(batch.id);
-        expect(file.s3_key).toBe(
-            `${userId}/${batch.id}/${file.id}/${fileName}`
-        );
-        expect(Number(file.size)).toBe(fileBuf.byteLength);
+            expect(files).toHaveLength(1);
+            const file = files[0];
+            expect(file.status).toBe('available');
+            expect(file.batch_id).toBe(batch.id);
+            expect(file.s3_key).toBe(
+                `${userId}/${batch.id}/${file.id}/${fileName}`
+            );
+            expect(Number(file.size)).toBe(fileBuf.byteLength);
 
-        const [usage] = await sql<
-            { used_bytes: string; file_count: number }[]
-        >`SELECT used_bytes, file_count FROM storage_usage WHERE user_id = ${userId}`;
-        expect(Number(usage.used_bytes)).toBe(fileBuf.byteLength);
-        expect(Number(usage.file_count)).toBe(1);
-    });
+            const [usage] = await sql<
+                { used_bytes: string; file_count: number }[]
+            >`SELECT used_bytes, file_count FROM storage_usage WHERE user_id = ${userId}`;
+            expect(Number(usage.used_bytes)).toBe(fileBuf.byteLength);
+            expect(Number(usage.file_count)).toBe(1);
+        }
+    );
 
-    test('dashboard Storage Usage widget renders after upload', async ({
-        page,
-    }) => {
-        await page.goto('/dashboard');
-        await expect(
-            page.getByRole('heading', { name: /welcome back, .+/i })
-        ).toBeVisible();
-        await expect(page.getByText('Storage Usage')).toBeVisible();
-        await page.screenshot({
-            path: `${SCREENSHOTS}/03-dashboard.png`,
-            fullPage: true,
-        });
-    });
+    test(
+        'dashboard Storage Usage widget renders after upload',
+        { tag: ['@page:/dashboard', '@uc:dashboard-storage-usage-widget'] },
+        async ({ page }) => {
+            await page.goto('/dashboard');
+            await expect(
+                page.getByRole('heading', { name: /welcome back, .+/i })
+            ).toBeVisible();
+            await expect(page.getByText('Storage Usage')).toBeVisible();
+            await page.screenshot({
+                path: `${SCREENSHOTS}/03-dashboard.png`,
+                fullPage: true,
+            });
+        }
+    );
 
-    test('grouped files page shows the auto-created batch from the upload', async ({
-        page,
-    }) => {
-        // Depends on the fresh-upload test having created the batch.
-        await page.goto('/dashboard/files');
-        await expect(
-            page.getByRole('heading', { name: /files/i, exact: false })
-        ).toBeVisible();
+    test(
+        'grouped files page shows the auto-created batch from the upload',
+        { tag: ['@page:/dashboard/files', '@uc:upload-batch-grouping'] },
+        async ({ page }) => {
+            // Depends on the fresh-upload test having created the batch.
+            await page.goto('/dashboard/files');
+            await expect(
+                page.getByRole('heading', { name: /files/i, exact: false })
+            ).toBeVisible();
 
-        // The auto-created batch uses the fallback name format
-        // `Upload YYYY-MM-DD HH:MM`. Match heading by that pattern.
-        await expect(
-            page.getByRole('heading', { name: /^Upload \d{4}-\d{2}-\d{2}/ })
-        ).toBeVisible();
-        // The single uploaded file should be visible (default expanded).
-        await expect(page.getByText('validate-')).toBeVisible();
+            // The auto-created batch uses the fallback name format
+            // `Upload YYYY-MM-DD HH:MM`. Match heading by that pattern.
+            await expect(
+                page.getByRole('heading', { name: /^Upload \d{4}-\d{2}-\d{2}/ })
+            ).toBeVisible();
+            // The single uploaded file should be visible (default expanded).
+            await expect(page.getByText('validate-')).toBeVisible();
 
-        await page.screenshot({
-            path: `${SCREENSHOTS}/05-grouped-files-page.png`,
-            fullPage: true,
-        });
-    });
+            await page.screenshot({
+                path: `${SCREENSHOTS}/05-grouped-files-page.png`,
+                fullPage: true,
+            });
+        }
+    );
 
-    test('quota soft cap: UI surfaces upload error when over 105%', async ({
-        page,
-    }) => {
-        const userId = await getUserId();
-        const sql = getDb();
+    test(
+        'quota soft cap: UI surfaces upload error when over 105%',
+        { tag: ['@page:/dashboard/upload', '@uc:upload-quota-exceeded'] },
+        async ({ page }) => {
+            const userId = await getUserId();
+            const sql = getDb();
 
-        // Park usage at exactly 105% of starter — any positive sizeBytes
-        // pushes past the soft cap.
-        const at105 = Math.floor(PLAN_LIMITS.starter * 1.05);
-        await sql`
+            // Park usage at exactly 105% of starter — any positive sizeBytes
+            // pushes past the soft cap.
+            const at105 = Math.floor(PLAN_LIMITS.starter * 1.05);
+            await sql`
             UPDATE storage_usage SET used_bytes = ${at105}, file_count = 1
             WHERE user_id = ${userId}
         `;
 
-        await page.goto('/dashboard/upload');
-        await expect(
-            page.getByRole('heading', { name: 'Upload Files', exact: true })
-        ).toBeVisible();
+            await page.goto('/dashboard/upload');
+            await expect(
+                page.getByRole('heading', { name: 'Upload Files', exact: true })
+            ).toBeVisible();
 
-        const rejectedName = `quota-rejected-${Date.now()}.txt`;
-        await page.setInputFiles('input[type="file"]', {
-            name: rejectedName,
-            mimeType: 'text/plain',
-            buffer: Buffer.from('over-quota attempt\n'),
-        });
-        await page.getByRole('button', { name: /^Upload \d+ files?$/ }).click();
+            const rejectedName = `quota-rejected-${Date.now()}.txt`;
+            await page.setInputFiles('input[type="file"]', {
+                name: rejectedName,
+                mimeType: 'text/plain',
+                buffer: Buffer.from('over-quota attempt\n'),
+            });
+            await page
+                .getByRole('button', { name: /^Upload \d+ files?$/ })
+                .click();
 
-        // UploadZone renders a Retry button + inline error on rejection.
-        await expect(
-            page.getByRole('button', { name: 'Retry upload' })
-        ).toBeVisible({ timeout: 15_000 });
-        await expect(page.getByText('Uploaded', { exact: true })).toHaveCount(
-            0
-        );
+            // UploadZone renders a Retry button + inline error on rejection.
+            await expect(
+                page.getByRole('button', { name: 'Retry upload' })
+            ).toBeVisible({ timeout: 15_000 });
+            await expect(
+                page.getByText('Uploaded', { exact: true })
+            ).toHaveCount(0);
 
-        await page.screenshot({
-            path: `${SCREENSHOTS}/04-quota-rejected.png`,
-            fullPage: true,
-        });
+            await page.screenshot({
+                path: `${SCREENSHOTS}/04-quota-rejected.png`,
+                fullPage: true,
+            });
 
-        // No file row with the rejected name should have been created.
-        const [{ count }] = await sql<{ count: string }[]>`
+            // No file row with the rejected name should have been created.
+            const [{ count }] = await sql<{ count: string }[]>`
             SELECT count(*)::text FROM files
             WHERE user_id = ${userId} AND name = ${rejectedName}
         `;
-        expect(Number(count)).toBe(0);
-    });
+            expect(Number(count)).toBe(0);
+        }
+    );
 });

@@ -20,35 +20,41 @@ test.describe('sequential file deletion', () => {
         await cleanupFiles(seededFiles);
     });
 
-    test('can delete multiple files sequentially without page refresh', async ({
-        page,
-    }) => {
-        await page.goto(PAGE_URL);
-        await waitForFileList(page);
+    test(
+        'can delete multiple files sequentially without page refresh',
+        { tag: ['@page:/dashboard/files', '@uc:files-delete-single'] },
+        async ({ page }) => {
+            await page.goto(PAGE_URL);
+            await waitForFileList(page);
 
-        // Verify all 3 seeded files are visible
-        for (const file of seededFiles) {
-            await expect(page.getByText(file.name)).toBeVisible();
+            // Verify all 3 seeded files are visible
+            for (const file of seededFiles) {
+                await expect(page.getByText(file.name)).toBeVisible();
+            }
+
+            // Delete first file. 30s: on a cold dev server this is the first
+            // S3-touching mutation (route compile + SDK init can exceed 10s).
+            await deleteFileByName(page, seededFiles[0].name);
+            await expect(page.getByText(seededFiles[0].name)).toBeHidden({
+                timeout: 30_000,
+            });
+
+            // Delete second file — this is the step that fails without the
+            // fix. The server is warm by now (route compiled, SDK
+            // initialized by the first delete), so the timeout stays tight
+            // to keep guarding the no-refresh sequential-delete regression.
+            await deleteFileByName(page, seededFiles[1].name);
+            await expect(page.getByText(seededFiles[1].name)).toBeHidden({
+                timeout: 10_000,
+            });
+
+            // Third file should still be visible
+            await expect(page.getByText(seededFiles[2].name)).toBeVisible();
+
+            // Remove deleted files from cleanup list (already gone from DB)
+            seededFiles = seededFiles.slice(2);
         }
-
-        // Delete first file
-        await deleteFileByName(page, seededFiles[0].name);
-        await expect(page.getByText(seededFiles[0].name)).toBeHidden({
-            timeout: 10_000,
-        });
-
-        // Delete second file — this is the step that fails without the fix
-        await deleteFileByName(page, seededFiles[1].name);
-        await expect(page.getByText(seededFiles[1].name)).toBeHidden({
-            timeout: 10_000,
-        });
-
-        // Third file should still be visible
-        await expect(page.getByText(seededFiles[2].name)).toBeVisible();
-
-        // Remove deleted files from cleanup list (already gone from DB)
-        seededFiles = seededFiles.slice(2);
-    });
+    );
 });
 
 async function waitForFileList(page: Page): Promise<void> {

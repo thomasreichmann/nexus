@@ -85,11 +85,17 @@ test.describe('Admin Feature', () => {
 
 For pages requiring auth (e.g. admin dashboards), use the `storageState` pattern with a Playwright setup project. Reusable helpers live in `e2e/helpers/`:
 
-| Helper                | Purpose                                             |
-| --------------------- | --------------------------------------------------- |
-| `e2e/helpers/auth.ts` | Create users, promote to admin, save `storageState` |
-| `e2e/helpers/seed.ts` | Seed/cleanup test data (jobs, etc.)                 |
-| `e2e/helpers/db.ts`   | Direct DB access via raw `postgres` driver          |
+| Helper                | Purpose                                                                                        |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| `e2e/helpers/auth.ts` | Create users, promote to admin, save `storageState`, `provisionDedicatedUser` for flows specs  |
+| `e2e/helpers/seed.ts` | Seed/cleanup test data (jobs, etc.)                                                            |
+| `e2e/helpers/db.ts`   | Direct DB access via raw `postgres` driver (`insertFile`/`insertBatch`/`deleteUserData`, etc.) |
+| `e2e/helpers/trpc.ts` | Batch-safe tRPC request matching: `interceptTrpcCalls` (record + abort), `waitForTrpcRequest`  |
+
+**Asserting on tRPC traffic:** never match procedure URLs with substrings or
+hand-rolled regexes — `httpBatchLink` can merge same-tick calls into
+`/api/trpc/<a>,<b>?batch=1`, which breaks both. Use `e2e/helpers/trpc.ts`,
+which matches the procedure as a full path segment.
 
 **Auth setup runs as a Playwright project** (`global.setup.ts`), not `globalSetup` config — because `globalSetup` runs before `webServer` starts, making API calls impossible.
 
@@ -116,11 +122,38 @@ test.describe('feature with seeded data', () => {
 });
 ```
 
-**Playwright config** has three projects:
+**Playwright config** projects:
 
 - `setup` — Creates test users and saves auth state to `e2e/.auth/`
 - `smoke` — All smoke tests (public + authenticated, depends on `setup`, matches `smoke/`)
-- `admin` — Authenticated E2E tests (uses `storageState`, depends on `setup`, matches `admin/`)
+- `admin-files` → `admin-jobs` → `admin` — Admin specs share the admin user's data (and the global jobs table), so the spec files are **chained as dependent projects**: serialization is enforced in the config itself, for every entrypoint (`playwright test`, `--ui`, all scripts). New admin specs land in the catch-all `admin` tail; if it ever holds more than one file, give the new file its own chain link.
+- `flows` — Interactive user flows (matches `flows/`). Each spec provisions a **dedicated user** in `beforeAll` via `provisionDedicatedUser` from `e2e/helpers/auth.ts`, so empty-state and exact-count assertions can't race other specs.
+- `validate` — Destructive dev-environment validation. **Env-gated** (`E2E_VALIDATE=1`): it doesn't exist in normal runs, so a plain `playwright test` can never run it alongside smoke and corrupt the shared user's data. Run via `pnpm -F web test:e2e:validate`.
+
+## E2E Coverage (100% target)
+
+`e2e/coverage/manifest.ts` lists every page and user-facing use-case — it is
+the definition of 100% E2E coverage. Tests declare what they cover with
+Playwright tags:
+
+```typescript
+test(
+    'search filters files',
+    { tag: ['@page:/dashboard/files', '@uc:files-search'] },
+    async ({ page }) => { ... }
+);
+```
+
+- `pnpm -F web e2e:coverage` — regenerates `coverage/e2e-coverage.json` and prints a summary; `--check` exits 1 below 100% (also fails on tags that don't match the manifest, on app routes missing from the manifest — the `PAGES` list is cross-checked against `app/**/page.tsx` — and on use-cases covered only by the manual `validate` tier without a `manual` acknowledgment)
+- `/dev/coverage` — dashboard showing E2E (pages + use-cases per area, exclusions with reasons) and unit coverage
+
+**When you ship a new page or user-facing flow:** add it to the manifest
+first, then write the tagged test. Use-cases that can't be E2E-tested get an
+`excluded` reason in the manifest instead of being silently dropped — never a
+placeholder test with no assertions, which would mark the use-case "covered"
+while verifying nothing. Use-cases verified only by the manual `validate`
+tier (not run in CI) must carry a `manual` reason so that's a visible,
+deliberate decision.
 
 **Key gotchas:**
 
@@ -138,9 +171,16 @@ Unit test utilities and pure functions with logic. Skip unit tests for presentat
 pnpm -F web test            # Unit tests (watch mode)
 pnpm -F web test:run        # Unit tests (single run)
 pnpm -F web test:e2e:smoke       # All smoke tests (public + authenticated)
-pnpm -F web test:e2e:admin       # Admin E2E tests (authenticated)
-pnpm -F web test:e2e             # All E2E tests
+pnpm -F web test:e2e:flows       # Interactive flows (dedicated users)
+pnpm -F web test:e2e:admin       # Admin E2E tests (serialized chain)
+pnpm -F web test:e2e             # All non-destructive E2E tiers
 ```
+
+**Terminal output is compact** (`e2e/reporters/compact.ts`, the e2e
+counterpart of `scripts/check.mjs`): one summary line on success; on failure,
+the trimmed error plus the `error-context.md` page-snapshot path. Flaky tests
+(passed only on retry) are named even on green runs. Full per-test output:
+`npx playwright test --reporter=list`; traces: `npx playwright show-report`.
 
 ## Related
 

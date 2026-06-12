@@ -2,7 +2,7 @@ import postgres from 'postgres';
 import { config } from 'dotenv';
 import { PLAN_LIMITS, type PlanTier } from '@nexus/db/plans';
 
-config({ path: '.env.local' });
+config({ path: '.env.local', quiet: true });
 
 let sql: ReturnType<typeof postgres> | null = null;
 
@@ -111,15 +111,18 @@ export interface InsertFileData {
     s3Key: string;
     storageTier?: string;
     status?: string;
+    /** Groups the file under an upload batch (see `insertBatch`) */
+    batchId?: string | null;
 }
 
 export async function insertFile(data: InsertFileData): Promise<DbFile> {
     const sql = getDb();
     const [file] = await sql<DbFile[]>`
-        INSERT INTO files (id, user_id, name, size, s3_key, storage_tier, status)
+        INSERT INTO files (id, user_id, batch_id, name, size, s3_key, storage_tier, status)
         VALUES (
             gen_random_uuid(),
             ${data.userId},
+            ${data.batchId ?? null},
             ${data.name},
             ${data.size ?? 1024},
             ${data.s3Key},
@@ -131,9 +134,77 @@ export async function insertFile(data: InsertFileData): Promise<DbFile> {
     return file;
 }
 
+export async function insertBatch(data: {
+    userId: string;
+    name: string;
+}): Promise<{ id: string }> {
+    const sql = getDb();
+    const [batch] = await sql<{ id: string }[]>`
+        INSERT INTO upload_batches (id, user_id, name)
+        VALUES (gen_random_uuid()::text, ${data.userId}, ${data.name})
+        RETURNING id
+    `;
+    return batch;
+}
+
+/**
+ * Removes all domain data hanging off a user (retrievals, files, batches)
+ * without deleting the user itself. The single cleanup/reset for specs that
+ * seed file data — keeping it here means a new user-scoped table gets added
+ * once, not per spec.
+ */
+export async function deleteUserData(userId: string): Promise<void> {
+    const sql = getDb();
+    await sql`DELETE FROM retrievals WHERE user_id = ${userId}`;
+    await sql`DELETE FROM files WHERE user_id = ${userId}`;
+    await sql`DELETE FROM upload_batches WHERE user_id = ${userId}`;
+}
+
 export async function deleteFile(id: string): Promise<void> {
     const sql = getDb();
     await sql`DELETE FROM files WHERE id = ${id}`;
+}
+
+export interface InsertRetrievalData {
+    fileId: string;
+    userId: string;
+    status?: string;
+    tier?: string;
+}
+
+/**
+ * Inserts a retrieval row directly. Seeding `status: 'ready'` is the only way
+ * to exercise the download path in E2E — `getDownloadUrl` requires a ready
+ * retrieval, and a real Glacier restore takes hours.
+ */
+export async function insertRetrieval(
+    data: InsertRetrievalData
+): Promise<{ id: string }> {
+    const sql = getDb();
+    const [row] = await sql<{ id: string }[]>`
+        INSERT INTO retrievals (id, file_id, user_id, status, tier, initiated_at, ready_at)
+        VALUES (
+            gen_random_uuid()::text,
+            ${data.fileId},
+            ${data.userId},
+            ${data.status ?? 'ready'},
+            ${data.tier ?? 'standard'},
+            NOW() - INTERVAL '1 hour',
+            NOW()
+        )
+        RETURNING id
+    `;
+    return row;
+}
+
+/**
+ * Removes a test user entirely. All domain tables (files, upload_batches,
+ * storage_usage, retrievals, subscriptions) and BetterAuth tables (session,
+ * account) cascade on user delete.
+ */
+export async function deleteUserByEmail(email: string): Promise<void> {
+    const sql = getDb();
+    await sql`DELETE FROM "user" WHERE email = ${email}`;
 }
 
 /**

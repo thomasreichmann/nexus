@@ -21,9 +21,51 @@ interface WorkspaceData {
     error?: boolean;
 }
 
+interface CoveringTest {
+    file: string;
+    title: string;
+}
+
+interface E2ePageItem {
+    route: string;
+    title: string;
+    auth: string;
+    covered: boolean;
+    tests: CoveringTest[];
+}
+
+interface E2eUseCaseItem {
+    id: string;
+    title: string;
+    area: string;
+    excluded?: string;
+    covered: boolean;
+    tests: CoveringTest[];
+}
+
+interface E2eReport {
+    generatedAt: string;
+    testCount: number;
+    pages: {
+        total: number;
+        covered: number;
+        pct: number;
+        items: E2ePageItem[];
+    };
+    useCases: {
+        total: number;
+        covered: number;
+        excluded: number;
+        pct: number;
+        items: E2eUseCaseItem[];
+    };
+    unknownTags: string[];
+}
+
 interface CoverageResponse {
     workspaces: WorkspaceData[];
     total: Record<string, MetricData>;
+    e2e: E2eReport | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -38,6 +80,20 @@ const LABELS: Record<MetricKey, string> = {
     branches: 'Branches',
     functions: 'Functions',
     lines: 'Lines',
+};
+
+const AREA_LABELS: Record<string, string> = {
+    auth: 'Auth',
+    dashboard: 'Dashboard',
+    files: 'Files',
+    upload: 'Upload',
+    billing: 'Billing',
+    settings: 'Settings',
+    'admin-jobs': 'Admin · Jobs',
+    'admin-dev-tools': 'Admin · Dev tools',
+    errors: 'Errors & feedback',
+    navigation: 'Navigation',
+    'dev-pages': 'Dev pages',
 };
 
 const R = 56;
@@ -95,26 +151,6 @@ export default function CoveragePage() {
         );
     }
 
-    const hasData = data.workspaces.some((ws) => !ws.error);
-    if (!hasData) {
-        return (
-            <Shell>
-                <div className="flex flex-1 items-center justify-center text-center">
-                    <div>
-                        <p className="font-medium">No coverage data found</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            Run{' '}
-                            <code className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs">
-                                pnpm test:coverage
-                            </code>{' '}
-                            first.
-                        </p>
-                    </div>
-                </div>
-            </Shell>
-        );
-    }
-
     return (
         <Shell>
             <div className="mx-auto w-full max-w-5xl px-8 py-10">
@@ -127,8 +163,334 @@ export default function CoveragePage() {
                     </h1>
                 </header>
 
-                <section className="mb-10">
-                    <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
+                <E2ESection report={data.e2e} ready={ready} />
+                <UnitSection data={data} ready={ready} />
+            </div>
+        </Shell>
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/*  E2E section                                                        */
+/* ------------------------------------------------------------------ */
+
+function E2ESection({
+    report,
+    ready,
+}: {
+    report: E2eReport | null;
+    ready: boolean;
+}) {
+    return (
+        <section className="mb-14">
+            <SectionHeading
+                kicker="E2E · Playwright"
+                hint={
+                    report
+                        ? `${report.testCount} tests · generated ${new Date(report.generatedAt).toLocaleString()}`
+                        : undefined
+                }
+            />
+
+            {!report ? (
+                <EmptyHint command="pnpm -F web e2e:coverage" />
+            ) : (
+                <E2EBody report={report} ready={ready} />
+            )}
+        </section>
+    );
+}
+
+function E2EBody({ report, ready }: { report: E2eReport; ready: boolean }) {
+    const inScope = report.useCases.items.filter((uc) => !uc.excluded);
+    const excluded = report.useCases.items.filter((uc) => uc.excluded);
+    const gaps = [
+        ...report.pages.items
+            .filter((p) => !p.covered)
+            .map((p) => ({ key: p.route, label: p.route, kind: 'page' })),
+        ...inScope
+            .filter((uc) => !uc.covered)
+            .map((uc) => ({ key: uc.id, label: uc.id, kind: 'use-case' })),
+    ];
+
+    const areas = [...new Set(inScope.map((uc) => uc.area))];
+
+    return (
+        <>
+            <div className="mb-8 grid grid-cols-2 gap-8 sm:grid-cols-4">
+                <RingGauge
+                    pct={report.pages.pct}
+                    label="Pages"
+                    covered={report.pages.covered}
+                    total={report.pages.total}
+                    ready={ready}
+                    delay={0}
+                />
+                <RingGauge
+                    pct={report.useCases.pct}
+                    label="Use-cases"
+                    covered={report.useCases.covered}
+                    total={report.useCases.total}
+                    ready={ready}
+                    delay={120}
+                />
+                <div className="col-span-2 flex flex-col justify-center">
+                    {gaps.length === 0 ? (
+                        <AllCoveredBadge excluded={excluded.length} />
+                    ) : (
+                        <GapList gaps={gaps} />
+                    )}
+                </div>
+            </div>
+
+            {report.unknownTags.length > 0 && (
+                <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/5 px-5 py-3">
+                    <p className="font-mono text-xs text-red-600 dark:text-red-400">
+                        Tags not in manifest:{' '}
+                        {report.unknownTags.map((t) => `@${t}`).join(', ')}
+                    </p>
+                </div>
+            )}
+
+            <p className="mb-4 font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-muted-foreground">
+                Pages
+            </p>
+            <div className="mb-8 grid gap-1.5 sm:grid-cols-2">
+                {report.pages.items.map((p) => (
+                    <ItemRow
+                        key={p.route}
+                        state={p.covered ? 'covered' : 'uncovered'}
+                        title={p.title}
+                        mono={p.route}
+                        tests={p.tests}
+                    />
+                ))}
+            </div>
+
+            <p className="mb-4 font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-muted-foreground">
+                Use-cases
+            </p>
+            <div className="space-y-3">
+                {areas.map((area, i) => (
+                    <AreaCard
+                        key={area}
+                        area={area}
+                        items={inScope.filter((uc) => uc.area === area)}
+                        ready={ready}
+                        delay={200 + i * 60}
+                    />
+                ))}
+            </div>
+
+            {excluded.length > 0 && (
+                <details className="group mt-6">
+                    <summary className="cursor-pointer list-none font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-muted-foreground transition-colors hover:text-foreground">
+                        <span className="mr-2 inline-block transition-transform group-open:rotate-90">
+                            ▸
+                        </span>
+                        Excluded from target ({excluded.length})
+                    </summary>
+                    <div className="mt-3 grid gap-1.5">
+                        {excluded.map((uc) => (
+                            <ItemRow
+                                key={uc.id}
+                                state="excluded"
+                                title={uc.title}
+                                mono={uc.id}
+                                reason={uc.excluded}
+                            />
+                        ))}
+                    </div>
+                </details>
+            )}
+        </>
+    );
+}
+
+function AllCoveredBadge({ excluded }: { excluded: number }) {
+    return (
+        <div className="rounded-xl border border-[oklch(0.72_0.17_155_/_0.35)] bg-[oklch(0.72_0.17_155_/_0.07)] px-5 py-4">
+            <p
+                className="font-mono text-sm font-semibold"
+                style={{ color: 'oklch(0.72 0.17 155)' }}
+            >
+                ● 100% — every page &amp; use-case covered
+            </p>
+            {excluded > 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                    {excluded} use-case{excluded === 1 ? '' : 's'} deliberately
+                    excluded (documented below)
+                </p>
+            )}
+        </div>
+    );
+}
+
+function GapList({
+    gaps,
+}: {
+    gaps: { key: string; label: string; kind: string }[];
+}) {
+    return (
+        <div className="rounded-xl border border-[oklch(0.63_0.22_25_/_0.35)] bg-[oklch(0.63_0.22_25_/_0.06)] px-5 py-4">
+            <p
+                className="mb-2 font-mono text-xs font-semibold uppercase tracking-wider"
+                style={{ color: 'oklch(0.63 0.22 25)' }}
+            >
+                {gaps.length} gap{gaps.length === 1 ? '' : 's'} to 100%
+            </p>
+            <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">
+                {gaps.map((g) => (
+                    <span
+                        key={`${g.kind}:${g.key}`}
+                        className="rounded-md bg-background/60 px-2 py-0.5 font-mono text-[11px] text-muted-foreground"
+                    >
+                        {g.label}
+                    </span>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function AreaCard({
+    area,
+    items,
+    ready,
+    delay,
+}: {
+    area: string;
+    items: E2eUseCaseItem[];
+    ready: boolean;
+    delay: number;
+}) {
+    const covered = items.filter((i) => i.covered).length;
+    const pct = items.length > 0 ? (covered / items.length) * 100 : 100;
+    const { fill } = getColors(pct);
+
+    return (
+        <div
+            className="rounded-xl border border-border bg-card/50 px-5 py-4 transition-colors hover:bg-card"
+            style={{
+                opacity: ready ? 1 : 0,
+                transform: ready ? 'none' : 'translateY(8px)',
+                transition: `opacity 0.5s ease ${delay}ms, transform 0.5s ease ${delay}ms, background-color 0.15s`,
+            }}
+        >
+            <div className="mb-3 flex items-baseline justify-between">
+                <p className="font-mono text-sm font-medium">
+                    {AREA_LABELS[area] ?? area}
+                </p>
+                <p
+                    className="font-mono text-xs font-medium tabular-nums"
+                    style={{ color: fill }}
+                >
+                    {covered}/{items.length}
+                </p>
+            </div>
+            <div className="grid gap-1.5">
+                {items.map((uc) => (
+                    <ItemRow
+                        key={uc.id}
+                        state={uc.covered ? 'covered' : 'uncovered'}
+                        title={uc.title}
+                        mono={uc.id}
+                        tests={uc.tests}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function ItemRow({
+    state,
+    title,
+    mono,
+    tests,
+    reason,
+}: {
+    state: 'covered' | 'uncovered' | 'excluded';
+    title: string;
+    mono: string;
+    tests?: CoveringTest[];
+    reason?: string;
+}) {
+    const dot =
+        state === 'covered'
+            ? 'oklch(0.72 0.17 155)'
+            : state === 'uncovered'
+              ? 'oklch(0.63 0.22 25)'
+              : 'oklch(0.5 0 0 / 0.4)';
+
+    return (
+        <div
+            className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted/50"
+            title={
+                tests && tests.length > 0
+                    ? tests.map((t) => `${t.file} › ${t.title}`).join('\n')
+                    : undefined
+            }
+        >
+            <span
+                className="mt-1.5 size-1.5 shrink-0 rounded-full"
+                style={{
+                    backgroundColor: dot,
+                    outline:
+                        state === 'uncovered' ? `2px solid ${dot}33` : 'none',
+                }}
+            />
+            <div className="min-w-0 flex-1">
+                <p
+                    className={
+                        state === 'excluded'
+                            ? 'text-sm text-muted-foreground'
+                            : 'text-sm'
+                    }
+                >
+                    {title}
+                </p>
+                <p className="font-mono text-[11px] text-muted-foreground/70">
+                    {mono}
+                    {tests && tests.length > 0 && (
+                        <span>
+                            {' '}
+                            · {tests.length} test{tests.length === 1 ? '' : 's'}
+                        </span>
+                    )}
+                </p>
+                {reason && (
+                    <p className="mt-0.5 text-xs italic text-muted-foreground">
+                        {reason}
+                    </p>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Unit section (Vitest)                                              */
+/* ------------------------------------------------------------------ */
+
+function UnitSection({
+    data,
+    ready,
+}: {
+    data: CoverageResponse;
+    ready: boolean;
+}) {
+    const hasData = data.workspaces.some((ws) => !ws.error);
+
+    return (
+        <section>
+            <SectionHeading kicker="Unit · Vitest" />
+
+            {!hasData ? (
+                <EmptyHint command="pnpm test:coverage" />
+            ) : (
+                <>
+                    <div className="mb-10 grid grid-cols-2 gap-8 sm:grid-cols-4">
                         {METRICS.map((m, i) => (
                             <RingGauge
                                 key={m}
@@ -141,9 +503,7 @@ export default function CoveragePage() {
                             />
                         ))}
                     </div>
-                </section>
 
-                <section>
                     <p className="mb-4 font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-muted-foreground">
                         Workspaces
                     </p>
@@ -157,9 +517,43 @@ export default function CoveragePage() {
                             />
                         ))}
                     </div>
-                </section>
-            </div>
-        </Shell>
+                </>
+            )}
+        </section>
+    );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Shared chrome                                                      */
+/* ------------------------------------------------------------------ */
+
+function SectionHeading({ kicker, hint }: { kicker: string; hint?: string }) {
+    return (
+        <div className="mb-6 flex items-baseline justify-between border-b border-border pb-2">
+            <p className="font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-muted-foreground">
+                {kicker}
+            </p>
+            {hint && (
+                <p className="font-mono text-[11px] tabular-nums text-muted-foreground/70">
+                    {hint}
+                </p>
+            )}
+        </div>
+    );
+}
+
+function EmptyHint({ command }: { command: string }) {
+    return (
+        <div className="rounded-xl border border-dashed border-border px-5 py-8 text-center">
+            <p className="text-sm font-medium">No data yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+                Run{' '}
+                <code className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs">
+                    {command}
+                </code>{' '}
+                first.
+            </p>
+        </div>
     );
 }
 

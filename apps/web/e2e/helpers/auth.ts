@@ -1,5 +1,5 @@
-import type { APIRequestContext } from '@playwright/test';
-import { findUserByEmail, updateUserRole } from './db';
+import { request as pwRequest, type APIRequestContext } from '@playwright/test';
+import { ensureTrialSubscription, findUserByEmail, updateUserRole } from './db';
 
 const BASE_URL = 'http://localhost:3000';
 const AUTH_HEADERS = { Origin: BASE_URL };
@@ -56,6 +56,32 @@ export async function createUser(
  */
 export async function promoteToAdmin(email: string): Promise<void> {
     await updateUserRole(email, 'admin');
+}
+
+/**
+ * Provisions a dedicated per-spec user: creates it (idempotent), gives it a
+ * fresh trial subscription, and saves its signed-in storageState. Flows specs
+ * call this in `beforeAll` and pair it with
+ * `test.use({ storageState: <path> })` so each spec owns an isolated user —
+ * empty-state and exact-count assertions can't race other specs.
+ */
+export async function provisionDedicatedUser(
+    testUser: TestUser,
+    storageStatePath: string
+): Promise<{ userId: string }> {
+    const ctx = await pwRequest.newContext({ baseURL: BASE_URL });
+    try {
+        await createUser(ctx, testUser);
+        const user = await findUserByEmail(testUser.email);
+        if (!user) {
+            throw new Error(`${testUser.email} missing after createUser`);
+        }
+        await ensureTrialSubscription(user.id);
+        await authenticateAndSaveState(ctx, testUser, storageStatePath);
+        return { userId: user.id };
+    } finally {
+        await ctx.dispose();
+    }
 }
 
 /**
