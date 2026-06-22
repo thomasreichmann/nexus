@@ -1,11 +1,12 @@
 /**
- * Upload queue interactions, run as a dedicated user. All client-side — the
- * one test that reaches the server (`files.upload`) intercepts and aborts the
- * mutation, so no DB rows or S3 objects are created. The real end-to-end
- * upload lives in the validate tier (upload-batches-and-quota.spec.ts).
+ * Upload queue interactions, run as a dedicated user (provisioned by the
+ * `dedicatedUserConfig` fixture). All client-side — the one test that reaches
+ * the server (`files.upload`) intercepts and aborts the mutation, so no DB rows
+ * or S3 objects are created. The real end-to-end upload lives in the validate
+ * tier (upload-batches-and-quota.spec.ts).
  */
-import { test, expect } from '../fixtures/console';
-import { provisionDedicatedUser, type TestUser } from '../helpers/auth';
+import { test, expect } from '../fixtures';
+import { type TestUser } from '../helpers/auth';
 import { interceptTrpcCalls } from '../helpers/trpc';
 
 const UPLOAD_USER: TestUser = {
@@ -28,11 +29,7 @@ const FILE_B = {
 };
 
 test.describe.configure({ mode: 'serial' });
-test.use({ storageState: STATE_PATH });
-
-test.beforeAll(async () => {
-    await provisionDedicatedUser(UPLOAD_USER, STATE_PATH);
-});
+test.use({ dedicatedUserConfig: { user: UPLOAD_USER, statePath: STATE_PATH } });
 
 test(
     'adding files builds the queue with names, sizes, and a remove control',

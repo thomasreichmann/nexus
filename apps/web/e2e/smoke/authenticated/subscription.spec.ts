@@ -1,10 +1,8 @@
-import { test, expect } from '../../fixtures/authenticated';
-import { REGULAR_USER } from '../../helpers/auth';
+import { test, expect } from '../../fixtures';
 import {
     ensureTrialSubscription,
-    findUserByEmail,
     markSubscriptionPaid,
-} from '../../helpers/db';
+} from '@nexus/db/test-db';
 import { interceptTrpcCalls } from '../../helpers/trpc';
 
 test.use({ userRole: 'user' });
@@ -15,16 +13,8 @@ test.describe('Subscription tier change', () => {
     // don't read subscription state, so cross-file races aren't an issue.
     test.describe.configure({ mode: 'serial' });
 
-    let userId: string;
-
-    test.beforeAll(async () => {
-        const user = await findUserByEmail(REGULAR_USER.email);
-        if (!user) throw new Error('seeded regular user not found');
-        userId = user.id;
-    });
-
-    test.afterEach(async () => {
-        await ensureTrialSubscription(userId);
+    test.afterEach(async ({ db, seedUserId }) => {
+        await ensureTrialSubscription(db, seedUserId);
     });
 
     test(
@@ -54,8 +44,8 @@ test.describe('Subscription tier change', () => {
     test(
         'paid Pro user clicking Upgrade Max routes to portal, not checkout',
         { tag: ['@uc:subscription-upgrade-paid-portal'] },
-        async ({ page }) => {
-            await markSubscriptionPaid(userId, { tier: 'pro' });
+        async ({ page, db, seedUserId }) => {
+            await markSubscriptionPaid(db, seedUserId, { tier: 'pro' });
 
             // Record which mutation fired then abort so neither hits Stripe
             // nor triggers a real navigation. The handler observes before
@@ -140,7 +130,7 @@ test.describe('Subscription tier change', () => {
     test(
         'Manage billing is disabled on trial and enabled with an active sub',
         { tag: ['@uc:manage-billing-portal'] },
-        async ({ page }) => {
+        async ({ page, db, seedUserId }) => {
             // Trial (no Stripe subscription) → disabled.
             await page.goto('/dashboard/settings');
             await expect(
@@ -148,7 +138,7 @@ test.describe('Subscription tier change', () => {
             ).toBeDisabled();
 
             // Paid subscription → enabled.
-            await markSubscriptionPaid(userId, { tier: 'pro' });
+            await markSubscriptionPaid(db, seedUserId, { tier: 'pro' });
             await page.reload();
             await expect(
                 page.getByRole('button', { name: 'Manage billing' })

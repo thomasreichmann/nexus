@@ -1,22 +1,30 @@
 /**
- * File browser interactions, run as a dedicated user (created below) so
- * empty-state and exact-count assertions can't race specs that share the
- * regular/admin users.
+ * File browser interactions, run as a dedicated user (via the
+ * `dedicatedUserConfig` fixture) so empty-state and exact-count assertions
+ * can't race specs that share the regular/admin users.
  *
- * Server mutations that hit S3 Glacier (`restore`) are intercepted and
- * observed rather than executed — seeded s3 keys have no real objects, and a
- * real Glacier restore takes hours. Those interceptions still verify the
- * complete UI wiring: menu/button → correct tRPC mutation + payload.
- * Deletion runs for real (S3 DeleteObjects is a no-op for missing keys).
+ * The seeded library is a worker-scoped fixture (`seededLibrary`): it seeds the
+ * batch + files + ready retrieval once and the serial tests share it. The
+ * empty-vault test doesn't request it, so under serial mode it runs first
+ * against the freshly-provisioned (empty) user; the bulk-delete test runs last
+ * and tears the library down.
+ *
+ * Server mutations that hit S3 Glacier (`restore`) are intercepted and observed
+ * rather than executed — seeded s3 keys have no real objects, and a real
+ * Glacier restore takes hours. Those interceptions still verify the complete UI
+ * wiring: menu/button → correct tRPC mutation + payload. Deletion runs for real
+ * (S3 DeleteObjects is a no-op for missing keys).
  */
-import { test, expect } from '../fixtures/console';
-import { provisionDedicatedUser, type TestUser } from '../helpers/auth';
+import { test as base, expect } from '../fixtures';
+import { type TestUser } from '../helpers/auth';
 import {
-    deleteUserData,
-    insertBatch,
+    type UploadBatch,
+    type File,
+    insertUploadBatch,
     insertFile,
     insertRetrieval,
-} from '../helpers/db';
+    deleteUserData,
+} from '@nexus/db/test-db';
 import { interceptTrpcCalls } from '../helpers/trpc';
 
 const FILES_USER: TestUser = {
@@ -27,24 +35,74 @@ const FILES_USER: TestUser = {
 const STATE_PATH = 'e2e/.auth/files-browser.json';
 const PAGE_URL = '/dashboard/files';
 
-const BATCH_NAME = `Browser Batch ${Date.now()}`;
-const ARCHIVED_A = 'arch-photo-aaa.jpg';
-const ARCHIVED_B = 'arch-video-bbb.mp4';
-const READY_DOC = 'ready-doc-ccc.pdf';
+interface SeededLibrary {
+    batch: UploadBatch;
+    archivedA: File;
+    archivedB: File;
+    readyDoc: File;
+}
 
-let userId: string;
+const test = base.extend<
+    Record<string, never>,
+    { seededLibrary: SeededLibrary }
+>({
+    seededLibrary: [
+        async ({ db, dedicatedUser }, use) => {
+            const userId = dedicatedUser!.userId;
+            const batch = await insertUploadBatch(db, {
+                userId,
+                name: `Browser Batch ${Date.now()}`,
+            });
+            // Two archived files in the batch. B seeded first with an earlier
+            // createdAt: the list sorts uploadedAt DESC, so A renders as the
+            // batch's first row — the shift-click range test anchors on it.
+            const now = Date.now();
+            const archivedB = await insertFile(db, {
+                userId,
+                batchId: batch.id,
+                name: 'arch-video-bbb.mp4',
+                size: 2000,
+                storageTier: 'deep_archive',
+                status: 'available',
+                createdAt: new Date(now - 2000),
+                updatedAt: new Date(now - 2000),
+            });
+            const archivedA = await insertFile(db, {
+                userId,
+                batchId: batch.id,
+                name: 'arch-photo-aaa.jpg',
+                size: 1000,
+                storageTier: 'glacier',
+                status: 'available',
+                createdAt: new Date(now - 1000),
+                updatedAt: new Date(now - 1000),
+            });
+            // One ungrouped standard file with a ready retrieval → derived
+            // status "available", Download action enabled.
+            const readyDoc = await insertFile(db, {
+                userId,
+                name: 'ready-doc-ccc.pdf',
+                size: 3000,
+                storageTier: 'standard',
+                status: 'available',
+            });
+            await insertRetrieval(db, {
+                userId,
+                fileId: readyDoc.id,
+                status: 'ready',
+            });
+
+            await use({ batch, archivedA, archivedB, readyDoc });
+
+            // Tear the library down before the dedicated user is deleted.
+            await deleteUserData(db, userId);
+        },
+        { scope: 'worker' },
+    ],
+});
 
 test.describe.configure({ mode: 'serial' });
-test.use({ storageState: STATE_PATH });
-
-test.beforeAll(async () => {
-    ({ userId } = await provisionDedicatedUser(FILES_USER, STATE_PATH));
-    await deleteUserData(userId);
-});
-
-test.afterAll(async () => {
-    await deleteUserData(userId);
-});
+test.use({ dedicatedUserConfig: { user: FILES_USER, statePath: STATE_PATH } });
 
 test(
     'empty vault shows the empty state with an upload CTA',
@@ -64,54 +122,14 @@ test(
 );
 
 test.describe('with a seeded library', () => {
-    test.beforeAll(async () => {
-        const { id: batchId } = await insertBatch({
-            userId,
-            name: BATCH_NAME,
-        });
-        // Two archived files in the batch (glacier/deep_archive + available).
-        // B inserted first: the list sorts uploadedAt DESC, so A renders as
-        // the batch's first row — the shift-click range test anchors on it.
-        await insertFile({
-            userId,
-            batchId,
-            name: ARCHIVED_B,
-            size: 2000,
-            s3Key: `${userId}/${batchId}/b/${ARCHIVED_B}`,
-            storageTier: 'deep_archive',
-            status: 'available',
-        });
-        await insertFile({
-            userId,
-            batchId,
-            name: ARCHIVED_A,
-            size: 1000,
-            s3Key: `${userId}/${batchId}/a/${ARCHIVED_A}`,
-            storageTier: 'glacier',
-            status: 'available',
-        });
-        // One ungrouped standard file with a ready retrieval → derived status
-        // "available", Download action enabled.
-        const readyFile = await insertFile({
-            userId,
-            name: READY_DOC,
-            size: 3000,
-            s3Key: `${userId}/legacy/${READY_DOC}`,
-            storageTier: 'standard',
-            status: 'available',
-        });
-        await insertRetrieval({
-            fileId: readyFile.id,
-            userId,
-            status: 'ready',
-        });
-    });
-
     test(
         'stats bar shows library-wide status counts',
         { tag: ['@uc:files-stats-bar'] },
-        async ({ page }) => {
+        async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeVisible();
 
             await expect(page.getByText('3 files')).toBeVisible();
             await expect(page.getByText('2 archived')).toBeVisible();
@@ -122,35 +140,47 @@ test.describe('with a seeded library', () => {
     test(
         'search filters files and shows the no-match state',
         { tag: ['@uc:files-search'] },
-        async ({ page }) => {
+        async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
-            await expect(page.getByText(ARCHIVED_A)).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeVisible();
 
             const search = page.getByPlaceholder('Search files...');
             await search.fill('aaa');
 
-            await expect(page.getByText(ARCHIVED_A)).toBeVisible();
-            await expect(page.getByText(ARCHIVED_B)).toBeHidden();
-            await expect(page.getByText(READY_DOC)).toBeHidden();
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.archivedB.name)
+            ).toBeHidden();
+            await expect(
+                page.getByText(seededLibrary.readyDoc.name)
+            ).toBeHidden();
 
             await search.fill('zzz-no-such-file');
             await expect(page.getByText(/No files match/)).toBeVisible();
 
             await search.clear();
-            await expect(page.getByText(ARCHIVED_B)).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.archivedB.name)
+            ).toBeVisible();
         }
     );
 
     test(
         'view toggles between list and grid',
         { tag: ['@uc:files-view-toggle'] },
-        async ({ page }) => {
+        async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
             await expect(page.locator('table')).toBeVisible();
 
             await page.getByRole('button', { name: 'Grid view' }).click();
             await expect(page.locator('table')).toHaveCount(0);
-            await expect(page.getByText(ARCHIVED_A)).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeVisible();
 
             await page.getByRole('button', { name: 'List view' }).click();
             await expect(page.locator('table')).toBeVisible();
@@ -160,30 +190,40 @@ test.describe('with a seeded library', () => {
     test(
         'batch group collapses and re-expands',
         { tag: ['@uc:files-batch-expand-collapse'] },
-        async ({ page }) => {
+        async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
-            await expect(page.getByText(ARCHIVED_A)).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeVisible();
 
             const batchToggle = page.getByRole('button', {
-                name: new RegExp(BATCH_NAME),
+                name: new RegExp(seededLibrary.batch.name),
             });
             await expect(batchToggle).toHaveAttribute('aria-expanded', 'true');
 
             await batchToggle.click();
-            await expect(page.getByText(ARCHIVED_A)).toBeHidden();
-            await expect(page.getByText(READY_DOC)).toBeVisible(); // other group untouched
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeHidden();
+            await expect(
+                page.getByText(seededLibrary.readyDoc.name)
+            ).toBeVisible(); // other group untouched
 
             await batchToggle.click();
-            await expect(page.getByText(ARCHIVED_A)).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeVisible();
         }
     );
 
     test(
         'select-all selects every visible file',
         { tag: ['@uc:files-select-all'] },
-        async ({ page }) => {
+        async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
-            await expect(page.getByText(ARCHIVED_A)).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeVisible();
 
             await page.getByRole('checkbox', { name: 'Select all' }).click();
             await expect(page.getByText('3 selected')).toBeVisible();
@@ -196,19 +236,23 @@ test.describe('with a seeded library', () => {
     test(
         'multi-select via icon checkboxes and shift-click range',
         { tag: ['@uc:files-multi-select'] },
-        async ({ page }) => {
+        async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
-            await expect(page.getByText(ARCHIVED_A)).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeVisible();
 
             // Click the first file's icon-checkbox, then shift-click the last
             // row → range selection covers all three.
             await page
-                .getByRole('button', { name: `Select ${ARCHIVED_A}` })
+                .getByRole('button', {
+                    name: `Select ${seededLibrary.archivedA.name}`,
+                })
                 .click();
             await expect(page.getByText('1 selected')).toBeVisible();
 
             await page
-                .locator('tr', { hasText: READY_DOC })
+                .locator('tr', { hasText: seededLibrary.readyDoc.name })
                 .click({ modifiers: ['Shift'] });
             await expect(page.getByText('3 selected')).toBeVisible();
 
@@ -219,18 +263,22 @@ test.describe('with a seeded library', () => {
     test(
         'bulk retrieve submits the archived selection',
         { tag: ['@uc:files-bulk-retrieve'] },
-        async ({ page }) => {
+        async ({ page, seededLibrary }) => {
             const calls = await interceptTrpcCalls(
                 page,
                 'files.requestBulkRetrieval'
             );
 
             await page.goto(PAGE_URL);
-            await expect(page.getByText(ARCHIVED_A)).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeVisible();
 
             // Only the non-archived file selected → Retrieve disabled.
             await page
-                .getByRole('button', { name: `Select ${READY_DOC}` })
+                .getByRole('button', {
+                    name: `Select ${seededLibrary.readyDoc.name}`,
+                })
                 .click();
             await expect(
                 page.getByRole('button', { name: 'Retrieve' })
@@ -239,10 +287,14 @@ test.describe('with a seeded library', () => {
 
             // Archived files selected → Retrieve fires the bulk mutation.
             await page
-                .getByRole('button', { name: `Select ${ARCHIVED_A}` })
+                .getByRole('button', {
+                    name: `Select ${seededLibrary.archivedA.name}`,
+                })
                 .click();
             await page
-                .getByRole('button', { name: `Select ${ARCHIVED_B}` })
+                .getByRole('button', {
+                    name: `Select ${seededLibrary.archivedB.name}`,
+                })
                 .click();
             await page.getByRole('button', { name: 'Retrieve' }).click();
 
@@ -254,17 +306,19 @@ test.describe('with a seeded library', () => {
     test(
         'single file retrieval fires from the actions menu',
         { tag: ['@uc:files-request-retrieval-single'] },
-        async ({ page }) => {
+        async ({ page, seededLibrary }) => {
             const calls = await interceptTrpcCalls(
                 page,
                 'files.requestRetrieval'
             );
 
             await page.goto(PAGE_URL);
-            await expect(page.getByText(ARCHIVED_B)).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.archivedB.name)
+            ).toBeVisible();
 
             await page
-                .locator('tr', { hasText: ARCHIVED_B })
+                .locator('tr', { hasText: seededLibrary.archivedB.name })
                 .getByRole('button', { name: 'Actions' })
                 .click();
             await page
@@ -279,13 +333,16 @@ test.describe('with a seeded library', () => {
     test(
         'batch restore fires from the batch header',
         { tag: ['@uc:files-batch-restore'] },
-        async ({ page }) => {
+        async ({ page, seededLibrary }) => {
             const calls = await interceptTrpcCalls(
                 page,
                 'files.requestBatchRetrieval'
             );
 
             await page.goto(PAGE_URL);
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeVisible();
             await expect(
                 page.getByRole('button', { name: /Restore batch/i })
             ).toBeVisible();
@@ -300,12 +357,14 @@ test.describe('with a seeded library', () => {
     test(
         'download opens a presigned URL for an available file',
         { tag: ['@uc:files-download-available'] },
-        async ({ page }) => {
+        async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
-            await expect(page.getByText(READY_DOC)).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.readyDoc.name)
+            ).toBeVisible();
 
             await page
-                .locator('tr', { hasText: READY_DOC })
+                .locator('tr', { hasText: seededLibrary.readyDoc.name })
                 .getByRole('button', { name: 'Actions' })
                 .click();
 
@@ -323,15 +382,21 @@ test.describe('with a seeded library', () => {
     test(
         'bulk delete removes the selected files after confirmation',
         { tag: ['@uc:files-bulk-delete'] },
-        async ({ page }) => {
+        async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
-            await expect(page.getByText(ARCHIVED_A)).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeVisible();
 
             await page
-                .getByRole('button', { name: `Select ${ARCHIVED_A}` })
+                .getByRole('button', {
+                    name: `Select ${seededLibrary.archivedA.name}`,
+                })
                 .click();
             await page
-                .getByRole('button', { name: `Select ${ARCHIVED_B}` })
+                .getByRole('button', {
+                    name: `Select ${seededLibrary.archivedB.name}`,
+                })
                 .click();
             await page.getByRole('button', { name: 'Delete' }).click();
 
@@ -341,11 +406,17 @@ test.describe('with a seeded library', () => {
                 .last()
                 .click();
 
-            await expect(page.getByText(ARCHIVED_A)).toBeHidden({
+            await expect(
+                page.getByText(seededLibrary.archivedA.name)
+            ).toBeHidden({
                 timeout: 10_000,
             });
-            await expect(page.getByText(ARCHIVED_B)).toBeHidden();
-            await expect(page.getByText(READY_DOC)).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.archivedB.name)
+            ).toBeHidden();
+            await expect(
+                page.getByText(seededLibrary.readyDoc.name)
+            ).toBeVisible();
         }
     );
 });

@@ -21,8 +21,13 @@
  * (`retrieval.ts`, `files.ts` multipart, `s3-restore.ts`) treats the value as
  * opaque, so legacy keys can't regress through code changes here.
  */
-import { test, expect } from '../fixtures/authenticated';
-import { findUserByEmail, getDb } from '../helpers/db';
+import { test, expect } from '../fixtures';
+import type { Connection } from '@nexus/db/test-db';
+import {
+    findUserByEmail,
+    deleteUserData,
+    insertStorageUsage,
+} from '@nexus/db/test-db';
 import { REGULAR_USER } from '../helpers/auth';
 import { PLAN_LIMITS } from '@nexus/db/plans';
 
@@ -33,43 +38,32 @@ test.use({ userRole: 'user' });
 
 const SCREENSHOTS = 'test-results/validate/upload-batches-and-quota';
 
-async function getUserId(): Promise<string> {
-    const u = await findUserByEmail(REGULAR_USER.email);
+// Hooks see only worker fixtures (not the test-scoped seedUserId), so resolve
+// the user from the connection directly.
+async function getUserId(db: Connection): Promise<string> {
+    const u = await findUserByEmail(db, REGULAR_USER.email);
     if (!u) throw new Error(`regular user missing: ${REGULAR_USER.email}`);
     return u.id;
 }
 
-async function resetUserState(userId: string): Promise<void> {
-    const sql = getDb();
-    await sql`DELETE FROM files WHERE user_id = ${userId}`;
-    await sql`DELETE FROM upload_batches WHERE user_id = ${userId}`;
-    await sql`
-        INSERT INTO storage_usage (id, user_id, used_bytes, file_count)
-        VALUES (gen_random_uuid()::text, ${userId}, 0, 0)
-        ON CONFLICT (user_id) DO UPDATE SET
-            used_bytes = 0,
-            file_count = 0,
-            updated_at = now()
-    `;
+async function resetUserState(db: Connection, userId: string): Promise<void> {
+    await deleteUserData(db, userId);
+    await insertStorageUsage(db, { userId, usedBytes: 0, fileCount: 0 });
 }
 
 test.describe('upload batches + storage quota', () => {
-    test.beforeAll(async () => {
-        await resetUserState(await getUserId());
+    test.beforeAll(async ({ db }) => {
+        await resetUserState(db, await getUserId(db));
     });
 
-    test.afterAll(async () => {
-        await resetUserState(await getUserId());
-        await getDb().end({ timeout: 5 });
+    test.afterAll(async ({ db }) => {
+        await resetUserState(db, await getUserId(db));
     });
 
     test(
         'fresh upload creates batch, new-format s3Key, increments storage_usage',
         { tag: ['@page:/dashboard/upload', '@uc:upload-single-file-flow'] },
-        async ({ page }) => {
-            const userId = await getUserId();
-            const sql = getDb();
-
+        async ({ page, db, seedUserId: userId }) => {
             await page.goto('/dashboard/upload');
             await expect(
                 page.getByRole('heading', { name: 'Upload Files', exact: true })
@@ -102,9 +96,9 @@ test.describe('upload batches + storage quota', () => {
             });
 
             // ---- DB assertions ----
-            const batches = await sql<{ id: string; name: string }[]>`
-            SELECT id, name FROM upload_batches WHERE user_id = ${userId}
-        `;
+            const batches = await db.query.uploadBatches.findMany({
+                where: (b, { eq }) => eq(b.userId, userId),
+            });
             expect(batches).toHaveLength(1);
             const batch = batches[0];
             // Fallback name shape: `Upload YYYY-MM-DD HH:MM`.
@@ -112,33 +106,24 @@ test.describe('upload batches + storage quota', () => {
                 /^Upload \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/
             );
 
-            const files = await sql<
-                {
-                    id: string;
-                    size: number;
-                    s3_key: string;
-                    status: string;
-                    batch_id: string | null;
-                }[]
-            >`
-            SELECT id, size, s3_key, status, batch_id
-            FROM files
-            WHERE user_id = ${userId} AND name = ${fileName}
-        `;
+            const files = await db.query.files.findMany({
+                where: (f, { eq, and }) =>
+                    and(eq(f.userId, userId), eq(f.name, fileName)),
+            });
             expect(files).toHaveLength(1);
             const file = files[0];
             expect(file.status).toBe('available');
-            expect(file.batch_id).toBe(batch.id);
-            expect(file.s3_key).toBe(
+            expect(file.batchId).toBe(batch.id);
+            expect(file.s3Key).toBe(
                 `${userId}/${batch.id}/${file.id}/${fileName}`
             );
-            expect(Number(file.size)).toBe(fileBuf.byteLength);
+            expect(file.size).toBe(fileBuf.byteLength);
 
-            const [usage] = await sql<
-                { used_bytes: string; file_count: number }[]
-            >`SELECT used_bytes, file_count FROM storage_usage WHERE user_id = ${userId}`;
-            expect(Number(usage.used_bytes)).toBe(fileBuf.byteLength);
-            expect(Number(usage.file_count)).toBe(1);
+            const usage = await db.query.storageUsage.findFirst({
+                where: (u, { eq }) => eq(u.userId, userId),
+            });
+            expect(usage?.usedBytes).toBe(fileBuf.byteLength);
+            expect(usage?.fileCount).toBe(1);
         }
     );
 
@@ -186,17 +171,15 @@ test.describe('upload batches + storage quota', () => {
     test(
         'quota soft cap: UI surfaces upload error when over 105%',
         { tag: ['@page:/dashboard/upload', '@uc:upload-quota-exceeded'] },
-        async ({ page }) => {
-            const userId = await getUserId();
-            const sql = getDb();
-
+        async ({ page, db, seedUserId: userId }) => {
             // Park usage at exactly 105% of starter — any positive sizeBytes
             // pushes past the soft cap.
             const at105 = Math.floor(PLAN_LIMITS.starter * 1.05);
-            await sql`
-            UPDATE storage_usage SET used_bytes = ${at105}, file_count = 1
-            WHERE user_id = ${userId}
-        `;
+            await insertStorageUsage(db, {
+                userId,
+                usedBytes: at105,
+                fileCount: 1,
+            });
 
             await page.goto('/dashboard/upload');
             await expect(
@@ -227,11 +210,11 @@ test.describe('upload batches + storage quota', () => {
             });
 
             // No file row with the rejected name should have been created.
-            const [{ count }] = await sql<{ count: string }[]>`
-            SELECT count(*)::text FROM files
-            WHERE user_id = ${userId} AND name = ${rejectedName}
-        `;
-            expect(Number(count)).toBe(0);
+            const rejected = await db.query.files.findMany({
+                where: (f, { eq, and }) =>
+                    and(eq(f.userId, userId), eq(f.name, rejectedName)),
+            });
+            expect(rejected).toHaveLength(0);
         }
     );
 });

@@ -133,9 +133,11 @@ const eslintConfig = defineConfig([
         // Generated coverage output
         'coverage/**',
     ]),
-    // Playwright fixtures use `use()` which triggers react-hooks/rules-of-hooks
+    // Playwright fixtures use `use()` which triggers react-hooks/rules-of-hooks.
+    // Specs can also define inline fixtures (spec-local preconditions), so the
+    // carve-out covers the whole e2e tree, not just fixtures/.
     {
-        files: ['e2e/fixtures/**/*.ts'],
+        files: ['e2e/**/*.ts'],
         rules: {
             'react-hooks/rules-of-hooks': 'off',
         },

@@ -5,7 +5,8 @@
  */
 import { test, expect } from '@playwright/test';
 import { REGULAR_USER } from '../helpers/auth';
-import { deleteUserByEmail } from '../helpers/db';
+import { deleteUserByEmail } from '@nexus/db/test-db';
+import { createTestDb } from '../helpers/connection';
 
 // Unique per run so a crashed previous run can't collide; cleaned in afterAll.
 const SIGNUP_EMAIL = `signup-e2e-${Date.now()}@test.local`;
@@ -13,7 +14,14 @@ const SIGNUP_PASSWORD = 'signup-e2e-password-123';
 
 test.describe('auth flows', () => {
     test.afterAll(async () => {
-        await deleteUserByEmail(SIGNUP_EMAIL);
+        // These tests run unauthenticated (outside the fixture chain), so use a
+        // direct connection rather than the worker `db` fixture.
+        const db = createTestDb();
+        try {
+            await deleteUserByEmail(db, SIGNUP_EMAIL);
+        } finally {
+            await db.$client.end({ timeout: 5 });
+        }
     });
 
     test(
