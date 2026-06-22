@@ -23,6 +23,12 @@ Pick the smallest tier that covers your change:
 Do NOT run `test:e2e:validate` unless explicitly asked — it's destructive
 (real S3 objects, mutates the dev user's quota).
 
+**Test data is back-door, typed.** Import `{ test, expect }` from `e2e/fixtures`
+and seed preconditions through `@nexus/db/test-db` (factories + insert/query/
+scenario helpers) or the precondition fixtures — never hand-written SQL or a raw
+`postgres` driver. Only the behavior under test goes through the UI. See
+`docs/conventions/testing.md` for the factory/fixture/scenario layers.
+
 **Output is compact by design** (`e2e/reporters/compact.ts`): one summary
 line on success; on failure, the trimmed error plus a `context:` path.
 Read that file first — it's a page snapshot at the moment of failure and

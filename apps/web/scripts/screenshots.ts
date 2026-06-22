@@ -30,6 +30,7 @@ import {
     createUser,
     promoteToAdmin,
 } from '../e2e/helpers/auth';
+import { createTestDb } from '../e2e/helpers/connection';
 
 const BASE_URL = 'http://localhost:3000';
 const DEFAULT_WIDTH = 1280;
@@ -107,13 +108,15 @@ async function ensureAuth(): Promise<void> {
 
     console.error('Auth state missing or expired — creating...');
     const ctx = await request.newContext({ baseURL: BASE_URL });
+    const db = createTestDb();
     try {
-        await createUser(ctx, ADMIN_USER);
-        await promoteToAdmin(ADMIN_USER.email);
+        await createUser(ctx, db, ADMIN_USER);
+        await promoteToAdmin(db, ADMIN_USER.email);
         await authenticateAndSaveState(ctx, ADMIN_USER, ADMIN_STATE_PATH);
         console.error('Auth state created.');
     } finally {
         await ctx.dispose();
+        await db.$client.end({ timeout: 5 });
     }
 }
 

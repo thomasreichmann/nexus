@@ -1,23 +1,25 @@
-import { test, expect, type Page } from '@playwright/test';
-import { findUserByEmail } from '../helpers/db';
-import { seedFiles, cleanupFiles, type DbFile } from '../helpers/seed';
+import { test, expect } from '../fixtures';
+import type { Page } from '@playwright/test';
+import { findUserByEmail, type File } from '@nexus/db/test-db';
 import { ADMIN_USER } from '../helpers/auth';
+import { seedFiles, cleanupFiles } from '../helpers/scenarios';
 
 const PAGE_URL = '/dashboard/files';
 
+test.use({ userRole: 'admin' });
 test.describe.configure({ mode: 'serial' });
 
 test.describe('sequential file deletion', () => {
-    let seededFiles: DbFile[] = [];
+    let seededFiles: File[] = [];
 
-    test.beforeAll(async () => {
-        const user = await findUserByEmail(ADMIN_USER.email);
+    test.beforeAll(async ({ db }) => {
+        const user = await findUserByEmail(db, ADMIN_USER.email);
         if (!user) throw new Error('Admin user not found — run setup first');
-        seededFiles = await seedFiles(user.id, 3);
+        seededFiles = await seedFiles(db, user.id, 3);
     });
 
-    test.afterAll(async () => {
-        await cleanupFiles(seededFiles);
+    test.afterAll(async ({ db }) => {
+        await cleanupFiles(db, seededFiles);
     });
 
     test(

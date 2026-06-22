@@ -1,14 +1,15 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '../fixtures';
+import type { Page } from '@playwright/test';
 import { USER_STATE_PATH } from '../helpers/auth';
 import { waitForTrpcRequest } from '../helpers/trpc';
-import {
-    seedJobs,
-    cleanupJobs,
-    countJobsByStatus,
-    type DbJob,
-} from '../helpers/seed';
+import { countJobsByStatus, type Job } from '@nexus/db/test-db';
+import { seedJobs, cleanupJobs } from '../helpers/scenarios';
 
 const PAGE_URL = '/dashboard/admin/jobs';
+
+// Admin project applies the admin storageState at the project level; align the
+// fixture chain's storageState override to it.
+test.use({ userRole: 'admin' });
 
 // Run serially — test describes share the same database and seed/cleanup data
 test.describe.configure({ mode: 'serial' });
@@ -50,26 +51,26 @@ test.describe(
 );
 
 test.describe('dashboard with seeded data', () => {
-    let seededJobs: DbJob[] = [];
+    let seededJobs: Job[] = [];
 
-    test.beforeAll(async () => {
+    test.beforeAll(async ({ db }) => {
         // Seed 3 of 4 statuses — leave "processing" empty to test empty state
-        seededJobs = await seedJobs({
+        seededJobs = await seedJobs(db, {
             pending: 3,
             completed: 5,
             failed: 1,
         });
     });
 
-    test.afterAll(async () => {
-        await cleanupJobs(seededJobs);
+    test.afterAll(async ({ db }) => {
+        await cleanupJobs(db, seededJobs);
     });
 
     test(
         'status cards display correct counts',
         { tag: ['@uc:admin-jobs-status-cards'] },
-        async ({ page }) => {
-            const dbCounts = await countJobsByStatus();
+        async ({ page, db }) => {
+            const dbCounts = await countJobsByStatus(db);
 
             await page.goto(PAGE_URL);
             await waitForDataLoad(page);
@@ -145,21 +146,21 @@ test.describe('dashboard with seeded data', () => {
 });
 
 test.describe('pagination', () => {
-    let seededJobs: DbJob[] = [];
+    let seededJobs: Job[] = [];
 
-    test.beforeAll(async () => {
-        seededJobs = await seedJobs({ pending: 25 });
+    test.beforeAll(async ({ db }) => {
+        seededJobs = await seedJobs(db, { pending: 25 });
     });
 
-    test.afterAll(async () => {
-        await cleanupJobs(seededJobs);
+    test.afterAll(async ({ db }) => {
+        await cleanupJobs(db, seededJobs);
     });
 
     test(
         'next/prev buttons navigate pages with correct counts',
         { tag: ['@uc:admin-jobs-pagination'] },
-        async ({ page }) => {
-            const dbCounts = await countJobsByStatus();
+        async ({ page, db }) => {
+            const dbCounts = await countJobsByStatus(db);
             const totalPending = dbCounts.pending;
 
             await page.goto(PAGE_URL);
@@ -233,14 +234,14 @@ test.describe('refresh', () => {
 });
 
 test.describe('retry', () => {
-    let seededJobs: DbJob[] = [];
+    let seededJobs: Job[] = [];
 
-    test.beforeAll(async () => {
-        seededJobs = await seedJobs({ failed: 1, completed: 1 });
+    test.beforeAll(async ({ db }) => {
+        seededJobs = await seedJobs(db, { failed: 1, completed: 1 });
     });
 
-    test.afterAll(async () => {
-        await cleanupJobs(seededJobs);
+    test.afterAll(async ({ db }) => {
+        await cleanupJobs(db, seededJobs);
     });
 
     test(

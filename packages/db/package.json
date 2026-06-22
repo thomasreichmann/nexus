@@ -63,6 +63,11 @@
             "types": "./src/seed/index.ts",
             "import": "./src/seed/index.ts",
             "default": "./src/seed/index.ts"
+        },
+        "./test-db": {
+            "types": "./src/test-db/index.ts",
+            "import": "./src/test-db/index.ts",
+            "default": "./src/test-db/index.ts"
         }
     },
     "scripts": {
