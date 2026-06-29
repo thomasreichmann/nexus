@@ -12,15 +12,13 @@ Nexus puts the files you want to keep but rarely touch — photo libraries, fini
 ![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
 
-[Live demo](https://nexus-web.vercel.app) · [Architecture](docs/architecture/_index.md) · [Decisions (ADRs)](docs/decisions/_index.md) · [Getting started](docs/guides/getting-started.md)
+[Live demo](https://nexus.thomasar.dev) · [Architecture](docs/architecture/_index.md) · [Decisions (ADRs)](docs/decisions/_index.md) · [Getting started](docs/guides/getting-started.md)
+
+[![Nexus dashboard](.github/assets/dashboard.png)](https://nexus.thomasar.dev)
+
+<sub>The dashboard — storage overview, file-type breakdown, and active Glacier retrievals.</sub>
 
 </div>
-
-<!--
-  Screenshot slot: drop a hero image of the retrieval-status UX at
-  .github/assets/dashboard.png and uncomment the next line.
-  ![Nexus dashboard](.github/assets/dashboard.png)
--->
 
 ## Why I built this
 
@@ -29,6 +27,14 @@ My mother is a photographer with a decade of shoots living on a closet full of e
 ## How it works
 
 Glacier is cheap because retrieval isn't instant — restoring an object takes minutes to hours. The interesting engineering in Nexus is making that asynchronous restore feel like a normal download: you request a file, the system kicks off an S3 restore, and you get a clear status until it's ready.
+
+<div align="center">
+
+![Walkthrough](.github/assets/demo.gif)
+
+<sub>A short tour: storage overview → archived shoots grouped by upload batch → upload. <a href=".github/assets/demo.mp4">Watch in HD (MP4) →</a></sub>
+
+</div>
 
 ```mermaid
 flowchart LR
@@ -43,7 +49,15 @@ flowchart LR
     SNS -->|signed, idempotent webhook| API
 ```
 
-Upload is a presigned `PUT` (or multipart for large files) straight to S3, with file metadata tracked in Postgres. **Every uploaded file is stored in Glacier by default** — the storage layer and the data model support any S3 tier (`standard` / `glacier` / `deep_archive`), but the product sends everything to Glacier today and will for the foreseeable future. Retrieval runs through a state machine:
+Upload is a presigned `PUT` (or multipart for large files) straight to S3, with file metadata tracked in Postgres. **Every uploaded file is stored in Glacier by default** — the storage layer and the data model support any S3 tier (`standard` / `glacier` / `deep_archive`), but the product sends everything to Glacier today and will for the foreseeable future. Files are grouped by upload batch — a photographer's natural unit is "a shoot" — and a restore in flight shows as `Retrieving`:
+
+<div align="center">
+
+![Files grouped by shoot, with a restore in progress](.github/assets/files.png)
+
+</div>
+
+Retrieval runs through a state machine:
 
 ```mermaid
 stateDiagram-v2
