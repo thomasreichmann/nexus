@@ -30,7 +30,7 @@ Glacier is cheap because retrieval isn't instant. Restoring an object takes minu
 
 <div align="center">
 
-<video src="https://github.com/thomasreichmann/nexus/raw/main/.github/assets/demo.mp4" controls muted width="900"></video>
+![Walkthrough: storage overview, bulk restore, and upload](.github/assets/demo.gif)
 
 <sub>A walkthrough: storage overview, archived shoots grouped by upload batch, multi-select with bulk restore, then upload.</sub>
 
