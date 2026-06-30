@@ -4,7 +4,7 @@
 
 **Deep storage made simple — "Dropbox for archival."**
 
-Nexus puts the files you want to keep but rarely touch — photo libraries, finished projects, raw footage — into Amazon S3 Glacier, so you pay archival prices for cold data instead of hot-storage prices for instant access you don't need.
+Nexus puts the files you want to keep but rarely touch (photo libraries, finished projects, raw footage) into Amazon S3 Glacier, so you pay archival prices for cold data instead of hot-storage prices for instant access you don't need.
 
 ![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)
 ![Node 24](https://img.shields.io/badge/node-24-339933?logo=node.js&logoColor=white)
@@ -16,7 +16,7 @@ Nexus puts the files you want to keep but rarely touch — photo libraries, fini
 
 [![Nexus dashboard](.github/assets/dashboard.png)](https://nexus.thomasar.dev)
 
-<sub>The dashboard — storage overview, file-type breakdown, and active Glacier retrievals.</sub>
+<sub>The dashboard: storage overview, file-type breakdown, and active Glacier retrievals.</sub>
 
 </div>
 
@@ -26,13 +26,13 @@ My mother is a photographer with a decade of shoots living on a closet full of e
 
 ## How it works
 
-Glacier is cheap because retrieval isn't instant — restoring an object takes minutes to hours. The interesting engineering in Nexus is making that asynchronous restore feel like a normal download: you request a file, the system kicks off an S3 restore, and you get a clear status until it's ready.
+Glacier is cheap because retrieval isn't instant. Restoring an object takes minutes to hours. The interesting engineering in Nexus is making that asynchronous restore feel like a normal download: you request a file, the system kicks off an S3 restore, and you get a clear status until it's ready.
 
 <div align="center">
 
-![Walkthrough](.github/assets/demo.gif)
+<video src="https://github.com/thomasreichmann/nexus/raw/main/.github/assets/demo.mp4" controls muted width="900"></video>
 
-<sub>A short tour: storage overview → archived shoots grouped by upload batch → upload. <a href=".github/assets/demo.mp4">Watch in HD (MP4) →</a></sub>
+<sub>A walkthrough: storage overview, archived shoots grouped by upload batch, multi-select with bulk restore, then upload.</sub>
 
 </div>
 
@@ -49,7 +49,7 @@ flowchart LR
     SNS -->|signed, idempotent webhook| API
 ```
 
-Upload is a presigned `PUT` (or multipart for large files) straight to S3, with file metadata tracked in Postgres. **Every uploaded file is stored in Glacier by default** — the storage layer and the data model support any S3 tier (`standard` / `glacier` / `deep_archive`), but the product sends everything to Glacier today and will for the foreseeable future. Files are grouped by upload batch — a photographer's natural unit is "a shoot" — and a restore in flight shows as `Retrieving`:
+Upload is a presigned `PUT` (or multipart for large files) straight to S3, with file metadata tracked in Postgres. **Every uploaded file is stored in Glacier by default.** The storage layer and the data model support any S3 tier (`standard` / `glacier` / `deep_archive`), but the product sends everything to Glacier today and will for the foreseeable future. Files are grouped by upload batch (a photographer's natural unit is "a shoot"), and a restore in flight shows as `Retrieving`:
 
 <div align="center">
 
@@ -73,13 +73,11 @@ A download URL is only ever issued once the retrieval is `ready`. The SNS webhoo
 
 ## Engineering highlights
 
-The parts worth reading:
-
 - **Event-driven Glacier restore** — a `pending → in_progress → ready → expired` state machine ([`server/services/s3-restore.ts`](apps/web/server/services/s3-restore.ts)) driven by a signature-verified, message-ID-idempotent SNS webhook ([`app/api/webhooks/s3-restore/route.ts`](apps/web/app/api/webhooks/s3-restore/route.ts)). Presigned download only when `ready`.
-- **Idempotent billing & event webhooks** — Stripe and SNS events are deduped through a shared `webhooks` table with signature verification, unique-violation handling for redelivery races, and terminal-state guards against out-of-order events. Prices resolve by Stripe metadata, so the same code works across test and live environments ([`lib/stripe/`](apps/web/lib/stripe)).
-- **A real E2E coverage gate** — [`apps/web/scripts/e2e-coverage.ts`](apps/web/scripts/e2e-coverage.ts) derives routes from the `app/` tree so "100% covered" can't be hollow: it fails on pages missing from the test manifest, catches typo'd `@page`/`@uc` tags, and forces validate-only cases to carry a `manual:` reason.
+- **Idempotent billing & event webhooks** — Stripe and SNS events are deduped through a shared `webhooks` table. Signature verification, unique-violation handling for redelivery races, and terminal-state guards keep replayed or out-of-order events from double-processing. Prices resolve by Stripe metadata, so the same code runs in test and live ([`lib/stripe/`](apps/web/lib/stripe)).
+- **A real E2E coverage gate** — [`apps/web/scripts/e2e-coverage.ts`](apps/web/scripts/e2e-coverage.ts) derives routes from the `app/` tree, so "100% covered" can't be hollow. It fails the build on a page that's missing from the manifest, a typo'd `@page`/`@uc` tag, or a validate-only case with no `manual:` reason.
 - **Published tooling** — [`packages/trpc-devtools`](packages/trpc-devtools) is a standalone tRPC devtools panel shipped to npm (MIT, with build provenance) and consumed by the web app.
-- **A typed monorepo** — [`@nexus/db`](packages/db) is the single source of truth for schema, migrations, and repositories, and exports typed test-seeding helpers (`@nexus/db/test-db`) shared by both unit and E2E tests.
+- **A typed monorepo** — [`@nexus/db`](packages/db) is the single source of truth for schema, migrations, and repositories. It also exports typed test-seeding helpers (`@nexus/db/test-db`) shared by unit and E2E tests.
 
 ## Tech stack
 
@@ -142,7 +140,7 @@ pnpm dev                                         # http://localhost:3000
 
 ## Environment variables
 
-Validated at startup by [`apps/web/lib/env/schema.ts`](apps/web/lib/env/schema.ts) (the canonical list) and imported type-safely via `@/lib/env` — a missing or malformed variable fails the build, not a request.
+Validated at startup by [`apps/web/lib/env/schema.ts`](apps/web/lib/env/schema.ts) (the canonical list) and imported type-safely via `@/lib/env`. A missing or malformed variable fails the build, not a request.
 
 | Category | Variables                                                                                                                  |
 | -------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -175,8 +173,6 @@ pnpm -F db db:custom <name>   # Empty migration for RLS / SQL functions
 
 ## Testing & CI
 
-Testing is a first-class part of the repo, not an afterthought:
-
 - **Unit & integration** — Vitest across `web`, `db`, and `worker` (~430 cases).
 - **End-to-end** — a 4-tier Playwright suite (`smoke` / `flows` / `admin` / `validate`). Pick the smallest tier that covers a change:
     ```bash
@@ -184,14 +180,12 @@ Testing is a first-class part of the repo, not an afterthought:
     pnpm -F web test:e2e:flows    # file browser + upload interactions
     pnpm -F web test:e2e:admin    # admin jobs / files / dev-tools
     ```
-    Test data is seeded through typed back-door helpers (`@nexus/db/test-db`) — only the behavior under test goes through the UI.
+    Test data is seeded through typed back-door helpers (`@nexus/db/test-db`). Only the behavior under test goes through the UI.
 - **Coverage gate** — `pnpm -F web e2e:coverage --check` fails CI when a page or use-case ships without a test (see the highlights above).
 
 CI ([`.github/workflows/`](.github/workflows)) runs lint/build/test/e2e on every PR (`ci.yml`), gates PRs on a linked issue (`pr-check.yml`), checks for migration drift (`migration-drift.yml`), runs migrate-then-smoke after merge (`post-merge.yml`), and publishes `trpc-devtools` to npm with provenance (`publish-trpc-devtools.yml`).
 
 ## Status
-
-Honest about what's built versus planned:
 
 - **Working** — single + multipart uploads to Glacier, the async retrieval flow with status tracking, Stripe subscriptions and webhooks, a file browser grouped by upload batch, and admin tooling.
 - **In progress** — the Lambda worker. The SQS dispatch and a typed, tested job registry are wired end to end; the first concrete job handler (account deletion) is landing now.
@@ -214,4 +208,4 @@ New contributors: start with [Getting Started](docs/guides/getting-started.md) a
 
 ## License
 
-[ISC](LICENSE) © Thomas Almeida
+[ISC](LICENSE) © Thomas Reichmann
