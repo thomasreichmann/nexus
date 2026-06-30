@@ -35,6 +35,7 @@ Stripe CLI is installed and authenticated to the sandbox (test-mode only; live m
 - **When unfamiliar with project:** `docs/ai/context.md` — data model, architecture
 - **When writing UI features:** `docs/guides/e2e-testing-guidelines.md` — E2E decisions
 - **Before creating GitHub issues:** `docs/ai/github-workflow.md` — issue format & labels
+- **To refresh the README demo GIF/MP4:** `docs/ai/recording-captures.md` — `pnpm capture` (the `tooling/capture` scene recorder)
 
 ## Git & Workflow
 

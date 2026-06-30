@@ -1,0 +1,22 @@
+{
+    "name": "@nexus/capture",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "description": "Scripted screen recordings of the app for docs/marketing (GIF + MP4).",
+    "scripts": {
+        "capture": "tsx src/cli.ts",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@nexus/db": "workspace:*",
+        "dotenv": "^17.2.3",
+        "drizzle-orm": "^0.45.1"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.57.0",
+        "@types/node": "^20",
+        "tsx": "^4.21.0",
+        "typescript": "^5"
+    }
+}

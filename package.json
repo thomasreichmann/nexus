@@ -13,7 +13,8 @@
         "coverage:open": "node scripts/coverage-summary.mjs --open",
         "test:e2e": "turbo test:e2e",
         "typecheck": "turbo typecheck",
-        "env:pull": "vercel env pull apps/web/.env.local"
+        "env:pull": "vercel env pull apps/web/.env.local",
+        "capture": "pnpm --filter @nexus/capture exec tsx src/cli.ts"
     },
     "devDependencies": {
         "prettier": "^3.8.0",
