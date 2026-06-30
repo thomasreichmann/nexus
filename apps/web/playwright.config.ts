@@ -1,10 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
+// E2E runs its own production server on an ephemeral free port (see the module
+// for why), so it never collides with a running `pnpm dev` on 3000.
+import { E2E_PORT, E2E_BASE_URL } from './e2e/helpers/server-url';
 
-// Honor PORT so each `claude --worktree` checkout (which sets a per-worktree
-// PORT) runs its dev server and e2e on the same port. Falls back to 3000, so
-// CI and the main checkout are unchanged.
-const PORT = process.env.PORT ?? 3000;
-const BASE_URL = `http://localhost:${PORT}`;
+const BASE_URL = E2E_BASE_URL;
 
 const adminChrome = {
     ...devices['Desktop Chrome'],
@@ -94,9 +93,27 @@ export default defineConfig({
               ]
             : []),
     ],
+    // Run e2e against a production build (next build + next start), never the
+    // dev server. `next dev`'s on-demand Turbopack compilation deadlocks under
+    // Playwright's parallel load — routes hang and every goto fails with
+    // net::ERR_ABORTED at the 30s timeout — and it also never builds the
+    // `trpc-devtools` workspace package (its dist/ is gitignored), so CI saw
+    // "Module not found: trpc-devtools". A production build sidesteps both: the
+    // build runs through turbo so workspace deps (trpc-devtools, db) compile
+    // first, and `next start` serves pre-compiled routes with no per-request
+    // compilation to stall.
+    //
+    // The server binds an ephemeral free port (E2E_PORT), so it coexists with a
+    // running `pnpm dev` instead of fighting it for 3000; reuseExistingServer is
+    // off because each run gets a fresh port anyway. E2E=1 re-enables the
+    // dev-only coverage API and admin dev-tools procedures for the /dev/* specs.
     webServer: {
-        command: 'pnpm dev',
+        command: `pnpm exec turbo run build --filter=@nexus/web && pnpm exec next start --port ${E2E_PORT}`,
         url: BASE_URL,
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: false,
+        timeout: 240_000,
+        env: { E2E: '1' },
+        stdout: 'pipe',
+        stderr: 'pipe',
     },
 });

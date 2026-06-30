@@ -14,12 +14,19 @@ const devLanOrigins =
         ? ['http://192.168.*:3000', 'http://10.*:3000', 'http://172.*:3000']
         : [];
 
+// better-auth enables rate limiting in production by default. The e2e suite
+// runs against a production build and signs in many times concurrently, which
+// trips the limiter ("Too many requests"). Disable it only under the E2E flag;
+// real production keeps the default limiter.
+const rateLimit = process.env.E2E ? { enabled: false } : undefined;
+
 export const auth = betterAuth({
     database: drizzleAdapter(db, {
         provider: 'pg',
         schema,
     }),
     trustedOrigins: devLanOrigins,
+    rateLimit,
     emailAndPassword: {
         enabled: true,
     },

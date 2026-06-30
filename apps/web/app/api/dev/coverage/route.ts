@@ -26,7 +26,10 @@ function findRoot(): string {
 }
 
 export async function GET(): Promise<NextResponse> {
-    if (process.env.NODE_ENV !== 'development') {
+    // Dev-only by default. E2E runs against a production build (next start),
+    // so the `E2E` flag re-enables this route for the /dev/coverage and
+    // /dev/report smoke specs; the real Vercel deploy never sets it.
+    if (process.env.NODE_ENV !== 'development' && !process.env.E2E) {
         return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 

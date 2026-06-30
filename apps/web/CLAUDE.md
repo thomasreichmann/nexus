@@ -10,6 +10,9 @@ App-specific instructions for working on `apps/web/`.
 
 ## E2E Tests
 
+These run against a production build (`next build` + `next start`) on an
+ephemeral port, so they build before running and coexist with `pnpm dev`.
+
 Pick the smallest tier that covers your change:
 
 | Command                            | Covers                             | Run when you changed                              |

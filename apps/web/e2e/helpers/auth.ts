@@ -6,8 +6,12 @@ import {
     ensureTrialSubscription,
     deleteUserData,
 } from '@nexus/db/test-db';
+import { E2E_BASE_URL } from './server-url';
 
-const BASE_URL = 'http://localhost:3000';
+// Shared with playwright.config.ts so the Origin header and the request
+// context's baseURL track the ephemeral server port (BetterAuth trusts the
+// request's own origin, so these must match the server we actually started).
+const BASE_URL = E2E_BASE_URL;
 const AUTH_HEADERS = { Origin: BASE_URL };
 
 export interface TestUser {

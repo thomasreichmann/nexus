@@ -46,7 +46,11 @@ export default function RootLayout({
                     </TRPCReactProvider>
                 </ThemeProvider>
                 <Toaster />
-                <Analytics />
+                {/* Vercel injects /_vercel/insights/script.js only on its edge;
+                    off-Vercel (local/CI production builds, e.g. e2e) that script
+                    404s and pollutes the zero-console-error assertions, so only
+                    mount it when actually deployed on Vercel. */}
+                {process.env.VERCEL ? <Analytics /> : null}
             </body>
         </html>
     );

@@ -76,8 +76,12 @@ test.describe('auth flows', () => {
 
             // BetterAuth returns "Invalid email or password" — assert the
             // semantic alert rather than exact copy so wording tweaks don't
-            // break the test.
-            await expect(page.getByRole('alert')).toBeVisible({
+            // break the test. Filter to the text-bearing alert: a production
+            // build also renders Next's empty role="alert" route announcer,
+            // which would otherwise make getByRole('alert') ambiguous.
+            await expect(
+                page.getByRole('alert').filter({ hasText: /\S/ })
+            ).toBeVisible({
                 timeout: 10_000,
             });
             await expect(page).toHaveURL(/\/sign-in/);

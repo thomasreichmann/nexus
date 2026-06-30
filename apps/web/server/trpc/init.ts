@@ -125,9 +125,12 @@ export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
     return next({ ctx });
 });
 
-// Dev tools procedure - admin-only and blocked in production
+// Dev tools procedure - admin-only and blocked in production. The e2e suite
+// runs against a production build, so the `E2E` flag re-enables these for the
+// admin dev-tools specs (seed/cleanup scenarios); the real Vercel deploy never
+// sets it, so dev tools stay blocked there.
 export const devToolsProcedure = adminProcedure.use(({ next }) => {
-    if (process.env.NODE_ENV === 'production') {
+    if (process.env.NODE_ENV === 'production' && !process.env.E2E) {
         throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'Dev tools are not available in production',
