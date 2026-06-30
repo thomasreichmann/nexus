@@ -633,6 +633,109 @@ describe('files service', () => {
         });
     });
 
+    describe('listMultipartParts', () => {
+        it('returns parts S3 reports for an uploading file', async () => {
+            const uploadingFile = createFileFixture({ status: 'uploading' });
+            mocks.files.findFirst.mockResolvedValue(uploadingFile);
+            const s3Parts = [
+                { partNumber: 1, etag: '"abc"', size: 1000 },
+                { partNumber: 2, etag: '"def"', size: 1000 },
+            ];
+            const spy = vi
+                .spyOn(mockS3.multipart, 'listParts')
+                .mockResolvedValue(s3Parts);
+
+            const result = await fileService.listMultipartParts(
+                db,
+                TEST_USER_ID,
+                uploadingFile.id,
+                'some-upload-id'
+            );
+
+            expect(result.parts).toEqual(s3Parts);
+            // Reconciliation must query the file's own key + the given uploadId.
+            expect(spy).toHaveBeenCalledWith(
+                uploadingFile.s3Key,
+                'some-upload-id'
+            );
+        });
+
+        it('throws NotFoundError when file does not exist', async () => {
+            mocks.files.findFirst.mockResolvedValue(undefined);
+
+            await expect(
+                fileService.listMultipartParts(
+                    db,
+                    TEST_USER_ID,
+                    'nonexistent',
+                    'some-upload-id'
+                )
+            ).rejects.toThrow(NotFoundError);
+        });
+
+        it('throws InvalidStateError when file is not uploading', async () => {
+            const availableFile = createFileFixture({ status: 'available' });
+            mocks.files.findFirst.mockResolvedValue(availableFile);
+
+            await expect(
+                fileService.listMultipartParts(
+                    db,
+                    TEST_USER_ID,
+                    availableFile.id,
+                    'some-upload-id'
+                )
+            ).rejects.toThrow(InvalidStateError);
+        });
+    });
+
+    describe('signMultipartParts', () => {
+        it('re-presigns the requested part numbers with an expiry', async () => {
+            const uploadingFile = createFileFixture({ status: 'uploading' });
+            mocks.files.findFirst.mockResolvedValue(uploadingFile);
+
+            const result = await fileService.signMultipartParts(
+                db,
+                TEST_USER_ID,
+                {
+                    fileId: uploadingFile.id,
+                    uploadId: 'some-upload-id',
+                    partNumbers: [2, 4],
+                }
+            );
+
+            expect(result.parts).toEqual([
+                { partNumber: 2, url: expect.stringContaining('part-2') },
+                { partNumber: 4, url: expect.stringContaining('part-4') },
+            ]);
+            expect(result.expiresAt).toBeInstanceOf(Date);
+        });
+
+        it('throws NotFoundError when file does not exist', async () => {
+            mocks.files.findFirst.mockResolvedValue(undefined);
+
+            await expect(
+                fileService.signMultipartParts(db, TEST_USER_ID, {
+                    fileId: 'nonexistent',
+                    uploadId: 'some-upload-id',
+                    partNumbers: [1],
+                })
+            ).rejects.toThrow(NotFoundError);
+        });
+
+        it('throws InvalidStateError when file is not uploading', async () => {
+            const availableFile = createFileFixture({ status: 'available' });
+            mocks.files.findFirst.mockResolvedValue(availableFile);
+
+            await expect(
+                fileService.signMultipartParts(db, TEST_USER_ID, {
+                    fileId: availableFile.id,
+                    uploadId: 'some-upload-id',
+                    partNumbers: [1],
+                })
+            ).rejects.toThrow(InvalidStateError);
+        });
+    });
+
     describe('abortMultipartUpload', () => {
         it('soft-deletes the file record', async () => {
             const uploadingFile = createFileFixture({ status: 'uploading' });

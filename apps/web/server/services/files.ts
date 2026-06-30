@@ -247,6 +247,81 @@ async function completeMultipartUpload(
     });
 }
 
+interface ListMultipartPartsResult {
+    parts: { partNumber: number; etag: string; size: number }[];
+}
+
+interface SignMultipartPartsInput {
+    fileId: string;
+    uploadId: string;
+    partNumbers: number[];
+}
+
+interface SignMultipartPartsResult {
+    parts: { partNumber: number; url: string }[];
+    expiresAt: Date;
+}
+
+// Resume helpers share an ownership + status guard: the caller must own the
+// file and it must still be `uploading`. A file that already reached
+// `available` (completed) or `deleted` (aborted) has no live multipart upload
+// to reconcile against, so resuming it is a client bug, not a recoverable state.
+async function loadResumableFile(
+    db: DB,
+    userId: string,
+    fileId: string
+): Promise<File> {
+    const fileRepo = createFileRepo(db);
+    const file = await fileRepo.findByUserAndId(userId, fileId);
+    if (!file) {
+        throw new NotFoundError('File', fileId);
+    }
+    if (file.status !== 'uploading') {
+        throw new InvalidStateError(
+            `File is not in uploading state: ${file.status}`
+        );
+    }
+    return file;
+}
+
+// Reconcile against S3: report which parts S3 has already received so the
+// client can skip them on resume even when its local (IndexedDB) state is
+// stale or lost. ETags come straight from S3 and feed back into `complete`.
+async function listMultipartParts(
+    db: DB,
+    userId: string,
+    fileId: string,
+    uploadId: string
+): Promise<ListMultipartPartsResult> {
+    const file = await loadResumableFile(db, userId, fileId);
+    const parts = await s3.multipart.listParts(file.s3Key, uploadId);
+    return { parts };
+}
+
+// Re-presign a specific set of part numbers without restarting the upload.
+// Used for the parts left to upload on resume, and to refresh URLs that
+// expired mid-upload (part URLs live 1 hour).
+async function signMultipartParts(
+    db: DB,
+    userId: string,
+    input: SignMultipartPartsInput
+): Promise<SignMultipartPartsResult> {
+    const file = await loadResumableFile(db, userId, input.fileId);
+
+    const parts = await s3.multipart.signPartsByNumber({
+        key: file.s3Key,
+        uploadId: input.uploadId,
+        partNumbers: input.partNumbers,
+        expiresIn: MULTIPART_URL_EXPIRY_SECONDS,
+    });
+
+    const expiresAt = new Date(
+        Date.now() + MULTIPART_URL_EXPIRY_SECONDS * 1000
+    );
+
+    return { parts, expiresAt };
+}
+
 async function abortMultipartUpload(
     db: DB,
     userId: string,
@@ -320,6 +395,8 @@ export const fileService = {
     confirmUpload,
     initiateMultipartUpload,
     completeMultipartUpload,
+    listMultipartParts,
+    signMultipartParts,
     abortMultipartUpload,
     deleteUserFile,
 } as const;

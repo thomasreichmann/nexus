@@ -224,6 +224,52 @@ export const filesRouter = router({
                 );
             }),
 
+        // Reconcile a resumed upload against S3: returns the parts S3 already
+        // holds so the client skips them even when its local state is stale.
+        // A mutation (not a query) so resume always reconciles fresh — a cached
+        // part list would let the client re-upload or skip the wrong parts.
+        listParts: protectedProcedure
+            .input(
+                z.object({
+                    fileId: z.string().uuid(),
+                    uploadId: z.string().min(1),
+                })
+            )
+            .mutation(({ ctx, input }) => {
+                return fileService.listMultipartParts(
+                    ctx.db,
+                    ctx.session.user.id,
+                    input.fileId,
+                    input.uploadId
+                );
+            }),
+
+        // Re-presign a specific set of part numbers without restarting the
+        // upload — for the parts left on resume and for URLs that expired
+        // mid-upload (part URLs live 1 hour).
+        signParts: protectedProcedure
+            .input(
+                z.object({
+                    fileId: z.string().uuid(),
+                    uploadId: z.string().min(1),
+                    partNumbers: z
+                        .array(z.number().int().min(1).max(10000))
+                        .min(1)
+                        .max(10000),
+                })
+            )
+            .mutation(({ ctx, input }) => {
+                return fileService.signMultipartParts(
+                    ctx.db,
+                    ctx.session.user.id,
+                    {
+                        fileId: input.fileId,
+                        uploadId: input.uploadId,
+                        partNumbers: input.partNumbers,
+                    }
+                );
+            }),
+
         abort: protectedProcedure
             .input(
                 z.object({

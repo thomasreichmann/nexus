@@ -147,6 +147,54 @@ Delete an object from the bucket. This operation is idempotent—it returns succ
 await s3.objects.remove('user/123/deleted-file.txt');
 ```
 
+### Multipart Uploads
+
+Large files (≥100 MB) upload in parts. The client PUTs each part to a presigned
+URL, collects the ETags, and completes the upload. These operations back the
+resumable-upload flow.
+
+#### `s3.multipart.create(key, contentType?)`
+
+Initiate a multipart upload. Returns `{ uploadId }` — required for every
+subsequent part operation.
+
+#### `s3.multipart.signParts(options)`
+
+Presign URLs for **all** parts at once (`{ key, uploadId, partCount, expiresIn? }`).
+Returns a `string[]` indexed by position (`partNumber - 1`). Used when starting a
+fresh upload. Default expiry: 3600s (1 hour).
+
+#### `s3.multipart.signPartsByNumber(options)`
+
+Presign URLs for a **specific** set of part numbers
+(`{ key, uploadId, partNumbers, expiresIn? }`). Returns `{ partNumber, url }[]`.
+Use this to re-presign only the parts left to upload on resume, and to refresh
+URLs that expired mid-upload — both without restarting the upload.
+
+```typescript
+const signed = await s3.multipart.signPartsByNumber({
+    key,
+    uploadId,
+    partNumbers: [3, 4, 5], // only the missing parts
+});
+```
+
+#### `s3.multipart.listParts(key, uploadId)`
+
+List the parts S3 has already received. Returns
+`{ partNumber, etag, size }[]`, paging through results automatically (S3 caps a
+single response at 1000 parts; 10000 parts max per upload). This is the
+authoritative source for resume reconciliation: it lets the client skip
+already-uploaded parts even when its local state is stale or lost, and the
+returned ETags feed straight back into `complete`.
+
+#### `s3.multipart.complete(key, uploadId, parts)` / `s3.multipart.abort(key, uploadId)`
+
+Finalize the upload with the collected `{ partNumber, etag }[]`, or abort to
+discard all uploaded parts. Incomplete uploads that are never completed or
+aborted are cleaned up by the bucket's `abort-incomplete-multipart` lifecycle
+rule (7 days) — see `docs/infra/aws-manual-setup.md`.
+
 ## Types
 
 All types are re-exported from the main module:

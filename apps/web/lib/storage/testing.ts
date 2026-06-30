@@ -57,6 +57,16 @@ const multipartMocks = {
             { length: options.partCount },
             (_, i) => `${MOCK_HOST}/${MOCK_BUCKET}/part-${i + 1}`
         ),
+    signPartsByNumber: async (options: {
+        partNumbers: number[];
+    }): Promise<{ partNumber: number; url: string }[]> =>
+        options.partNumbers.map((partNumber) => ({
+            partNumber,
+            url: `${MOCK_HOST}/${MOCK_BUCKET}/part-${partNumber}`,
+        })),
+    listParts: async (): Promise<
+        { partNumber: number; etag: string; size: number }[]
+    > => [],
     complete: async (): Promise<void> => {},
     abort: async (): Promise<void> => {},
 };
