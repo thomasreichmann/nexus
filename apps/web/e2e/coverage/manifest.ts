@@ -281,6 +281,20 @@ export const USE_CASES: UseCaseEntry[] = [
             'Requires uploading >100MB through the browser; multipart init/complete/abort are covered by unit tests',
         routes: ['/dashboard/upload'],
     },
+    {
+        id: 'upload-resume-detect',
+        title: 'Interrupted upload is detected on load and shown as resumable',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
+        id: 'upload-resume-flow',
+        title: 'Re-adding an interrupted file resumes from the last completed part',
+        area: 'upload',
+        excluded:
+            'Full resume needs a real >100MB multipart upload + S3 ListParts reconciliation; resume primitives and store/part logic are covered by unit tests, detection by upload-resume-detect',
+        routes: ['/dashboard/upload'],
+    },
 
     /* ---------------------------------------------------------------- */
     /* Billing & subscription                                            */

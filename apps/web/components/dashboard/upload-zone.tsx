@@ -13,6 +13,8 @@ import {
     Loader2,
     AlertCircle,
     RotateCcw,
+    PauseCircle,
+    History,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatBytes } from '@/lib/format';
@@ -36,7 +38,7 @@ export function UploadZone() {
         (e: React.DragEvent) => {
             e.preventDefault();
             setIsDragOver(false);
-            addFiles(e.dataTransfer.files);
+            void addFiles(e.dataTransfer.files);
         },
         [addFiles]
     );
@@ -50,7 +52,7 @@ export function UploadZone() {
         setIsDragOver(false);
     };
 
-    const totalSize = files.reduce((acc, f) => acc + f.file.size, 0);
+    const totalSize = files.reduce((acc, f) => acc + f.size, 0);
     const estimatedCost = (totalSize / (1024 * 1024 * 1024)) * 0.01; // $0.01 per GB per month
     const pendingFiles = files.filter((f) => f.status === 'pending');
     const hasCompletedFiles = files.some((f) => f.status === 'complete');
@@ -84,7 +86,7 @@ export function UploadZone() {
                                 type="file"
                                 multiple
                                 className="hidden"
-                                onChange={(e) => addFiles(e.target.files)}
+                                onChange={(e) => void addFiles(e.target.files)}
                                 disabled={isUploading}
                             />
                             <Button
@@ -128,6 +130,10 @@ export function UploadZone() {
                                             <CheckCircle className="h-5 w-5 text-green-500" />
                                         ) : file.status === 'error' ? (
                                             <AlertCircle className="h-5 w-5 text-destructive" />
+                                        ) : file.status === 'paused' ? (
+                                            <PauseCircle className="h-5 w-5 text-amber-500" />
+                                        ) : file.status === 'resumable' ? (
+                                            <History className="h-5 w-5 text-amber-500" />
                                         ) : file.status === 'uploading' ? (
                                             <Loader2 className="h-5 w-5 animate-spin text-primary" />
                                         ) : (
@@ -136,16 +142,30 @@ export function UploadZone() {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="truncate font-medium">
-                                            {file.file.name}
+                                            {file.name}
                                         </p>
                                         <p className="text-sm text-muted-foreground">
-                                            {formatBytes(file.file.size)}
+                                            {formatBytes(file.size)}
                                         </p>
-                                        {file.status === 'uploading' && (
+                                        {(file.status === 'uploading' ||
+                                            file.status === 'paused' ||
+                                            file.status === 'resumable') && (
                                             <Progress
                                                 value={file.progress}
                                                 className="mt-2 h-1"
                                             />
+                                        )}
+                                        {file.status === 'paused' && (
+                                            <p className="mt-1 text-xs text-amber-600">
+                                                Paused — waiting for your
+                                                connection
+                                            </p>
+                                        )}
+                                        {file.status === 'resumable' && (
+                                            <p className="mt-1 text-xs text-amber-600">
+                                                Interrupted — re-add this file
+                                                to resume
+                                            </p>
                                         )}
                                         {file.status === 'error' &&
                                             file.error && (
@@ -169,7 +189,9 @@ export function UploadZone() {
                                                 </span>
                                             </Button>
                                         )}
-                                    {file.status === 'uploading' && (
+                                    {(file.status === 'uploading' ||
+                                        file.status === 'paused' ||
+                                        file.status === 'resumable') && (
                                         <Button
                                             variant="ghost"
                                             size="icon"
