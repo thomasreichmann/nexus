@@ -14,6 +14,10 @@ export function formatDate(date: Date | string): string {
     return format(new Date(date), 'MMM d, yyyy');
 }
 
+export function formatDateTime(date: Date | string): string {
+    return format(new Date(date), "MMMM d, yyyy 'at' h:mm a");
+}
+
 export function formatRelativeTime(date: Date | string): string {
     return formatDistanceToNow(new Date(date), { addSuffix: true });
 }

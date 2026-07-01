@@ -5,6 +5,7 @@ import type { Job, NewJob } from './jobs';
 import type { Retrieval } from './retrievals';
 import type { Subscription } from './subscriptions';
 import type { UploadBatch } from './uploadBatches';
+import type { User } from './users';
 import type { WebhookEvent } from './webhooks';
 
 export const TEST_USER_ID = 'user_test123';
@@ -17,7 +18,7 @@ export const TEST_STRIPE_CUSTOMER_ID = 'cus_test303';
 export const TEST_WEBHOOK_EVENT_ID = 'wh_test404';
 export const TEST_BATCH_ID = 'batch_test505';
 
-export type User = typeof schema.user.$inferSelect;
+export type { User } from './users';
 export type StorageUsage = typeof schema.storageUsage.$inferSelect;
 
 export function createFileFixture(overrides: Partial<File> = {}): File {

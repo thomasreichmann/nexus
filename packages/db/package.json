@@ -44,6 +44,11 @@
             "import": "./src/repositories/uploadBatches.ts",
             "default": "./src/repositories/uploadBatches.ts"
         },
+        "./repo/users": {
+            "types": "./src/repositories/users.ts",
+            "import": "./src/repositories/users.ts",
+            "default": "./src/repositories/users.ts"
+        },
         "./repo/webhooks": {
             "types": "./src/repositories/webhooks.ts",
             "import": "./src/repositories/webhooks.ts",
