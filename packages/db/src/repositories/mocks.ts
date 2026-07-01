@@ -44,6 +44,7 @@ export function createMockDb() {
     const subscriptions = createQueryMock();
     const uploadBatches = createQueryMock();
     const webhookEvents = createQueryMock();
+    const user = createQueryMock();
 
     const db = {
         query: {
@@ -54,6 +55,7 @@ export function createMockDb() {
             subscriptions,
             uploadBatches,
             webhookEvents,
+            user,
         },
         select,
         insert,
@@ -89,6 +91,7 @@ export function createMockDb() {
             subscriptions,
             uploadBatches,
             webhookEvents,
+            user,
         },
     };
 }

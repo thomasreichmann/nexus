@@ -13,6 +13,11 @@ export const serverSchema = z.object({
     SQS_QUEUE_URL: z.string().url(),
     STRIPE_SECRET_KEY: z.string().min(1),
     STRIPE_WEBHOOK_SECRET: z.string().min(1),
+    RESEND_API_KEY: z.string().min(1),
+    // Resend accepts a friendly-from format ("Name <addr@domain>"), which
+    // z.string().email() rejects — this only checks it's non-empty and lets
+    // Resend validate the actual address on send.
+    RESEND_FROM_EMAIL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32),
     LOG_ERROR_VERBOSITY: logErrorVerbositySchema.optional(),
 });
