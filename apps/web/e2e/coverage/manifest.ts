@@ -295,6 +295,12 @@ export const USE_CASES: UseCaseEntry[] = [
             'Full resume needs a real >100MB multipart upload + S3 ListParts reconciliation; resume primitives and store/part logic are covered by unit tests, detection by upload-resume-detect',
         routes: ['/dashboard/upload'],
     },
+    {
+        id: 'upload-resume-one-click',
+        title: 'Interrupted upload with a persisted handle is shown as one-click resumable',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
 
     /* ---------------------------------------------------------------- */
     /* Billing & subscription                                            */

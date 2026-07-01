@@ -47,6 +47,18 @@ describe('uploadStore', () => {
         expect(await getUpload('nope')).toBeUndefined();
     });
 
+    it('round-trips a persisted file handle', async () => {
+        // A real FileSystemFileHandle is structured-cloneable in Chromium; here a
+        // plain stand-in proves the optional field survives put/get unchanged.
+        const fileHandle = {
+            kind: 'file',
+            name: 'shoot.zip',
+        } as unknown as FileSystemFileHandle;
+        await putUpload(makeRecord({ fileHandle }));
+
+        expect((await getUpload('file-1'))?.fileHandle).toEqual(fileHandle);
+    });
+
     it('lists all records', async () => {
         await putUpload(makeRecord({ fileId: 'a' }));
         await putUpload(makeRecord({ fileId: 'b' }));

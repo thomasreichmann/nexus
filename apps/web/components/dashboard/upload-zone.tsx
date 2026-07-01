@@ -1,7 +1,7 @@
 'use client';
 
 import type React from 'react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -15,9 +15,15 @@ import {
     RotateCcw,
     PauseCircle,
     History,
+    Play,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatBytes } from '@/lib/format';
+import {
+    isFileSystemAccessSupported,
+    pickFilesWithHandles,
+    pickedFilesFromDataTransfer,
+} from '@/lib/upload/fileSystemAccess';
 import { useUpload } from './useUpload';
 
 export function UploadZone() {
@@ -30,18 +36,36 @@ export function UploadZone() {
         startUpload,
         cancelFile,
         retryFile,
+        resumeWithHandle,
+        resumeAllWithHandles,
     } = useUpload();
 
     const [isDragOver, setIsDragOver] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     const handleDrop = useCallback(
         (e: React.DragEvent) => {
             e.preventDefault();
             setIsDragOver(false);
-            void addFiles(e.dataTransfer.files);
+            // Read the DataTransfer synchronously — its items are only live
+            // during the event — then queue the files (with handles when present).
+            void pickedFilesFromDataTransfer(e.dataTransfer).then(addFiles);
         },
         [addFiles]
     );
+
+    // On Chromium the picker captures persistable handles for zero-touch resume;
+    // elsewhere it falls through to the plain file input (the re-add path). Decided
+    // at click time so there's no SSR/client mismatch and no render-time state.
+    const handleBrowse = useCallback(() => {
+        if (isFileSystemAccessSupported()) {
+            void pickFilesWithHandles().then((picked) => {
+                if (picked.length > 0) void addFiles(picked);
+            });
+        } else {
+            inputRef.current?.click();
+        }
+    }, [addFiles]);
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
@@ -56,6 +80,9 @@ export function UploadZone() {
     const estimatedCost = (totalSize / (1024 * 1024 * 1024)) * 0.01; // $0.01 per GB per month
     const pendingFiles = files.filter((f) => f.status === 'pending');
     const hasCompletedFiles = files.some((f) => f.status === 'complete');
+    const quickResumable = files.filter(
+        (f) => f.status === 'resumable' && f.isQuickResumable
+    );
 
     return (
         <div className="space-y-6">
@@ -81,23 +108,32 @@ export function UploadZone() {
                         <p className="mb-4 text-sm text-muted-foreground">
                             or click to browse your computer
                         </p>
-                        <label>
-                            <input
-                                type="file"
-                                multiple
-                                className="hidden"
-                                onChange={(e) => void addFiles(e.target.files)}
-                                disabled={isUploading}
-                            />
-                            <Button
-                                variant="outline"
-                                disabled={isUploading}
-                                nativeButton={false}
-                                render={<span />}
-                            >
-                                Browse files
-                            </Button>
-                        </label>
+                        {/* Always rendered (hidden) as the non-Chromium fallback
+                            and the programmatic seam for tests; the picker path
+                            below is what captures resumable handles. */}
+                        <input
+                            ref={inputRef}
+                            type="file"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => {
+                                const picked = Array.from(
+                                    e.target.files ?? []
+                                ).map((file) => ({ file }));
+                                void addFiles(picked);
+                                // Allow re-selecting the same file (e.g. to re-add
+                                // an interrupted upload) to fire onChange again.
+                                e.target.value = '';
+                            }}
+                            disabled={isUploading}
+                        />
+                        <Button
+                            variant="outline"
+                            disabled={isUploading}
+                            onClick={handleBrowse}
+                        >
+                            Browse files
+                        </Button>
                     </div>
                 </CardContent>
             </Card>
@@ -119,6 +155,31 @@ export function UploadZone() {
                                 </Button>
                             )}
                         </div>
+                        {quickResumable.length > 0 && (
+                            <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+                                <div className="flex items-center gap-2 text-sm">
+                                    <History className="h-4 w-4 shrink-0 text-amber-500" />
+                                    <span>
+                                        <span className="font-medium">
+                                            {quickResumable.length}
+                                        </span>{' '}
+                                        interrupted{' '}
+                                        {quickResumable.length === 1
+                                            ? 'upload'
+                                            : 'uploads'}{' '}
+                                        ready to resume — no re-selecting
+                                    </span>
+                                </div>
+                                <Button
+                                    size="sm"
+                                    onClick={resumeAllWithHandles}
+                                    disabled={isUploading}
+                                >
+                                    <Play className="mr-2 h-4 w-4" />
+                                    Resume all
+                                </Button>
+                            </div>
+                        )}
                         <div className="space-y-3">
                             {files.map((file) => (
                                 <div
@@ -163,8 +224,9 @@ export function UploadZone() {
                                         )}
                                         {file.status === 'resumable' && (
                                             <p className="mt-1 text-xs text-amber-600">
-                                                Interrupted — re-add this file
-                                                to resume
+                                                {file.isQuickResumable
+                                                    ? 'Interrupted — resume in one click'
+                                                    : 'Interrupted — re-add this file to resume'}
                                             </p>
                                         )}
                                         {file.status === 'error' &&
@@ -187,6 +249,19 @@ export function UploadZone() {
                                                 <span className="sr-only">
                                                     Remove
                                                 </span>
+                                            </Button>
+                                        )}
+                                    {file.status === 'resumable' &&
+                                        file.isQuickResumable && (
+                                            <Button
+                                                size="sm"
+                                                onClick={() =>
+                                                    resumeWithHandle(file.id)
+                                                }
+                                                disabled={isUploading}
+                                            >
+                                                <Play className="mr-2 h-4 w-4" />
+                                                Resume
                                             </Button>
                                         )}
                                     {(file.status === 'uploading' ||

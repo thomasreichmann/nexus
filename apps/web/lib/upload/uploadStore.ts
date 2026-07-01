@@ -33,6 +33,10 @@ export interface ResumableUpload {
     completedParts: CompletedPart[];
     createdAt: number;
     updatedAt: number;
+    // Chromium-only: the File System Access handle for zero-touch resume. It's
+    // structured-cloneable, so IndexedDB persists it directly — no schema bump.
+    // Absent on other browsers and pre-handle records, which fall back to re-add.
+    fileHandle?: FileSystemFileHandle;
 }
 
 interface UploadDBSchema extends DBSchema {

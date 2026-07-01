@@ -24,6 +24,11 @@ import {
     toFileIdentity,
 } from '@/lib/upload/parts';
 import {
+    isFileSystemAccessSupported,
+    reacquireMatchingFile,
+    type PickedFile,
+} from '@/lib/upload/fileSystemAccess';
+import {
     isAbortError,
     isExpiredUrlError,
     isNetworkError,
@@ -55,12 +60,21 @@ export interface UploadFile {
     progress: number;
     status: UploadStatus;
     error?: string;
+    // A `resumable` row whose persisted handle can be reopened in one click,
+    // rather than requiring the user to re-add the file (Chromium only).
+    isQuickResumable?: boolean;
 }
 
 interface InternalUploadFile extends UploadFile {
     // Null for an interrupted upload detected on reload — the bytes are gone
-    // until the user re-adds the file, at which point we reattach and resume.
+    // until the user re-adds the file (or one-click reopens its handle), at
+    // which point we reattach and resume.
     file: File | null;
+    // Persisted File System Access handle; lets us silently reopen the bytes on
+    // reload. Carried from the picker/drop and written into the IndexedDB record.
+    fileHandle?: FileSystemFileHandle;
+    // Identity field a reopened handle must match before we trust it to resume.
+    lastModified?: number;
     fileId?: string;
     uploadId?: string;
     chunkSize?: number;
@@ -221,6 +235,9 @@ export function useUpload() {
                         completedParts: [],
                         createdAt: now,
                         updatedAt: now,
+                        // Persist the handle (when we have one) so an interruption
+                        // is zero-touch resumable, not just re-add resumable.
+                        fileHandle: uploadFile.fileHandle,
                     });
                     updateFile(uploadFile.id, {
                         fileId,
@@ -431,13 +448,16 @@ export function useUpload() {
     }, [runUpload]);
 
     // Surface interrupted uploads found in IndexedDB on mount as `resumable`
-    // rows. The bytes are gone, so they show until the user re-adds the file.
+    // rows. Records that persisted a File System Access handle (and run on a
+    // browser that supports it) are marked `isQuickResumable` — the bytes can be
+    // reopened in one click. The rest show until the user re-adds the file.
     // Runs once per mount; the setFiles dedupe (by fileId) keeps it idempotent
     // under React StrictMode's double-invoked effects, so no cancel flag needed.
     const hydratedRef = useRef(false);
     useEffect(() => {
         if (hydratedRef.current) return;
         hydratedRef.current = true;
+        const hasFileSystemAccess = isFileSystemAccessSupported();
         void (async () => {
             const records = await listUploads();
             const resumable = records.filter(isResumable);
@@ -455,7 +475,10 @@ export function useUpload() {
                             r.totalParts
                         ),
                         status: 'resumable' as const,
+                        isQuickResumable: hasFileSystemAccess && !!r.fileHandle,
                         file: null,
+                        fileHandle: r.fileHandle,
+                        lastModified: r.lastModified,
                         fileId: r.fileId,
                         uploadId: r.uploadId,
                         chunkSize: r.chunkSize,
@@ -508,23 +531,22 @@ export function useUpload() {
         };
     }, [uploadMultipartFile]);
 
-    const addFiles = useCallback(async (fileList: FileList | null) => {
-        if (!fileList) return;
+    const addFiles = useCallback(async (picked: PickedFile[]) => {
+        if (picked.length === 0) return;
 
-        const incoming = Array.from(fileList);
         // Match each file against a persisted interrupted upload so a re-add
         // resumes from where S3 left off instead of starting over.
         const matches = await Promise.all(
-            incoming.map((file) => findUploadByIdentity(toFileIdentity(file)))
+            picked.map(({ file }) => findUploadByIdentity(toFileIdentity(file)))
         );
 
         setFiles((prev) => {
             // Reattach re-added files to their resumable rows (immutably), then
             // append rows for everything that didn't match an existing row.
-            const reattach = new Map<string, File>();
+            const reattach = new Map<string, PickedFile>();
             const appended: InternalUploadFile[] = [];
 
-            incoming.forEach((file, i) => {
+            picked.forEach(({ file, handle }, i) => {
                 const match = matches[i];
                 const existing =
                     match && isResumable(match)
@@ -534,7 +556,7 @@ export function useUpload() {
                 if (match && isResumable(match) && existing) {
                     // Re-add of an interrupted upload: queue it as resumable;
                     // clicking Upload continues from the last completed part.
-                    reattach.set(existing.id, file);
+                    reattach.set(existing.id, { file, handle });
                     return;
                 }
                 if (match && isResumable(match)) {
@@ -548,6 +570,7 @@ export function useUpload() {
                         ),
                         status: 'pending',
                         file,
+                        fileHandle: handle,
                         fileId: match.fileId,
                         uploadId: match.uploadId,
                         chunkSize: match.chunkSize,
@@ -563,15 +586,18 @@ export function useUpload() {
                     progress: 0,
                     status: 'pending',
                     file,
+                    fileHandle: handle,
                 });
             });
 
             const updated = prev.map((f) => {
-                const file = reattach.get(f.id);
-                return file
+                const reattached = reattach.get(f.id);
+                return reattached
                     ? {
                           ...f,
-                          file,
+                          file: reattached.file,
+                          // Keep any handle we already had if the re-add lacked one.
+                          fileHandle: reattached.handle ?? f.fileHandle,
                           status: 'pending' as const,
                           progress: partsProgress(
                               f.completedParts?.length ?? 0,
@@ -644,15 +670,80 @@ export function useUpload() {
         [updateFile, runUpload]
     );
 
+    // Reopen interrupted uploads from their persisted handles and resume them
+    // through the same multipart engine. Handles are reopened up front (in
+    // parallel) so the permission prompts ride the single click that triggered
+    // this, then resumed serially like the normal queue. A row whose handle
+    // can't be reopened (permission denied, file moved/changed) loses its
+    // quick-resume affordance and falls back to the manual re-add flow.
+    const resumeRows = useCallback(
+        async (rows: InternalUploadFile[]) => {
+            if (rows.length === 0) return;
+            setIsUploading(true);
+            try {
+                const reopened = await Promise.all(
+                    rows.map(async (row) => ({
+                        row,
+                        file: await reacquireRowFile(row),
+                    }))
+                );
+                let hasResumedAny = false;
+                for (const { row, file } of reopened) {
+                    if (!file) {
+                        updateFile(row.id, { isQuickResumable: false });
+                        continue;
+                    }
+                    hasResumedAny = true;
+                    updateFile(row.id, {
+                        file,
+                        status: 'pending',
+                        error: undefined,
+                    });
+                    await uploadMultipartFile({
+                        ...row,
+                        file,
+                        status: 'pending',
+                    });
+                }
+                if (!hasResumedAny) {
+                    toast.error(
+                        rows.length > 1
+                            ? "Couldn't reopen the files — re-add them to resume"
+                            : "Couldn't reopen the file — re-add it to resume"
+                    );
+                }
+            } finally {
+                setIsUploading(false);
+            }
+        },
+        [updateFile, uploadMultipartFile]
+    );
+
+    const resumeWithHandle = useCallback(
+        (id: string) => {
+            const row = filesRef.current.find((f) => f.id === id);
+            if (row) void resumeRows([row]);
+        },
+        [resumeRows]
+    );
+
+    const resumeAllWithHandles = useCallback(() => {
+        const rows = filesRef.current.filter(
+            (f) => f.status === 'resumable' && f.isQuickResumable
+        );
+        void resumeRows(rows);
+    }, [resumeRows]);
+
     // Expose only the public UploadFile shape (strip internal fields)
     const publicFiles: UploadFile[] = files.map(
-        ({ id, name, size, progress, status, error }) => ({
+        ({ id, name, size, progress, status, error, isQuickResumable }) => ({
             id,
             name,
             size,
             progress,
             status,
             error,
+            isQuickResumable,
         })
     );
 
@@ -665,7 +756,21 @@ export function useUpload() {
         startUpload: processQueue,
         cancelFile,
         retryFile,
+        resumeWithHandle,
+        resumeAllWithHandles,
     };
+}
+
+// Reopen the bytes behind a resumable row's persisted handle, verifying identity.
+// Resolves to null (so the caller falls back to re-add) when there's no handle or
+// it can't be reopened. Lives at module scope since it touches no reactive state.
+function reacquireRowFile(row: InternalUploadFile): Promise<File | null> {
+    if (!row.fileHandle) return Promise.resolve(null);
+    return reacquireMatchingFile(row.fileHandle, {
+        name: row.name,
+        size: row.size,
+        lastModified: row.lastModified ?? 0,
+    });
 }
 
 // Wrapped so it's easy to reason about in non-browser test contexts; the engine

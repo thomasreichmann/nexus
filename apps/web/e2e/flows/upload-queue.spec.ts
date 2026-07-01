@@ -8,6 +8,7 @@
 import { test, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
 import { interceptTrpcCalls } from '../helpers/trpc';
+import { seedResumableUpload } from '../helpers/uploadStore';
 
 const UPLOAD_USER: TestUser = {
     email: 'upload-flows-e2e@test.local',
@@ -80,41 +81,9 @@ test(
         // Wait for the app to open the IndexedDB store before seeding it.
         await expect(page.getByText('Drop files here to upload')).toBeVisible();
 
-        // Seed a half-finished multipart upload directly into IndexedDB, as if a
-        // prior session had been interrupted (5 of 10 parts done).
-        await page.evaluate(async () => {
-            const open = indexedDB.open('nexus-uploads', 1);
-            const db: IDBDatabase = await new Promise((res, rej) => {
-                open.onupgradeneeded = () =>
-                    open.result.createObjectStore('uploads', {
-                        keyPath: 'fileId',
-                    });
-                open.onsuccess = () => res(open.result);
-                open.onerror = () => rej(open.error);
-            });
-            await new Promise<void>((res, rej) => {
-                const tx = db.transaction('uploads', 'readwrite');
-                tx.objectStore('uploads').put({
-                    fileId: '11111111-1111-1111-1111-111111111111',
-                    uploadId: 'seeded-upload-id',
-                    name: 'big-shoot.zip',
-                    size: 1_048_576_000,
-                    lastModified: 1700000000000,
-                    mimeType: 'application/zip',
-                    chunkSize: 104_857_600,
-                    totalParts: 10,
-                    completedParts: Array.from({ length: 5 }, (_, i) => ({
-                        partNumber: i + 1,
-                        etag: `"part-${i + 1}"`,
-                    })),
-                    createdAt: 1700000000000,
-                    updatedAt: 1700000000000,
-                });
-                tx.oncomplete = () => res();
-                tx.onerror = () => rej(tx.error);
-            });
-            db.close();
-        });
+        // Seed a half-finished multipart upload (5 of 10 parts) with no persisted
+        // handle, as if a prior session had been interrupted before this feature.
+        await seedResumableUpload(page);
 
         await page.reload();
 
@@ -129,6 +98,50 @@ test(
         ).toBeVisible();
         await expect(
             page.getByRole('button', { name: 'Retry upload' })
+        ).toBeHidden();
+
+        expect(consoleErrors).toEqual([]);
+    }
+);
+
+test(
+    'an interrupted upload with a persisted handle is shown as one-click resumable',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-resume-one-click'] },
+    async ({ page, consoleErrors }) => {
+        await page.goto(PAGE_URL);
+        await expect(page.getByText('Drop files here to upload')).toBeVisible();
+
+        // Seed an interrupted upload that captured a File System Access handle.
+        // A plain stand-in is enough for the surfacing: the app keys the
+        // one-click affordance on the handle's presence + browser support
+        // (Chromium, which Playwright runs). The actual reopen/permission flow
+        // can't be driven from a script, so it's covered by unit tests.
+        await seedResumableUpload(page, {
+            fileId: '22222222-2222-2222-2222-222222222222',
+            uploadId: 'seeded-handle-upload-id',
+            name: 'handle-shoot.zip',
+            size: 2_097_152_000,
+            totalParts: 20,
+            completedCount: 7,
+            fileHandle: { kind: 'file', name: 'handle-shoot.zip' },
+        });
+
+        await page.reload();
+
+        // The row offers one-click resume (not the re-add prompt), with both a
+        // per-row Resume button and a Resume-all affordance.
+        await expect(page.getByText('handle-shoot.zip')).toBeVisible();
+        await expect(
+            page.getByText('Interrupted — resume in one click')
+        ).toBeVisible();
+        await expect(
+            page.getByRole('button', { name: 'Resume', exact: true })
+        ).toBeVisible();
+        await expect(
+            page.getByRole('button', { name: 'Resume all' })
+        ).toBeVisible();
+        await expect(
+            page.getByText('Interrupted — re-add this file to resume')
         ).toBeHidden();
 
         expect(consoleErrors).toEqual([]);
