@@ -114,7 +114,7 @@ const content: CSSProperties = {
 
 const hr: CSSProperties = {
     borderColor: colors.border,
-    margin: '24px 0',
+    margin: `${spacing.block} 0`,
 };
 
 const footerBrand: CSSProperties = {

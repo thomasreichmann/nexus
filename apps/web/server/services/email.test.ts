@@ -7,12 +7,19 @@ import {
     TEST_USER_ID,
 } from '@nexus/db/testing';
 import { mockEmail } from '@/lib/email/testing';
-import { NotFoundError } from '@/server/errors';
-import { emailService } from './email';
+
+const hoisted = await vi.hoisted(async () => {
+    const { createMockLogger } = await import('@/server/lib/logger/testing');
+    return { logger: createMockLogger() };
+});
 
 vi.mock('@/lib/email', () => ({
     email: mockEmail,
 }));
+
+vi.mock('@/server/lib/logger', () => ({ logger: hoisted.logger }));
+
+const { emailService } = await import('./email');
 
 describe('email service', () => {
     let db: MockDb;
@@ -49,13 +56,34 @@ describe('email service', () => {
             expect(sent.react).toBeDefined();
         });
 
-        it('throws NotFoundError when the user does not exist', async () => {
+        it('logs and skips when the user does not exist', async () => {
             mocks.user.findFirst.mockResolvedValue(undefined);
 
             await expect(
                 emailService.sendRetrievalReadyEmail(db, opts)
-            ).rejects.toThrow(NotFoundError);
+            ).resolves.toBeUndefined();
             expect(mockEmail.send).not.toHaveBeenCalled();
+            expect(hoisted.logger.warn).toHaveBeenCalledWith(
+                { userId: TEST_USER_ID },
+                'Skipping retrieval-ready email for unknown user'
+            );
+        });
+
+        it('logs and swallows when the send fails', async () => {
+            const user = createUserFixture({
+                id: TEST_USER_ID,
+                email: 'user@example.com',
+            });
+            mocks.user.findFirst.mockResolvedValue(user);
+            mockEmail.send.mockRejectedValueOnce(new Error('Resend outage'));
+
+            await expect(
+                emailService.sendRetrievalReadyEmail(db, opts)
+            ).resolves.toBeUndefined();
+            expect(hoisted.logger.warn).toHaveBeenCalledWith(
+                { userId: TEST_USER_ID, err: expect.any(Error) },
+                'Failed to send retrieval-ready email'
+            );
         });
     });
 });

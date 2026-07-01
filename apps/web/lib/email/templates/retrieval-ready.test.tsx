@@ -20,9 +20,9 @@ describe('RetrievalReadyEmail', () => {
         expect(html).toContain(props.downloadUrl);
     });
 
-    it('renders a human-readable expiration date', async () => {
+    it('renders a human-readable expiration date in UTC', async () => {
         const html = await render(<RetrievalReadyEmail {...props} />);
-        expect(html).toContain('July 8, 2026');
+        expect(html).toContain('July 8, 2026 at 3:45 PM UTC');
     });
 
     it('renders to a full HTML document', async () => {

@@ -7,10 +7,10 @@ import {
     Section,
     Text,
 } from '@react-email/components';
-import { formatDateTime } from '@/lib/format';
 import { EmailLayout } from './_layout';
 import { ArchiveIcon, ClockIcon } from './components/icons';
-import { colors, radii } from './theme';
+import { formatEmailDateTime } from './format';
+import { colors, radii, spacing } from './theme';
 
 export interface RetrievalReadyEmailProps {
     fileName: string;
@@ -34,8 +34,8 @@ export function RetrievalReadyEmail({
     downloadUrl,
     expiresAt,
 }: RetrievalReadyEmailProps) {
-    // e.g. "July 8, 2026 at 3:45 PM" — readable in a plain-text fallback too
-    const formattedExpiry = formatDateTime(expiresAt);
+    // e.g. "July 8, 2026 at 3:45 PM UTC" — explicit zone since the reader's is unknown
+    const formattedExpiry = formatEmailDateTime(expiresAt);
 
     return (
         <EmailLayout
@@ -115,7 +115,7 @@ const intro: CSSProperties = {
     fontSize: '15px',
     lineHeight: '24px',
     color: colors.body,
-    margin: '0 0 24px',
+    margin: `0 0 ${spacing.block}`,
 };
 
 const introStrong: CSSProperties = {
@@ -128,7 +128,7 @@ const fileCard: CSSProperties = {
     border: `1px solid ${colors.border}`,
     borderRadius: radii.md,
     padding: '16px',
-    margin: '0 0 24px',
+    margin: `0 0 ${spacing.block}`,
 };
 
 const fileIconCell: CSSProperties = {
@@ -167,7 +167,7 @@ const fileSub: CSSProperties = {
 };
 
 const buttonSection: CSSProperties = {
-    margin: '0 0 24px',
+    margin: `0 0 ${spacing.block}`,
 };
 
 const button: CSSProperties = {

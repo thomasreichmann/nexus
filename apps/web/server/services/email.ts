@@ -1,16 +1,19 @@
 import { createElement } from 'react';
 import type { DB } from '@nexus/db';
 import { createUserRepo } from '@nexus/db/repo/users';
-import { NotFoundError } from '@/server/errors';
 import { email } from '@/lib/email';
+import type { RetrievalReadyEmailProps } from '@/lib/email/templates/retrieval-ready';
+import { logger } from '@/server/lib/logger';
 
-export interface SendRetrievalReadyEmailOptions {
+const log = logger.child({ service: 'email' });
+
+export interface SendRetrievalReadyEmailOptions extends RetrievalReadyEmailProps {
     userId: string;
-    fileName: string;
-    downloadUrl: string;
-    expiresAt: Date;
 }
 
+// Notification failures shouldn't fail the work that triggered them (e.g. a
+// completed S3 restore) — mirrors the warn-and-skip contract in
+// s3-restore.ts's resolveRetrieval.
 async function sendRetrievalReadyEmail(
     db: DB,
     opts: SendRetrievalReadyEmailOptions
@@ -19,18 +22,25 @@ async function sendRetrievalReadyEmail(
 
     const user = await userRepo.findById(opts.userId);
     if (!user) {
-        throw new NotFoundError('User', opts.userId);
+        log.warn(
+            { userId: opts.userId },
+            'Skipping retrieval-ready email for unknown user'
+        );
+        return;
     }
 
-    await email.send({
-        to: user.email,
-        subject: email.templates.retrievalReadySubject(opts),
-        react: createElement(email.templates.RetrievalReadyEmail, {
-            fileName: opts.fileName,
-            downloadUrl: opts.downloadUrl,
-            expiresAt: opts.expiresAt,
-        }),
-    });
+    try {
+        await email.send({
+            to: user.email,
+            subject: email.templates.retrievalReadySubject(opts),
+            react: createElement(email.templates.RetrievalReadyEmail, opts),
+        });
+    } catch (err) {
+        log.warn(
+            { userId: opts.userId, err },
+            'Failed to send retrieval-ready email'
+        );
+    }
 }
 
 export const emailService = {
