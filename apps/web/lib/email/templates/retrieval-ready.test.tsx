@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from '@react-email/components';
-import { RetrievalReadyEmail } from './retrieval-ready';
+import { RetrievalReadyEmail, retrievalReadySubject } from './retrieval-ready';
 
 describe('RetrievalReadyEmail', () => {
     const props = {
@@ -28,5 +28,11 @@ describe('RetrievalReadyEmail', () => {
     it('renders to a full HTML document', async () => {
         const html = await render(<RetrievalReadyEmail {...props} />);
         expect(html).toContain('<!DOCTYPE html');
+    });
+
+    it('builds a subject line naming the file', () => {
+        expect(retrievalReadySubject(props)).toBe(
+            'Your file "vacation-photos.zip" is ready to download'
+        );
     });
 });

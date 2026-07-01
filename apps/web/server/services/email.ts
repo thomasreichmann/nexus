@@ -24,7 +24,7 @@ async function sendRetrievalReadyEmail(
 
     await email.send({
         to: user.email,
-        subject: `Your file "${opts.fileName}" is ready to download`,
+        subject: email.templates.retrievalReadySubject(opts),
         react: createElement(email.templates.RetrievalReadyEmail, {
             fileName: opts.fileName,
             downloadUrl: opts.downloadUrl,

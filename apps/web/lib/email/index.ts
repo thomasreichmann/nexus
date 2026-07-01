@@ -9,14 +9,15 @@ import * as templates from './templates';
  * import { email } from '@/lib/email';
  * import { createElement } from 'react';
  *
+ * const props = {
+ *   fileName: 'photo.jpg',
+ *   downloadUrl: 'https://...',
+ *   expiresAt: new Date(),
+ * };
  * await email.send({
  *   to: 'user@example.com',
- *   subject: 'Your file is ready',
- *   react: createElement(email.templates.RetrievalReadyEmail, {
- *     fileName: 'photo.jpg',
- *     downloadUrl: 'https://...',
- *     expiresAt: new Date(),
- *   }),
+ *   subject: email.templates.retrievalReadySubject(props),
+ *   react: createElement(email.templates.RetrievalReadyEmail, props),
  * });
  * ```
  */
