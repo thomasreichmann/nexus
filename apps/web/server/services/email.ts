@@ -1,8 +1,7 @@
 import { createElement } from 'react';
 import type { DB } from '@nexus/db';
 import { createUserRepo } from '@nexus/db/repo/users';
-import { email } from '@/lib/email';
-import type { RetrievalReadyEmailProps } from '@/lib/email/templates/retrieval-ready';
+import { email, type RetrievalReadyEmailProps } from '@/lib/email';
 import { logger } from '@/server/lib/logger';
 
 const log = logger.child({ service: 'email' });

@@ -26,5 +26,4 @@ export const email = {
     templates,
 } as const;
 
-export type { SendEmailOptions } from './send';
 export type { RetrievalReadyEmailProps } from './templates';

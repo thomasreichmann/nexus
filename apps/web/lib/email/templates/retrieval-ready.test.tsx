@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { render } from '@react-email/components';
 import { RetrievalReadyEmail, retrievalReadySubject } from './retrieval-ready';
 
@@ -9,24 +9,25 @@ describe('RetrievalReadyEmail', () => {
         expiresAt: new Date('2026-07-08T15:45:00Z'),
     };
 
-    it('renders the file name', async () => {
-        const html = await render(<RetrievalReadyEmail {...props} />);
+    let html: string;
+    beforeAll(async () => {
+        html = await render(<RetrievalReadyEmail {...props} />);
+    });
+
+    it('renders the file name', () => {
         expect(html).toContain('vacation-photos.zip');
     });
 
-    it('renders the download link on the button and as fallback text', async () => {
-        const html = await render(<RetrievalReadyEmail {...props} />);
+    it('renders the download link on the button and as fallback text', () => {
         // Button href + plain-text fallback both carry the URL
         expect(html).toContain(props.downloadUrl);
     });
 
-    it('renders a human-readable expiration date in UTC', async () => {
-        const html = await render(<RetrievalReadyEmail {...props} />);
+    it('renders a human-readable expiration date in UTC', () => {
         expect(html).toContain('July 8, 2026 at 3:45 PM UTC');
     });
 
-    it('renders to a full HTML document', async () => {
-        const html = await render(<RetrievalReadyEmail {...props} />);
+    it('renders to a full HTML document', () => {
         expect(html).toContain('<!DOCTYPE html');
     });
 

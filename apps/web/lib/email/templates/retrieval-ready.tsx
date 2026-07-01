@@ -99,8 +99,6 @@ export function RetrievalReadyEmail({
     );
 }
 
-export default RetrievalReadyEmail;
-
 // --- Styles -----------------------------------------------------------------
 
 const heading: CSSProperties = {
