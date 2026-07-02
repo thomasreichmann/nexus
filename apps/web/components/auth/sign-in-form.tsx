@@ -5,15 +5,21 @@ import type React from 'react';
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { GoogleIcon } from '@/components/icons/google-icon';
 import { OAuthDivider } from '@/components/auth/oauth-divider';
 import { signIn } from '@/lib/auth/client';
-import { Loader2 } from 'lucide-react';
+import { DEFAULT_REDIRECT } from '@/lib/auth/sanitizeRedirect';
 
-export function SignInForm() {
+interface SignInFormProps {
+    /** Sanitized path to land on after a successful sign-in. */
+    redirectTo?: string;
+}
+
+export function SignInForm({ redirectTo = DEFAULT_REDIRECT }: SignInFormProps) {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -38,7 +44,7 @@ export function SignInForm() {
             return;
         }
 
-        router.push('/dashboard');
+        router.push(redirectTo);
     }
 
     async function onGoogleSignIn() {

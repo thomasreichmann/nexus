@@ -18,7 +18,7 @@ test.describe(
     'auth guards',
     { tag: ['@page:/dashboard/admin/jobs', '@uc:auth-guard-admin'] },
     () => {
-        test('unauthenticated user is redirected to dashboard', async ({
+        test('unauthenticated user is redirected to sign-in', async ({
             browser,
         }) => {
             const context = await browser.newContext({
@@ -28,8 +28,11 @@ test.describe(
 
             await page.goto(PAGE_URL);
 
-            // Admin layout redirects unauthenticated users to /dashboard
-            await expect(page).toHaveURL(/\/dashboard$/);
+            // The proxy guard catches signed-out users before the admin layout
+            // runs and sends them to sign-in with the original path preserved.
+            await expect(page).toHaveURL(/\/sign-in\?redirect=/);
+            const redirect = new URL(page.url()).searchParams.get('redirect');
+            expect(redirect).toBe(PAGE_URL);
             await context.close();
         });
 

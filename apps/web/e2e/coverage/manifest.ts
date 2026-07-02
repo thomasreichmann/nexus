@@ -119,6 +119,24 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/admin/jobs'],
     },
     {
+        id: 'auth-guard-dashboard',
+        title: 'Signed-out visitors to dashboard routes are redirected to sign-in with the original path preserved',
+        area: 'auth',
+        routes: ['/dashboard/files', '/sign-in'],
+    },
+    {
+        id: 'auth-guard-deep-link-round-trip',
+        title: 'Signing in from a preserved deep-link lands back on the original URL',
+        area: 'auth',
+        routes: ['/sign-in', '/dashboard/files'],
+    },
+    {
+        id: 'auth-guard-signed-in-redirect',
+        title: 'Signed-in visitors to /sign-in or /sign-up are forwarded to the dashboard',
+        area: 'auth',
+        routes: ['/sign-in', '/sign-up'],
+    },
+    {
         id: 'sign-in-google',
         title: 'Sign in / sign up with Google OAuth',
         area: 'auth',

@@ -1,13 +1,26 @@
 import { test, expect } from '@playwright/test';
+import { E2E_BASE_URL } from '../helpers/server-url';
 
 test.describe('Error Handling Infrastructure', () => {
     test(
         'tRPC error shows toast notification',
         { tag: ['@uc:trpc-error-toast'] },
-        async ({ page }) => {
-            // /dashboard/files calls trpc.files.list (protectedProcedure),
-            // which throws UNAUTHORIZED without auth. The errorLink should
-            // surface this as a toast. React Query retries 3x (~7s).
+        async ({ context, page }) => {
+            // A forged session cookie slips past the optimistic proxy guard
+            // (presence-only, no DB hit) but fails tRPC's protectedProcedure —
+            // the "forged cookie sees the shell and 401s" invariant
+            // (docs/ai/conventions.md § Auth Enforcement). /dashboard/files
+            // then calls trpc.files.list, which throws UNAUTHORIZED; the
+            // errorLink should surface it as a toast. React Query retries 3x
+            // (~7s). Without the cookie the proxy would redirect to /sign-in
+            // and no tRPC call would fire.
+            await context.addCookies([
+                {
+                    name: 'better-auth.session_token',
+                    value: 'forged-invalid-session',
+                    url: E2E_BASE_URL,
+                },
+            ]);
 
             await page.goto('/dashboard/files');
 
