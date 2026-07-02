@@ -45,6 +45,10 @@ function assertUploadAllowed(
 ): QuotaCheckResult {
     const { subscription, currentUsage } = ctx;
 
+    // Only `trialing` rows can expire. Every other status — including
+    // `sponsored` (comped alpha testers, no Stripe subscription, no trialEnd)
+    // — is enforced on storageLimit alone. If #199 tightens enforcement to a
+    // good-standing allowlist, `sponsored` belongs in that allowlist.
     if (
         subscription?.status === 'trialing' &&
         subscription.trialEnd &&

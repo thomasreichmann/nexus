@@ -222,6 +222,65 @@ describe('assertUploadAllowed', () => {
             ).not.toThrow();
         });
     });
+
+    // Sponsored rows are good-standing by construction: no Stripe
+    // subscription, no trial expiry — only storageLimit is enforced (#239).
+    describe('with a sponsored subscription', () => {
+        it('never throws TrialExpiredError, even with a stale trialEnd set', () => {
+            const subscription = {
+                storageLimit: PLAN_LIMITS.max,
+                status: 'sponsored' as const,
+                trialEnd: new Date(NOW.getTime() - 1),
+            };
+
+            expect(() =>
+                assertUploadAllowed(
+                    ctx({ currentUsage: 0, subscription }),
+                    oneGB,
+                    NOW
+                )
+            ).not.toThrow();
+        });
+
+        it('allows uploads up to the sponsored storage limit', () => {
+            const subscription = {
+                storageLimit: PLAN_LIMITS.max,
+                status: 'sponsored' as const,
+                trialEnd: null,
+            };
+
+            const result = assertUploadAllowed(
+                ctx({
+                    currentUsage: PLAN_LIMITS.max - oneGB,
+                    subscription,
+                }),
+                oneGB,
+                NOW
+            );
+
+            expect(result.allowed).toBe(true);
+            expect(result.limitBytes).toBe(PLAN_LIMITS.max);
+        });
+
+        it('still enforces the storage limit with QuotaExceededError', () => {
+            const subscription = {
+                storageLimit: PLAN_LIMITS.max,
+                status: 'sponsored' as const,
+                trialEnd: null,
+            };
+
+            expect(() =>
+                assertUploadAllowed(
+                    ctx({
+                        currentUsage: Math.floor(PLAN_LIMITS.max * 1.05),
+                        subscription,
+                    }),
+                    oneGB,
+                    NOW
+                )
+            ).toThrow(QuotaExceededError);
+        });
+    });
 });
 
 describe('checkQuota', () => {

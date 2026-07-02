@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import * as schema from '@nexus/db/schema';
+import { INVITE_TOKEN_COOKIE } from '@/lib/auth/inviteCookie';
 import { db } from '@/server/db';
 import { subscriptionService } from '@/server/services/subscriptions';
 import { logger } from '@/server/lib/logger';
@@ -50,18 +51,28 @@ export const auth = betterAuth({
                 // failure. The user row may persist as an orphan if the hook
                 // throws — the `backfill-trial-subscriptions` script
                 // recovers those by inserting the missing subscription.
-                after: async (user) => {
+                // (Sponsored-path failures never reach here: the service
+                // falls back to a trial internally; only trial-provisioning
+                // failure rethrows.)
+                after: async (user, context) => {
+                    // Set by the /invite/[token] redemption page (#246);
+                    // absent for normal signups.
+                    const inviteToken =
+                        context?.getCookie(INVITE_TOKEN_COOKIE) ?? null;
                     try {
-                        await subscriptionService.provisionTrialSubscription(
+                        await subscriptionService.provisionSignupSubscription(
                             db,
-                            user.id,
-                            user.email,
-                            user.name
+                            {
+                                id: user.id,
+                                email: user.email,
+                                name: user.name,
+                            },
+                            inviteToken
                         );
                     } catch (err) {
                         log.error(
                             { err, userId: user.id },
-                            'Failed to provision trial subscription on signup'
+                            'Failed to provision subscription on signup'
                         );
                         throw err;
                     }

@@ -1,6 +1,7 @@
 import type Stripe from 'stripe';
 import { addDays } from 'date-fns';
 import type { DB } from '@nexus/db';
+import { createInviteRepo } from '@nexus/db/repo/invites';
 import {
     createSubscriptionRepo,
     type Subscription,
@@ -12,6 +13,7 @@ import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { logger } from '@/server/lib/logger';
 import {
     PLAN_LIMITS,
+    SPONSORED_DEFAULT_STORAGE_LIMIT,
     TRIAL_DURATION_DAYS,
     type PlanTier,
     type CheckoutTier,
@@ -190,21 +192,17 @@ async function createPortalSession(
 }
 
 /**
- * Provisions a local-only trial: creates a Stripe Customer but no Stripe
- * Subscription. Expiry is enforced soft by `quotaService.checkQuota` —
- * the row stays `status: 'trialing'` until a real subscription replaces it.
+ * Create the Stripe customer backing a new user's subscription row (trial or
+ * sponsored) — or, under the e2e flag, a synthetic stand-in. The e2e suite
+ * runs against a live server (E2E=1) that signs up with a fresh email every
+ * run, so a real call here would leak a test-mode customer with no cleanup
+ * and make the smoke tier depend on Stripe's API being reachable. A synthetic
+ * id keeps signup a pure local flow; the subscription row and settings UI
+ * never need a real customer, and real creation stays covered by unit tests.
+ * Mirrors the E2E rate-limit gate in `lib/auth/server.ts` and the `cus_test_`
+ * fixtures in `@nexus/db/test-db`.
  */
-/**
- * Create the Stripe customer backing a new user's trial — or, under the e2e
- * flag, a synthetic stand-in. The e2e suite runs against a live server
- * (E2E=1) that signs up with a fresh email every run, so a real call here
- * would leak a test-mode customer with no cleanup and make the smoke tier
- * depend on Stripe's API being reachable. A synthetic id keeps signup a pure
- * local flow; the trial row and settings UI never need a real customer, and
- * real creation stays covered by unit tests. Mirrors the E2E rate-limit gate
- * in `lib/auth/server.ts` and the `cus_test_` fixtures in `@nexus/db/test-db`.
- */
-async function createTrialCustomer(
+async function createSignupCustomer(
     userId: string,
     email: string,
     name?: string
@@ -217,13 +215,18 @@ async function createTrialCustomer(
     });
 }
 
+/**
+ * Provisions a local-only trial: creates a Stripe Customer but no Stripe
+ * Subscription. Expiry is enforced soft by `quotaService.checkQuota` —
+ * the row stays `status: 'trialing'` until a real subscription replaces it.
+ */
 async function provisionTrialSubscription(
     db: DB,
     userId: string,
     email: string,
     name?: string
 ): Promise<void> {
-    const customer = await createTrialCustomer(userId, email, name);
+    const customer = await createSignupCustomer(userId, email, name);
 
     const trialEnd = addDays(new Date(), TRIAL_DURATION_DAYS);
 
@@ -242,6 +245,157 @@ async function provisionTrialSubscription(
         { userId, stripeCustomerId: customer.id },
         'Trial subscription provisioned'
     );
+}
+
+interface SignupUser {
+    id: string;
+    email: string;
+    name?: string;
+}
+
+/**
+ * Attempt sponsored provisioning from an invite token. Returns true when the
+ * invite was claimed and the sponsored row inserted; false when the invite is
+ * unusable (unknown, non-pending, expired, email-bound mismatch, or lost the
+ * claim race) so the caller falls back to a normal trial. Throws only on
+ * infrastructure failure (Stripe/DB), which the caller also treats as
+ * fall-back-to-trial.
+ */
+async function tryProvisionSponsoredSubscription(
+    db: DB,
+    user: SignupUser,
+    inviteToken: string
+): Promise<boolean> {
+    const invite = await createInviteRepo(db).findByToken(inviteToken);
+
+    if (!invite) {
+        log.warn(
+            // The token is a credential; log a prefix, enough to correlate.
+            { userId: user.id, tokenPrefix: inviteToken.slice(0, 8) },
+            'Invite token not found; provisioning trial instead'
+        );
+        return false;
+    }
+
+    // Pre-checks only shape logging (and avoid a pointless Stripe call); the
+    // conditional UPDATE in `claim` below is the authoritative single-use gate.
+    if (invite.status !== 'pending') {
+        log.warn(
+            { userId: user.id, inviteId: invite.id, status: invite.status },
+            'Invite no longer pending; provisioning trial instead'
+        );
+        return false;
+    }
+    if (invite.expiresAt && invite.expiresAt <= new Date()) {
+        log.warn(
+            {
+                userId: user.id,
+                inviteId: invite.id,
+                expiresAt: invite.expiresAt,
+            },
+            'Invite expired; provisioning trial instead'
+        );
+        return false;
+    }
+
+    // Email-bound defense in depth: #246's redemption UI locks the signup
+    // email, so a mismatch here means the tester signed up outside the invite
+    // flow and lands on a trial with no way to attach the invite — loud by
+    // design so an admin can intervene. Checked only for still-usable invites
+    // (after the status/expiry guards) so a re-click of an already-redeemed
+    // link doesn't false-alarm monitoring.
+    if (
+        invite.email &&
+        invite.email.toLowerCase() !== user.email.toLowerCase()
+    ) {
+        log.error(
+            {
+                userId: user.id,
+                inviteId: invite.id,
+                inviteEmail: invite.email,
+                signupEmail: user.email,
+            },
+            'Invite email mismatch on signup; provisioning trial instead'
+        );
+        return false;
+    }
+
+    // Stripe first, so a Stripe failure leaves the invite claimable; the
+    // claim and insert share a transaction, so a failed insert releases the
+    // claim instead of burning the invite.
+    const customer = await createSignupCustomer(user.id, user.email, user.name);
+    const storageLimit = invite.storageLimit ?? SPONSORED_DEFAULT_STORAGE_LIMIT;
+
+    const claimed = await db.transaction(async (tx) => {
+        const claimedInvite = await createInviteRepo(tx).claim(
+            invite.token,
+            user.id
+        );
+        if (!claimedInvite) return null;
+
+        await createSubscriptionRepo(tx).insert({
+            id: crypto.randomUUID(),
+            userId: user.id,
+            stripeCustomerId: customer.id,
+            planTier: 'max',
+            status: 'sponsored',
+            storageLimit,
+            trialEnd: null,
+        });
+        return claimedInvite;
+    });
+
+    if (!claimed) {
+        log.error(
+            {
+                userId: user.id,
+                inviteId: invite.id,
+                stripeCustomerId: customer.id,
+            },
+            'Invite claim lost a concurrent race; provisioning trial instead (Stripe customer orphaned)'
+        );
+        return false;
+    }
+
+    log.info(
+        {
+            userId: user.id,
+            inviteId: invite.id,
+            stripeCustomerId: customer.id,
+            storageLimit,
+        },
+        'Sponsored subscription provisioned'
+    );
+    return true;
+}
+
+/**
+ * Signup entry point: sponsored when a valid invite token accompanies the
+ * signup, otherwise a trial. Sponsored failure never blocks signup (#239) —
+ * any error falls back to the trial path; trial failures keep the loud
+ * rethrow posture of the auth hook.
+ */
+async function provisionSignupSubscription(
+    db: DB,
+    user: SignupUser,
+    inviteToken: string | null
+): Promise<void> {
+    if (inviteToken) {
+        try {
+            const isSponsored = await tryProvisionSponsoredSubscription(
+                db,
+                user,
+                inviteToken
+            );
+            if (isSponsored) return;
+        } catch (err) {
+            log.error(
+                { err, userId: user.id },
+                'Sponsored provisioning failed; provisioning trial instead'
+            );
+        }
+    }
+    await provisionTrialSubscription(db, user.id, user.email, user.name);
 }
 
 // ─── Webhook event handlers ─────────────────────────────────────────────
@@ -433,5 +587,6 @@ export const subscriptionService = {
     createCheckoutSession,
     createPortalSession,
     provisionTrialSubscription,
+    provisionSignupSubscription,
     dispatchWebhookEvent,
 } as const;

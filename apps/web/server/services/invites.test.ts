@@ -1,0 +1,145 @@
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+import {
+    createMockDb,
+    createInviteFixture,
+    TEST_ADMIN_USER_ID,
+    TEST_INVITE_ID,
+    TEST_INVITE_TOKEN,
+    type MockDb,
+    type MockDbMocks,
+} from '@nexus/db/testing';
+
+const hoisted = await vi.hoisted(async () => {
+    const { createMockLogger } = await import('@/server/lib/logger/testing');
+    return { logger: createMockLogger() };
+});
+
+vi.mock('@/lib/env', () => ({
+    env: { NEXT_PUBLIC_APP_URL: 'https://test.example' },
+}));
+
+vi.mock('@/server/lib/logger', () => ({ logger: hoisted.logger }));
+
+import { NotFoundError, InvalidStateError } from '@/server/errors';
+import { inviteService } from './invites';
+
+describe('inviteService.createInvite', () => {
+    let db: MockDb;
+    let mocks: MockDbMocks;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        const mockDb = createMockDb();
+        db = mockDb.db;
+        mocks = mockDb.mocks;
+        mocks.returning.mockResolvedValue([createInviteFixture()]);
+    });
+
+    function insertedRow(callIndex = 0): Record<string, unknown> {
+        return mocks.values.mock.calls[callIndex][0];
+    }
+
+    it('generates a base64url token with 32 bytes of entropy', async () => {
+        await inviteService.createInvite(db, {
+            createdBy: TEST_ADMIN_USER_ID,
+        });
+
+        // 32 random bytes → exactly 43 base64url chars, no padding
+        expect(insertedRow().token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    });
+
+    it('generates a distinct token per invite', async () => {
+        await inviteService.createInvite(db, {
+            createdBy: TEST_ADMIN_USER_ID,
+        });
+        await inviteService.createInvite(db, {
+            createdBy: TEST_ADMIN_USER_ID,
+        });
+
+        expect(insertedRow(0).token).not.toBe(insertedRow(1).token);
+    });
+
+    it('defaults email, storageLimit, and expiresAt to null', async () => {
+        await inviteService.createInvite(db, {
+            createdBy: TEST_ADMIN_USER_ID,
+        });
+
+        expect(mocks.values).toHaveBeenCalledWith(
+            expect.objectContaining({
+                createdBy: TEST_ADMIN_USER_ID,
+                email: null,
+                storageLimit: null,
+                expiresAt: null,
+            })
+        );
+    });
+
+    it('passes optional email binding, storage override, and expiry through', async () => {
+        const expiresAt = new Date('2026-08-01T00:00:00Z');
+
+        await inviteService.createInvite(db, {
+            createdBy: TEST_ADMIN_USER_ID,
+            email: 'tester@example.com',
+            storageLimit: 20 * 1024 ** 4,
+            expiresAt,
+        });
+
+        expect(mocks.values).toHaveBeenCalledWith(
+            expect.objectContaining({
+                email: 'tester@example.com',
+                storageLimit: 20 * 1024 ** 4,
+                expiresAt,
+            })
+        );
+    });
+
+    it('returns the redemption link for the created invite', async () => {
+        const { url } = await inviteService.createInvite(db, {
+            createdBy: TEST_ADMIN_USER_ID,
+        });
+
+        expect(url).toBe(`https://test.example/invite/${TEST_INVITE_TOKEN}`);
+    });
+});
+
+describe('inviteService.revokeInvite', () => {
+    let db: MockDb;
+    let mocks: MockDbMocks;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        const mockDb = createMockDb();
+        db = mockDb.db;
+        mocks = mockDb.mocks;
+    });
+
+    it('revokes a pending invite', async () => {
+        const revoked = createInviteFixture({ status: 'revoked' });
+        mocks.returning.mockResolvedValue([revoked]);
+
+        const result = await inviteService.revokeInvite(db, TEST_INVITE_ID);
+
+        expect(mocks.set).toHaveBeenCalledWith({ status: 'revoked' });
+        expect(result).toBe(revoked);
+    });
+
+    it('throws NotFoundError when the invite does not exist', async () => {
+        mocks.returning.mockResolvedValue([]);
+        mocks.invites.findFirst.mockResolvedValue(undefined);
+
+        await expect(inviteService.revokeInvite(db, 'missing')).rejects.toThrow(
+            NotFoundError
+        );
+    });
+
+    it('throws InvalidStateError when the invite is already redeemed', async () => {
+        mocks.returning.mockResolvedValue([]);
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({ status: 'redeemed' })
+        );
+
+        await expect(
+            inviteService.revokeInvite(db, TEST_INVITE_ID)
+        ).rejects.toThrow(InvalidStateError);
+    });
+});

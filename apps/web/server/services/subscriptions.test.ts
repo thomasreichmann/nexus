@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, vi } from 'vitest';
 import type Stripe from 'stripe';
 import {
     createMockDb,
+    createInviteFixture,
     createSubscriptionFixture,
     TEST_STRIPE_CUSTOMER_ID,
 } from '@nexus/db/testing';
@@ -27,7 +28,7 @@ vi.mock('@/lib/stripe', () => ({
 }));
 
 import { subscriptionService } from './subscriptions';
-import { PLAN_LIMITS } from './constants';
+import { PLAN_LIMITS, SPONSORED_DEFAULT_STORAGE_LIMIT } from './constants';
 
 const productsRetrieve = hoisted.stripeClient.products.retrieve;
 
@@ -436,6 +437,306 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
 
         expect(mocks.subscriptions.findFirst).not.toHaveBeenCalled();
         expect(mocks.insert).not.toHaveBeenCalled();
+    });
+});
+
+describe('subscriptionService.provisionSignupSubscription', () => {
+    let db: ReturnType<typeof createMockDb>['db'];
+    let mocks: ReturnType<typeof createMockDb>['mocks'];
+
+    const user = {
+        id: 'user_new',
+        email: 'tester@example.com',
+        name: 'Tester',
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        const mockDb = createMockDb();
+        db = mockDb.db;
+        mocks = mockDb.mocks;
+        hoisted.stripeClient.customers.create.mockResolvedValue({
+            id: 'cus_new_test',
+        });
+    });
+
+    /** All rows passed to `.values()` across the test, for path assertions. */
+    function insertedRows(): Array<Record<string, unknown>> {
+        return mocks.values.mock.calls.map((call) => call[0]);
+    }
+
+    it('provisions a trial when no invite token is present', async () => {
+        await subscriptionService.provisionSignupSubscription(db, user, null);
+
+        expect(mocks.invites.findFirst).not.toHaveBeenCalled();
+        expect(insertedRows()).toEqual([
+            expect.objectContaining({
+                userId: user.id,
+                status: 'trialing',
+                storageLimit: PLAN_LIMITS.starter,
+            }),
+        ]);
+    });
+
+    it('provisions a sponsored subscription from a valid pending invite', async () => {
+        const invite = createInviteFixture();
+        mocks.invites.findFirst.mockResolvedValue(invite);
+        // First `.returning()` is the claim UPDATE — it must yield the row
+        mocks.returning.mockResolvedValueOnce([invite]);
+
+        await subscriptionService.provisionSignupSubscription(
+            db,
+            user,
+            invite.token
+        );
+
+        // Invite atomically claimed for this user...
+        expect(mocks.set).toHaveBeenCalledWith(
+            expect.objectContaining({
+                status: 'redeemed',
+                redeemedByUserId: user.id,
+                redeemedAt: expect.any(Date),
+            })
+        );
+        // ...and the row is sponsored, capped at the default, with no expiry
+        expect(insertedRows()).toEqual([
+            expect.objectContaining({
+                userId: user.id,
+                status: 'sponsored',
+                storageLimit: SPONSORED_DEFAULT_STORAGE_LIMIT,
+                trialEnd: null,
+                stripeCustomerId: 'cus_new_test',
+            }),
+        ]);
+    });
+
+    it('uses the invite storageLimit override when present', async () => {
+        const invite = createInviteFixture({ storageLimit: 20 * 1024 ** 4 });
+        mocks.invites.findFirst.mockResolvedValue(invite);
+        mocks.returning.mockResolvedValueOnce([invite]);
+
+        await subscriptionService.provisionSignupSubscription(
+            db,
+            user,
+            invite.token
+        );
+
+        expect(mocks.values).toHaveBeenCalledWith(
+            expect.objectContaining({
+                status: 'sponsored',
+                storageLimit: 20 * 1024 ** 4,
+            })
+        );
+    });
+
+    it('falls back to trial when the token matches no invite', async () => {
+        mocks.invites.findFirst.mockResolvedValue(undefined);
+
+        await subscriptionService.provisionSignupSubscription(
+            db,
+            user,
+            'unknown-token'
+        );
+
+        expect(mocks.update).not.toHaveBeenCalled();
+        expect(insertedRows()).toEqual([
+            expect.objectContaining({ status: 'trialing' }),
+        ]);
+        expect(hoisted.logger.warn).toHaveBeenCalled();
+    });
+
+    it('falls back to trial and logs loudly on an email-binding mismatch', async () => {
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({ email: 'invited@example.com' })
+        );
+
+        await subscriptionService.provisionSignupSubscription(
+            db,
+            user,
+            'token'
+        );
+
+        // No claim attempt, no Stripe customer burned on the sponsored path
+        expect(mocks.update).not.toHaveBeenCalled();
+        expect(hoisted.stripeClient.customers.create).toHaveBeenCalledTimes(1);
+        expect(insertedRows()).toEqual([
+            expect.objectContaining({ status: 'trialing' }),
+        ]);
+        // The mismatch is surfaced to monitoring with both addresses
+        expect(hoisted.logger.error).toHaveBeenCalledWith(
+            expect.objectContaining({
+                inviteEmail: 'invited@example.com',
+                signupEmail: user.email,
+            }),
+            expect.stringContaining('email mismatch')
+        );
+    });
+
+    it('matches email binding case-insensitively', async () => {
+        const invite = createInviteFixture({ email: 'Tester@Example.COM' });
+        mocks.invites.findFirst.mockResolvedValue(invite);
+        mocks.returning.mockResolvedValueOnce([invite]);
+
+        await subscriptionService.provisionSignupSubscription(
+            db,
+            user,
+            invite.token
+        );
+
+        expect(mocks.values).toHaveBeenCalledWith(
+            expect.objectContaining({ status: 'sponsored' })
+        );
+    });
+
+    it('does not raise the email-mismatch alert for an already-redeemed invite', async () => {
+        // A re-click of a consumed email-bound link by a different email is
+        // benign ("already redeemed"), not a wrong-email signup — it must take
+        // the quiet warn path, or monitoring drowns in false positives.
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({
+                status: 'redeemed',
+                email: 'invited@example.com',
+            })
+        );
+
+        await subscriptionService.provisionSignupSubscription(
+            db,
+            user,
+            'token'
+        );
+
+        expect(insertedRows()).toEqual([
+            expect.objectContaining({ status: 'trialing' }),
+        ]);
+        expect(hoisted.logger.warn).toHaveBeenCalledWith(
+            expect.objectContaining({ status: 'redeemed' }),
+            expect.stringContaining('no longer pending')
+        );
+        expect(hoisted.logger.error).not.toHaveBeenCalled();
+    });
+
+    it('falls back to trial when the subscription insert fails after the claim', async () => {
+        // The claim and insert share a transaction — a failed insert rolls
+        // the claim back in real Postgres (not observable through this mock,
+        // which has no rollback semantics). This pins the error path: the
+        // failure escapes the transaction and still lands on a trial.
+        const invite = createInviteFixture();
+        mocks.invites.findFirst.mockResolvedValue(invite);
+        mocks.returning.mockResolvedValueOnce([invite]);
+        mocks.values.mockImplementationOnce(() => {
+            throw new Error('insert failed');
+        });
+
+        await subscriptionService.provisionSignupSubscription(
+            db,
+            user,
+            invite.token
+        );
+
+        // The claim ran before the insert blew up...
+        expect(mocks.set).toHaveBeenCalledWith(
+            expect.objectContaining({ status: 'redeemed' })
+        );
+        // ...and the user still ends up on a trial, signup unblocked
+        // (the first .values() call is the sponsored insert that threw)
+        expect(mocks.values).toHaveBeenLastCalledWith(
+            expect.objectContaining({ status: 'trialing' })
+        );
+        expect(hoisted.logger.error).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: user.id }),
+            'Sponsored provisioning failed; provisioning trial instead'
+        );
+    });
+
+    it('falls back to trial on a repeat redemption (invite already redeemed)', async () => {
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({ status: 'redeemed' })
+        );
+
+        await subscriptionService.provisionSignupSubscription(
+            db,
+            user,
+            'token'
+        );
+
+        expect(mocks.update).not.toHaveBeenCalled();
+        expect(insertedRows()).toEqual([
+            expect.objectContaining({ status: 'trialing' }),
+        ]);
+    });
+
+    it('falls back to trial when the invite is expired', async () => {
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({ expiresAt: new Date(Date.now() - 1000) })
+        );
+
+        await subscriptionService.provisionSignupSubscription(
+            db,
+            user,
+            'token'
+        );
+
+        expect(mocks.update).not.toHaveBeenCalled();
+        expect(insertedRows()).toEqual([
+            expect.objectContaining({ status: 'trialing' }),
+        ]);
+    });
+
+    it('falls back to trial when the atomic claim loses a concurrent race', async () => {
+        // Pre-check sees a pending invite, but the conditional UPDATE matches
+        // nothing — a concurrent signup claimed it in between.
+        mocks.invites.findFirst.mockResolvedValue(createInviteFixture());
+        // default mocks.returning resolves [] → claim comes back empty
+
+        await subscriptionService.provisionSignupSubscription(
+            db,
+            user,
+            'token'
+        );
+
+        expect(insertedRows()).toEqual([
+            expect.objectContaining({ status: 'trialing' }),
+        ]);
+        expect(hoisted.logger.error).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: user.id }),
+            expect.stringContaining('lost a concurrent race')
+        );
+    });
+
+    it('falls back to trial when the sponsored path fails on infrastructure', async () => {
+        mocks.invites.findFirst.mockResolvedValue(createInviteFixture());
+        hoisted.stripeClient.customers.create
+            .mockRejectedValueOnce(new Error('stripe down'))
+            .mockResolvedValueOnce({ id: 'cus_retry_test' });
+
+        await subscriptionService.provisionSignupSubscription(
+            db,
+            user,
+            'token'
+        );
+
+        expect(insertedRows()).toEqual([
+            expect.objectContaining({
+                status: 'trialing',
+                stripeCustomerId: 'cus_retry_test',
+            }),
+        ]);
+        expect(hoisted.logger.error).toHaveBeenCalledWith(
+            expect.objectContaining({ userId: user.id }),
+            'Sponsored provisioning failed; provisioning trial instead'
+        );
+    });
+
+    it('rethrows when trial provisioning itself fails (loud signup failure)', async () => {
+        hoisted.stripeClient.customers.create.mockRejectedValue(
+            new Error('stripe down')
+        );
+
+        await expect(
+            subscriptionService.provisionSignupSubscription(db, user, null)
+        ).rejects.toThrow('stripe down');
+
+        expect(mocks.values).not.toHaveBeenCalled();
     });
 });
 

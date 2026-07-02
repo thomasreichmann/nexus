@@ -24,6 +24,7 @@ export const subscriptionStatusEnum = pgEnum('subscription_status', [
     'canceled', // Subscription ended
     'unpaid', // Payment failed, access restricted
     'incomplete', // Initial payment pending
+    'sponsored', // Comped access (alpha testers via invite) — good standing, no Stripe subscription, no trial expiry
 ]);
 
 export const subscriptions = pgTable(
