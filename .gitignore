@@ -59,3 +59,5 @@ AGENTS.md
 .devcontainer/
 .openclaude-profile.json
 .pnpm-store/
+.claude/skills/
+.tokensave/
