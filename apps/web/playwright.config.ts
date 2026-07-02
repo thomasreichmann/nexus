@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 // E2E runs its own production server on an ephemeral free port (see the module
 // for why), so it never collides with a running `pnpm dev` on 3000.
 import { E2E_PORT, E2E_BASE_URL } from './e2e/helpers/server-url';
+import { WEBSERVER_LOG } from './e2e/helpers/webserver-log';
 
 const BASE_URL = E2E_BASE_URL;
 
@@ -107,8 +108,14 @@ export default defineConfig({
     // running `pnpm dev` instead of fighting it for 3000; reuseExistingServer is
     // off because each run gets a fresh port anyway. E2E=1 re-enables the
     // dev-only coverage API and admin dev-tools procedures for the /dev/* specs.
+    // The compact reporter owns terminal stdio, so Playwright drops the
+    // webServer child's output — a failing test would otherwise never show the
+    // server-side error behind it. Tee `next start`'s combined stdout/stderr to
+    // WEBSERVER_LOG (truncated each run); the reporter reads the failing test's
+    // slice from there. `|` binds tighter than `&&`, so this is
+    // `build && (next start 2>&1 | tee)` — a build failure still short-circuits.
     webServer: {
-        command: `pnpm exec turbo run build --filter=@nexus/web && pnpm exec next start --port ${E2E_PORT}`,
+        command: `pnpm exec turbo run build --filter=@nexus/web && pnpm exec next start --port ${E2E_PORT} 2>&1 | tee ${WEBSERVER_LOG}`,
         url: BASE_URL,
         reuseExistingServer: false,
         timeout: 240_000,

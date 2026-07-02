@@ -45,3 +45,6 @@ test-results/
 
 # Dev log file
 .dev.log
+
+# Piped e2e webServer stdout/stderr (surfaced on failure by the compact reporter)
+e2e/.webserver.log
