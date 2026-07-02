@@ -1,4 +1,4 @@
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, or, inArray, isNull, gt, desc } from 'drizzle-orm';
 import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
@@ -6,18 +6,29 @@ import { createRepository } from './create';
 export type Retrieval = typeof schema.retrievals.$inferSelect;
 export type NewRetrieval = typeof schema.retrievals.$inferInsert;
 
-// 'ready' included because the restored copy is still available for download
-const ACTIVE_STATUSES: Retrieval['status'][] = [
-    'pending',
-    'in_progress',
-    'ready',
-];
+// A retrieval is active while it's queued, restoring, or ready with an
+// unexpired download window. `ready` rows past `expiresAt` are expired by
+// predicate rather than by stored status: standard-tier fast-path rows never
+// get an S3 expiry event, and Deep Archive rows can miss theirs. A lapsed row
+// no longer blocks a fresh retrieval of the same file.
+function activeRetrievalFilter() {
+    return or(
+        inArray(schema.retrievals.status, ['pending', 'in_progress']),
+        and(
+            eq(schema.retrievals.status, 'ready'),
+            or(
+                isNull(schema.retrievals.expiresAt),
+                gt(schema.retrievals.expiresAt, new Date())
+            )
+        )
+    );
+}
 
 function findByFileId(db: DB, fileId: string): Promise<Retrieval | undefined> {
     return db.query.retrievals.findFirst({
         where: and(
             eq(schema.retrievals.fileId, fileId),
-            inArray(schema.retrievals.status, ACTIVE_STATUSES)
+            activeRetrievalFilter()
         ),
     });
 }
@@ -27,8 +38,21 @@ function findByFileIds(db: DB, fileIds: string[]): Promise<Retrieval[]> {
     return db.query.retrievals.findMany({
         where: and(
             inArray(schema.retrievals.fileId, fileIds),
-            inArray(schema.retrievals.status, ACTIVE_STATUSES)
+            activeRetrievalFilter()
         ),
+    });
+}
+
+// Unfiltered lookup for S3 webhook resolution: the ObjectRestore:Delete
+// event arrives at/after `expiresAt`, when the row is already invisible to
+// the active-filtered queries — it must still be found to record `expired`.
+function findLatestByFileId(
+    db: DB,
+    fileId: string
+): Promise<Retrieval | undefined> {
+    return db.query.retrievals.findFirst({
+        where: eq(schema.retrievals.fileId, fileId),
+        orderBy: desc(schema.retrievals.createdAt),
     });
 }
 
@@ -71,10 +95,7 @@ async function findActiveByUserWithFiles(
         .from(schema.retrievals)
         .innerJoin(schema.files, eq(schema.retrievals.fileId, schema.files.id))
         .where(
-            and(
-                eq(schema.retrievals.userId, userId),
-                inArray(schema.retrievals.status, ACTIVE_STATUSES)
-            )
+            and(eq(schema.retrievals.userId, userId), activeRetrievalFilter())
         )
         .orderBy(schema.retrievals.createdAt);
 
@@ -116,6 +137,7 @@ async function updateStatus(
 export const createRetrievalRepo = createRepository({
     findByFileId,
     findByFileIds,
+    findLatestByFileId,
     findByUser,
     findActiveByUserWithFiles,
     insert,
