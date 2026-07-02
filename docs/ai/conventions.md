@@ -87,6 +87,12 @@ Terse reference for AI agents. Detailed examples with code: [[../conventions/nam
 
 See [[../guides/server-architecture|Server Architecture Guide]] for the full layered pattern.
 
+## Auth Enforcement
+
+- `apps/web/proxy.ts` guards `/dashboard/*` with an **optimistic** cookie-presence check (no DB hit) — a UX layer only. It redirects signed-out users to `/sign-in?redirect=<path>` and signed-in users away from the auth pages.
+- The proxy is **not** real protection: a forged cookie gets past it, sees an empty shell, and 401s. Real enforcement is tRPC's `protectedProcedure`.
+- Any dashboard page that fetches data in a **server component** must do its own `auth.api.getSession` check (precedent: `app/(dashboard)/dashboard/admin/layout.tsx`) — the proxy does not cover it.
+
 ## Issue-Driven Development
 
 All non-trivial work requires a GitHub Issue with scope, acceptance criteria, and out-of-scope.

@@ -6,15 +6,21 @@ import type React from 'react';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { GoogleIcon } from '@/components/icons/google-icon';
 import { OAuthDivider } from '@/components/auth/oauth-divider';
 import { signUp } from '@/lib/auth/client';
-import { Loader2 } from 'lucide-react';
+import { DEFAULT_REDIRECT } from '@/lib/auth/sanitizeRedirect';
 
-export function SignUpForm() {
+interface SignUpFormProps {
+    /** Sanitized path to land on after a successful sign-up. */
+    redirectTo?: string;
+}
+
+export function SignUpForm({ redirectTo = DEFAULT_REDIRECT }: SignUpFormProps) {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -41,7 +47,7 @@ export function SignUpForm() {
             return;
         }
 
-        router.push('/dashboard');
+        router.push(redirectTo);
     }
 
     async function onGoogleSignUp() {
