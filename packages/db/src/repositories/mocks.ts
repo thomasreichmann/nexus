@@ -38,6 +38,7 @@ export function createMockDb() {
     const deleteFn: AnyMock = vi.fn(() => ({ where }));
 
     const files = createQueryMock();
+    const invites = createQueryMock();
     const backgroundJobs = createQueryMock();
     const retrievals = createQueryMock();
     const storageUsage = createQueryMock();
@@ -49,6 +50,7 @@ export function createMockDb() {
     const db = {
         query: {
             files,
+            invites,
             backgroundJobs,
             retrievals,
             storageUsage,
@@ -85,6 +87,7 @@ export function createMockDb() {
             orderBy,
             // Per-table query mocks (db.query.<table>.findFirst/findMany)
             files,
+            invites,
             backgroundJobs,
             retrievals,
             storageUsage,

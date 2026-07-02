@@ -14,6 +14,11 @@
             "import": "./src/schema/index.ts",
             "default": "./src/schema/index.ts"
         },
+        "./repo/invites": {
+            "types": "./src/repositories/invites.ts",
+            "import": "./src/repositories/invites.ts",
+            "default": "./src/repositories/invites.ts"
+        },
         "./repo/files": {
             "types": "./src/repositories/files.ts",
             "import": "./src/repositories/files.ts",

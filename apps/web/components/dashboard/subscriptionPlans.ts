@@ -73,6 +73,8 @@ const STATUS_BADGES: Record<Subscription['status'], StatusBadge> = {
     canceled: { label: 'Canceled', variant: 'destructive' },
     unpaid: { label: 'Unpaid', variant: 'destructive' },
     incomplete: { label: 'Incomplete', variant: 'secondary' },
+    // Minimal badge for comped alpha testers; richer sponsored UI is #246
+    sponsored: { label: 'Sponsored', variant: 'default' },
 };
 
 const UNKNOWN_STATUS_BADGE: StatusBadge = {

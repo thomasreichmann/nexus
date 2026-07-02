@@ -6,6 +6,7 @@ import {
     type SqsMessageBody,
 } from '@nexus/db/repo/jobs';
 import { sendToQueue } from '@/lib/jobs/publish';
+import { inviteService } from '@/server/services/invites';
 import { adminProcedure, router } from '../init';
 import { devToolsRouter } from './adminDevTools';
 
@@ -18,6 +19,32 @@ const jobStatusSchema = z.enum([
 
 export const adminRouter = router({
     devTools: devToolsRouter,
+    invites: router({
+        create: adminProcedure
+            .input(
+                z
+                    .object({
+                        email: z.email().optional(),
+                        storageLimit: z.number().int().positive().optional(),
+                        expiresAt: z.date().optional(),
+                    })
+                    .optional()
+            )
+            .mutation(({ ctx, input }) =>
+                inviteService.createInvite(ctx.db, {
+                    createdBy: ctx.session.user.id,
+                    email: input?.email,
+                    storageLimit: input?.storageLimit,
+                    expiresAt: input?.expiresAt,
+                })
+            ),
+
+        revoke: adminProcedure
+            .input(z.object({ id: z.string() }))
+            .mutation(({ ctx, input }) =>
+                inviteService.revokeInvite(ctx.db, input.id)
+            ),
+    }),
     jobs: router({
         list: adminProcedure
             .input(
