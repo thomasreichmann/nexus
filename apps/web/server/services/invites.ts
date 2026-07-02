@@ -4,6 +4,7 @@ import { createInviteRepo, type Invite } from '@nexus/db/repo/invites';
 import { env } from '@/lib/env';
 import { InvalidStateError, NotFoundError } from '@/server/errors';
 import { logger } from '@/server/lib/logger';
+import { emailService } from '@/server/services/email';
 
 const log = logger.child({ service: 'invites' });
 
@@ -44,7 +45,29 @@ async function createInvite(
         'Invite created'
     );
 
-    return { invite, url: `${env.NEXT_PUBLIC_APP_URL}/invite/${invite.token}` };
+    const url = `${env.NEXT_PUBLIC_APP_URL}/invite/${invite.token}`;
+
+    // Email-bound invites are delivered directly; unbound ones have no
+    // recipient and stay manual. Delivery failure must never block creation —
+    // the row is persisted and the link is still returned. (The email service
+    // swallows send errors itself; this catch is a backstop so createInvite
+    // holds that guarantee locally.)
+    if (invite.email) {
+        try {
+            await emailService.sendInviteEmail({
+                to: invite.email,
+                inviteUrl: url,
+                expiresAt: invite.expiresAt,
+            });
+        } catch (err) {
+            log.error(
+                { err, inviteId: invite.id },
+                'Invite email failed after invite creation'
+            );
+        }
+    }
+
+    return { invite, url };
 }
 
 async function revokeInvite(db: DB, id: string): Promise<Invite> {

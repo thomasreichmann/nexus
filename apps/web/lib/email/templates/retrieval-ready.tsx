@@ -8,8 +8,11 @@ import {
     Text,
 } from '@react-email/components';
 import { EmailLayout } from './_layout';
+import { Callout, CalloutStrong } from './components/callout';
 import { ArchiveIcon, ClockIcon } from './components/icons';
+import { LinkFallback } from './components/link-fallback';
 import { formatEmailDateTime } from './format';
+import { button, buttonSection, heading, intro, introStrong } from './styles';
 import { colors, radii, spacing } from './theme';
 
 export interface RetrievalReadyEmailProps {
@@ -40,14 +43,7 @@ export function RetrievalReadyEmail({
     return (
         <EmailLayout
             preview={`${fileName} is ready to download`}
-            footer={
-                <>
-                    <Text style={footerLabel}>
-                        Button not working? Paste this link into your browser:
-                    </Text>
-                    <Text style={footerLink}>{downloadUrl}</Text>
-                </>
-            }
+            footer={<LinkFallback url={downloadUrl} />}
         >
             <Heading style={heading}>Your file is ready</Heading>
             <Text style={intro}>
@@ -76,50 +72,18 @@ export function RetrievalReadyEmail({
                 </Button>
             </Section>
 
-            {/* Expiry callout — this link is time-boxed, so give it its own
-                weight rather than burying it in prose. */}
-            <Section style={callout}>
-                <Row>
-                    <Column style={calloutIconCell}>
-                        <ClockIcon size={16} color={colors.primary} />
-                    </Column>
-                    <Column>
-                        <Text style={calloutText}>
-                            This link expires on{' '}
-                            <strong style={calloutStrong}>
-                                {formattedExpiry}
-                            </strong>
-                            . After that, request the file again from your
-                            library.
-                        </Text>
-                    </Column>
-                </Row>
-            </Section>
+            {/* This link is time-boxed, so the expiry gets its own weight
+                rather than being buried in prose. */}
+            <Callout icon={<ClockIcon size={16} color={colors.primary} />}>
+                This link expires on{' '}
+                <CalloutStrong>{formattedExpiry}</CalloutStrong>. After that,
+                request the file again from your library.
+            </Callout>
         </EmailLayout>
     );
 }
 
 // --- Styles -----------------------------------------------------------------
-
-const heading: CSSProperties = {
-    fontSize: '22px',
-    fontWeight: 600,
-    letterSpacing: '-0.02em',
-    color: colors.ink,
-    margin: '0 0 12px',
-};
-
-const intro: CSSProperties = {
-    fontSize: '15px',
-    lineHeight: '24px',
-    color: colors.body,
-    margin: `0 0 ${spacing.block}`,
-};
-
-const introStrong: CSSProperties = {
-    color: colors.ink,
-    fontWeight: 600,
-};
 
 const fileCard: CSSProperties = {
     backgroundColor: colors.cardSurface,
@@ -162,60 +126,4 @@ const fileSub: CSSProperties = {
     lineHeight: '18px',
     color: colors.success,
     fontWeight: 500,
-};
-
-const buttonSection: CSSProperties = {
-    margin: `0 0 ${spacing.block}`,
-};
-
-const button: CSSProperties = {
-    display: 'block',
-    backgroundColor: colors.primary,
-    color: colors.onPrimary,
-    fontSize: '15px',
-    fontWeight: 600,
-    textDecoration: 'none',
-    textAlign: 'center',
-    padding: '13px 20px',
-    borderRadius: radii.sm,
-};
-
-const callout: CSSProperties = {
-    backgroundColor: colors.accentSurfaceSoft,
-    border: `1px solid ${colors.accentSurface}`,
-    borderRadius: radii.md,
-    padding: '12px 16px',
-};
-
-const calloutIconCell: CSSProperties = {
-    width: '26px',
-    verticalAlign: 'top',
-    paddingTop: '2px',
-};
-
-const calloutText: CSSProperties = {
-    margin: 0,
-    fontSize: '13px',
-    lineHeight: '20px',
-    color: colors.primaryText,
-};
-
-const calloutStrong: CSSProperties = {
-    fontWeight: 600,
-    color: colors.primaryTextStrong,
-};
-
-const footerLabel: CSSProperties = {
-    fontSize: '12px',
-    lineHeight: '18px',
-    color: colors.muted,
-    margin: '0 0 4px',
-};
-
-const footerLink: CSSProperties = {
-    fontSize: '12px',
-    lineHeight: '18px',
-    color: colors.faint,
-    margin: '0 0 20px',
-    wordBreak: 'break-all',
 };

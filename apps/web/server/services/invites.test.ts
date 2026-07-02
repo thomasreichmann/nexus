@@ -11,7 +11,10 @@ import {
 
 const hoisted = await vi.hoisted(async () => {
     const { createMockLogger } = await import('@/server/lib/logger/testing');
-    return { logger: createMockLogger() };
+    return {
+        logger: createMockLogger(),
+        sendInviteEmail: vi.fn(async (): Promise<void> => {}),
+    };
 });
 
 vi.mock('@/lib/env', () => ({
@@ -19,6 +22,10 @@ vi.mock('@/lib/env', () => ({
 }));
 
 vi.mock('@/server/lib/logger', () => ({ logger: hoisted.logger }));
+
+vi.mock('@/server/services/email', () => ({
+    emailService: { sendInviteEmail: hoisted.sendInviteEmail },
+}));
 
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { inviteService } from './invites';
@@ -99,6 +106,55 @@ describe('inviteService.createInvite', () => {
         });
 
         expect(url).toBe(`https://test.example/invite/${TEST_INVITE_TOKEN}`);
+    });
+
+    it('emails the invite link to an email-bound invite', async () => {
+        const expiresAt = new Date('2026-08-01T00:00:00Z');
+        mocks.returning.mockResolvedValue([
+            createInviteFixture({ email: 'tester@example.com', expiresAt }),
+        ]);
+
+        await inviteService.createInvite(db, {
+            createdBy: TEST_ADMIN_USER_ID,
+            email: 'tester@example.com',
+            expiresAt,
+        });
+
+        expect(hoisted.sendInviteEmail).toHaveBeenCalledOnce();
+        expect(hoisted.sendInviteEmail).toHaveBeenCalledWith({
+            to: 'tester@example.com',
+            inviteUrl: `https://test.example/invite/${TEST_INVITE_TOKEN}`,
+            expiresAt,
+        });
+    });
+
+    it('does not send an email for an unbound invite', async () => {
+        await inviteService.createInvite(db, {
+            createdBy: TEST_ADMIN_USER_ID,
+        });
+
+        expect(hoisted.sendInviteEmail).not.toHaveBeenCalled();
+    });
+
+    it('still creates the invite and returns the link when the email fails', async () => {
+        mocks.returning.mockResolvedValue([
+            createInviteFixture({ email: 'tester@example.com' }),
+        ]);
+        hoisted.sendInviteEmail.mockRejectedValueOnce(
+            new Error('Resend outage')
+        );
+
+        const { invite, url } = await inviteService.createInvite(db, {
+            createdBy: TEST_ADMIN_USER_ID,
+            email: 'tester@example.com',
+        });
+
+        expect(invite.id).toBe(TEST_INVITE_ID);
+        expect(url).toBe(`https://test.example/invite/${TEST_INVITE_TOKEN}`);
+        expect(hoisted.logger.error).toHaveBeenCalledWith(
+            { err: expect.any(Error), inviteId: TEST_INVITE_ID },
+            'Invite email failed after invite creation'
+        );
     });
 });
 

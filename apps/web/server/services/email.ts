@@ -1,7 +1,11 @@
 import { createElement } from 'react';
 import type { DB } from '@nexus/db';
 import { createUserRepo } from '@nexus/db/repo/users';
-import { email, type RetrievalReadyEmailProps } from '@/lib/email';
+import {
+    email,
+    type InviteEmailProps,
+    type RetrievalReadyEmailProps,
+} from '@/lib/email';
 import { logger } from '@/server/lib/logger';
 
 const log = logger.child({ service: 'email' });
@@ -42,6 +46,28 @@ async function sendRetrievalReadyEmail(
     }
 }
 
+export interface SendInviteEmailOptions extends InviteEmailProps {
+    /** Recipient — the invite's bound email; unbound invites are never sent. */
+    to: string;
+}
+
+// No db lookup here: the recipient comes straight off the invite row. Same
+// warn-and-swallow contract as above — delivery must not fail invite creation.
+async function sendInviteEmail(opts: SendInviteEmailOptions): Promise<void> {
+    const { to, ...props } = opts;
+
+    try {
+        await email.send({
+            to,
+            subject: email.templates.inviteSubject(),
+            react: createElement(email.templates.InviteEmail, props),
+        });
+    } catch (err) {
+        log.warn({ to, err }, 'Failed to send invite email');
+    }
+}
+
 export const emailService = {
+    sendInviteEmail,
     sendRetrievalReadyEmail,
 } as const;

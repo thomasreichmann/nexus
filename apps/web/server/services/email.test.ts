@@ -86,4 +86,34 @@ describe('email service', () => {
             );
         });
     });
+
+    describe('sendInviteEmail', () => {
+        const inviteOpts = {
+            to: 'tester@example.com',
+            inviteUrl: 'https://test.example/invite/abc123token',
+            expiresAt: null,
+        };
+
+        it('sends to the bound email with the free-access subject', async () => {
+            await emailService.sendInviteEmail(inviteOpts);
+
+            expect(mockEmail.send).toHaveBeenCalledOnce();
+            const sent = mockEmail.send.mock.calls[0][0];
+            expect(sent.to).toBe('tester@example.com');
+            expect(sent.subject).toContain('free access to Nexus');
+            expect(sent.react).toBeDefined();
+        });
+
+        it('logs and swallows when the send fails', async () => {
+            mockEmail.send.mockRejectedValueOnce(new Error('Resend outage'));
+
+            await expect(
+                emailService.sendInviteEmail(inviteOpts)
+            ).resolves.toBeUndefined();
+            expect(hoisted.logger.warn).toHaveBeenCalledWith(
+                { to: 'tester@example.com', err: expect.any(Error) },
+                'Failed to send invite email'
+            );
+        });
+    });
 });
