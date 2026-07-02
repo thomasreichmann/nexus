@@ -2,6 +2,7 @@
 name: conventions-review
 description: Review code changes against project conventions. Use during self-review before committing to catch convention violations.
 tools: Read, Grep, Glob
+model: sonnet
 ---
 
 # Conventions Review Agent

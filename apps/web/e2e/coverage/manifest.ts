@@ -73,7 +73,6 @@ export const PAGES: PageEntry[] = [
     },
     { route: '/design', title: 'Design system', auth: 'public' },
     { route: '/dev/coverage', title: 'Dev · Coverage', auth: 'public' },
-    { route: '/dev/preview', title: 'Dev · Preview', auth: 'public' },
     { route: '/dev/studio', title: 'Dev · tRPC Studio', auth: 'public' },
     { route: '/dev/report', title: 'Dev · Coverage report', auth: 'public' },
 ];

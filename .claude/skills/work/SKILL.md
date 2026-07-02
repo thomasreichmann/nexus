@@ -1,183 +1,48 @@
 ---
 name: work
-description: Work on a ready GitHub issue (implement, test, commit, PR)
-argument-hint: [issue-number] (optional)
+description: Work on a GitHub issue (implement, test, commit, PR)
+argument-hint: <issue-number>
 allowed-tools: Bash, Task, Read, Grep, Glob, Edit, Write
 disable-model-invocation: true
 agent: work-agent
 ---
 
-# Work on Issue Command
+# Work on Issue
 
-Implement a `ready`-labeled GitHub issue: research, implement, review, commit, and open a PR.
+Implement a GitHub issue: research, implement, review, commit, PR.
 
-## Dynamic Context
-
-**Current git status:**
-!`git status --short 2>/dev/null || echo "Not in a git repo"`
-
-**Current branch:**
-!`git branch --show-current 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo "Unknown"`
-
-**Recent commits:**
-!`git log --oneline -20 2>/dev/null || echo "No git history found"`
-
-## Prerequisites
-
-Issues must have the `ready` label (groomed with clear description, acceptance criteria, out-of-scope section).
-
-## Arguments
+**Git state:**
+!`git status --short; git branch --show-current; git log --oneline -5`
 
 **Issue number:** $ARGUMENTS
 
-## Instructions
+## Workflow
 
-### Step 1: Select Issue
+1. **Understand.** `gh issue view <n> --json number,title,body,labels,milestone`. Briefly summarize description, acceptance criteria, and out-of-scope.
 
-If an issue number was provided above, verify it has the `ready` label. If not, inform the user and suggest running `/groom` first.
+2. **Research.** Read `docs/ai/conventions.md`. Spawn an `explore-issue` agent to find related files, patterns, and similar implementations. Decide files to change, patterns to follow, and change order.
 
-If no issue number was provided:
+3. **Branch.** `git fetch origin main`, then `git checkout -b <type>/<n>-<slug> origin/main` (types: feat/fix/refactor/docs/chore). If the branch already exists, ask: resume it, rebase onto `origin/main`, or use a different name.
 
-1. Fetch issues: `gh issue list --label ready --json number,title,labels,milestone --limit 20` (exclude any with `in-progress` label)
-2. If none found, inform the user and exit
-3. Present the issues and ask the user to select one
+4. **Implement.** Stay within acceptance criteria; note out-of-scope discoveries as follow-up issues rather than expanding scope (if scope must grow, ask first). Repeat until green: `pnpm check`. UI changes also require `pnpm -F web test:e2e:smoke`; new pages need a smoke test in `apps/web/e2e/smoke/` following `home.spec.ts`. DB schema changes: see CLAUDE.md for `db:generate`/`db:migrate`/`db:custom`. If checks, tests, or migrations fail, show the output and ask: fix now / continue (note in PR) / abort with changes uncommitted.
 
-After selection, mark it in-progress: `gh issue edit <number> --add-label in-progress`
+5. **Verify criteria.** Walk each acceptance criterion and confirm it's satisfied (run relevant tests). If one isn't met, ask whether to address now or note for follow-up.
 
-### Step 2: Understand the Issue
+6. **Self-review (never skip).** Spawn 3 parallel Task agents, each given the changed files and diff: `conventions-review`, `code-quality-review`, `reuse-review`. Present findings grouped by category and ask: fix all / fix selected / skip (note in PR). Apply approved fixes, re-run `pnpm check`.
 
-1. Fetch full details: `gh issue view <number> --json number,title,body,labels,milestone`
-2. Parse: Description, Acceptance Criteria, Out of Scope
-3. Present a brief summary showing you understand the requirements
+7. **Commit & push.** Invoke the `/commit` skill (runs on a cheap model in a forked context). Message format: `<type>: <description> (#<n>)`. Stage only related files.
 
-### Step 3: Research Phase
+8. **PR.** `gh pr create` with body:
 
-1. **Read conventions:** Use Read tool on `docs/ai/conventions.md`
-
-2. **Explore codebase** using the `explore-issue` agent:
-    - Spawn a Task with `subagent_type: explore-issue`
-    - Find related files, existing patterns, similar implementations
-    - Identify files to create or modify
-
-3. **Identify approach:** files to change, patterns to follow, technical decisions, change order
-
-### Step 4: Setup Branch
-
-1. Fetch latest: `git fetch origin main`
-2. Create feature branch from `origin/main`:
-    - Convention: `<type>/<issue-number>-<short-description>` (types: `feat/`, `fix/`, `refactor/`, `docs/`, `chore/`)
-    - Example: `git checkout -b feat/42-user-authentication origin/main`
-3. If branch exists, see `templates/edge-cases.md` for resolution
-
-### Step 5: Implementation
-
-Make changes following the approach from research:
-
-- Edit existing files with Edit tool, create new files with Write tool
-- Keep changes focused on acceptance criteria — avoid scope creep
-
-**Core loop — repeat until green:**
-
-```bash
-pnpm check    # lint + build + test (REQUIRED before committing)
-```
-
-Fix any failures before proceeding. For UI changes, also run:
-
-```bash
-pnpm -F web test:e2e:smoke    # REQUIRED for UI changes
-```
-
-For specialized scenarios (DB migrations, CSS tokens, visual-compare), see `templates/implementation-guide.md`.
-
-If implementation reveals out-of-scope work, note it for follow-up issues — stay focused on acceptance criteria.
-
-### Step 6: Verify Acceptance Criteria
-
-Go through each acceptance criterion from the issue:
-
-1. Confirm each item is satisfied by the implementation
-2. Run relevant tests to verify
-3. If any criterion is not met, ask the user whether to address now or note for follow-up
-
-### Step 7: Self-Review (REQUIRED)
-
-**You MUST spawn 3 parallel review agents before committing. DO NOT skip this step or proceed directly to commit.**
-
-1. Get the diff of all changes:
-
-    ```bash
-    git diff --name-only
-    git diff
     ```
+    ## Summary
+    <what was done and why>
 
-2. **Spawn 3 review agents in parallel** using Task tool:
-    - `subagent_type: conventions-review` — check against project conventions
-    - `subagent_type: code-quality-review` — check for over-engineering and unnecessary complexity
-    - `subagent_type: reuse-review` — check for code duplication and reuse opportunities
+    Closes #<n>
 
-    Pass each agent the changed files list and diff content.
+    ## Changes
+    - <change>
 
-3. Collect findings from all 3 agents.
-
-4. If issues found, present them grouped by category and ask the user how to proceed:
-    - **Fix all**: Auto-fix all identified issues
-    - **Fix selected**: Let user pick which to fix
-    - **Skip**: Proceed without fixes (add note to PR)
-
-5. Apply any approved fixes, then re-run `pnpm check` to verify.
-
-6. If no issues found, proceed to Step 8.
-
-### Step 8: Commit Changes
-
-**GATE CHECK — Before proceeding, confirm Step 7 was completed:**
-
-- Did you spawn all 3 review agents (conventions, code-quality, reuse)?
-- Did you collect and process their findings?
-- Did you apply approved fixes or confirm no issues were found?
-
-**If ANY answer is NO, STOP and return to Step 7 now.**
-
-1. Review changes: `git status` and `git diff`
-2. Stage relevant files (avoid staging unrelated changes)
-3. Commit with issue reference:
-    ```bash
-    git commit -m "<type>: <description> (#<issue-number>)"
+    ## Test Plan
+    - [ ] <how to verify>
     ```
-4. Push branch: `git push -u origin <branch-name>`
-
-### Step 9: Create Pull Request
-
-Create PR using the template from `templates/pr-body.md`:
-
-```bash
-gh pr create --title "<title>" --body "$(cat <<'EOF'
-<fill in from templates/pr-body.md>
-EOF
-)"
-```
-
-Include `Closes #<issue-number>` in the body. Then remove the in-progress label:
-
-```bash
-gh issue edit <number> --remove-label in-progress
-```
-
-### Step 10: Summary
-
-Provide a summary including:
-
-- Issue worked on (number and title)
-- Branch name and PR link
-- Key changes made and files modified
-- Any follow-up items identified
-
-## Notes
-
-- ALWAYS read the issue thoroughly before starting
-- ALWAYS research the codebase to understand existing patterns
-- NEVER skip self-review — always spawn review agents before committing
-- Follow conventions in `docs/ai/conventions.md`
-- Keep commits focused and atomic; reference the issue number in commits and PR
-- For edge cases (issue not ready, lint errors, branch conflicts, etc.), see `templates/edge-cases.md`
