@@ -236,8 +236,8 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/files'],
     },
     {
-        id: 'files-download-available',
-        title: 'Download an available file via presigned URL',
+        id: 'files-standard-tier-archived',
+        title: 'Standard-tier files render archived with Retrieve, no Download',
         area: 'files',
         routes: ['/dashboard/files'],
     },

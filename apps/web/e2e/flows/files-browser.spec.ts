@@ -77,8 +77,9 @@ const test = base.extend<
                 createdAt: new Date(now - 1000),
                 updatedAt: new Date(now - 1000),
             });
-            // One ungrouped standard file with a ready retrieval → derived
-            // status "available", Download action enabled.
+            // One ungrouped standard-tier file with a ready retrieval. Every
+            // tier derives status "archived" (#256), so this row must render
+            // identically to the deep_archive ones: Retrieve, no Download.
             const readyDoc = await insertFile(db, {
                 userId,
                 name: 'ready-doc-ccc.pdf',
@@ -132,8 +133,10 @@ test.describe('with a seeded library', () => {
             ).toBeVisible();
 
             await expect(page.getByText('3 files')).toBeVisible();
-            await expect(page.getByText('2 archived')).toBeVisible();
-            await expect(page.getByText('1 available')).toBeVisible();
+            // Standard tier counts as archived (#256); the "available" chip
+            // only renders for a non-zero count, so it must be absent.
+            await expect(page.getByText('3 archived')).toBeVisible();
+            await expect(page.getByText(/\d+ available/)).toBeHidden();
         }
     );
 
@@ -292,17 +295,6 @@ test.describe('with a seeded library', () => {
                 page.getByText(seededLibrary.archivedA.name)
             ).toBeVisible();
 
-            // Only the non-archived file selected → Retrieve disabled.
-            await page
-                .getByRole('button', {
-                    name: `Select ${seededLibrary.readyDoc.name}`,
-                })
-                .click();
-            await expect(
-                page.getByRole('button', { name: 'Retrieve' })
-            ).toBeDisabled();
-            await page.getByRole('button', { name: 'Clear selection' }).click();
-
             // Archived files selected → Retrieve fires the bulk mutation.
             await page
                 .getByRole('button', {
@@ -373,27 +365,40 @@ test.describe('with a seeded library', () => {
     );
 
     test(
-        'download opens a presigned URL for an available file',
-        { tag: ['@uc:files-download-available'] },
+        'standard-tier file renders archived with Retrieve, no Download',
+        { tag: ['@uc:files-standard-tier-archived'] },
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
             await expect(
                 page.getByText(seededLibrary.readyDoc.name)
             ).toBeVisible();
 
+            // Row renders identically to a deep_archive row (#256).
+            const row = page.locator('tr', {
+                hasText: seededLibrary.readyDoc.name,
+            });
+            await expect(row.getByText('archived')).toBeVisible();
+
+            // Selecting it counts toward the bulk Retrieve selection.
             await page
-                .locator('tr', { hasText: seededLibrary.readyDoc.name })
-                .getByRole('button', { name: 'Actions' })
+                .getByRole('button', {
+                    name: `Select ${seededLibrary.readyDoc.name}`,
+                })
                 .click();
+            await expect(
+                page.getByRole('button', { name: 'Retrieve' })
+            ).toBeEnabled();
+            await page.getByRole('button', { name: 'Clear selection' }).click();
 
-            const popupPromise = page.waitForEvent('popup');
-            await page.getByRole('menuitem', { name: 'Download' }).click();
-            const popup = await popupPromise;
-
-            // Presigned S3 GET — signature params prove it went through the
-            // presigner rather than a bare bucket URL.
-            expect(popup.url()).toContain('X-Amz-');
-            await popup.close();
+            // Actions menu offers Retrieve only — no Download for any tier.
+            await row.getByRole('button', { name: 'Actions' }).click();
+            await expect(
+                page.getByRole('menuitem', { name: 'Request retrieval' })
+            ).toBeVisible();
+            await expect(
+                page.getByRole('menuitem', { name: 'Download' })
+            ).toHaveCount(0);
+            await page.keyboard.press('Escape');
         }
     );
 

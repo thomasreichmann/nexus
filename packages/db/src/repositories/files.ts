@@ -171,7 +171,9 @@ async function countByUser(
  * apps/web/components/dashboard/file-browser.tsx — keep the two in lockstep
  * or UI counts will disagree with per-row status dots. Hidden statuses
  * (`uploading`, `deleted`) are always excluded since they don't fit any
- * bucket and would produce a NULL category from the CASE below.
+ * bucket and would produce a NULL category from the CASE below. The
+ * `available` bucket is currently always 0 — every tier renders as
+ * archived (#256) until the retrieval fast-path lands.
  */
 async function countStatusesByUser(
     db: DB,
@@ -182,10 +184,7 @@ async function countStatusesByUser(
             category: sql<keyof StatusCategoryCounts | null>`
                 CASE
                     WHEN ${schema.files.status} = 'restoring' THEN 'retrieving'
-                    WHEN ${schema.files.status} = 'available'
-                        AND ${schema.files.storageTier} IN ('glacier', 'deep_archive') THEN 'archived'
-                    WHEN ${schema.files.status} = 'available'
-                        AND ${schema.files.storageTier} = 'standard' THEN 'available'
+                    WHEN ${schema.files.status} = 'available' THEN 'archived'
                     ELSE NULL
                 END`.as('category'),
             count: sql<number>`count(*)::int`.as('count'),
