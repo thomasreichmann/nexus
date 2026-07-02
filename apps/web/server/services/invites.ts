@@ -15,6 +15,17 @@ export interface CreateInviteInput {
     expiresAt?: Date;
 }
 
+/** Why an invite can't be redeemed — drives the message on the redemption page. */
+export type InviteInvalidReason =
+    | 'not_found'
+    | 'redeemed'
+    | 'revoked'
+    | 'expired';
+
+export type RedeemableInvite =
+    | { valid: true; email: string | null }
+    | { valid: false; reason: InviteInvalidReason };
+
 /** 32 bytes → 43-char base64url; ≥128 bits of entropy per the token decision in #239. */
 function generateInviteToken(): string {
     return randomBytes(32).toString('base64url');
@@ -70,6 +81,32 @@ async function createInvite(
     return { invite, url };
 }
 
+/**
+ * Client-safe validation for the `/invite/[token]` redemption page. Mirrors the
+ * pre-checks in `subscriptionService.tryProvisionSponsoredSubscription` (status
+ * `pending`, not expired) but returns only what the page needs to render — a
+ * valid/invalid verdict plus the bound email to pre-fill and lock. It never
+ * exposes the full row (storageLimit, createdBy, etc.). Not authoritative: the
+ * conditional-UPDATE `claim` at redemption is the real single-use gate, so a
+ * `valid` result here can still lose a concurrent race and fall back to a trial.
+ */
+async function getRedeemableInvite(
+    db: DB,
+    token: string
+): Promise<RedeemableInvite> {
+    const invite = await createInviteRepo(db).findByToken(token);
+
+    if (!invite) return { valid: false, reason: 'not_found' };
+    if (invite.status !== 'pending') {
+        return { valid: false, reason: invite.status };
+    }
+    if (invite.expiresAt && invite.expiresAt <= new Date()) {
+        return { valid: false, reason: 'expired' };
+    }
+
+    return { valid: true, email: invite.email };
+}
+
 async function revokeInvite(db: DB, id: string): Promise<Invite> {
     const repo = createInviteRepo(db);
     const revoked = await repo.revoke(id);
@@ -89,5 +126,6 @@ async function revokeInvite(db: DB, id: string): Promise<Invite> {
 
 export const inviteService = {
     createInvite,
+    getRedeemableInvite,
     revokeInvite,
 } as const;

@@ -25,6 +25,7 @@ import {
     createSubscriptionFixture,
     createStorageUsageFixture,
     createJobFixture,
+    createInviteFixture,
     type User,
     type StorageUsage,
 } from '../repositories/fixtures';
@@ -33,6 +34,7 @@ import type { UploadBatch } from '../repositories/uploadBatches';
 import type { Retrieval } from '../repositories/retrievals';
 import type { Subscription } from '../repositories/subscriptions';
 import type { Job } from '../repositories/jobs';
+import type { Invite } from '../repositories/invites';
 
 /**
  * Writes ONLY the `user` row — no BetterAuth `account`/password. A user that
@@ -133,6 +135,19 @@ export async function insertStorageUsage(
         })
         .returning();
     return usage!;
+}
+
+export async function insertInvite(
+    db: DB,
+    overrides: Partial<Invite> = {}
+): Promise<Invite> {
+    const row = createInviteFixture(overrides);
+    if (overrides.id === undefined) row.id = crypto.randomUUID();
+    // token is UNIQUE-indexed; derive a collision-free default from the (now
+    // unique) id so back-to-back seeds don't clash on the factory's fixed token.
+    if (overrides.token === undefined) row.token = `invite-token-${row.id}`;
+    const [invite] = await db.insert(schema.invites).values(row).returning();
+    return invite!;
 }
 
 export async function insertJob(

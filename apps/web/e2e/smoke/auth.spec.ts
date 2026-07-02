@@ -45,4 +45,24 @@ test.describe('Auth Pages', () => {
             expect(errors).toEqual([]);
         }
     );
+
+    test(
+        'invite page shows a friendly message for an invalid token',
+        { tag: ['@page:/invite/[token]'] },
+        async ({ page }) => {
+            const errors = setupConsoleErrorTracking(page);
+
+            await page.goto('/invite/definitely-not-a-real-token');
+
+            await expect(
+                page.getByRole('heading', { name: /invite unavailable/i })
+            ).toBeVisible();
+            // Never render the signup form for an unusable invite.
+            await expect(
+                page.getByRole('button', { name: /create account/i })
+            ).toHaveCount(0);
+
+            expect(errors).toEqual([]);
+        }
+    );
 });

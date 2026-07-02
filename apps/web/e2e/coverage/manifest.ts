@@ -61,6 +61,7 @@ export const PAGES: PageEntry[] = [
     { route: '/', title: 'Landing', auth: 'public' },
     { route: '/sign-in', title: 'Sign in', auth: 'public' },
     { route: '/sign-up', title: 'Sign up', auth: 'public' },
+    { route: '/invite/[token]', title: 'Invite redemption', auth: 'public' },
     { route: '/dashboard', title: 'Dashboard overview', auth: 'user' },
     { route: '/dashboard/files', title: 'Files', auth: 'user' },
     { route: '/dashboard/upload', title: 'Upload', auth: 'user' },
@@ -92,6 +93,18 @@ export const USE_CASES: UseCaseEntry[] = [
         title: 'Trial subscription is provisioned at signup',
         area: 'auth',
         routes: ['/sign-up', '/dashboard/settings'],
+    },
+    {
+        id: 'invite-redemption',
+        title: 'Redeeming an invite validates the token and renders the signup form (friendly message when unusable)',
+        area: 'auth',
+        routes: ['/invite/[token]'],
+    },
+    {
+        id: 'sponsored-on-signup',
+        title: 'Redeeming a valid invite provisions sponsored access with no trial UI',
+        area: 'auth',
+        routes: ['/invite/[token]', '/dashboard/settings'],
     },
     {
         id: 'sign-in-email',

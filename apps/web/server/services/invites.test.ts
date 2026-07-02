@@ -158,6 +158,106 @@ describe('inviteService.createInvite', () => {
     });
 });
 
+describe('inviteService.getRedeemableInvite', () => {
+    let db: MockDb;
+    let mocks: MockDbMocks;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        const mockDb = createMockDb();
+        db = mockDb.db;
+        mocks = mockDb.mocks;
+    });
+
+    it('returns valid with the bound email for a pending invite', async () => {
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({ email: 'tester@example.com' })
+        );
+
+        const result = await inviteService.getRedeemableInvite(
+            db,
+            TEST_INVITE_TOKEN
+        );
+
+        expect(result).toEqual({ valid: true, email: 'tester@example.com' });
+    });
+
+    it('returns valid with a null email for an unbound invite', async () => {
+        mocks.invites.findFirst.mockResolvedValue(createInviteFixture());
+
+        const result = await inviteService.getRedeemableInvite(
+            db,
+            TEST_INVITE_TOKEN
+        );
+
+        expect(result).toEqual({ valid: true, email: null });
+    });
+
+    it('returns not_found when no invite matches the token', async () => {
+        mocks.invites.findFirst.mockResolvedValue(undefined);
+
+        const result = await inviteService.getRedeemableInvite(db, 'missing');
+
+        expect(result).toEqual({ valid: false, reason: 'not_found' });
+    });
+
+    it('reports a redeemed invite by its status', async () => {
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({ status: 'redeemed' })
+        );
+
+        const result = await inviteService.getRedeemableInvite(
+            db,
+            TEST_INVITE_TOKEN
+        );
+
+        expect(result).toEqual({ valid: false, reason: 'redeemed' });
+    });
+
+    it('reports a revoked invite by its status', async () => {
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({ status: 'revoked' })
+        );
+
+        const result = await inviteService.getRedeemableInvite(
+            db,
+            TEST_INVITE_TOKEN
+        );
+
+        expect(result).toEqual({ valid: false, reason: 'revoked' });
+    });
+
+    it('reports an expired invite whose expiry has passed', async () => {
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({
+                expiresAt: new Date('2020-01-01T00:00:00Z'),
+            })
+        );
+
+        const result = await inviteService.getRedeemableInvite(
+            db,
+            TEST_INVITE_TOKEN
+        );
+
+        expect(result).toEqual({ valid: false, reason: 'expired' });
+    });
+
+    it('treats a future expiry as still valid', async () => {
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({
+                expiresAt: new Date('2999-01-01T00:00:00Z'),
+            })
+        );
+
+        const result = await inviteService.getRedeemableInvite(
+            db,
+            TEST_INVITE_TOKEN
+        );
+
+        expect(result).toEqual({ valid: true, email: null });
+    });
+});
+
 describe('inviteService.revokeInvite', () => {
     let db: MockDb;
     let mocks: MockDbMocks;

@@ -5,20 +5,58 @@
  */
 import { test, expect } from '@playwright/test';
 import { REGULAR_USER } from '../helpers/auth';
-import { deleteUserByEmail } from '@nexus/db/test-db';
+import {
+    deleteInvite,
+    deleteUserByEmail,
+    findUserByEmail,
+    insertInvite,
+} from '@nexus/db/test-db';
 import { createTestDb } from '../helpers/connection';
 
 // Unique per run so a crashed previous run can't collide; cleaned in afterAll.
 const SIGNUP_EMAIL = `signup-e2e-${Date.now()}@test.local`;
 const SIGNUP_PASSWORD = 'signup-e2e-password-123';
 
+// Sponsored-invite redemption seeds a pending invite before the run and drops
+// it after. The token/email are unique per run. The invite's createdBy points
+// at the already-seeded REGULAR_USER (created durably by the setup project)
+// rather than a throwaway user — one insert against a committed FK target, so
+// the invite's foreign key can't lose a race on the transaction-mode pooler.
+const INVITE_SIGNUP_EMAIL = `invite-e2e-${Date.now()}@test.local`;
+const INVITE_TOKEN = `invite-e2e-token-${Date.now()}`;
+let inviteId: string;
+
 test.describe('auth flows', () => {
+    test.beforeAll(async () => {
+        const db = createTestDb();
+        try {
+            const creator = await findUserByEmail(db, REGULAR_USER.email);
+            if (!creator) {
+                throw new Error(
+                    'REGULAR_USER must be seeded by the setup project before this spec'
+                );
+            }
+            const invite = await insertInvite(db, {
+                token: INVITE_TOKEN,
+                createdBy: creator.id,
+            });
+            inviteId = invite.id;
+        } finally {
+            await db.$client.end({ timeout: 5 });
+        }
+    });
+
     test.afterAll(async () => {
         // These tests run unauthenticated (outside the fixture chain), so use a
         // direct connection rather than the worker `db` fixture.
         const db = createTestDb();
         try {
             await deleteUserByEmail(db, SIGNUP_EMAIL);
+            // Drop the redeemer first (nulls redeemedByUserId via ON DELETE SET
+            // NULL), then the invite. The creator is the shared REGULAR_USER —
+            // never delete it.
+            await deleteUserByEmail(db, INVITE_SIGNUP_EMAIL);
+            await deleteInvite(db, inviteId);
         } finally {
             await db.$client.end({ timeout: 5 });
         }
@@ -47,6 +85,38 @@ test.describe('auth flows', () => {
                 .getByRole('heading', { name: 'Starter', exact: true })
                 .locator('..');
             await expect(starterCard.getByText('Current')).toBeVisible();
+        }
+    );
+
+    test(
+        'redeeming an invite provisions sponsored access and hides trial UI',
+        {
+            tag: [
+                '@page:/invite/[token]',
+                '@uc:invite-redemption',
+                '@uc:sponsored-on-signup',
+            ],
+        },
+        async ({ page }) => {
+            await page.goto(`/invite/${INVITE_TOKEN}`);
+
+            await page.getByLabel('Name').fill('Invite E2E');
+            await page.getByLabel('Email').fill(INVITE_SIGNUP_EMAIL);
+            await page.getByLabel('Password').fill(SIGNUP_PASSWORD);
+            await page.getByRole('button', { name: 'Create account' }).click();
+
+            await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+
+            // Settings shows the Sponsored badge and never any trial UI —
+            // sponsored rows are 'sponsored'/trialEnd null, so the trial
+            // countdown and TRIAL_EXPIRED banner can't render for them.
+            await page.goto('/dashboard/settings');
+            await expect(
+                page.getByText('Sponsored', { exact: true })
+            ).toBeVisible({ timeout: 15_000 });
+            await expect(page.getByText('Trial', { exact: true })).toHaveCount(
+                0
+            );
         }
     );
 
