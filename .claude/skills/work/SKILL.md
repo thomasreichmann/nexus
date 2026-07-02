@@ -2,9 +2,7 @@
 name: work
 description: Work on a GitHub issue (implement, test, commit, PR)
 argument-hint: <issue-number>
-allowed-tools: Bash, Task, Read, Grep, Glob, Edit, Write
 disable-model-invocation: true
-agent: work-agent
 ---
 
 # Work on Issue
