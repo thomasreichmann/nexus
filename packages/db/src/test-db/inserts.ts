@@ -25,6 +25,7 @@ import {
     createSubscriptionFixture,
     createStorageUsageFixture,
     createJobFixture,
+    createInviteFixture,
     type User,
     type StorageUsage,
 } from '../repositories/fixtures';
@@ -33,6 +34,7 @@ import type { UploadBatch } from '../repositories/uploadBatches';
 import type { Retrieval } from '../repositories/retrievals';
 import type { Subscription } from '../repositories/subscriptions';
 import type { Job } from '../repositories/jobs';
+import type { Invite } from '../repositories/invites';
 
 /**
  * Writes ONLY the `user` row — no BetterAuth `account`/password. A user that
@@ -133,6 +135,24 @@ export async function insertStorageUsage(
         })
         .returning();
     return usage!;
+}
+
+/**
+ * `createdBy` references a real user row — e2e callers must pass an existing
+ * user's id (the fixture's `TEST_ADMIN_USER_ID` default only exists in unit
+ * tests' mocked DB).
+ */
+export async function insertInvite(
+    db: DB,
+    overrides: Partial<Invite> = {}
+): Promise<Invite> {
+    const row = createInviteFixture(overrides);
+    if (overrides.id === undefined) row.id = crypto.randomUUID();
+    // token is UNIQUE; derive from the (now unique) id so back-to-back
+    // inserts don't clash on the factory's fixed default.
+    if (overrides.token === undefined) row.token = `test-invite-${row.id}`;
+    const [invite] = await db.insert(schema.invites).values(row).returning();
+    return invite!;
 }
 
 export async function insertJob(

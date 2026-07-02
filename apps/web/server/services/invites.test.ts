@@ -158,6 +158,95 @@ describe('inviteService.createInvite', () => {
     });
 });
 
+describe('inviteService.getInviteRedemption', () => {
+    let db: MockDb;
+    let mocks: MockDbMocks;
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        const mockDb = createMockDb();
+        db = mockDb.db;
+        mocks = mockDb.mocks;
+    });
+
+    it('returns valid with a null email for an unbound pending invite', async () => {
+        mocks.invites.findFirst.mockResolvedValue(createInviteFixture());
+
+        const result = await inviteService.getInviteRedemption(
+            db,
+            TEST_INVITE_TOKEN
+        );
+
+        expect(result).toEqual({ status: 'valid', email: null });
+    });
+
+    it('returns the bound email for an email-bound pending invite', async () => {
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({ email: 'tester@example.com' })
+        );
+
+        const result = await inviteService.getInviteRedemption(
+            db,
+            TEST_INVITE_TOKEN
+        );
+
+        expect(result).toEqual({
+            status: 'valid',
+            email: 'tester@example.com',
+        });
+    });
+
+    it('treats a pending invite with a future expiry as valid', async () => {
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({ expiresAt: new Date(Date.now() + 60_000) })
+        );
+
+        const result = await inviteService.getInviteRedemption(
+            db,
+            TEST_INVITE_TOKEN
+        );
+
+        expect(result).toEqual({ status: 'valid', email: null });
+    });
+
+    it('returns invalid for an unknown token', async () => {
+        mocks.invites.findFirst.mockResolvedValue(undefined);
+
+        const result = await inviteService.getInviteRedemption(db, 'missing');
+
+        expect(result).toEqual({ status: 'invalid' });
+    });
+
+    it('returns expired for a pending invite past its expiry', async () => {
+        mocks.invites.findFirst.mockResolvedValue(
+            createInviteFixture({ expiresAt: new Date(Date.now() - 60_000) })
+        );
+
+        const result = await inviteService.getInviteRedemption(
+            db,
+            TEST_INVITE_TOKEN
+        );
+
+        expect(result).toEqual({ status: 'expired' });
+    });
+
+    it.each(['redeemed', 'revoked'] as const)(
+        'returns %s for a %s invite',
+        async (status) => {
+            mocks.invites.findFirst.mockResolvedValue(
+                createInviteFixture({ status })
+            );
+
+            const result = await inviteService.getInviteRedemption(
+                db,
+                TEST_INVITE_TOKEN
+            );
+
+            expect(result).toEqual({ status });
+        }
+    );
+});
+
 describe('inviteService.revokeInvite', () => {
     let db: MockDb;
     let mocks: MockDbMocks;

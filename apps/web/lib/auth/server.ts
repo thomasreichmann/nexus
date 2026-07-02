@@ -1,7 +1,6 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import * as schema from '@nexus/db/schema';
-import { INVITE_TOKEN_COOKIE } from '@/lib/auth/inviteCookie';
 import { db } from '@/server/db';
 import { subscriptionService } from '@/server/services/subscriptions';
 import { logger } from '@/server/lib/logger';
@@ -55,10 +54,17 @@ export const auth = betterAuth({
                 // falls back to a trial internally; only trial-provisioning
                 // failure rethrows.)
                 after: async (user, context) => {
-                    // Set by the /invite/[token] redemption page (#246);
-                    // absent for normal signups.
+                    // Sent in the signup body by the /invite/[token]
+                    // redemption page (#246); absent for normal signups.
+                    // better-auth's sign-up body schema passes unknown keys
+                    // through to this endpoint context, and its user-input
+                    // parser drops them, so the token never touches the
+                    // user row.
+                    const bodyToken: unknown = context?.body?.inviteToken;
                     const inviteToken =
-                        context?.getCookie(INVITE_TOKEN_COOKIE) ?? null;
+                        typeof bodyToken === 'string' && bodyToken !== ''
+                            ? bodyToken
+                            : null;
                     try {
                         await subscriptionService.provisionSignupSubscription(
                             db,

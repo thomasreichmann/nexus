@@ -70,6 +70,30 @@ async function createInvite(
     return { invite, url };
 }
 
+/**
+ * Everything the public redemption page needs to render: whether the link is
+ * usable and, for email-bound invites, the address to lock the signup form
+ * to. Non-valid states are distinguished so the page can explain what
+ * happened. Read-only — claiming stays in the signup create-hook, and the
+ * provisioning path re-checks all of this authoritatively.
+ */
+export type InviteRedemption =
+    | { status: 'valid'; email: string | null }
+    | { status: 'invalid' | 'expired' | 'redeemed' | 'revoked' };
+
+async function getInviteRedemption(
+    db: DB,
+    token: string
+): Promise<InviteRedemption> {
+    const invite = await createInviteRepo(db).findByToken(token);
+    if (!invite) return { status: 'invalid' };
+    if (invite.status !== 'pending') return { status: invite.status };
+    if (invite.expiresAt && invite.expiresAt <= new Date()) {
+        return { status: 'expired' };
+    }
+    return { status: 'valid', email: invite.email };
+}
+
 async function revokeInvite(db: DB, id: string): Promise<Invite> {
     const repo = createInviteRepo(db);
     const revoked = await repo.revoke(id);
@@ -89,5 +113,6 @@ async function revokeInvite(db: DB, id: string): Promise<Invite> {
 
 export const inviteService = {
     createInvite,
+    getInviteRedemption,
     revokeInvite,
 } as const;

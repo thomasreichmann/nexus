@@ -80,6 +80,10 @@ export async function deleteJob(db: DB, id: string): Promise<void> {
         .where(eq(schema.backgroundJobs.id, id));
 }
 
+export async function deleteInvite(db: DB, id: string): Promise<void> {
+    await db.delete(schema.invites).where(eq(schema.invites.id, id));
+}
+
 /**
  * Upserts the user's subscription to a fresh trial. Used by global setup (the
  * shared e2e users are reused across runs and may pre-date the signup trial

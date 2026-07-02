@@ -26,3 +26,4 @@ export type { UploadBatch } from '../repositories/uploadBatches';
 export type { Retrieval } from '../repositories/retrievals';
 export type { Subscription } from '../repositories/subscriptions';
 export type { Job, NewJob } from '../repositories/jobs';
+export type { Invite } from '../repositories/invites';

@@ -18,16 +18,31 @@ import { DEFAULT_REDIRECT } from '@/lib/auth/sanitizeRedirect';
 interface SignUpFormProps {
     /** Sanitized path to land on after a successful sign-up. */
     redirectTo?: string;
+    /**
+     * Sponsored invite token (#246). Rides the signup request body so the
+     * user create-hook can provision sponsored access in the same request.
+     */
+    inviteToken?: string;
+    /**
+     * Email an invite is bound to. Locks the field so redemption can't be
+     * silently downgraded to a trial by an email mismatch server-side.
+     */
+    lockedEmail?: string;
 }
 
-export function SignUpForm({ redirectTo = DEFAULT_REDIRECT }: SignUpFormProps) {
+export function SignUpForm({
+    redirectTo = DEFAULT_REDIRECT,
+    inviteToken,
+    lockedEmail,
+}: SignUpFormProps) {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(false);
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
     const [name, setName] = useState('');
-    const [email, setEmail] = useState('');
+    const [email, setEmail] = useState(lockedEmail ?? '');
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
+    const isEmailLocked = lockedEmail !== undefined;
 
     async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
@@ -38,6 +53,9 @@ export function SignUpForm({ redirectTo = DEFAULT_REDIRECT }: SignUpFormProps) {
             name,
             email,
             password,
+            // Spread keeps the key out of normal signups entirely; better-auth
+            // forwards extra body keys to the server hook (see lib/auth/server.ts).
+            ...(inviteToken !== undefined && { inviteToken }),
         });
 
         setIsLoading(false);
@@ -60,21 +78,28 @@ export function SignUpForm({ redirectTo = DEFAULT_REDIRECT }: SignUpFormProps) {
 
     return (
         <div className="space-y-6">
-            <Button
-                variant="outline"
-                className="w-full bg-transparent"
-                onClick={onGoogleSignUp}
-                disabled={isGoogleLoading || isLoading}
-            >
-                {isGoogleLoading ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                    <GoogleIcon className="mr-2 h-4 w-4" />
-                )}
-                Continue with Google
-            </Button>
+            {/* OAuth is a redirect flow — it can't carry the invite token in
+                the signup body, so a Google signup here would silently land
+                the tester on a trial. Hide it for invite redemptions. */}
+            {inviteToken === undefined && (
+                <>
+                    <Button
+                        variant="outline"
+                        className="w-full bg-transparent"
+                        onClick={onGoogleSignUp}
+                        disabled={isGoogleLoading || isLoading}
+                    >
+                        {isGoogleLoading ? (
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                            <GoogleIcon className="mr-2 h-4 w-4" />
+                        )}
+                        Continue with Google
+                    </Button>
 
-            <OAuthDivider />
+                    <OAuthDivider />
+                </>
+            )}
 
             <form onSubmit={onSubmit} className="space-y-4">
                 {error && (
@@ -105,9 +130,21 @@ export function SignUpForm({ redirectTo = DEFAULT_REDIRECT }: SignUpFormProps) {
                         placeholder="you@example.com"
                         required
                         disabled={isLoading}
+                        readOnly={isEmailLocked}
+                        aria-readonly={isEmailLocked || undefined}
+                        className={
+                            isEmailLocked
+                                ? 'bg-muted text-muted-foreground'
+                                : undefined
+                        }
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                     />
+                    {isEmailLocked && (
+                        <p className="text-xs text-muted-foreground">
+                            Your invite is for this email address.
+                        </p>
+                    )}
                 </div>
                 <div className="space-y-2">
                     <Label htmlFor="password">Password</Label>

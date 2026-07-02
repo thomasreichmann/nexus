@@ -61,6 +61,7 @@ export const PAGES: PageEntry[] = [
     { route: '/', title: 'Landing', auth: 'public' },
     { route: '/sign-in', title: 'Sign in', auth: 'public' },
     { route: '/sign-up', title: 'Sign up', auth: 'public' },
+    { route: '/invite/[token]', title: 'Invite redemption', auth: 'public' },
     { route: '/dashboard', title: 'Dashboard overview', auth: 'user' },
     { route: '/dashboard/files', title: 'Files', auth: 'user' },
     { route: '/dashboard/upload', title: 'Upload', auth: 'user' },
@@ -141,6 +142,30 @@ export const USE_CASES: UseCaseEntry[] = [
         area: 'auth',
         routes: ['/sign-in', '/sign-up'],
         excluded: 'Google OAuth provider is not configured in any environment',
+    },
+    {
+        id: 'invite-redeem-sponsored',
+        title: 'Redeeming a valid invite at signup provisions sponsored access',
+        area: 'auth',
+        routes: ['/invite/[token]', '/dashboard/settings'],
+    },
+    {
+        id: 'invite-invalid-state',
+        title: 'Invalid, expired, or used invite links show a friendly message',
+        area: 'auth',
+        routes: ['/invite/[token]'],
+    },
+    {
+        id: 'invite-email-locked',
+        title: 'Email-bound invite pre-fills the signup email read-only',
+        area: 'auth',
+        routes: ['/invite/[token]'],
+    },
+    {
+        id: 'sponsored-no-trial-ui',
+        title: 'Sponsored users see no trial badge or countdown',
+        area: 'auth',
+        routes: ['/dashboard/settings'],
     },
 
     /* ---------------------------------------------------------------- */
