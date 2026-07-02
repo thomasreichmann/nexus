@@ -1,6 +1,14 @@
 // Re-export from canonical source in @nexus/db
 export { RESTORE_TIERS, type RestoreTier } from '@nexus/db/schema';
 
+/**
+ * Days a restored Glacier copy stays accessible. Also the length of the
+ * synthetic download window for standard-tier retrievals, which skip S3
+ * restore entirely — keep the two in lockstep so both tiers present the
+ * same window.
+ */
+export const DEFAULT_RESTORE_DAYS_TO_KEEP = 7;
+
 export interface RestoreStatus {
     status: 'not-started' | 'in-progress' | 'completed';
     /** Present only when status === 'completed' */
