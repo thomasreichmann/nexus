@@ -138,6 +138,24 @@ test.describe('with a seeded library', () => {
     );
 
     test(
+        'deep-link ?file={id} highlights the target file',
+        { tag: ['@uc:files-deep-link-focus'] },
+        async ({ page, seededLibrary }) => {
+            // The retrieval-ready email lands here; the target row should be
+            // in view and visibly highlighted.
+            await page.goto(`${PAGE_URL}?file=${seededLibrary.archivedB.id}`);
+
+            const row = page.locator(
+                `[data-file-id="${seededLibrary.archivedB.id}"]`
+            );
+            await expect(row).toBeInViewport();
+            // The highlight tint is seeded from the query param at first paint
+            // and clears on a timer, so assert it before it fades.
+            await expect(row).toHaveClass(/bg-primary\/10/);
+        }
+    );
+
+    test(
         'search filters files and shows the no-match state',
         { tag: ['@uc:files-search'] },
         async ({ page, seededLibrary }) => {

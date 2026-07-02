@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -261,7 +261,12 @@ function SelectableIcon({
     );
 }
 
-export function FileBrowser() {
+interface FileBrowserProps {
+    /** Deep-link target (`?file={id}`): scroll to and highlight this file. */
+    focusFileId?: string;
+}
+
+export function FileBrowser({ focusFileId }: FileBrowserProps) {
     const trpc = useTRPC();
     const invalidateFileList = useInvalidateFileList();
 
@@ -286,6 +291,30 @@ export function FileBrowser() {
 
     const groups = useMemo(() => groupsData ?? [], [groupsData]);
     const counts = countsData ?? { archived: 0, retrieving: 0, available: 0 };
+
+    // Seeded from the deep-link so the target row is highlighted from first
+    // paint; cleared on a timer once we've scrolled to it.
+    const [highlightedFileId, setHighlightedFileId] = useState<string | null>(
+        focusFileId ?? null
+    );
+    const hasScrolledToFocus = useRef(false);
+
+    // Deep-link focus (retrieval-ready email lands here): once the list loads,
+    // scroll the target file into view. Runs once per mount; batches render
+    // expanded by default so the row is in the DOM.
+    useEffect(() => {
+        if (!focusFileId || hasScrolledToFocus.current) return;
+        if (!groups.some((g) => g.files.some((f) => f.id === focusFileId)))
+            return;
+        hasScrolledToFocus.current = true;
+
+        document
+            .querySelector(`[data-file-id="${CSS.escape(focusFileId)}"]`)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // No cleanup: re-runs early-return via the ref, and clearing here would
+        // cancel the fade whenever an unrelated dep change re-fires the effect.
+        setTimeout(() => setHighlightedFileId(null), 2500);
+    }, [focusFileId, groups]);
 
     // Search filters files inside each group and drops groups that empty out.
     // Client-side is fine for the validation cohort; revisit when datasets grow.
@@ -601,6 +630,10 @@ export function FileBrowser() {
                                                         isSelected={selectedFiles.includes(
                                                             file.id
                                                         )}
+                                                        isHighlighted={
+                                                            file.id ===
+                                                            highlightedFileId
+                                                        }
                                                         hasSelection={
                                                             hasSelection
                                                         }
@@ -650,6 +683,10 @@ export function FileBrowser() {
                                                         isSelected={selectedFiles.includes(
                                                             file.id
                                                         )}
+                                                        isHighlighted={
+                                                            file.id ===
+                                                            highlightedFileId
+                                                        }
                                                         hasSelection={
                                                             hasSelection
                                                         }
@@ -900,6 +937,7 @@ function BatchRestoreSlot({ batchId, files }: BatchRestoreSlotProps) {
 interface FileItemProps {
     file: File;
     isSelected: boolean;
+    isHighlighted: boolean;
     hasSelection: boolean;
     onSelect: (shiftKey: boolean) => void;
 }
@@ -944,18 +982,26 @@ function useFileActions(file: File) {
     };
 }
 
-function FileRow({ file, isSelected, hasSelection, onSelect }: FileItemProps) {
+function FileRow({
+    file,
+    isSelected,
+    isHighlighted,
+    hasSelection,
+    onSelect,
+}: FileItemProps) {
     const status = deriveStatus(file);
     const actions = useFileActions(file);
     const ext = getFileExtension(file.name);
 
     return (
         <TableRow
+            data-file-id={file.id}
             data-state={isSelected ? 'selected' : undefined}
             className={cn(
                 'cursor-pointer transition-colors',
                 isSelected &&
-                    'bg-primary/4 hover:bg-primary/6 dark:bg-primary/8 dark:hover:bg-primary/10'
+                    'bg-primary/4 hover:bg-primary/6 dark:bg-primary/8 dark:hover:bg-primary/10',
+                isHighlighted && 'bg-primary/10 dark:bg-primary/15'
             )}
             onClick={(e) => onSelect(e.shiftKey)}
         >
@@ -996,18 +1042,26 @@ function FileRow({ file, isSelected, hasSelection, onSelect }: FileItemProps) {
     );
 }
 
-function FileCard({ file, isSelected, hasSelection, onSelect }: FileItemProps) {
+function FileCard({
+    file,
+    isSelected,
+    isHighlighted,
+    hasSelection,
+    onSelect,
+}: FileItemProps) {
     const status = deriveStatus(file);
     const actions = useFileActions(file);
     const ext = getFileExtension(file.name);
 
     return (
         <Card
+            data-file-id={file.id}
             className={cn(
                 'group relative cursor-pointer py-0 transition-all',
                 isSelected
                     ? 'ring-2 ring-primary/30 bg-primary/2 dark:bg-primary/6'
-                    : 'hover:border-border/80'
+                    : 'hover:border-border/80',
+                isHighlighted && 'ring-2 ring-primary/40'
             )}
             onClick={(e) => onSelect(e.shiftKey)}
         >

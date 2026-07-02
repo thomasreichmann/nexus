@@ -1,6 +1,8 @@
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
 import { createRetrievalRepo, type Retrieval } from '@nexus/db/repo/retrievals';
+import { env } from '@/lib/env';
+import { emailService } from '@/server/services/email';
 import { logger } from '@/server/lib/logger';
 import type { S3EventRecord } from '@/lib/sns/types';
 
@@ -72,6 +74,45 @@ async function handleRestoreCompleted(
         { fileId: file.id, retrievalId: retrieval.id, expiresAt },
         'Retrieval marked as ready'
     );
+
+    await sendReadyNotification(db, file, retrieval, expiresAt);
+}
+
+// The email links to the app (login → file focused → Download), not a presigned
+// S3 URL: presigned URLs expire in an hour while the restore stays downloadable
+// until expiresAt, and minting the S3 URL on click keeps it revocable.
+async function sendReadyNotification(
+    db: DB,
+    file: File,
+    retrieval: Retrieval,
+    expiresAt: Date | undefined
+): Promise<void> {
+    // Completed events always carry the restore expiry in practice; a missing
+    // one means a malformed event, and the template needs a date to render.
+    if (!expiresAt) {
+        log.warn(
+            { fileId: file.id, retrievalId: retrieval.id },
+            'Skipping retrieval-ready email: no expiry available'
+        );
+        return;
+    }
+
+    try {
+        await emailService.sendRetrievalReadyEmail(db, {
+            userId: file.userId,
+            fileName: file.name,
+            downloadUrl: `${env.NEXT_PUBLIC_APP_URL}/dashboard/files?file=${file.id}`,
+            expiresAt,
+        });
+    } catch (err) {
+        // The restore completed and status is persisted — a notification
+        // failure must not mark the webhook event as failed. (The email
+        // service swallows send errors itself; this guards its user lookup.)
+        log.error(
+            { err, fileId: file.id, retrievalId: retrieval.id },
+            'Retrieval-ready notification failed after restore completion'
+        );
+    }
 }
 
 async function handleRestoreExpired(

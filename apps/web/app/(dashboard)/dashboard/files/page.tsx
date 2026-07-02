@@ -1,6 +1,14 @@
 import { FileBrowser } from '@/components/dashboard/file-browser';
 
-export default function FilesPage() {
+interface FilesPageProps {
+    searchParams: Promise<{ file?: string }>;
+}
+
+// `?file={id}` is the deep-link target used by the retrieval-ready email —
+// FileBrowser scrolls to and highlights that file.
+export default async function FilesPage({ searchParams }: FilesPageProps) {
+    const { file } = await searchParams;
+
     return (
         <div className="mx-auto max-w-6xl space-y-6">
             <div>
@@ -9,7 +17,7 @@ export default function FilesPage() {
                     Browse and manage your archived files
                 </p>
             </div>
-            <FileBrowser />
+            <FileBrowser focusFileId={file} />
         </div>
     );
 }

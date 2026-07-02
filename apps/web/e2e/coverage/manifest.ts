@@ -230,6 +230,12 @@ export const USE_CASES: UseCaseEntry[] = [
         area: 'files',
         routes: ['/dashboard/files'],
     },
+    {
+        id: 'files-deep-link-focus',
+        title: 'Deep-link ?file={id} highlights the target file (retrieval-ready email landing)',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
 
     /* ---------------------------------------------------------------- */
     /* Upload                                                            */
