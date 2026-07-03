@@ -84,9 +84,12 @@ export const files = pgTable(
         size: bigint('size', { mode: 'number' }).notNull(),
         mimeType: text('mime_type'),
         s3Key: text('s3_key').notNull().unique(),
+        // Defaults to 'standard' because that's where every upload lands in
+        // S3; the bucket lifecycle rule transitions objects to Deep Archive
+        // and the s3:LifecycleTransition webhook flips this column to match.
         storageTier: storageTierEnum('storage_tier')
             .notNull()
-            .default('glacier'),
+            .default('standard'),
         status: fileStatusEnum('status').notNull().default('uploading'),
         ...timestamps(),
         lastAccessedAt: timestamp('last_accessed_at'),

@@ -1,0 +1,1 @@
+ALTER TABLE "files" ALTER COLUMN "storage_tier" SET DEFAULT 'standard';

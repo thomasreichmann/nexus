@@ -22,6 +22,9 @@ function createSnsNotification(
     s3Key: string,
     glacierEventData?: {
         restoreEventData: { lifecycleRestorationExpiryTime: string };
+    },
+    lifecycleEventData?: {
+        transitionEventData: { destinationStorageClass: string };
     }
 ) {
     const record: Record<string, unknown> = {
@@ -34,6 +37,10 @@ function createSnsNotification(
 
     if (glacierEventData) {
         record.glacierEventData = glacierEventData;
+    }
+
+    if (lifecycleEventData) {
+        record.lifecycleEventData = lifecycleEventData;
     }
 
     return {
@@ -315,6 +322,67 @@ describe('POST /api/webhooks/s3-restore', () => {
         // Verify webhook event was marked as processed
         expect(webhookRecord).toBeDefined();
         expect(webhookRecord!.status).toBe('processed');
+    });
+
+    it('flips the file storage tier on LifecycleTransition', async () => {
+        const messageId = `lifecycle-test-${crypto.randomUUID()}`;
+        const s3Key = `${testUserId}/${testFileId}/test-document.pdf`;
+
+        // Seeded as 'glacier'; the transition event should flip it
+        await db
+            .update(files)
+            .set({ storageTier: 'glacier' })
+            .where(eq(files.id, testFileId));
+
+        const body = createSnsNotification(
+            messageId,
+            's3:LifecycleTransition',
+            s3Key,
+            undefined,
+            { transitionEventData: { destinationStorageClass: 'DEEP_ARCHIVE' } }
+        );
+
+        const res = await postWebhook(body);
+        expect(res.status).toBe(200);
+
+        // Track for cleanup
+        const webhookRecord = await db.query.webhookEvents.findFirst({
+            where: and(
+                eq(webhookEvents.source, 'sns'),
+                eq(webhookEvents.externalId, messageId)
+            ),
+        });
+        if (webhookRecord) createdWebhookEventIds.push(webhookRecord.id);
+
+        const file = await db.query.files.findFirst({
+            where: eq(files.id, testFileId),
+        });
+
+        expect(file).toBeDefined();
+        expect(file!.storageTier).toBe('deep_archive');
+
+        expect(webhookRecord).toBeDefined();
+        expect(webhookRecord!.status).toBe('processed');
+    });
+
+    it('inserts files rows with a standard storage tier by default', async () => {
+        const fileId = `test-file-default-${crypto.randomUUID()}`;
+        await db.insert(files).values({
+            id: fileId,
+            userId: testUserId,
+            name: 'default-tier.pdf',
+            size: 2048,
+            s3Key: `${testUserId}/${fileId}/default-tier.pdf`,
+        });
+
+        try {
+            const file = await db.query.files.findFirst({
+                where: eq(files.id, fileId),
+            });
+            expect(file!.storageTier).toBe('standard');
+        } finally {
+            await db.delete(files).where(eq(files.id, fileId));
+        }
     });
 
     it('handles unknown event types gracefully', async () => {

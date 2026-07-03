@@ -123,6 +123,77 @@ describe('s3RestoreService.dispatch', () => {
         });
     });
 
+    describe('lifecycle transition', () => {
+        function makeTransitionRecord(
+            destinationStorageClass?: string
+        ): S3EventRecord {
+            return makeRecord({
+                eventName: 's3:LifecycleTransition',
+                glacierEventData: undefined,
+                lifecycleEventData: destinationStorageClass
+                    ? { transitionEventData: { destinationStorageClass } }
+                    : undefined,
+            });
+        }
+
+        it('flips the file storage tier to deep_archive', async () => {
+            const handled = await s3RestoreService.dispatch(
+                mockDb.db,
+                makeTransitionRecord('DEEP_ARCHIVE')
+            );
+
+            expect(handled).toBe(true);
+            expect(mockDb.mocks.set).toHaveBeenCalledWith({
+                storageTier: 'deep_archive',
+            });
+        });
+
+        it('logs and ignores events for unknown files', async () => {
+            mockDb.mocks.files.findFirst.mockResolvedValue(undefined);
+
+            const handled = await s3RestoreService.dispatch(
+                mockDb.db,
+                makeTransitionRecord('DEEP_ARCHIVE')
+            );
+
+            expect(handled).toBe(true);
+            expect(mockDb.mocks.set).not.toHaveBeenCalled();
+            expect(hoisted.logger.warn).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    s3Key: 'uploads/test-file.jpg',
+                }),
+                'Lifecycle transition for unknown file'
+            );
+        });
+
+        it('logs and skips unmapped destination storage classes', async () => {
+            const handled = await s3RestoreService.dispatch(
+                mockDb.db,
+                makeTransitionRecord('GLACIER_IR')
+            );
+
+            expect(handled).toBe(true);
+            expect(mockDb.mocks.set).not.toHaveBeenCalled();
+            expect(hoisted.logger.warn).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    fileId: TEST_FILE_ID,
+                    destinationStorageClass: 'GLACIER_IR',
+                }),
+                'Lifecycle transition to unmapped storage class'
+            );
+        });
+
+        it('logs and skips events with no transition data', async () => {
+            const handled = await s3RestoreService.dispatch(
+                mockDb.db,
+                makeTransitionRecord()
+            );
+
+            expect(handled).toBe(true);
+            expect(mockDb.mocks.set).not.toHaveBeenCalled();
+        });
+    });
+
     describe('non-completion events', () => {
         it('sends no email on restore expiry', async () => {
             const handled = await s3RestoreService.dispatch(

@@ -46,6 +46,9 @@ const glacierMocks = {
 
 const objectsMocks = {
     remove: async (): Promise<void> => {},
+    listAll: async (): Promise<
+        { key: string; size?: number; storageClass?: string }[]
+    > => [],
 };
 
 const multipartMocks = {

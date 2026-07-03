@@ -5,6 +5,7 @@ import { env } from '@/lib/env';
 import { emailService } from '@/server/services/email';
 import { logger } from '@/server/lib/logger';
 import type { S3EventRecord } from '@/lib/sns/types';
+import { resolveStorageTier } from '@/lib/storage/types';
 
 const log = logger.child({ service: 's3-restore' });
 
@@ -13,6 +14,7 @@ type S3RestoreEventHandler = (db: DB, record: S3EventRecord) => Promise<void>;
 const handlers: Record<string, S3RestoreEventHandler> = {
     's3:ObjectRestore:Completed': handleRestoreCompleted,
     's3:ObjectRestore:Delete': handleRestoreExpired,
+    's3:LifecycleTransition': handleLifecycleTransition,
 };
 
 // S3 encodes spaces as `+` in event notification keys
@@ -131,6 +133,40 @@ async function handleRestoreExpired(
     log.info(
         { fileId: file.id, retrievalId: retrieval.id },
         'Retrieval marked as expired'
+    );
+}
+
+// Keeps files.storageTier truthful: uploads insert as 'standard' (the class
+// every upload lands in) and this flips the row when the bucket lifecycle
+// rule actually moves the object. Sub-128KB objects never transition, so
+// their rows stay 'standard' permanently — that's correct, not a miss.
+async function handleLifecycleTransition(
+    db: DB,
+    record: S3EventRecord
+): Promise<void> {
+    const fileRepo = createFileRepo(db);
+    const s3Key = decodeS3Key(record);
+    const file = await fileRepo.findByS3Key(s3Key);
+    if (!file) {
+        log.warn({ s3Key }, 'Lifecycle transition for unknown file');
+        return;
+    }
+
+    const destinationStorageClass =
+        record.lifecycleEventData?.transitionEventData?.destinationStorageClass;
+    const storageTier = resolveStorageTier(destinationStorageClass);
+    if (!storageTier) {
+        log.warn(
+            { fileId: file.id, s3Key, destinationStorageClass },
+            'Lifecycle transition to unmapped storage class'
+        );
+        return;
+    }
+
+    await fileRepo.update(file.id, { storageTier });
+    log.info(
+        { fileId: file.id, s3Key, storageTier },
+        'Storage tier updated from lifecycle transition'
     );
 }
 

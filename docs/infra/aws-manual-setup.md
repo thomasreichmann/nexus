@@ -105,7 +105,7 @@ Add these to Vercel (Development environment):
 
 ## SNS Topic for S3 Restore Events
 
-Receives S3 Glacier restore lifecycle events (`s3:ObjectRestore:Post`, `s3:ObjectRestore:Completed`, `s3:ObjectRestore:Delete`) and delivers them to the webhook endpoint via HTTPS subscription.
+Receives S3 Glacier restore events (`s3:ObjectRestore:Post`, `s3:ObjectRestore:Completed`, `s3:ObjectRestore:Delete`) and lifecycle transition events (`s3:LifecycleTransition`, which keeps `files.storageTier` truthful when the lifecycle rule moves an object to Deep Archive) and delivers them to the webhook endpoint via HTTPS subscription.
 
 See [[../guides/webhooks|Webhook Handling]] for the webhook pattern and signature verification.
 
@@ -198,11 +198,16 @@ aws sns subscribe \
     --protocol https \
     --notification-endpoint "https://{domain}/api/webhooks/s3-restore" \
     --attributes "{
-        \"RawMessageDelivery\": \"true\",
         \"RedrivePolicy\": \"{\\\"deadLetterTargetArn\\\":\\\"$DLQ_ARN\\\"}\"
     }" \
     --region "$REGION"
 ```
+
+> **Do not enable `RawMessageDelivery`.** The webhook handler parses the full
+> SNS envelope (`Type`, `MessageId`, `Message`) and verifies its signature;
+> raw delivery strips the envelope and would break both. Dev subscribes
+> `https://nexus.thomasar.dev/api/webhooks/s3-restore` (provisioned
+> 2026-07-03).
 
 > **Note:** The endpoint must be deployed and respond to the SNS `SubscriptionConfirmation` request before the subscription becomes active. Replace `{domain}` with the actual Vercel deployment URL.
 
@@ -217,7 +222,8 @@ aws s3api put-bucket-notification-configuration \
             "Events": [
                 "s3:ObjectRestore:Post",
                 "s3:ObjectRestore:Completed",
-                "s3:ObjectRestore:Delete"
+                "s3:ObjectRestore:Delete",
+                "s3:LifecycleTransition"
             ]
         }]
     }'

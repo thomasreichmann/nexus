@@ -20,7 +20,8 @@
         "e2e:coverage": "tsx scripts/e2e-coverage.ts",
         "test:integration": "vitest run --config vitest.integration.config.ts",
         "screenshots": "tsx scripts/screenshots.ts",
-        "backfill:trial-subscriptions": "tsx --env-file=.env.local scripts/backfill-trial-subscriptions.ts"
+        "backfill:trial-subscriptions": "tsx --env-file=.env.local scripts/backfill-trial-subscriptions.ts",
+        "backfill:storage-tier": "tsx --env-file=.env.local scripts/backfill-storage-tier.ts"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.975.0",
