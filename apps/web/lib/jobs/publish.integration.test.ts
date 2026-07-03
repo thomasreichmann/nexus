@@ -31,7 +31,12 @@ describe('jobs.publish() integration', () => {
             where: eq(backgroundJobs.id, job.id),
         });
 
+        // Only assert on what publish() owns: the row exists with the inserted
+        // fields. The live dev worker may have already consumed the message and
+        // transitioned status, so re-asserting 'pending' here races it (#262);
+        // the returned row above already proves the insert used 'pending'.
         expect(found).toBeDefined();
-        expect(found!.status).toBe('pending');
+        expect(found!.type).toBe('delete-account');
+        expect(found!.payload).toEqual({ userId: 'integration-test-user' });
     });
 });

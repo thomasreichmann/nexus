@@ -313,7 +313,7 @@ pnpm -F web test:integration
 - Asserts that a `background_jobs` record is created with status `pending` and that the SQS publish resolves without error
 - Cleans up test DB records in `afterAll`
 
-> **Note:** The dev Lambda event source mapping is active, so test messages will be consumed by the real worker. Since the test only asserts on the publish side, this doesn't affect test correctness.
+> **Note:** The dev Lambda event source mapping is active, so test messages will be consumed by the real worker, which may transition the job's status (e.g. to `failed`) at any point after publish. The test therefore asserts only on publish-owned state — the returned row and the inserted fields — never on `status` re-read from the DB (#262).
 
 ## Related
 
