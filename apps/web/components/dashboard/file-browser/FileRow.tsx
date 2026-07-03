@@ -18,6 +18,7 @@ export function FileRow({
     isHighlighted,
     hasSelection,
     onSelect,
+    ref,
 }: FileItemProps) {
     const status = deriveStatus(file);
     const actions = useFileActions(file);
@@ -26,7 +27,7 @@ export function FileRow({
 
     return (
         <TableRow
-            data-file-id={file.id}
+            ref={ref}
             data-state={isSelected ? 'selected' : undefined}
             className={cn(
                 'cursor-pointer transition-colors',

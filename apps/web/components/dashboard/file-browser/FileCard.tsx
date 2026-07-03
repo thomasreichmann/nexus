@@ -18,6 +18,7 @@ export function FileCard({
     isHighlighted,
     hasSelection,
     onSelect,
+    ref,
 }: FileItemProps) {
     const status = deriveStatus(file);
     const actions = useFileActions(file);
@@ -26,7 +27,7 @@ export function FileCard({
 
     return (
         <Card
-            data-file-id={file.id}
+            ref={ref}
             className={cn(
                 'group relative cursor-pointer py-0 transition-all',
                 isSelected

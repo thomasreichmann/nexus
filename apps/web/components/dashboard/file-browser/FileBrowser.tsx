@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -83,22 +83,16 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
     );
     const hasScrolledToFocus = useRef(false);
 
-    // Deep-link focus (retrieval-ready email lands here): once the list loads,
-    // scroll the target file into view. Runs once per mount; batches render
-    // expanded by default so the row is in the DOM.
-    useEffect(() => {
-        if (!focusFileId || hasScrolledToFocus.current) return;
-        if (!groups.some((g) => g.files.some((f) => f.id === focusFileId)))
-            return;
+    // Deep-link focus (retrieval-ready email lands here): attached to the
+    // target row in both views, fires when the row mounts. Guarded so later
+    // remounts (search filter, view-mode toggle) don't re-scroll.
+    const focusRowRef = useCallback((node: HTMLElement | null) => {
+        if (!node || hasScrolledToFocus.current) return;
         hasScrolledToFocus.current = true;
 
-        document
-            .querySelector(`[data-file-id="${CSS.escape(focusFileId)}"]`)
-            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // No cleanup: re-runs early-return via the ref, and clearing here would
-        // cancel the fade whenever an unrelated dep change re-fires the effect.
+        node.scrollIntoView({ behavior: 'smooth', block: 'center' });
         setTimeout(() => setHighlightedFileId(null), 2500);
-    }, [focusFileId, groups]);
+    }, []);
 
     // Search filters files inside each group and drops groups that empty out.
     // Client-side is fine for the validation cohort; revisit when datasets grow.
@@ -412,6 +406,12 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                                                 group.files.map((file) => (
                                                     <FileRow
                                                         key={file.id}
+                                                        ref={
+                                                            file.id ===
+                                                            focusFileId
+                                                                ? focusRowRef
+                                                                : undefined
+                                                        }
                                                         file={file}
                                                         isSelected={selectedFiles.includes(
                                                             file.id
@@ -465,6 +465,12 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                                                 {group.files.map((file) => (
                                                     <FileCard
                                                         key={file.id}
+                                                        ref={
+                                                            file.id ===
+                                                            focusFileId
+                                                                ? focusRowRef
+                                                                : undefined
+                                                        }
                                                         file={file}
                                                         isSelected={selectedFiles.includes(
                                                             file.id

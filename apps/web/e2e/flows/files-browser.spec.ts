@@ -164,9 +164,9 @@ test.describe('with a seeded library', () => {
             // in view and visibly highlighted.
             await page.goto(`${PAGE_URL}?file=${seededLibrary.archivedB.id}`);
 
-            const row = page.locator(
-                `[data-file-id="${seededLibrary.archivedB.id}"]`
-            );
+            const row = page.getByRole('row', {
+                name: seededLibrary.archivedB.name,
+            });
             await expect(row).toBeInViewport();
             // The highlight tint is seeded from the query param at first paint
             // and clears on a timer, so assert it before it fades.
