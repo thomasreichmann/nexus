@@ -98,8 +98,34 @@ describe('retrieval service', () => {
             ).rejects.toThrow(NotFoundError);
         });
 
-        it('throws InvalidStateError when file is not in Glacier tier', async () => {
+        it('marks standard-tier file ready immediately without calling RestoreObject', async () => {
+            const restoreManySpy = vi.spyOn(mockS3.glacier, 'restoreMany');
             const file = createFileFixture({ storageTier: 'standard' });
+            const retrieval = createRetrievalFixture({ status: 'ready' });
+
+            mocks.files.findMany.mockResolvedValue([file]);
+            mocks.retrievals.findMany.mockResolvedValue([]);
+            mocks.returning.mockResolvedValue([retrieval]);
+
+            const result = await retrievalService.requestRetrieval(
+                db,
+                TEST_USER_ID,
+                TEST_FILE_ID
+            );
+
+            expect(result).toEqual(retrieval);
+            expect(restoreManySpy).not.toHaveBeenCalled();
+            expect(mocks.values).toHaveBeenCalledWith([
+                expect.objectContaining({
+                    status: 'ready',
+                    readyAt: expect.any(Date),
+                    expiresAt: expect.any(Date),
+                }),
+            ]);
+        });
+
+        it('throws InvalidStateError when file is not available', async () => {
+            const file = createFileFixture({ status: 'uploading' });
 
             mocks.files.findMany.mockResolvedValue([file]);
             mocks.retrievals.findMany.mockResolvedValue([]);
@@ -196,7 +222,61 @@ describe('retrieval service', () => {
             ).rejects.toThrow(NotFoundError);
         });
 
-        it('throws InvalidStateError when any file is not in Glacier tier', async () => {
+        it('restores only archived files in a mixed-tier request; standard files are ready immediately', async () => {
+            const restoreManySpy = vi.spyOn(mockS3.glacier, 'restoreMany');
+            const files = [
+                createFileFixture({
+                    id: 'file1',
+                    s3Key: 'user/file1',
+                    storageTier: 'glacier',
+                }),
+                createFileFixture({
+                    id: 'file2',
+                    s3Key: 'user/file2',
+                    storageTier: 'standard',
+                }),
+            ];
+            const newRetrievals = [
+                createRetrievalFixture({ id: 'r1', fileId: 'file1' }),
+                createRetrievalFixture({
+                    id: 'r2',
+                    fileId: 'file2',
+                    status: 'ready',
+                }),
+            ];
+
+            mocks.files.findMany.mockResolvedValue(files);
+            mocks.retrievals.findMany.mockResolvedValue([]);
+            mocks.returning.mockResolvedValue(newRetrievals);
+
+            const result = await retrievalService.requestBulkRetrieval(
+                db,
+                TEST_USER_ID,
+                ['file1', 'file2'],
+                'standard'
+            );
+
+            expect(result).toHaveLength(2);
+            expect(restoreManySpy).toHaveBeenCalledExactlyOnceWith(
+                ['user/file1'],
+                'standard',
+                expect.any(Number)
+            );
+            expect(mocks.values).toHaveBeenCalledWith([
+                expect.objectContaining({
+                    fileId: 'file1',
+                    status: 'pending',
+                }),
+                expect.objectContaining({
+                    fileId: 'file2',
+                    status: 'ready',
+                    readyAt: expect.any(Date),
+                    expiresAt: expect.any(Date),
+                }),
+            ]);
+        });
+
+        it('throws InvalidStateError when any file is not available', async () => {
             const files = [
                 createFileFixture({
                     id: 'file1',
@@ -204,7 +284,7 @@ describe('retrieval service', () => {
                 }),
                 createFileFixture({
                     id: 'file2',
-                    storageTier: 'standard',
+                    status: 'deleted',
                 }),
             ];
 
@@ -321,23 +401,166 @@ describe('retrieval service', () => {
             ).rejects.toThrow(InvalidStateError);
         });
 
-        it('throws InvalidStateError when any file is not in a Glacier tier', async () => {
+        it('marks an all-standard batch ready immediately without calling RestoreObject', async () => {
+            const restoreManySpy = vi.spyOn(mockS3.glacier, 'restoreMany');
             const batch = createUploadBatchFixture();
             const files = [
-                createFileFixture({ id: 'f1', storageTier: 'glacier' }),
-                createFileFixture({ id: 'f2', storageTier: 'standard' }),
+                createFileFixture({
+                    id: 'f1',
+                    batchId: batch.id,
+                    storageTier: 'standard',
+                }),
+                createFileFixture({
+                    id: 'f2',
+                    batchId: batch.id,
+                    storageTier: 'standard',
+                }),
             ];
+            const newRetrievals = [
+                createRetrievalFixture({
+                    id: 'r1',
+                    fileId: 'f1',
+                    batchId: batch.id,
+                    status: 'ready',
+                }),
+                createRetrievalFixture({
+                    id: 'r2',
+                    fileId: 'f2',
+                    batchId: batch.id,
+                    status: 'ready',
+                }),
+            ];
+
+            mocks.uploadBatches.findFirst.mockResolvedValue(batch);
+            mocks.files.findMany.mockResolvedValue(files);
+            mocks.retrievals.findMany.mockResolvedValue([]);
+            mocks.returning.mockResolvedValue(newRetrievals);
+
+            const result = await retrievalService.requestBatchRetrieval(
+                db,
+                TEST_USER_ID,
+                batch.id
+            );
+
+            expect(result).toHaveLength(2);
+            expect(restoreManySpy).not.toHaveBeenCalled();
+            expect(mocks.values).toHaveBeenCalledWith([
+                expect.objectContaining({ fileId: 'f1', status: 'ready' }),
+                expect.objectContaining({ fileId: 'f2', status: 'ready' }),
+            ]);
+        });
+    });
+
+    describe('getBatchRetrievalStatus', () => {
+        it('is not ready while any file in the batch is still restoring', async () => {
+            const batch = createUploadBatchFixture();
+            const files = [
+                createFileFixture({ id: 'f1', batchId: batch.id }),
+                createFileFixture({ id: 'f2', batchId: batch.id }),
+            ];
+            const retrievals = [
+                createRetrievalFixture({
+                    id: 'r1',
+                    fileId: 'f1',
+                    batchId: batch.id,
+                    status: 'ready',
+                }),
+                createRetrievalFixture({
+                    id: 'r2',
+                    fileId: 'f2',
+                    batchId: batch.id,
+                    status: 'in_progress',
+                }),
+            ];
+
+            mocks.uploadBatches.findFirst.mockResolvedValue(batch);
+            mocks.files.findMany.mockResolvedValue(files);
+            mocks.retrievals.findMany.mockResolvedValue(retrievals);
+
+            const result = await retrievalService.getBatchRetrievalStatus(
+                db,
+                TEST_USER_ID,
+                batch.id
+            );
+
+            expect(result).toEqual({
+                totalFiles: 2,
+                readyFiles: 1,
+                isReady: false,
+            });
+        });
+
+        it('is ready when every file in the batch has a ready retrieval', async () => {
+            const batch = createUploadBatchFixture();
+            const files = [
+                createFileFixture({ id: 'f1', batchId: batch.id }),
+                createFileFixture({ id: 'f2', batchId: batch.id }),
+            ];
+            // f1 was retrieved individually before the batch request — its
+            // row has no batchId but must still count toward readiness.
+            const retrievals = [
+                createRetrievalFixture({
+                    id: 'r1',
+                    fileId: 'f1',
+                    batchId: null,
+                    status: 'ready',
+                }),
+                createRetrievalFixture({
+                    id: 'r2',
+                    fileId: 'f2',
+                    batchId: batch.id,
+                    status: 'ready',
+                }),
+            ];
+
+            mocks.uploadBatches.findFirst.mockResolvedValue(batch);
+            mocks.files.findMany.mockResolvedValue(files);
+            mocks.retrievals.findMany.mockResolvedValue(retrievals);
+
+            const result = await retrievalService.getBatchRetrievalStatus(
+                db,
+                TEST_USER_ID,
+                batch.id
+            );
+
+            expect(result).toEqual({
+                totalFiles: 2,
+                readyFiles: 2,
+                isReady: true,
+            });
+        });
+
+        it('is not ready when no retrievals were requested', async () => {
+            const batch = createUploadBatchFixture();
+            const files = [createFileFixture({ id: 'f1', batchId: batch.id })];
+
             mocks.uploadBatches.findFirst.mockResolvedValue(batch);
             mocks.files.findMany.mockResolvedValue(files);
             mocks.retrievals.findMany.mockResolvedValue([]);
 
+            const result = await retrievalService.getBatchRetrievalStatus(
+                db,
+                TEST_USER_ID,
+                batch.id
+            );
+
+            expect(result).toEqual({
+                totalFiles: 1,
+                readyFiles: 0,
+                isReady: false,
+            });
+        });
+
+        it('throws NotFoundError when batch missing or not owned', async () => {
+            mocks.uploadBatches.findFirst.mockResolvedValue(undefined);
+
             await expect(
-                retrievalService.requestBatchRetrieval(
+                retrievalService.getBatchRetrievalStatus(
                     db,
                     TEST_USER_ID,
-                    batch.id
+                    TEST_BATCH_ID
                 )
-            ).rejects.toThrow(InvalidStateError);
+            ).rejects.toThrow(NotFoundError);
         });
     });
 

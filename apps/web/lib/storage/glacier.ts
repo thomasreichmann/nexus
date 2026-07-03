@@ -1,5 +1,6 @@
 import { RestoreObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { client, bucket } from './client';
+import { DEFAULT_RESTORE_DAYS_TO_KEEP } from './types';
 import type { RestoreTier, RestoreStatus } from './types';
 
 const tierMapping: Record<RestoreTier, 'Expedited' | 'Standard' | 'Bulk'> = {
@@ -17,7 +18,7 @@ const tierMapping: Record<RestoreTier, 'Expedited' | 'Standard' | 'Bulk'> = {
 export async function restore(
     key: string,
     tier: RestoreTier,
-    daysToKeep = 7
+    daysToKeep = DEFAULT_RESTORE_DAYS_TO_KEEP
 ): Promise<void> {
     const command = new RestoreObjectCommand({
         Bucket: bucket,
@@ -40,7 +41,7 @@ export async function restore(
 export async function restoreMany(
     keys: string[],
     tier: RestoreTier,
-    daysToKeep = 7
+    daysToKeep = DEFAULT_RESTORE_DAYS_TO_KEEP
 ): Promise<void> {
     await Promise.all(keys.map((key) => restore(key, tier, daysToKeep)));
 }

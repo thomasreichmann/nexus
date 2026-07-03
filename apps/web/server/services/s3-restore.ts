@@ -35,7 +35,9 @@ async function resolveRetrieval(
         return null;
     }
 
-    const retrieval = await retrievalRepo.findByFileId(file.id);
+    // Unfiltered lookup: the expiry event arrives at/after `expiresAt`, when
+    // the active-filtered queries no longer see the row.
+    const retrieval = await retrievalRepo.findLatestByFileId(file.id);
     if (!retrieval) {
         log.warn(
             { fileId: file.id, s3Key },
