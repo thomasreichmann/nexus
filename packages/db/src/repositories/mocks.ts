@@ -24,10 +24,13 @@ export function createMockDb() {
     const set: AnyMock = vi.fn(() => ({ where }));
     const onConflictDoUpdate: AnyMock = vi.fn(() => ({ returning }));
     const values: AnyMock = vi.fn(() => ({ returning, onConflictDoUpdate }));
-    // leftJoin has its own `where` so the `.where().orderBy()` terminal here
-    // doesn't collide with the awaitable `where` used by simpler chains.
-    const leftJoinWhere: AnyMock = vi.fn(() => ({ orderBy }));
+    // leftJoin has its own `where` so the `.where().orderBy()`/`.where()
+    // .groupBy()` terminals here don't collide with the awaitable `where`
+    // used by simpler chains. leftJoin returns itself so chains may stack
+    // any number of joins.
+    const leftJoinWhere: AnyMock = vi.fn(() => ({ orderBy, groupBy }));
     const leftJoin: AnyMock = vi.fn(() => ({
+        leftJoin,
         where: leftJoinWhere,
         orderBy,
     }));

@@ -411,11 +411,15 @@ describe('files repository', () => {
                     file: fileInBatch,
                     batchName: batch.name,
                     batchCreatedAt: batch.createdAt,
+                    retrievalStatus: null,
+                    retrievalExpiresAt: null,
                 },
                 {
                     file: orphanFile,
                     batchName: null,
                     batchCreatedAt: null,
+                    retrievalStatus: null,
+                    retrievalExpiresAt: null,
                 },
             ]);
 
@@ -425,13 +429,40 @@ describe('files repository', () => {
             const named = result.find((g) => g.batchId === 'batch-1');
             expect(named).toBeDefined();
             expect(named!.batchName).toBe('Silva Wedding');
-            expect(named!.files).toEqual([fileInBatch]);
+            expect(named!.files).toEqual([
+                { ...fileInBatch, activeRetrieval: null },
+            ]);
 
             const orphan = result.find((g) => g.batchId === null);
             expect(orphan).toBeDefined();
             expect(orphan!.batchName).toBeNull();
             expect(orphan!.batchCreatedAt).toBeNull();
-            expect(orphan!.files).toEqual([orphanFile]);
+            expect(orphan!.files).toEqual([
+                { ...orphanFile, activeRetrieval: null },
+            ]);
+        });
+
+        it('attaches the joined active retrieval to its file', async () => {
+            const file = createFileFixture({ id: 'f-ready', batchId: null });
+            const expiresAt = new Date('2026-07-10T00:00:00Z');
+            mocks.orderBy.mockResolvedValue([
+                {
+                    file,
+                    batchName: null,
+                    batchCreatedAt: null,
+                    retrievalStatus: 'ready',
+                    retrievalExpiresAt: expiresAt,
+                },
+            ]);
+
+            const result = await repo.findByUserGroupedByBatch(TEST_USER_ID);
+
+            expect(result[0].files).toEqual([
+                {
+                    ...file,
+                    activeRetrieval: { status: 'ready', expiresAt },
+                },
+            ]);
         });
 
         it('returns empty array when user has no files', async () => {
@@ -451,18 +482,25 @@ describe('files repository', () => {
                     file: f1,
                     batchName: batch.name,
                     batchCreatedAt: batch.createdAt,
+                    retrievalStatus: null,
+                    retrievalExpiresAt: null,
                 },
                 {
                     file: f2,
                     batchName: batch.name,
                     batchCreatedAt: batch.createdAt,
+                    retrievalStatus: null,
+                    retrievalExpiresAt: null,
                 },
             ]);
 
             const result = await repo.findByUserGroupedByBatch(TEST_USER_ID);
 
             expect(result).toHaveLength(1);
-            expect(result[0].files).toEqual([f1, f2]);
+            expect(result[0].files).toEqual([
+                { ...f1, activeRetrieval: null },
+                { ...f2, activeRetrieval: null },
+            ]);
         });
     });
 });

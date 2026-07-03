@@ -262,7 +262,19 @@ export const USE_CASES: UseCaseEntry[] = [
     },
     {
         id: 'files-standard-tier-archived',
-        title: 'Standard-tier files render archived with Retrieve, no Download',
+        title: 'Standard-tier files without a retrieval render archived with Retrieve, no Download',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
+        id: 'files-ready-download-window',
+        title: 'Ready retrieval renders available with a download window (uniform across tiers)',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
+        id: 'files-retrieve-dialog-estimate',
+        title: 'Retrieve dialog shows a tier-derived time estimate',
         area: 'files',
         routes: ['/dashboard/files'],
     },

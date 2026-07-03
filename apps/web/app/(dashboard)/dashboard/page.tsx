@@ -16,7 +16,11 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSession } from '@/lib/auth/client';
 import { useTRPC } from '@/lib/trpc/client';
-import { formatBytes, formatRelativeTime } from '@/lib/format';
+import {
+    formatBytes,
+    formatDownloadWindow,
+    formatRelativeTime,
+} from '@/lib/format';
 import { StorageUsageBar } from '@/components/dashboard/StorageUsageBar';
 import { StorageByType } from '@/components/dashboard/StorageByType';
 import { UploadHistory } from '@/components/dashboard/UploadHistory';
@@ -247,7 +251,11 @@ export default function DashboardPage() {
                                     <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
                                         <span>{formatBytes(r.fileSize)}</span>
                                         <span>
-                                            {formatRelativeTime(r.createdAt)}
+                                            {formatDownloadWindow(
+                                                r.status,
+                                                r.expiresAt
+                                            ) ??
+                                                formatRelativeTime(r.createdAt)}
                                         </span>
                                     </div>
                                 </div>

@@ -52,14 +52,14 @@ import {
     Snowflake,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { formatBytes, formatDate } from '@/lib/format';
+import { formatBytes, formatDate, formatDownloadWindow } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
-import type { File } from '@nexus/db/repo/files';
-import type { FileBatchGroup } from '@nexus/db/repo/files';
+import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
+import type { FileBatchGroup, FileWithRetrieval } from '@nexus/db/repo/files';
 
 type DerivedStatus = 'archived' | 'retrieving' | 'available';
 
@@ -68,13 +68,24 @@ const SEARCH_DEBOUNCE_MS = 300;
 // Keep in lockstep with countStatusesByUser in
 // packages/db/src/repositories/files.ts — the library-wide stats bar bucket
 // counts must match the per-row status dots derived here.
-function deriveStatus(file: File): DerivedStatus {
+function deriveStatus(file: FileWithRetrieval): DerivedStatus {
+    // The active retrieval wins, uniformly across tiers (#259): a ready row
+    // is downloadable within its window, a queued/restoring row is in
+    // flight. Without one the file sits archived — never Download, since
+    // getDownloadUrl can't serve without a ready retrieval (#256).
+    if (file.activeRetrieval) {
+        return file.activeRetrieval.status === 'ready'
+            ? 'available'
+            : 'retrieving';
+    }
     if (file.status === 'restoring') return 'retrieving';
-    // Every tier renders as archived: standard-tier rows (fresh uploads
-    // pre-transition, sub-128KB files) must not surface a Download action
-    // that getDownloadUrl can't serve without a ready retrieval (#256).
-    if (file.status === 'available') return 'archived';
-    return 'available';
+    return 'archived';
+}
+
+function getDownloadWindowLabel(file: FileWithRetrieval): string | null {
+    const retrieval = file.activeRetrieval;
+    if (!retrieval) return null;
+    return formatDownloadWindow(retrieval.status, retrieval.expiresAt);
 }
 
 function getFileExtension(name: string): string {
@@ -364,9 +375,13 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
     const selectedFileObjects = visibleFiles.filter((f) =>
         selectedFiles.includes(f.id)
     );
-    const hasArchivedSelected = selectedFileObjects.some(
+    // Only archived files can be retrieved — available ones already have a
+    // download window and retrieving ones are in flight.
+    const retrievableSelectedFiles = selectedFileObjects.filter(
         (f) => deriveStatus(f) === 'archived'
     );
+    const hasArchivedSelected = retrievableSelectedFiles.length > 0;
+    const [isRetrieveDialogOpen, setIsRetrieveDialogOpen] = useState(false);
 
     const toggleSelectAll = () => {
         if (selectedFiles.length === visibleFiles.length) {
@@ -403,9 +418,7 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
     }
 
     function handleBulkRetrieval() {
-        const archivedIds = selectedFileObjects
-            .filter((f) => deriveStatus(f) === 'archived')
-            .map((f) => f.id);
+        const archivedIds = retrievableSelectedFiles.map((f) => f.id);
         if (archivedIds.length > 0) {
             bulkRetrievalMutation.reset();
             bulkRetrievalMutation.mutate({ fileIds: archivedIds });
@@ -721,7 +734,7 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                         <Button
                             variant="ghost"
                             size="sm"
-                            onClick={handleBulkRetrieval}
+                            onClick={() => setIsRetrieveDialogOpen(true)}
                             disabled={
                                 !hasArchivedSelected ||
                                 bulkRetrievalMutation.isPending
@@ -734,6 +747,15 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                             )}
                             Retrieve
                         </Button>
+                        <RetrieveDialog
+                            open={isRetrieveDialogOpen}
+                            onOpenChange={setIsRetrieveDialogOpen}
+                            tiers={retrievableSelectedFiles.map(
+                                (f) => f.storageTier
+                            )}
+                            fileCount={retrievableSelectedFiles.length}
+                            onConfirm={handleBulkRetrieval}
+                        />
                         <AlertDialog>
                             <AlertDialogTrigger
                                 render={
@@ -873,12 +895,13 @@ function BatchHeaderRow({
 
 interface BatchRestoreSlotProps {
     batchId: string;
-    files: File[];
+    files: FileWithRetrieval[];
 }
 
 function BatchRestoreSlot({ batchId, files }: BatchRestoreSlotProps) {
     const trpc = useTRPC();
     const invalidateFileList = useInvalidateFileList();
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
     const mutation = useMutation(
         trpc.files.requestBatchRetrieval.mutationOptions({
             onSuccess() {
@@ -892,10 +915,10 @@ function BatchRestoreSlot({ batchId, files }: BatchRestoreSlotProps) {
     );
 
     const fileCount = files.length;
-    const restoringCount = files.filter((f) => f.status === 'restoring').length;
-    const eligibleCount = files.filter(
-        (f) => deriveStatus(f) === 'archived'
+    const restoringCount = files.filter(
+        (f) => deriveStatus(f) === 'retrieving'
     ).length;
+    const eligibleFiles = files.filter((f) => deriveStatus(f) === 'archived');
 
     if (restoringCount === fileCount && fileCount > 0) {
         return (
@@ -912,36 +935,45 @@ function BatchRestoreSlot({ batchId, files }: BatchRestoreSlotProps) {
             </span>
         );
     }
-    if (eligibleCount === 0) return null;
+    if (eligibleFiles.length === 0) return null;
 
     return (
-        <Button
-            variant="outline"
-            size="sm"
-            onClick={() => mutation.mutate({ batchId, tier: 'standard' })}
-            disabled={mutation.isPending}
-            className="shrink-0"
-        >
-            <RotateCw
-                className={cn(
-                    'mr-1.5 h-3.5 w-3.5',
-                    mutation.isPending && 'animate-spin'
-                )}
+        <>
+            <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsDialogOpen(true)}
+                disabled={mutation.isPending}
+                className="shrink-0"
+            >
+                <RotateCw
+                    className={cn(
+                        'mr-1.5 h-3.5 w-3.5',
+                        mutation.isPending && 'animate-spin'
+                    )}
+                />
+                {mutation.isPending ? 'Requesting…' : 'Restore batch'}
+            </Button>
+            <RetrieveDialog
+                open={isDialogOpen}
+                onOpenChange={setIsDialogOpen}
+                tiers={eligibleFiles.map((f) => f.storageTier)}
+                fileCount={eligibleFiles.length}
+                onConfirm={() => mutation.mutate({ batchId, tier: 'standard' })}
             />
-            {mutation.isPending ? 'Requesting…' : 'Restore batch'}
-        </Button>
+        </>
     );
 }
 
 interface FileItemProps {
-    file: File;
+    file: FileWithRetrieval;
     isSelected: boolean;
     isHighlighted: boolean;
     hasSelection: boolean;
     onSelect: (shiftKey: boolean) => void;
 }
 
-function useFileActions(file: File) {
+function useFileActions(file: FileWithRetrieval) {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
     const invalidateFileList = useInvalidateFileList();
@@ -991,6 +1023,7 @@ function FileRow({
     const status = deriveStatus(file);
     const actions = useFileActions(file);
     const ext = getFileExtension(file.name);
+    const downloadWindow = getDownloadWindowLabel(file);
 
     return (
         <TableRow
@@ -1033,9 +1066,18 @@ function FileRow({
             </TableCell>
             <TableCell>
                 <StatusDot status={status} />
+                {downloadWindow && (
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                        {downloadWindow}
+                    </p>
+                )}
             </TableCell>
             <TableCell onClick={(e) => e.stopPropagation()}>
-                <FileActions status={status} {...actions} />
+                <FileActions
+                    status={status}
+                    storageTier={file.storageTier}
+                    {...actions}
+                />
             </TableCell>
         </TableRow>
     );
@@ -1051,6 +1093,7 @@ function FileCard({
     const status = deriveStatus(file);
     const actions = useFileActions(file);
     const ext = getFileExtension(file.name);
+    const downloadWindow = getDownloadWindowLabel(file);
 
     return (
         <Card
@@ -1082,7 +1125,11 @@ function FileCard({
                         )}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <FileActions status={status} {...actions} />
+                        <FileActions
+                            status={status}
+                            storageTier={file.storageTier}
+                            {...actions}
+                        />
                     </div>
                 </div>
                 <p className="truncate text-sm/tight font-medium">
@@ -1098,7 +1145,14 @@ function FileCard({
                             </>
                         )}
                     </span>
-                    <StatusDot status={status} />
+                    <div className="flex flex-col items-end gap-0.5">
+                        <StatusDot status={status} />
+                        {downloadWindow && (
+                            <p className="text-xs text-muted-foreground">
+                                {downloadWindow}
+                            </p>
+                        )}
+                    </div>
                 </div>
             </CardContent>
         </Card>
@@ -1107,6 +1161,7 @@ function FileCard({
 
 interface FileActionsProps {
     status: DerivedStatus;
+    storageTier: FileWithRetrieval['storageTier'];
     onDelete: () => void;
     onRetrieval: () => void;
     onDownload: () => void;
@@ -1116,62 +1171,75 @@ interface FileActionsProps {
 
 function FileActions({
     status,
+    storageTier,
     onDelete,
     onRetrieval,
     onDownload,
     isDeleting,
     isRetrieving,
 }: FileActionsProps) {
+    // The dialog lives outside the dropdown: menu content unmounts on close,
+    // which would tear the dialog down mid-open.
+    const [isRetrieveDialogOpen, setIsRetrieveDialogOpen] = useState(false);
     return (
-        <DropdownMenu>
-            <DropdownMenuTrigger
-                render={<Button variant="ghost" size="icon-sm" />}
-            >
-                <MoreHorizontal className="size-4" />
-                <span className="sr-only">Actions</span>
-            </DropdownMenuTrigger>
-            <DropdownMenuPositioner align="end">
-                <DropdownMenuContent>
-                    {status === 'archived' && (
+        <>
+            <RetrieveDialog
+                open={isRetrieveDialogOpen}
+                onOpenChange={setIsRetrieveDialogOpen}
+                tiers={[storageTier]}
+                fileCount={1}
+                onConfirm={onRetrieval}
+            />
+            <DropdownMenu>
+                <DropdownMenuTrigger
+                    render={<Button variant="ghost" size="icon-sm" />}
+                >
+                    <MoreHorizontal className="size-4" />
+                    <span className="sr-only">Actions</span>
+                </DropdownMenuTrigger>
+                <DropdownMenuPositioner align="end">
+                    <DropdownMenuContent>
+                        {status === 'archived' && (
+                            <DropdownMenuItem
+                                onClick={() => setIsRetrieveDialogOpen(true)}
+                                disabled={isRetrieving}
+                            >
+                                {isRetrieving ? (
+                                    <Loader2 className="mr-2 size-4 animate-spin" />
+                                ) : (
+                                    <Clock className="mr-2 size-4" />
+                                )}
+                                Request retrieval
+                            </DropdownMenuItem>
+                        )}
+                        {status === 'available' && (
+                            <DropdownMenuItem onClick={onDownload}>
+                                <Download className="mr-2 size-4" />
+                                Download
+                            </DropdownMenuItem>
+                        )}
+                        {status === 'retrieving' && (
+                            <DropdownMenuItem disabled>
+                                <RotateCw className="mr-2 size-4" />
+                                Retrieving...
+                            </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
                         <DropdownMenuItem
-                            onClick={onRetrieval}
-                            disabled={isRetrieving}
+                            className="text-destructive focus:text-destructive"
+                            onClick={onDelete}
+                            disabled={isDeleting}
                         >
-                            {isRetrieving ? (
+                            {isDeleting ? (
                                 <Loader2 className="mr-2 size-4 animate-spin" />
                             ) : (
-                                <Clock className="mr-2 size-4" />
+                                <Trash2 className="mr-2 size-4" />
                             )}
-                            Request retrieval
+                            Delete
                         </DropdownMenuItem>
-                    )}
-                    {status === 'available' && (
-                        <DropdownMenuItem onClick={onDownload}>
-                            <Download className="mr-2 size-4" />
-                            Download
-                        </DropdownMenuItem>
-                    )}
-                    {status === 'retrieving' && (
-                        <DropdownMenuItem disabled>
-                            <RotateCw className="mr-2 size-4" />
-                            Retrieving...
-                        </DropdownMenuItem>
-                    )}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onClick={onDelete}
-                        disabled={isDeleting}
-                    >
-                        {isDeleting ? (
-                            <Loader2 className="mr-2 size-4 animate-spin" />
-                        ) : (
-                            <Trash2 className="mr-2 size-4" />
-                        )}
-                        Delete
-                    </DropdownMenuItem>
-                </DropdownMenuContent>
-            </DropdownMenuPositioner>
-        </DropdownMenu>
+                    </DropdownMenuContent>
+                </DropdownMenuPositioner>
+            </DropdownMenu>
+        </>
     );
 }

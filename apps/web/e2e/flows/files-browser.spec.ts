@@ -40,6 +40,7 @@ interface SeededLibrary {
     archivedA: File;
     archivedB: File;
     readyDoc: File;
+    standardDoc: File;
 }
 
 const test = base.extend<
@@ -77,23 +78,38 @@ const test = base.extend<
                 createdAt: new Date(now - 1000),
                 updatedAt: new Date(now - 1000),
             });
-            // One ungrouped standard-tier file with a ready retrieval. Every
-            // tier derives status "archived" (#256), so this row must render
-            // identically to the deep_archive ones: Retrieve, no Download.
+            // One ungrouped standard-tier file with a ready retrieval (#257
+            // fast path): renders "available" with a download window, exactly
+            // like a restored deep_archive copy would (#259).
             const readyDoc = await insertFile(db, {
                 userId,
                 name: 'ready-doc-ccc.pdf',
                 size: 3000,
                 storageTier: 'standard',
                 status: 'available',
+                createdAt: new Date(now - 100),
+                updatedAt: new Date(now - 100),
             });
             await insertRetrieval(db, {
                 userId,
                 fileId: readyDoc.id,
                 status: 'ready',
             });
+            // One ungrouped standard-tier file with no retrieval: archived
+            // with Retrieve only (#256), and the all-standard estimate case.
+            // Seeded older than readyDoc so it sorts last — the shift-click
+            // range test anchors on flat row order.
+            const standardDoc = await insertFile(db, {
+                userId,
+                name: 'plain-doc-ddd.txt',
+                size: 500,
+                storageTier: 'standard',
+                status: 'available',
+                createdAt: new Date(now - 3000),
+                updatedAt: new Date(now - 3000),
+            });
 
-            await use({ batch, archivedA, archivedB, readyDoc });
+            await use({ batch, archivedA, archivedB, readyDoc, standardDoc });
 
             // Tear the library down before the dedicated user is deleted.
             await deleteUserData(db, userId);
@@ -132,11 +148,11 @@ test.describe('with a seeded library', () => {
                 page.getByText(seededLibrary.archivedA.name)
             ).toBeVisible();
 
-            await expect(page.getByText('3 files')).toBeVisible();
-            // Standard tier counts as archived (#256); the "available" chip
-            // only renders for a non-zero count, so it must be absent.
+            await expect(page.getByText('4 files')).toBeVisible();
+            // The ready-retrieval file counts as available (#259); files
+            // without one count as archived regardless of tier (#256).
             await expect(page.getByText('3 archived')).toBeVisible();
-            await expect(page.getByText(/\d+ available/)).toBeHidden();
+            await expect(page.getByText('1 available')).toBeVisible();
         }
     );
 
@@ -247,10 +263,10 @@ test.describe('with a seeded library', () => {
             ).toBeVisible();
 
             await page.getByRole('checkbox', { name: 'Select all' }).click();
-            await expect(page.getByText('3 selected')).toBeVisible();
+            await expect(page.getByText('4 selected')).toBeVisible();
 
             await page.getByRole('button', { name: 'Clear selection' }).click();
-            await expect(page.getByText('3 selected')).toBeHidden();
+            await expect(page.getByText('4 selected')).toBeHidden();
         }
     );
 
@@ -282,8 +298,13 @@ test.describe('with a seeded library', () => {
     );
 
     test(
-        'bulk retrieve submits the archived selection',
-        { tag: ['@uc:files-bulk-retrieve'] },
+        'bulk retrieve confirms through the estimate dialog',
+        {
+            tag: [
+                '@uc:files-bulk-retrieve',
+                '@uc:files-retrieve-dialog-estimate',
+            ],
+        },
         async ({ page, seededLibrary }) => {
             const calls = await interceptTrpcCalls(
                 page,
@@ -295,7 +316,7 @@ test.describe('with a seeded library', () => {
                 page.getByText(seededLibrary.archivedA.name)
             ).toBeVisible();
 
-            // Archived files selected → Retrieve fires the bulk mutation.
+            // Archived files selected → Retrieve opens the estimate dialog.
             await page
                 .getByRole('button', {
                     name: `Select ${seededLibrary.archivedA.name}`,
@@ -308,13 +329,21 @@ test.describe('with a seeded library', () => {
                 .click();
             await page.getByRole('button', { name: 'Retrieve' }).click();
 
+            // glacier + deep_archive selection → slow estimate.
+            const dialog = page.getByRole('alertdialog');
+            await expect(dialog.getByText('Retrieve 2 files?')).toBeVisible();
+            await expect(
+                dialog.getByText('Ready in up to 12 hours')
+            ).toBeVisible();
+            await dialog.getByRole('button', { name: 'Retrieve' }).click();
+
             await expect.poll(() => calls.length).toBe(1);
             expect(calls[0]).toContain('fileIds');
         }
     );
 
     test(
-        'single file retrieval fires from the actions menu',
+        'single file retrieval confirms through the estimate dialog',
         { tag: ['@uc:files-request-retrieval-single'] },
         async ({ page, seededLibrary }) => {
             const calls = await interceptTrpcCalls(
@@ -335,13 +364,21 @@ test.describe('with a seeded library', () => {
                 .getByRole('menuitem', { name: 'Request retrieval' })
                 .click();
 
+            // Single deep_archive file → slow estimate.
+            const dialog = page.getByRole('alertdialog');
+            await expect(dialog.getByText('Retrieve 1 file?')).toBeVisible();
+            await expect(
+                dialog.getByText('Ready in up to 12 hours')
+            ).toBeVisible();
+            await dialog.getByRole('button', { name: 'Retrieve' }).click();
+
             await expect.poll(() => calls.length).toBe(1);
             expect(calls[0]).toContain('fileId');
         }
     );
 
     test(
-        'batch restore fires from the batch header',
+        'batch restore confirms through the estimate dialog',
         { tag: ['@uc:files-batch-restore'] },
         async ({ page, seededLibrary }) => {
             const calls = await interceptTrpcCalls(
@@ -359,27 +396,33 @@ test.describe('with a seeded library', () => {
 
             await page.getByRole('button', { name: /Restore batch/i }).click();
 
+            const dialog = page.getByRole('alertdialog');
+            await expect(dialog.getByText('Retrieve 2 files?')).toBeVisible();
+            await dialog.getByRole('button', { name: 'Retrieve' }).click();
+
             await expect.poll(() => calls.length).toBe(1);
             expect(calls[0]).toContain('batchId');
         }
     );
 
     test(
-        'standard-tier file renders archived with Retrieve, no Download',
-        { tag: ['@uc:files-standard-tier-archived'] },
+        'ready standard-tier file renders available with a download window',
+        { tag: ['@uc:files-ready-download-window'] },
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
             await expect(
                 page.getByText(seededLibrary.readyDoc.name)
             ).toBeVisible();
 
-            // Row renders identically to a deep_archive row (#256).
+            // The synthetic 7-day window (#257) renders exactly like a real
+            // restore's: status "available" plus the expiry date.
             const row = page.locator('tr', {
                 hasText: seededLibrary.readyDoc.name,
             });
-            await expect(row.getByText('archived')).toBeVisible();
+            await expect(row.getByText('available')).toBeVisible();
+            await expect(row.getByText(/until /)).toBeVisible();
 
-            // Selecting it counts toward the bulk Retrieve selection.
+            // Already downloadable → doesn't count toward bulk Retrieve.
             await page
                 .getByRole('button', {
                     name: `Select ${seededLibrary.readyDoc.name}`,
@@ -387,10 +430,41 @@ test.describe('with a seeded library', () => {
                 .click();
             await expect(
                 page.getByRole('button', { name: 'Retrieve' })
-            ).toBeEnabled();
+            ).toBeDisabled();
             await page.getByRole('button', { name: 'Clear selection' }).click();
 
-            // Actions menu offers Retrieve only — no Download for any tier.
+            // Actions menu offers Download, not Request retrieval.
+            await row.getByRole('button', { name: 'Actions' }).click();
+            await expect(
+                page.getByRole('menuitem', { name: 'Download' })
+            ).toBeVisible();
+            await expect(
+                page.getByRole('menuitem', { name: 'Request retrieval' })
+            ).toHaveCount(0);
+            await page.keyboard.press('Escape');
+        }
+    );
+
+    test(
+        'standard-tier file without a retrieval renders archived and estimates ~minutes',
+        {
+            tag: [
+                '@uc:files-standard-tier-archived',
+                '@uc:files-retrieve-dialog-estimate',
+            ],
+        },
+        async ({ page, seededLibrary }) => {
+            await page.goto(PAGE_URL);
+            await expect(
+                page.getByText(seededLibrary.standardDoc.name)
+            ).toBeVisible();
+
+            // No retrieval yet → archived with Retrieve only, no Download,
+            // same as the colder tiers (#256).
+            const row = page.locator('tr', {
+                hasText: seededLibrary.standardDoc.name,
+            });
+            await expect(row.getByText('archived')).toBeVisible();
             await row.getByRole('button', { name: 'Actions' }).click();
             await expect(
                 page.getByRole('menuitem', { name: 'Request retrieval' })
@@ -399,6 +473,17 @@ test.describe('with a seeded library', () => {
                 page.getByRole('menuitem', { name: 'Download' })
             ).toHaveCount(0);
             await page.keyboard.press('Escape');
+
+            // All-standard selection → fast estimate.
+            await page
+                .getByRole('button', {
+                    name: `Select ${seededLibrary.standardDoc.name}`,
+                })
+                .click();
+            await page.getByRole('button', { name: 'Retrieve' }).click();
+            const dialog = page.getByRole('alertdialog');
+            await expect(dialog.getByText('Ready in ~minutes')).toBeVisible();
+            await dialog.getByRole('button', { name: 'Cancel' }).click();
         }
     );
 
@@ -439,6 +524,9 @@ test.describe('with a seeded library', () => {
             ).toBeHidden();
             await expect(
                 page.getByText(seededLibrary.readyDoc.name)
+            ).toBeVisible();
+            await expect(
+                page.getByText(seededLibrary.standardDoc.name)
             ).toBeVisible();
         }
     );

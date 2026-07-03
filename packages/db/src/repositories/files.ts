@@ -13,9 +13,24 @@ import {
 import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
+import { activeRetrievalFilter } from './retrievals';
 
 export type File = typeof schema.files.$inferSelect;
 export type NewFile = typeof schema.files.$inferInsert;
+
+export interface ActiveRetrievalSummary {
+    status: (typeof schema.retrievals.status.enumValues)[number];
+    expiresAt: Date | null;
+}
+
+/**
+ * File row plus its active retrieval, if any. At most one retrieval per file
+ * matches the active predicate: the retrieval service skips files that
+ * already have an active row, so the join can't fan out.
+ */
+export type FileWithRetrieval = File & {
+    activeRetrieval: ActiveRetrievalSummary | null;
+};
 
 export type FileSortKey = 'name' | 'size' | 'uploadedAt';
 export type FileSortOrder = 'asc' | 'desc';
@@ -171,9 +186,9 @@ async function countByUser(
  * apps/web/components/dashboard/file-browser.tsx — keep the two in lockstep
  * or UI counts will disagree with per-row status dots. Hidden statuses
  * (`uploading`, `deleted`) are always excluded since they don't fit any
- * bucket and would produce a NULL category from the CASE below. The
- * `available` bucket is currently always 0 — every tier renders as
- * archived (#256) until the retrieval fast-path lands.
+ * bucket and would produce a NULL category from the CASE below. Buckets are
+ * derived from the file's active retrieval first (ready → available,
+ * queued/restoring → retrieving), so both tiers count identically (#259).
  */
 async function countStatusesByUser(
     db: DB,
@@ -183,13 +198,26 @@ async function countStatusesByUser(
         .select({
             category: sql<keyof StatusCategoryCounts | null>`
                 CASE
+                    WHEN ${schema.retrievals.status} = 'ready' THEN 'available'
+                    WHEN ${schema.retrievals.status} IN ('pending', 'in_progress') THEN 'retrieving'
                     WHEN ${schema.files.status} = 'restoring' THEN 'retrieving'
                     WHEN ${schema.files.status} = 'available' THEN 'archived'
                     ELSE NULL
                 END`.as('category'),
-            count: sql<number>`count(*)::int`.as('count'),
+            // DISTINCT guards against join fan-out from duplicate active
+            // retrievals (#266) double-counting a file within a bucket.
+            count: sql<number>`count(distinct ${schema.files.id})::int`.as(
+                'count'
+            ),
         })
         .from(schema.files)
+        .leftJoin(
+            schema.retrievals,
+            and(
+                eq(schema.retrievals.fileId, schema.files.id),
+                activeRetrievalFilter()
+            )
+        )
         .where(buildUserFilesWhereClause(userId, false))
         .groupBy(sql`category`);
 
@@ -353,7 +381,7 @@ export interface FileBatchGroup {
     batchId: string | null;
     batchName: string | null;
     batchCreatedAt: Date | null;
-    files: File[];
+    files: FileWithRetrieval[];
 }
 
 // Postgres defaults DESC to NULLS FIRST; we want orphan (null-batch) rows
@@ -368,11 +396,20 @@ async function findByUserGroupedByBatch(
             file: schema.files,
             batchName: schema.uploadBatches.name,
             batchCreatedAt: schema.uploadBatches.createdAt,
+            retrievalStatus: schema.retrievals.status,
+            retrievalExpiresAt: schema.retrievals.expiresAt,
         })
         .from(schema.files)
         .leftJoin(
             schema.uploadBatches,
             eq(schema.files.batchId, schema.uploadBatches.id)
+        )
+        .leftJoin(
+            schema.retrievals,
+            and(
+                eq(schema.retrievals.fileId, schema.files.id),
+                activeRetrievalFilter()
+            )
         )
         .where(buildUserFilesWhereClause(userId, opts.includeHidden ?? false))
         .orderBy(
@@ -395,7 +432,21 @@ async function findByUserGroupedByBatch(
             };
             groups.set(key, group);
         }
-        group.files.push(row.file);
+        // The service guards against concurrent duplicate active retrievals,
+        // but nothing at the DB level does yet (#266) — if a race slips two
+        // active rows in, the join fans out. Keep the first row (duplicates
+        // are adjacent: ordering is by file columns only) rather than
+        // duplicating the file in the UI.
+        if (group.files.at(-1)?.id === row.file.id) continue;
+        group.files.push({
+            ...row.file,
+            activeRetrieval: row.retrievalStatus
+                ? {
+                      status: row.retrievalStatus,
+                      expiresAt: row.retrievalExpiresAt,
+                  }
+                : null,
+        });
     }
 
     return Array.from(groups.values());

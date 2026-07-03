@@ -11,7 +11,9 @@ export type NewRetrieval = typeof schema.retrievals.$inferInsert;
 // predicate rather than by stored status: standard-tier fast-path rows never
 // get an S3 expiry event, and Deep Archive rows can miss theirs. A lapsed row
 // no longer blocks a fresh retrieval of the same file.
-function activeRetrievalFilter() {
+// Exported for the files repo, which joins the active retrieval per file so
+// the file list can render ready/retrieving state from the same predicate.
+export function activeRetrievalFilter() {
     return or(
         inArray(schema.retrievals.status, ['pending', 'in_progress']),
         and(
