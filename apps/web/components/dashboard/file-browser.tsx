@@ -70,11 +70,10 @@ const SEARCH_DEBOUNCE_MS = 300;
 // counts must match the per-row status dots derived here.
 function deriveStatus(file: File): DerivedStatus {
     if (file.status === 'restoring') return 'retrieving';
-    if (
-        file.status === 'available' &&
-        (file.storageTier === 'glacier' || file.storageTier === 'deep_archive')
-    )
-        return 'archived';
+    // Every tier renders as archived: standard-tier rows (fresh uploads
+    // pre-transition, sub-128KB files) must not surface a Download action
+    // that getDownloadUrl can't serve without a ready retrieval (#256).
+    if (file.status === 'available') return 'archived';
     return 'available';
 }
 
