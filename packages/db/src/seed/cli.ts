@@ -1,6 +1,8 @@
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
 
+// Dev-only tool: loads the web app's .env.local, the single env source for
+// all local tooling — see docs/guides/environment-setup.md.
 config({
     path: resolve(import.meta.dirname, '../../../../apps/web/.env.local'),
 });

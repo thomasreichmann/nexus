@@ -142,13 +142,14 @@ pnpm dev                                         # http://localhost:3000
 
 Validated at startup by [`apps/web/lib/env/schema.ts`](apps/web/lib/env/schema.ts) (the canonical list) and imported type-safely via `@/lib/env`. A missing or malformed variable fails the build, not a request.
 
-| Category | Variables                                                                                                                  |
-| -------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Database | `DATABASE_URL`, `SUPABASE_SECRET_KEY`                                                                                      |
-| Auth     | `BETTER_AUTH_SECRET` (32+ chars)                                                                                           |
-| AWS      | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET`, `SQS_QUEUE_URL`                                   |
-| Stripe   | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`                                                                               |
-| Public   | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_STRIPE_PUBLIC_KEY`, `NEXT_PUBLIC_APP_URL` |
+| Category | Variables                                                                                |
+| -------- | ---------------------------------------------------------------------------------------- |
+| Database | `DATABASE_URL`                                                                           |
+| Auth     | `BETTER_AUTH_SECRET` (32+ chars)                                                         |
+| AWS      | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET`, `SQS_QUEUE_URL` |
+| Stripe   | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`                                             |
+| Email    | `RESEND_API_KEY`, `RESEND_FROM_EMAIL`                                                    |
+| Public   | `NEXT_PUBLIC_APP_URL`                                                                    |
 
 ## Commands
 

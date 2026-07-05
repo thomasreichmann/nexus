@@ -36,6 +36,26 @@ pnpm -F worker test         # Run tests
 pnpm -F worker lint         # Lint
 ```
 
+## Environment
+
+The worker does not read `.env` files or Vercel env, and does not use the web
+app's Zod schema. Its environment is set per-environment on the Lambda
+function configuration:
+
+| Variable       | Purpose                                                    |
+| -------------- | ---------------------------------------------------------- |
+| `DATABASE_URL` | Postgres connection string (pooled, port 6543 — PgBouncer) |
+
+`DATABASE_URL` is validated at first invocation (`src/handler.ts`) and throws
+a descriptive error if missing. To set it:
+
+```bash
+aws lambda update-function-configuration \
+    --function-name nexus-worker \
+    --environment "Variables={DATABASE_URL=postgresql://...}" \
+    --region us-east-1
+```
+
 ## Deployment
 
 The build produces a single self-contained ES module (`dist/handler.js`) with all dependencies bundled. Deploy to Lambda:
@@ -55,4 +75,4 @@ aws lambda update-function-code \
 - **Runtime:** Node.js 22, ES modules
 - **Database:** Connects via Supabase PgBouncer (port 6543) with `prepare: false` to handle Lambda's concurrent execution model
 - **Bundler:** tsup (esbuild) — bundles all dependencies into a single file
-- **Infrastructure:** Managed via Terraform in `infra/terraform/`
+- **Infrastructure:** Provisioned manually — see `docs/infra/aws-manual-setup.md` (Terraform is planned but not yet in the repo)

@@ -100,7 +100,7 @@ Add these to Vercel (Development environment):
 | ----------------------- | ------------------------- |
 | `AWS_ACCESS_KEY_ID`     | (stored in Vercel)        |
 | `AWS_SECRET_ACCESS_KEY` | (stored in Vercel)        |
-| `AWS_S3_BUCKET`         | `nexus-storage-files-dev` |
+| `S3_BUCKET`             | `nexus-storage-files-dev` |
 | `AWS_REGION`            | `us-east-1`               |
 
 ## SNS Topic for S3 Restore Events

@@ -40,6 +40,11 @@ pnpm env:pull
 
 This creates `apps/web/.env.local` with all variables from your Vercel Development environment.
 
+`apps/web/.env.local` is the single env source for all local tooling —
+`packages/db` (drizzle-kit, seed CLI), `tooling/capture`, and the e2e suite
+all load it via hardcoded relative paths. This is a deliberate dev-only
+assumption: deployed code (Vercel, Lambda) never reads `.env` files.
+
 ## File Structure
 
 ```
@@ -75,30 +80,46 @@ Secret key for session signing and token generation.
 
 File storage credentials for S3/Glacier operations.
 
-| Variable                | Type   | Description                    |
-| ----------------------- | ------ | ------------------------------ |
-| `AWS_ACCESS_KEY_ID`     | Server | IAM access key                 |
-| `AWS_SECRET_ACCESS_KEY` | Server | IAM secret key                 |
-| `AWS_REGION`            | Server | AWS region (e.g., `us-east-1`) |
-| `S3_BUCKET`             | Server | S3 bucket name                 |
+| Variable                | Type   | Description                       |
+| ----------------------- | ------ | --------------------------------- |
+| `AWS_ACCESS_KEY_ID`     | Server | IAM access key                    |
+| `AWS_SECRET_ACCESS_KEY` | Server | IAM secret key                    |
+| `AWS_REGION`            | Server | AWS region (e.g., `us-east-1`)    |
+| `S3_BUCKET`             | Server | S3 bucket name                    |
+| `SQS_QUEUE_URL`         | Server | Queue URL for S3 event processing |
 
 ### Stripe
 
-Payment processing credentials.
+Payment processing credentials. Server-side only — there is no Stripe.js on the client, so no publishable key is needed.
 
-| Variable                        | Type   | Description            |
-| ------------------------------- | ------ | ---------------------- |
-| `NEXT_PUBLIC_STRIPE_PUBLIC_KEY` | Public | Publishable key        |
-| `STRIPE_SECRET_KEY`             | Server | Secret key             |
-| `STRIPE_WEBHOOK_SECRET`         | Server | Webhook signing secret |
+| Variable                | Type   | Description            |
+| ----------------------- | ------ | ---------------------- |
+| `STRIPE_SECRET_KEY`     | Server | Secret key             |
+| `STRIPE_WEBHOOK_SECRET` | Server | Webhook signing secret |
+
+### Email (Resend)
+
+Transactional email credentials.
+
+| Variable            | Type   | Description                                    |
+| ------------------- | ------ | ---------------------------------------------- |
+| `RESEND_API_KEY`    | Server | Resend API key                                 |
+| `RESEND_FROM_EMAIL` | Server | From address (`Name <addr@domain>` also works) |
 
 ### App
 
 Application-level configuration.
 
-| Variable              | Type   | Description                 |
-| --------------------- | ------ | --------------------------- |
-| `NEXT_PUBLIC_APP_URL` | Public | Base URL of the application |
+| Variable              | Type   | Description                                                            |
+| --------------------- | ------ | ---------------------------------------------------------------------- |
+| `NEXT_PUBLIC_APP_URL` | Public | Base URL of the application                                            |
+| `LOG_ERROR_VERBOSITY` | Server | Optional: `minimal` \| `standard` \| `full` (defaults per environment) |
+
+### Worker (AWS Lambda)
+
+`apps/worker` does not use Vercel env or the web app's Zod schema. Its
+environment (`DATABASE_URL`) is set per-environment on the Lambda function
+configuration — see `apps/worker/README.md`.
 
 ## Type-Safe Access
 

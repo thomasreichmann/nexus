@@ -5,7 +5,6 @@ export const logErrorVerbositySchema = z.enum(['minimal', 'standard', 'full']);
 // Server-side env vars (not exposed to client)
 export const serverSchema = z.object({
     DATABASE_URL: z.string().url(),
-    SUPABASE_SECRET_KEY: z.string().min(1),
     AWS_ACCESS_KEY_ID: z.string().min(1),
     AWS_SECRET_ACCESS_KEY: z.string().min(1),
     AWS_REGION: z.string().min(1),
@@ -24,8 +23,5 @@ export const serverSchema = z.object({
 
 // Client-side env vars (NEXT_PUBLIC_ prefix)
 export const clientSchema = z.object({
-    NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
-    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(1),
-    NEXT_PUBLIC_STRIPE_PUBLIC_KEY: z.string().min(1),
     NEXT_PUBLIC_APP_URL: z.string().url(),
 });
