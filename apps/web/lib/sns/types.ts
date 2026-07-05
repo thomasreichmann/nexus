@@ -36,7 +36,7 @@ export interface S3EventRecord {
             lifecycleRestorationExpiryTime: string;
         };
     };
-    // Present on s3:LifecycleTransition events
+    // Present on LifecycleTransition events
     lifecycleEventData?: {
         transitionEventData: {
             destinationStorageClass: string;

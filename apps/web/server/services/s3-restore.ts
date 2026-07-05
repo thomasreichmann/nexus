@@ -11,10 +11,14 @@ const log = logger.child({ service: 's3-restore' });
 
 type S3RestoreEventHandler = (db: DB, record: S3EventRecord) => Promise<void>;
 
+// Delivered `eventName` values are UNPREFIXED (`ObjectRestore:Completed`),
+// unlike the `s3:`-prefixed event types used when configuring bucket
+// notifications. Keys here must match the wire format — see the captured
+// payloads in webhook_events / docs/guides/webhooks.md.
 const handlers: Record<string, S3RestoreEventHandler> = {
-    's3:ObjectRestore:Completed': handleRestoreCompleted,
-    's3:ObjectRestore:Delete': handleRestoreExpired,
-    's3:LifecycleTransition': handleLifecycleTransition,
+    'ObjectRestore:Completed': handleRestoreCompleted,
+    'ObjectRestore:Delete': handleRestoreExpired,
+    LifecycleTransition: handleLifecycleTransition,
 };
 
 // S3 encodes spaces as `+` in event notification keys

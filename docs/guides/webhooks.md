@@ -498,9 +498,14 @@ curl -X POST http://localhost:3000/api/webhooks/s3-restore \
     "MessageId": "msg-456",
     "TopicArn": "arn:aws:sns:us-east-1:123456789:nexus-events",
     "Subject": "Amazon S3 Notification",
-    "Message": "{\"Records\":[{\"eventName\":\"s3:ObjectRestore:Completed\",\"s3\":{\"bucket\":{\"name\":\"nexus-storage-files-dev\"},\"object\":{\"key\":\"user-123/file-456/document.pdf\"}}}]}"
+    "Message": "{\"Records\":[{\"eventName\":\"ObjectRestore:Completed\",\"s3\":{\"bucket\":{\"name\":\"nexus-storage-files-dev\"},\"object\":{\"key\":\"user-123/file-456/document.pdf\"}}}]}"
   }'
 ```
+
+> **Wire format:** the delivered `eventName` is **unprefixed**
+> (`ObjectRestore:Completed`, `LifecycleTransition`) even though the bucket
+> notification config subscribes with `s3:`-prefixed event types. Payloads
+> replayed with the prefix will silently match no handler (#271).
 
 > **Note:** These manual tests skip signature verification. In the SNS route handler, you can bypass verification in development by checking `NODE_ENV` — but never skip it in production.
 

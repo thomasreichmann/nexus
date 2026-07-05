@@ -229,6 +229,8 @@ aws s3api put-bucket-notification-configuration \
     }'
 ```
 
+> **Naming gotcha:** the `s3:` prefix is only used here, at configuration time. The events S3 actually delivers carry an **unprefixed** `eventName` (`ObjectRestore:Completed`, `LifecycleTransition`). Handler code must match the unprefixed form — keying on the config-time names silently drops every event (#271).
+
 > **Warning:** `put-bucket-notification-configuration` replaces the entire notification config. If the bucket already has other notifications configured, include them in the same command. Check existing config first with `aws s3api get-bucket-notification-configuration --bucket "$BUCKET"`.
 
 ### SNS Verification Commands

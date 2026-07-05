@@ -33,7 +33,7 @@ const RESTORE_EXPIRY = '2026-07-10T12:00:00.000Z';
 
 function makeRecord(overrides: Partial<S3EventRecord> = {}): S3EventRecord {
     return {
-        eventName: 's3:ObjectRestore:Completed',
+        eventName: 'ObjectRestore:Completed',
         s3: {
             bucket: { name: 'test-bucket' },
             object: { key: 'uploads/test-file.jpg' },
@@ -128,7 +128,7 @@ describe('s3RestoreService.dispatch', () => {
             destinationStorageClass?: string
         ): S3EventRecord {
             return makeRecord({
-                eventName: 's3:LifecycleTransition',
+                eventName: 'LifecycleTransition',
                 glacierEventData: undefined,
                 lifecycleEventData: destinationStorageClass
                     ? { transitionEventData: { destinationStorageClass } }
@@ -198,7 +198,7 @@ describe('s3RestoreService.dispatch', () => {
         it('sends no email on restore expiry', async () => {
             const handled = await s3RestoreService.dispatch(
                 mockDb.db,
-                makeRecord({ eventName: 's3:ObjectRestore:Delete' })
+                makeRecord({ eventName: 'ObjectRestore:Delete' })
             );
 
             expect(handled).toBe(true);
@@ -208,7 +208,7 @@ describe('s3RestoreService.dispatch', () => {
         it('sends no email for unhandled event types', async () => {
             const handled = await s3RestoreService.dispatch(
                 mockDb.db,
-                makeRecord({ eventName: 's3:ObjectCreated:Put' })
+                makeRecord({ eventName: 'ObjectCreated:Put' })
             );
 
             expect(handled).toBe(false);

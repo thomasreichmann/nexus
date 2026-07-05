@@ -194,7 +194,7 @@ describe('POST /api/webhooks/s3-restore', () => {
 
         const body = createSnsNotification(
             messageId,
-            's3:ObjectRestore:Completed',
+            'ObjectRestore:Completed',
             s3Key,
             {
                 restoreEventData: {
@@ -237,7 +237,7 @@ describe('POST /api/webhooks/s3-restore', () => {
 
         const body = createSnsNotification(
             messageId,
-            's3:ObjectRestore:Completed',
+            'ObjectRestore:Completed',
             s3Key,
             {
                 restoreEventData: {
@@ -295,7 +295,7 @@ describe('POST /api/webhooks/s3-restore', () => {
 
         const body = createSnsNotification(
             messageId,
-            's3:ObjectRestore:Delete',
+            'ObjectRestore:Delete',
             s3Key
         );
 
@@ -336,7 +336,7 @@ describe('POST /api/webhooks/s3-restore', () => {
 
         const body = createSnsNotification(
             messageId,
-            's3:LifecycleTransition',
+            'LifecycleTransition',
             s3Key,
             undefined,
             { transitionEventData: { destinationStorageClass: 'DEEP_ARCHIVE' } }
@@ -390,7 +390,7 @@ describe('POST /api/webhooks/s3-restore', () => {
 
         const body = createSnsNotification(
             messageId,
-            's3:ObjectRestore:Post',
+            'ObjectRestore:Post',
             'some/unknown/key'
         );
 
