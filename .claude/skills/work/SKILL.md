@@ -18,9 +18,9 @@ Implement a GitHub issue: research, implement, review, commit, PR.
 
 1. **Understand.** `gh issue view <n> --json number,title,body,labels,milestone`. Briefly summarize description, acceptance criteria, and out-of-scope.
 
-2. **Research.** Read `docs/ai/conventions.md`. Spawn an `explore-issue` agent to find related files, patterns, and similar implementations. Decide files to change, patterns to follow, and change order.
+2. **Branch.** `git fetch origin main`, then `git checkout -b <type>/<n>-<slug> origin/main` (types: feat/fix/refactor/docs/chore). If the branch already exists, ask: resume it, rebase onto `origin/main`, or use a different name.
 
-3. **Branch.** `git fetch origin main`, then `git checkout -b <type>/<n>-<slug> origin/main` (types: feat/fix/refactor/docs/chore). If the branch already exists, ask: resume it, rebase onto `origin/main`, or use a different name.
+3. **Research.** Read `docs/ai/conventions.md`. Spawn an `explore-issue` agent to find related files, patterns, and similar implementations. Decide files to change, patterns to follow, and change order.
 
 4. **Implement.** Stay within acceptance criteria; note out-of-scope discoveries as follow-up issues rather than expanding scope (if scope must grow, ask first). Repeat until green: `pnpm check`. UI changes also require `pnpm -F web test:e2e:smoke`; new pages need a smoke test in `apps/web/e2e/smoke/` following `home.spec.ts`. DB schema changes: see CLAUDE.md for `db:generate`/`db:migrate`/`db:custom`. If checks, tests, or migrations fail, show the output and ask: fix now / continue (note in PR) / abort with changes uncommitted.
 
