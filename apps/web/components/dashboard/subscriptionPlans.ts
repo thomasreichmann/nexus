@@ -73,7 +73,7 @@ const STATUS_BADGES: Record<Subscription['status'], StatusBadge> = {
     canceled: { label: 'Canceled', variant: 'destructive' },
     unpaid: { label: 'Unpaid', variant: 'destructive' },
     incomplete: { label: 'Incomplete', variant: 'secondary' },
-    // Minimal badge for comped alpha testers; richer sponsored UI is #252
+    // Sponsored accounts are comped; richer treatment renders in SubscriptionView
     sponsored: { label: 'Sponsored', variant: 'default' },
 };
 

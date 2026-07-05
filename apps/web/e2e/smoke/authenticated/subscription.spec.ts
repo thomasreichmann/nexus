@@ -2,6 +2,7 @@ import { test, expect } from '../../fixtures';
 import {
     ensureTrialSubscription,
     markSubscriptionPaid,
+    markSubscriptionSponsored,
 } from '@nexus/db/test-db';
 import { interceptTrpcCalls } from '../../helpers/trpc';
 
@@ -143,6 +144,47 @@ test.describe('Subscription tier change', () => {
             await expect(
                 page.getByRole('button', { name: 'Manage billing' })
             ).toBeEnabled({ timeout: 15_000 });
+        }
+    );
+
+    test(
+        'sponsored user sees sponsored panel with no billing controls',
+        {
+            tag: [
+                '@page:/dashboard/settings',
+                '@uc:subscription-sponsored-panel',
+            ],
+        },
+        async ({ page, db, seedUserId, consoleErrors }) => {
+            await markSubscriptionSponsored(db, seedUserId);
+            await page.goto('/dashboard/settings');
+
+            const panel = page
+                .getByText('Sponsored by Nexus', { exact: true })
+                .locator('..');
+            await expect(panel).toBeVisible();
+            // 2 TB is the helper default, not PLAN_LIMITS.max (10 TB) —
+            // proves the panel reads subscription.storageLimit, not the
+            // tier constant.
+            await expect(panel.getByText('2 TB')).toBeVisible();
+
+            await expect(
+                page.getByRole('button', { name: 'Upgrade' })
+            ).toHaveCount(0);
+            await expect(
+                page.getByRole('button', { name: 'Downgrade' })
+            ).toHaveCount(0);
+            await expect(
+                page.getByRole('button', { name: 'Manage billing' })
+            ).toHaveCount(0);
+            await expect(
+                page.getByRole('group', { name: 'Billing interval' })
+            ).toHaveCount(0);
+            await expect(
+                page.getByRole('heading', { name: 'Starter', exact: true })
+            ).toHaveCount(0);
+
+            expect(consoleErrors).toEqual([]);
         }
     );
 });

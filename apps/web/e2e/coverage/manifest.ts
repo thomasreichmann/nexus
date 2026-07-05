@@ -396,6 +396,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/settings'],
     },
     {
+        id: 'subscription-sponsored-panel',
+        title: 'Sponsored user sees the sponsored panel with no billing controls',
+        area: 'billing',
+        routes: ['/dashboard/settings'],
+    },
+    {
         id: 'stripe-checkout-completion',
         title: 'Complete a payment on Stripe Checkout',
         area: 'billing',

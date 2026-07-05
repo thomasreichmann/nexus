@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Check, CreditCard, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
-import { formatDate } from '@/lib/format';
+import { formatBytes, formatDate } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -119,6 +119,25 @@ function SubscriptionView({
     const statusBadge = getStatusBadge(subscription.status);
     const canManageBilling = subscription.stripeSubscriptionId !== null;
 
+    // Sponsored accounts have no Stripe subscription, so checkout/portal
+    // actions are meaningless, and their storage limit is set per-invite
+    // rather than by tier — render a dedicated panel instead of the plan grid.
+    if (subscription.status === 'sponsored') {
+        return (
+            <>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                        <Badge variant={statusBadge.variant}>
+                            {statusBadge.label}
+                        </Badge>
+                        <SubscriptionMeta subscription={subscription} />
+                    </div>
+                </div>
+                <SponsoredPanel storageLimit={subscription.storageLimit} />
+            </>
+        );
+    }
+
     return (
         <>
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -168,6 +187,28 @@ function SubscriptionView({
                 </Button>
             </div>
         </>
+    );
+}
+
+interface SponsoredPanelProps {
+    storageLimit: number;
+}
+
+function SponsoredPanel({ storageLimit }: SponsoredPanelProps) {
+    return (
+        <div className="rounded-lg border border-primary bg-primary/5 p-6">
+            <h3 className="font-semibold">Sponsored by Nexus</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+                Your account has full access — no billing required.
+            </p>
+            <p className="mt-4 text-2xl font-bold">
+                {formatBytes(storageLimit)}
+                <span className="text-sm font-normal text-muted-foreground">
+                    {' '}
+                    storage
+                </span>
+            </p>
+        </div>
     );
 }
 

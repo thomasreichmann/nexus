@@ -151,6 +151,33 @@ export async function markSubscriptionPaid(
         .where(eq(schema.subscriptions.userId, userId));
 }
 
+/**
+ * Flips a user's subscription to a comped sponsored account, mimicking invite
+ * provisioning (`planTier: 'max'`, no Stripe subscription, per-invite storage
+ * limit). Default limit is 2 TB — deliberately NOT `PLAN_LIMITS.max` (10 TB) —
+ * so UI tests prove the page reads the row, not a tier constant. Reset via
+ * `ensureTrialSubscription` after.
+ */
+export async function markSubscriptionSponsored(
+    db: DB,
+    userId: string,
+    options?: { storageLimit?: number }
+): Promise<void> {
+    await db
+        .update(schema.subscriptions)
+        .set({
+            status: 'sponsored',
+            planTier: 'max',
+            stripeSubscriptionId: null,
+            currentPeriodStart: null,
+            currentPeriodEnd: null,
+            cancelAtPeriodEnd: false,
+            trialEnd: null,
+            storageLimit: options?.storageLimit ?? 2 * 1024 ** 4,
+        })
+        .where(eq(schema.subscriptions.userId, userId));
+}
+
 export interface JobCounts {
     pending: number;
     processing: number;
