@@ -12,6 +12,7 @@
  * Usage:
  *   pnpm -F web backfill:storage-tier          # dry run (default)
  *   pnpm -F web backfill:storage-tier --apply  # actually update rows
+ *   pnpm -F web backfill:storage-tier --check  # dry run, exit 1 on drift (CI)
  */
 
 import { ne } from 'drizzle-orm';
@@ -24,6 +25,7 @@ import { files } from '@nexus/db/schema';
 
 async function main(): Promise<void> {
     const shouldApply = process.argv.includes('--apply');
+    const isCheck = process.argv.includes('--check');
 
     // Deleted rows keep their s3Key but the object is already removed —
     // reconciling them would only report every one as missing.
@@ -94,6 +96,12 @@ async function main(): Promise<void> {
 
     if (mismatches.length === 0) {
         console.log('\nNothing to update.');
+        return;
+    }
+
+    if (isCheck) {
+        console.log('\nCheck failed: storage tiers have drifted from S3.');
+        process.exitCode = 1;
         return;
     }
 

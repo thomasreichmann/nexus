@@ -21,7 +21,8 @@
         "test:integration": "vitest run --config vitest.integration.config.ts",
         "screenshots": "tsx scripts/screenshots.ts",
         "backfill:trial-subscriptions": "tsx --env-file=.env.local scripts/backfill-trial-subscriptions.ts",
-        "backfill:storage-tier": "tsx --env-file=.env.local scripts/backfill-storage-tier.ts"
+        "backfill:storage-tier": "tsx --env-file=.env.local scripts/backfill-storage-tier.ts",
+        "check:s3-event-health": "tsx --env-file=.env.local scripts/check-s3-event-health.ts"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.975.0",

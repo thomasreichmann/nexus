@@ -1,0 +1,110 @@
+name: S3 Event Health
+
+# Post-deploy watch for the S3 event pipeline (#285): tier drift, failed SNS
+# webhooks, stuck retrievals. A failed run is the alert. Also posts a one-time
+# success comment on PR #278 once the first real post-deploy event lands —
+# that step is temporary (#286 tracks the generalized pattern).
+
+on:
+    schedule:
+        - cron: '0 5 * * *'
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    pull-requests: write
+
+jobs:
+    health:
+        name: Drift + webhook/retrieval health
+        runs-on: ubuntu-latest
+        env:
+            DATABASE_URL: ${{ secrets.DATABASE_URL }}
+            SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+            AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            AWS_REGION: ${{ secrets.AWS_REGION }}
+            S3_BUCKET: ${{ secrets.S3_BUCKET }}
+            SQS_QUEUE_URL: ${{ secrets.SQS_QUEUE_URL }}
+            STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+            STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+            RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+            RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+            BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+            NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_STRIPE_PUBLIC_KEY: ${{ secrets.NEXT_PUBLIC_STRIPE_PUBLIC_KEY }}
+            NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Read Node version
+              id: node-version
+              run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: ${{ steps.node-version.outputs.version }}
+                  cache: 'pnpm'
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            # The scripts load env via `tsx --env-file=.env.local`, which
+            # errors if the file is missing; real values come from the job
+            # env above (process env wins over the file).
+            - name: Create empty env file
+              run: touch apps/web/.env.local
+
+            - name: Check storage-tier drift
+              run: pnpm -F web backfill:storage-tier --check
+
+            - name: Resolve PR 278 merge time
+              id: merge
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  echo "merged_at=$(gh pr view 278 --repo "$GITHUB_REPOSITORY" --json mergedAt -q '.mergedAt // empty')" >> "$GITHUB_OUTPUT"
+
+            - name: Check webhook & retrieval health
+              id: health
+              run: |
+                  set -o pipefail
+                  ARGS=()
+                  if [ -n "${{ steps.merge.outputs.merged_at }}" ]; then
+                      ARGS=(--since "${{ steps.merge.outputs.merged_at }}")
+                  fi
+                  pnpm -F web check:s3-event-health "${ARGS[@]}" | tee health.log
+                  echo "handled_since=$(sed -n 's/^handled_events_since=//p' health.log)" >> "$GITHUB_OUTPUT"
+
+            # Temporary (#286 generalizes this): tick the post-deploy box on
+            # PR #278 once the first real event has been processed end-to-end.
+            # Remove this step after the comment lands.
+            - name: Post one-time verification comment on PR 278
+              if: steps.merge.outputs.merged_at != '' && steps.health.outputs.handled_since != '' && steps.health.outputs.handled_since != '0'
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  HANDLED_SINCE: ${{ steps.health.outputs.handled_since }}
+                  MERGED_AT: ${{ steps.merge.outputs.merged_at }}
+              run: |
+                  MARKER="<!-- post-deploy-verified-278 -->"
+                  if gh pr view 278 --repo "$GITHUB_REPOSITORY" --json comments -q '.comments[].body' | grep -qF "$MARKER"; then
+                      echo "Verification comment already posted — skipping."
+                      exit 0
+                  fi
+                  cat > comment.md <<EOF
+                  $MARKER
+                  ✅ **Post-deploy verification passed** (automated by the s3-event-health workflow, #285)
+
+                  - $HANDLED_SINCE handled-type S3 event(s) processed since merge ($MERGED_AT)
+                  - \`backfill:storage-tier --check\`: no drift
+                  - No failed SNS webhook events, no stuck retrievals
+
+                  The remaining post-deploy test-plan item can be ticked.
+                  EOF
+                  gh pr comment 278 --repo "$GITHUB_REPOSITORY" --body-file comment.md
