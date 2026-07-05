@@ -2,7 +2,7 @@
 name: validate
 description: End-to-end validate a merged PR or feature against the dev environment — UI + DB assertions with screenshots
 argument-hint: [PR number, commit, or free-form description] (optional)
-allowed-tools: Bash, Read, Grep, Glob, Edit, Write, Task, AskUserQuestion
+allowed-tools: Bash, Read, Grep, Glob, Edit, Write, Task
 ---
 
 # Validate
@@ -54,7 +54,7 @@ Identify what's at risk, then group into validation items. Categories to conside
 
 **Drop items aggressively.** Three high-leverage tests beat seven low-leverage ones. Justify drops out loud ("opaque field, no parsing, skipped").
 
-**Present the list to the user via `AskUserQuestion`** before writing anything. Single-select if the user wants one item at a time, multi-select if they want a batch. Include "all of them" as an option when reasonable.
+State the chosen items (and the drops, with reasons) and proceed.
 
 Then create `TaskCreate` entries — one per validation item plus one for cleanup. Mark `in_progress` as you start each.
 
