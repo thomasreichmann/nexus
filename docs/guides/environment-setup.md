@@ -1,7 +1,7 @@
 ---
 title: Environment Setup
 created: 2025-12-30
-updated: 2026-01-03
+updated: 2026-07-05
 status: active
 tags:
     - guide
@@ -18,15 +18,17 @@ Environment variable management and configuration strategy for Nexus.
 
 ## Overview
 
-Nexus uses a **single environment** approach for simplicity:
+Nexus runs on **two Supabase projects** — dev and prod — with a cloud-only development model:
 
-- **Cloud-only development** - Local dev connects to cloud Supabase (no local Docker)
-- **Single `.env.local`** - Contains cloud credentials pulled from Vercel
-- **Vercel as source of truth** - Variables configured once in Vercel dashboard
+- **Two databases** - A shared dev project (local dev, CI, previews, e2e) and a separate prod project used only by the Vercel Production deployment. See [[../infra/supabase-manual-setup|Supabase Manual Setup]].
+- **Cloud-only development** - Local dev connects to the cloud dev Supabase (no local Docker)
+- **Single `.env.local`** - Contains cloud **dev** credentials pulled from Vercel; local tooling never touches prod
+- **Vercel as source of truth** - Variables configured once in Vercel dashboard, per environment
 - **Type-safe validation** - Zod validates at runtime
+- **Migrations to both** - `post-merge.yml` applies migrations to dev, then to prod once the dev apply succeeds
 
 > [!note] Why cloud-only?
-> Managing multiple environment files (local, dev, staging, prod) adds complexity. For MVP, we use the cloud dev environment for all local development. This requires an internet connection but eliminates env file juggling.
+> Managing local database containers adds complexity. We use the cloud dev environment for all local development. This requires an internet connection but eliminates env file juggling. Prod is reached only by the Vercel Production deployment and by CI workflows via the `DATABASE_URL_PROD` GitHub Actions secret.
 
 ## Quick Start
 
@@ -43,7 +45,9 @@ This creates `apps/web/.env.local` with all variables from your Vercel Developme
 `apps/web/.env.local` is the single env source for all local tooling —
 `packages/db` (drizzle-kit, seed CLI), `tooling/capture`, and the e2e suite
 all load it via hardcoded relative paths. This is a deliberate dev-only
-assumption: deployed code (Vercel, Lambda) never reads `.env` files.
+assumption: deployed code (Vercel, Lambda) never reads `.env` files. Because
+it is pulled from the Vercel **Development** environment, it always points at
+the dev database — local tooling never touches prod.
 
 ## File Structure
 
@@ -61,12 +65,18 @@ apps/web/
 
 Direct PostgreSQL connection for Drizzle ORM queries.
 
-| Variable       | Type   | Description                  |
-| -------------- | ------ | ---------------------------- |
-| `DATABASE_URL` | Server | PostgreSQL connection string |
+| Variable       | Type   | Description                                                                    |
+| -------------- | ------ | ------------------------------------------------------------------------------ |
+| `DATABASE_URL` | Server | PostgreSQL connection string (dev DB locally; prod DB in Vercel Production)    |
+| `DB_ENV`       | Server | Environment marker (`development` / `production`) — fail-closed seed-CLI guard |
 
-> [!note] Connection Pooling
-> For production, use the pooled connection string (port 6543) instead of direct connection (port 5432).
+> [!warning] Connection Pooling
+> **Every environment** must use the transaction-pooler connection string (port 6543), not the direct connection (port 5432). `packages/db/src/connection.ts` sets `prepare: false` unconditionally, which assumes transaction-pooler mode.
+
+> [!note] DB_ENV guard
+> The seed CLI (`pnpm -F db db:seed`) refuses to run unless `DB_ENV` is set to a non-production value. Missing `DB_ENV` also refuses (fail-closed). Set `DB_ENV=development` in the Vercel Development environment so `pnpm env:pull` writes it into `.env.local`.
+
+The `DATABASE_URL_PROD` GitHub Actions secret (not a Vercel/app variable) points CI workflows — post-merge prod migrate, drift check, keepalive, event health — at the prod database. See [[../infra/supabase-manual-setup|Supabase Manual Setup]].
 
 ### Authentication (BetterAuth)
 

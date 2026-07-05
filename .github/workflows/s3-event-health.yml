@@ -16,10 +16,23 @@ permissions:
 
 jobs:
     health:
-        name: Drift + webhook/retrieval health
+        name: Drift + webhook/retrieval health (${{ matrix.env }})
         runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - env: dev
+                      db-secret: DATABASE_URL
+                    - env: prod
+                      db-secret: DATABASE_URL_PROD
+        # Only DATABASE_URL is matrixed. AWS/Stripe/etc. stay dev-scoped: no
+        # prod S3 bucket exists yet, so on prod the storage-tier check
+        # compares an empty prod DB against dev AWS credentials (trivially
+        # green). Provisioning prod AWS resources + secrets is a follow-up
+        # for when the prod bucket exists.
         env:
-            DATABASE_URL: ${{ secrets.DATABASE_URL }}
+            DATABASE_URL: ${{ secrets[matrix.db-secret] }}
             AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
             AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
             AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -32,6 +45,14 @@ jobs:
             BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
             NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
         steps:
+            # DATABASE_URL comes from the job env above (matrixed secret).
+            - name: Verify database secret is configured
+              run: |
+                  if [ -z "$DATABASE_URL" ]; then
+                      echo "::error::secret ${{ matrix.db-secret }} is not configured (see docs/infra/supabase-manual-setup.md)"
+                      exit 1
+                  fi
+
             - name: Checkout
               uses: actions/checkout@v4
 
@@ -61,6 +82,7 @@ jobs:
               run: pnpm -F web backfill:storage-tier --check
 
             - name: Resolve PR 278 merge time
+              if: matrix.env == 'dev'
               id: merge
               env:
                   GH_TOKEN: ${{ github.token }}
@@ -82,7 +104,7 @@ jobs:
             # PR #278 once the first real event has been processed end-to-end.
             # Remove this step after the comment lands.
             - name: Post one-time verification comment on PR 278
-              if: steps.merge.outputs.merged_at != '' && steps.health.outputs.handled_since != '' && steps.health.outputs.handled_since != '0'
+              if: matrix.env == 'dev' && steps.merge.outputs.merged_at != '' && steps.health.outputs.handled_since != '' && steps.health.outputs.handled_since != '0'
               env:
                   GH_TOKEN: ${{ github.token }}
                   HANDLED_SINCE: ${{ steps.health.outputs.handled_since }}

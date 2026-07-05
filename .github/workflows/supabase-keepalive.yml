@@ -8,11 +8,30 @@ on:
 
 jobs:
     ping:
-        name: Ping database
+        name: Ping database (${{ matrix.env }})
         runs-on: ubuntu-latest
+        strategy:
+            # Both Supabase projects are on the free (pausing) plan — ping
+            # both, and keep pinging one even if the other fails.
+            fail-fast: false
+            matrix:
+                include:
+                    - env: dev
+                      db-secret: DATABASE_URL
+                    - env: prod
+                      db-secret: DATABASE_URL_PROD
 
         steps:
+            - name: Verify database secret is configured
+              env:
+                  DATABASE_URL: ${{ secrets[matrix.db-secret] }}
+              run: |
+                  if [ -z "$DATABASE_URL" ]; then
+                      echo "::error::secret ${{ matrix.db-secret }} is not configured (see docs/infra/supabase-manual-setup.md)"
+                      exit 1
+                  fi
+
             - name: Run trivial query
               env:
-                  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+                  DATABASE_URL: ${{ secrets[matrix.db-secret] }}
               run: psql "$DATABASE_URL" -c 'select 1' -v ON_ERROR_STOP=1

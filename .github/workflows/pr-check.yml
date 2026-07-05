@@ -92,7 +92,7 @@ jobs:
                         MARKER,
                         '## :warning: This PR contains DB migration(s)',
                         '',
-                        'On merge, `post-merge.yml` applies these to production before smoke tests run. If apply fails, the workflow fails loudly.',
+                        'On merge, `post-merge.yml` applies these to the dev database, then to prod once the dev apply succeeds; smoke tests run against dev. If either apply fails, the workflow fails loudly.',
                         '',
                         sqlBlocks,
                         '',

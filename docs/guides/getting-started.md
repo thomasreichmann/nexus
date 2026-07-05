@@ -1,7 +1,7 @@
 ---
 title: Getting Started
 created: 2025-12-29
-updated: 2026-01-23
+updated: 2026-07-05
 status: active
 tags:
     - guide
@@ -27,7 +27,7 @@ git clone <repo-url>
 cd nexus
 pnpm install
 vercel link && pnpm env:pull
-pnpm -F web db:migrate
+pnpm -F db db:migrate
 pnpm dev
 ```
 
@@ -111,7 +111,7 @@ pnpm -F web db:migrate
 ```
 
 > [!note] Cloud-First Database
-> We use Supabase's cloud PostgreSQL directly—no local database container needed. Your `DATABASE_URL` points to the shared development database.
+> We use Supabase's cloud PostgreSQL directly—no local database container needed. Your `DATABASE_URL` points to the shared **development** database. Production has its own Supabase project that local tooling never touches — see [[../infra/supabase-manual-setup|Supabase Manual Setup]].
 
 See [[database-workflow|Database Workflow]] for schema changes and migration commands.
 
