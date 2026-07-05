@@ -16,8 +16,10 @@ import { createTestDb } from '../helpers/connection';
 import { setupConsoleErrorTracking } from '../utils';
 
 // Unique per run so a crashed previous run can't collide; cleaned in afterAll.
-const SIGNUP_EMAIL = `sponsored-e2e-${Date.now()}@test.local`;
-const BOUND_EMAIL = `invite-bound-e2e-${Date.now()}@test.local`;
+// The pid guards against cross-worker Date.now() collisions — see the note in
+// auth-flows.spec.ts (another worker's afterAll would delete this user).
+const SIGNUP_EMAIL = `sponsored-e2e-${Date.now()}-${process.pid}@test.local`;
+const BOUND_EMAIL = `invite-bound-e2e-${Date.now()}-${process.pid}@test.local`;
 const SIGNUP_PASSWORD = 'sponsored-e2e-password-123';
 
 test.describe('invite redemption', () => {

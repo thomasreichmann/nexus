@@ -9,7 +9,11 @@ import { deleteUserByEmail } from '@nexus/db/test-db';
 import { createTestDb } from '../helpers/connection';
 
 // Unique per run so a crashed previous run can't collide; cleaned in afterAll.
-const SIGNUP_EMAIL = `signup-e2e-${Date.now()}@test.local`;
+// The pid matters: fullyParallel spreads this file's tests across workers, and
+// afterAll runs in each of them. Workers spawn together, so Date.now() alone
+// can collide across workers — then another worker's afterAll cascade-deletes
+// this worker's signup user (and its session) mid-test.
+const SIGNUP_EMAIL = `signup-e2e-${Date.now()}-${process.pid}@test.local`;
 const SIGNUP_PASSWORD = 'signup-e2e-password-123';
 
 test.describe('auth flows', () => {
