@@ -18,7 +18,9 @@ import { TablePagination } from '@/components/ui/table-pagination';
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDate, formatRelativeTime } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
+import { SPONSORED_DEFAULT_STORAGE_LIMIT } from '@/server/services/constants';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { addDays } from 'date-fns';
 import { Ban, Check, Copy, Loader2, RotateCw, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Invite } from '@nexus/db/repo/invites';
@@ -250,7 +252,7 @@ function CreateInviteForm({ onCreated }: CreateInviteFormProps) {
             storageLimit:
                 storageGb && gb > 0 ? Math.round(gb * BYTES_PER_GB) : undefined,
             expiresAt: expiresInDays
-                ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
+                ? addDays(new Date(), expiresInDays)
                 : undefined,
         });
     }
@@ -287,7 +289,7 @@ function CreateInviteForm({ onCreated }: CreateInviteFormProps) {
                                 id="invite-storage"
                                 type="number"
                                 min={1}
-                                placeholder="Default (10 TB)"
+                                placeholder={`Default (${formatBytes(SPONSORED_DEFAULT_STORAGE_LIMIT)})`}
                                 value={storageGb}
                                 onChange={(e) => setStorageGb(e.target.value)}
                             />
