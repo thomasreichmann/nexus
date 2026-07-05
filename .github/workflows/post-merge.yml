@@ -15,6 +15,9 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 10
         steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
             - name: Setup Node and pnpm
               uses: ./.github/actions/setup-node-pnpm
 
@@ -33,6 +36,9 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 10
         steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
             - name: Setup Node and pnpm
               uses: ./.github/actions/setup-node-pnpm
 
@@ -72,6 +78,9 @@ jobs:
             BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
 
         steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
             - name: Setup Node and pnpm
               uses: ./.github/actions/setup-node-pnpm
 

@@ -1,14 +1,13 @@
 name: Setup Node and pnpm
 description: >-
-    Checkout, read the Node version from .nvmrc, set up pnpm and Node.js (with
-    pnpm cache), and install dependencies with a frozen lockfile.
+    Read the Node version from .nvmrc, set up pnpm and Node.js (with pnpm
+    cache), and install dependencies with a frozen lockfile. Requires the repo
+    to be checked out first — a local composite action can't run actions/checkout
+    itself, since its own files must already be on disk.
 
 runs:
     using: composite
     steps:
-        - name: Checkout
-          uses: actions/checkout@v4
-
         - name: Read Node version
           id: node-version
           shell: bash
