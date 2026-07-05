@@ -44,7 +44,7 @@ Review code changes against project conventions defined in `docs/ai/conventions.
 You will receive:
 
 - List of changed files
-- The git diff of changes
+- A path to a diff file — Read it first
 
 ## Output Format
 

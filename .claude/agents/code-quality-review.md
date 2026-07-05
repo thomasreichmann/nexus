@@ -45,7 +45,7 @@ Review code changes for quality issues that hurt maintainability.
 You will receive:
 
 - List of changed files
-- The git diff of changes
+- A path to a diff file — Read it first
 - Issue acceptance criteria (to check scope)
 
 ## Output Format
