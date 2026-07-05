@@ -32,6 +32,7 @@ playwright-report/
 # Terraform
 infra/terraform/.terraform/
 infra/terraform/*.tfstate*
+infra/terraform/worker-stub.zip
 
 # Obsidian vault metadata
 docs/.obsidian/workspace.json

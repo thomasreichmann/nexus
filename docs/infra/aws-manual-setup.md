@@ -1,7 +1,7 @@
 ---
 title: AWS Manual Setup
 created: 2026-01-23
-updated: 2026-02-15
+updated: 2026-07-05
 status: active
 tags:
     - infra
@@ -14,6 +14,9 @@ ai_summary: 'Manual AWS provisioning commands for S3, IAM, and SNS resources in 
 # AWS Manual Setup (Dev Environment)
 
 This documents the manual AWS setup for the dev environment. Created 2026-01-23.
+
+> [!important] Scope: dev only — prod is Terraform-managed.
+> The **prod** environment (`sa-east-1`, `-prod` suffixes) is provisioned by Terraform in [`infra/terraform/`](../../infra/terraform/README.md), which is the source of truth for prod (#53). This runbook remains the spec for the hand-built dev resources until #127 recreates dev from the same Terraform config.
 
 ## Resources Created
 

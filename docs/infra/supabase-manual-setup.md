@@ -106,7 +106,7 @@ gh workflow run supabase-keepalive.yml
 ## Follow-Ups
 
 - **Repoint the Vercel production deployment** at the prod project: after setting the Production env vars above, redeploy production so it picks up the prod `DATABASE_URL`. Until then, the production deployment still points at dev.
-- **Prod AWS resources**: `s3-event-health.yml` runs its prod leg with dev AWS credentials (no prod S3 bucket exists yet — trivially green while prod is empty). Provision prod AWS resources and secrets when a prod bucket exists; see [[aws-manual-setup|AWS Manual Setup]] for the dev pattern. Put them in `sa-east-1` to match the prod database and the Brazilian user base — uploads go browser → S3 directly, so bucket proximity to users matters more than proximity to dev infrastructure.
+- **Prod AWS resources**: provisioned 2026-07-05 via Terraform (`infra/terraform/`, #53) in `sa-east-1`. Remaining: repoint `s3-event-health.yml`'s prod leg and the Vercel Production env vars at the prod resources (#291) — until then the prod leg still runs with dev AWS credentials.
 
 ## Related
 
