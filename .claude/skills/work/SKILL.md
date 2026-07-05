@@ -32,7 +32,7 @@ Implement a GitHub issue: research, implement, review, commit, PR.
 
 5. **Verify criteria.** Walk each acceptance criterion and confirm it's satisfied, citing step 4's run results; execute something new only for criteria not covered by `pnpm check` or the smoke suite (e.g. a manual flow or a migration). If one isn't met, ask whether to address now or note for follow-up.
 
-6. **Self-review (never skip).** Write the diff once to a scratch file without echoing it into context: `git diff origin/main...HEAD > <scratchpad>/diff.txt`. Spawn 3 parallel Task agents — `conventions-review`, `code-quality-review`, `reuse-review` — each given the diff file **path** and the changed-file list (`code-quality-review` also gets the acceptance criteria); do not inline the diff or file contents into spawn prompts. Present findings grouped by category and ask: fix all / fix selected / skip (note in PR). Apply approved fixes, then re-run `pnpm check` (skip the re-run if no fixes were applied).
+6. **Self-review (never skip).** Invoke the `/self-review` skill with the issue number so `code-quality-review` gets the acceptance criteria. Skipped findings get noted in the PR.
 
 7. **Commit & push.** Invoke the `/commit` skill (runs on a cheap model in a forked context). Message format: `<type>: <description> (#<n>)`. Stage only related files.
 
