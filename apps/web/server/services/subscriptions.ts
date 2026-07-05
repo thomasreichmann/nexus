@@ -550,35 +550,37 @@ async function handlePaymentFailed(
     );
 }
 
+// Returns whether the event type had a handler — the webhook route uses this
+// to mark unhandled events visibly instead of silently succeeding (#281).
 async function dispatchWebhookEvent(
     db: DB,
     event: Stripe.Event
-): Promise<void> {
+): Promise<boolean> {
     switch (event.type) {
         case 'checkout.session.completed':
             await handleCheckoutCompleted(
                 db,
                 event.data.object as Stripe.Checkout.Session
             );
-            break;
+            return true;
         case 'customer.subscription.created':
         case 'customer.subscription.updated':
             await handleSubscriptionUpsert(
                 db,
                 event.data.object as Stripe.Subscription
             );
-            break;
+            return true;
         case 'customer.subscription.deleted':
             await handleSubscriptionDeleted(
                 db,
                 event.data.object as Stripe.Subscription
             );
-            break;
+            return true;
         case 'invoice.payment_failed':
             await handlePaymentFailed(db, event.data.object as Stripe.Invoice);
-            break;
+            return true;
         default:
-            log.debug({ eventType: event.type }, 'Unhandled event type');
+            return false;
     }
 }
 

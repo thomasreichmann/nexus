@@ -385,9 +385,10 @@ describe('POST /api/webhooks/s3-restore', () => {
         }
     });
 
-    it('handles unknown event types gracefully', async () => {
-        const messageId = `unknown-event-${crypto.randomUUID()}`;
+    it('marks expected-unhandled event types as processed', async () => {
+        const messageId = `allowlisted-event-${crypto.randomUUID()}`;
 
+        // ObjectRestore:Post fires on every restore initiation — allowlisted
         const body = createSnsNotification(
             messageId,
             'ObjectRestore:Post',
@@ -406,8 +407,33 @@ describe('POST /api/webhooks/s3-restore', () => {
         });
         if (webhookRecord) createdWebhookEventIds.push(webhookRecord.id);
 
-        // Event should still be recorded and marked as processed
         expect(webhookRecord).toBeDefined();
         expect(webhookRecord!.status).toBe('processed');
+    });
+
+    it('marks truly unknown event types as unhandled', async () => {
+        const messageId = `unknown-event-${crypto.randomUUID()}`;
+
+        const body = createSnsNotification(
+            messageId,
+            'ObjectCreated:Put',
+            'some/unknown/key'
+        );
+
+        const res = await postWebhook(body);
+        expect(res.status).toBe(200);
+
+        // Track for cleanup
+        const webhookRecord = await db.query.webhookEvents.findFirst({
+            where: and(
+                eq(webhookEvents.source, 'sns'),
+                eq(webhookEvents.externalId, messageId)
+            ),
+        });
+        if (webhookRecord) createdWebhookEventIds.push(webhookRecord.id);
+
+        // Recorded and surfaced as unhandled — but still a 200 response
+        expect(webhookRecord).toBeDefined();
+        expect(webhookRecord!.status).toBe('unhandled');
     });
 });

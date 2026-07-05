@@ -21,6 +21,17 @@ const handlers: Record<string, S3RestoreEventHandler> = {
     LifecycleTransition: handleLifecycleTransition,
 };
 
+// Events we subscribe to but deliberately don't act on. `ObjectRestore:Post`
+// fires at restore initiation on every restore — expected, not a coverage gap,
+// so routes must not flag it as unhandled.
+const expectedUnhandledEvents: ReadonlySet<string> = new Set([
+    'ObjectRestore:Post',
+]);
+
+// Wire names this service acts on — the single source of truth for consumers
+// like scripts/check-s3-event-health.ts.
+const handledEventTypes = Object.keys(handlers);
+
 // S3 encodes spaces as `+` in event notification keys
 function decodeS3Key(record: S3EventRecord): string {
     return decodeURIComponent(record.s3.object.key.replace(/\+/g, ' '));
@@ -185,4 +196,6 @@ async function dispatch(db: DB, record: S3EventRecord): Promise<boolean> {
 
 export const s3RestoreService = {
     dispatch,
+    expectedUnhandledEvents,
+    handledEventTypes,
 } as const;

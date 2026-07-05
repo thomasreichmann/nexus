@@ -14,6 +14,7 @@ export const webhookStatusEnum = pgEnum('webhook_status', [
     'received',
     'processed',
     'failed',
+    'unhandled',
 ]);
 
 export const webhookEvents = pgTable(

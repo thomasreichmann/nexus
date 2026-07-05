@@ -67,6 +67,9 @@ describe('POST /api/webhooks/stripe', () => {
         // mockResolvedValue defaults set in createMockDb (e.g. returning -> []).
         mocks.returning.mockResolvedValue([]);
         mocks.webhookEvents.findFirst.mockResolvedValue(undefined);
+        // Dispatch resolves handled by default; tests override for the
+        // unhandled/failed outcomes.
+        dispatchWebhookEvent.mockResolvedValue(true);
     });
 
     afterEach(() => {
@@ -188,7 +191,7 @@ describe('POST /api/webhooks/stripe', () => {
                 error: 'previous downstream error',
             });
             mocks.webhookEvents.findFirst.mockResolvedValue(failedRecord);
-            dispatchWebhookEvent.mockResolvedValue(undefined);
+            dispatchWebhookEvent.mockResolvedValue(true);
 
             const response = await POST(makeRequest(sampleEvent));
 
@@ -208,7 +211,7 @@ describe('POST /api/webhooks/stripe', () => {
                     status: 'received',
                 })
             );
-            dispatchWebhookEvent.mockResolvedValue(undefined);
+            dispatchWebhookEvent.mockResolvedValue(true);
 
             const response = await POST(makeRequest(sampleEvent));
 
@@ -259,7 +262,7 @@ describe('POST /api/webhooks/stripe', () => {
         });
 
         it('marks event processed and returns 200 on success', async () => {
-            dispatchWebhookEvent.mockResolvedValue(undefined);
+            dispatchWebhookEvent.mockResolvedValue(true);
 
             const response = await POST(makeRequest(sampleEvent));
 
@@ -267,6 +270,22 @@ describe('POST /api/webhooks/stripe', () => {
             await expect(response.json()).resolves.toEqual({ received: true });
             expect(mocks.update).toHaveBeenCalled();
             expect(mocks.set).toHaveBeenCalledWith({ status: 'processed' });
+        });
+
+        it('marks event unhandled and returns 200 for unrecognized event types', async () => {
+            dispatchWebhookEvent.mockResolvedValue(false);
+
+            const response = await POST(makeRequest(sampleEvent));
+
+            // Unhandled events still return 200 — visibility comes from the
+            // row status and the warn log, not the response code.
+            expect(response.status).toBe(200);
+            await expect(response.json()).resolves.toEqual({ received: true });
+            expect(mocks.set).toHaveBeenCalledWith({ status: 'unhandled' });
+            expect(hoisted.logger.warn).toHaveBeenCalledWith(
+                { eventId: sampleEvent.id, eventType: sampleEvent.type },
+                'Unhandled Stripe event type'
+            );
         });
 
         it('marks event failed with error message on dispatch error', async () => {

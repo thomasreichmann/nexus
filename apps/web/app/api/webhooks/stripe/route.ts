@@ -104,9 +104,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     log.info({ eventId: event.id, eventType: event.type }, 'Webhook received');
 
     try {
-        await subscriptionService.dispatchWebhookEvent(db, event);
+        const isHandled = await subscriptionService.dispatchWebhookEvent(
+            db,
+            event
+        );
 
-        await webhookRepo.update(webhookEvent.id, { status: 'processed' });
+        if (!isHandled) {
+            log.warn(
+                { eventId: event.id, eventType: event.type },
+                'Unhandled Stripe event type'
+            );
+        }
+
+        await webhookRepo.update(webhookEvent.id, {
+            status: isHandled ? 'processed' : 'unhandled',
+        });
 
         log.info(
             {

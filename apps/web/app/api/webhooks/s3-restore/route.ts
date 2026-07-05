@@ -88,19 +88,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
 
     try {
+        let hasUnhandledRecord = false;
         for (const record of s3Event.Records ?? []) {
             const isHandled = await s3RestoreService.dispatch(db, record);
 
             if (!isHandled) {
-                log.debug(
-                    { eventName: record.eventName },
-                    'Unhandled S3 event type'
-                );
+                if (
+                    s3RestoreService.expectedUnhandledEvents.has(
+                        record.eventName
+                    )
+                ) {
+                    log.debug(
+                        { eventName: record.eventName },
+                        'Expected-unhandled S3 event type'
+                    );
+                } else {
+                    hasUnhandledRecord = true;
+                    log.warn(
+                        { eventName: record.eventName },
+                        'Unhandled S3 event type'
+                    );
+                }
             }
         }
 
         await webhookRepo.update(webhookEvent.id, {
-            status: 'processed',
+            status: hasUnhandledRecord ? 'unhandled' : 'processed',
         });
 
         log.info(

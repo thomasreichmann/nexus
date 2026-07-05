@@ -2,7 +2,9 @@
  * Health check for the S3 event pipeline (SNS webhook → DB side effects).
  *
  * Fails (exit 1) when:
- *   - any SNS webhook event landed in status 'failed' in the last 7 days
+ *   - any SNS webhook event landed in status 'failed' or 'unhandled' in the
+ *     last 7 days (allowlisted expected events stay 'processed', so routine
+ *     ObjectRestore:Post deliveries don't trip this)
  *   - any retrieval has sat in 'pending'/'in_progress' for over 48 hours
  *     (Deep Archive bulk restores complete within 48h — older is stuck)
  *
@@ -21,18 +23,11 @@
 import { and, count, eq, gte, inArray, lt } from 'drizzle-orm';
 
 import { db } from '@/server/db';
+import { s3RestoreService } from '@/server/services/s3-restore';
 import { retrievals, webhookEvents } from '@nexus/db/schema';
 
 const FAILED_WEBHOOK_WINDOW_DAYS = 7;
 const STUCK_RETRIEVAL_HOURS = 48;
-
-// Wire names as AWS delivers them (unprefixed) — must match the handler map
-// in server/services/s3-restore.ts.
-const HANDLED_EVENT_TYPES = [
-    'ObjectRestore:Completed',
-    'ObjectRestore:Delete',
-    'LifecycleTransition',
-];
 
 function parseSinceArg(): Date | null {
     const index = process.argv.indexOf('--since');
@@ -56,6 +51,7 @@ async function main(): Promise<void> {
         .select({
             id: webhookEvents.id,
             eventType: webhookEvents.eventType,
+            status: webhookEvents.status,
             error: webhookEvents.error,
             createdAt: webhookEvents.createdAt,
         })
@@ -63,17 +59,17 @@ async function main(): Promise<void> {
         .where(
             and(
                 eq(webhookEvents.source, 'sns'),
-                eq(webhookEvents.status, 'failed'),
+                inArray(webhookEvents.status, ['failed', 'unhandled']),
                 gte(webhookEvents.createdAt, failedAfter)
             )
         );
 
     console.log(
-        `Failed SNS webhook events (last ${FAILED_WEBHOOK_WINDOW_DAYS}d): ${failedWebhooks.length}`
+        `Failed/unhandled SNS webhook events (last ${FAILED_WEBHOOK_WINDOW_DAYS}d): ${failedWebhooks.length}`
     );
     for (const event of failedWebhooks) {
         console.log(
-            `  ✗ ${event.createdAt.toISOString()}  ${event.eventType}  ${event.error ?? '(no error recorded)'}`
+            `  ✗ ${event.createdAt.toISOString()}  ${event.status}  ${event.eventType}  ${event.error ?? '(no error recorded)'}`
         );
     }
     if (failedWebhooks.length > 0) hasFailure = true;
@@ -115,7 +111,10 @@ async function main(): Promise<void> {
                 and(
                     eq(webhookEvents.source, 'sns'),
                     eq(webhookEvents.status, 'processed'),
-                    inArray(webhookEvents.eventType, HANDLED_EVENT_TYPES),
+                    inArray(
+                        webhookEvents.eventType,
+                        s3RestoreService.handledEventTypes
+                    ),
                     gte(webhookEvents.createdAt, since)
                 )
             );

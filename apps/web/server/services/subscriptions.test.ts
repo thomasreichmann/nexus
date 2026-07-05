@@ -412,7 +412,7 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
                 })
             );
 
-            await subscriptionService.dispatchWebhookEvent(
+            const isHandled = await subscriptionService.dispatchWebhookEvent(
                 db,
                 makeSubscriptionEvent({
                     type: 'customer.subscription.deleted',
@@ -420,6 +420,7 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
                 })
             );
 
+            expect(isHandled).toBe(true);
             expect(mocks.values).toHaveBeenCalledWith(
                 expect.objectContaining({
                     status: 'canceled',
@@ -429,12 +430,13 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
         });
     });
 
-    it('ignores unhandled event types without error', async () => {
-        await subscriptionService.dispatchWebhookEvent(
+    it('reports unhandled event types without error', async () => {
+        const isHandled = await subscriptionService.dispatchWebhookEvent(
             db,
             makeStripeEvent('some.other.event', {})
         );
 
+        expect(isHandled).toBe(false);
         expect(mocks.subscriptions.findFirst).not.toHaveBeenCalled();
         expect(mocks.insert).not.toHaveBeenCalled();
     });

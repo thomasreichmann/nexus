@@ -1,0 +1,1 @@
+ALTER TYPE "public"."webhook_status" ADD VALUE 'unhandled';
