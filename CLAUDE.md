@@ -13,6 +13,8 @@ Nexus is a deep storage solution using AWS S3 tiers (Standard → Glacier) for c
 
 **REQUIRED before committing:** `pnpm check` (runs lint + build + test via Turborepo).
 **REQUIRED after modifying pages/components:** `pnpm -F web test:e2e:smoke`.
+**REQUIRED after adding a page, use-case, or e2e test:** `pnpm -F web e2e:coverage --check`.
+Full E2E tier table and test-selection gotchas: `apps/web/CLAUDE.md`.
 
 ## Database (Drizzle)
 

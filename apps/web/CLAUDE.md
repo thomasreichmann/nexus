@@ -41,3 +41,9 @@ named even on green runs; treat them as bugs, not noise.
 Escape hatches: `--reporter=list` (full per-test output),
 `npx playwright show-report` (traces). Run a single spec/test with
 `npx playwright test <file> -g "<title>"`.
+
+**Never pass `--` before extra args to a pnpm test script.** pnpm forwards the
+`--` literally, and Playwright then silently mis-selects and runs the full
+suite: `pnpm -F web test:e2e:smoke -- subscription.spec.ts` runs all tests.
+Append args directly (`pnpm -F web test:e2e:smoke subscription.spec.ts`) or
+run the binary via `pnpm -F web exec playwright test <file>`.
