@@ -1,0 +1,27 @@
+name: Setup Node and pnpm
+description: >-
+    Read the Node version from .nvmrc, set up pnpm and Node.js (with pnpm
+    cache), and install dependencies with a frozen lockfile. Requires the repo
+    to be checked out first — a local composite action can't run actions/checkout
+    itself, since its own files must already be on disk.
+
+runs:
+    using: composite
+    steps:
+        - name: Read Node version
+          id: node-version
+          shell: bash
+          run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
+        - name: Setup pnpm
+          uses: pnpm/action-setup@v4
+
+        - name: Setup Node.js
+          uses: actions/setup-node@v4
+          with:
+              node-version: ${{ steps.node-version.outputs.version }}
+              cache: 'pnpm'
+
+        - name: Install dependencies
+          shell: bash
+          run: pnpm install --frozen-lockfile
