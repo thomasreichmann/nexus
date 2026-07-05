@@ -72,6 +72,13 @@ test.describe('admin invites', () => {
                 .filter({ hasText: SEEDED_EMAIL });
             await expect(row.getByText('Pending')).toBeVisible();
             await expect(row.getByText('2 TB')).toBeVisible();
+
+            // Invites without a per-tester override show the effective
+            // sponsored default, marked as such.
+            const defaultRow = page
+                .locator('tbody tr')
+                .filter({ hasText: REVOKE_EMAIL });
+            await expect(defaultRow.getByText('(default)')).toBeVisible();
         }
     );
 

@@ -28,7 +28,7 @@ import type { Invite } from '@nexus/db/repo/invites';
 type InviteStatus = Invite['status'];
 
 const PAGE_SIZE = 20;
-const BYTES_PER_GB = 1024 ** 3;
+const BYTES_PER_TB = 1024 ** 4;
 
 const STATUS_FILTERS: { label: string; value: InviteStatus | undefined }[] = [
     { label: 'All', value: undefined },
@@ -158,9 +158,16 @@ export default function AdminInvitesPage() {
                                         />
                                     </TableCell>
                                     <TableCell className="text-muted-foreground">
-                                        {invite.storageLimit
-                                            ? formatBytes(invite.storageLimit)
-                                            : 'Default'}
+                                        {formatBytes(
+                                            invite.storageLimit ??
+                                                SPONSORED_DEFAULT_STORAGE_LIMIT
+                                        )}
+                                        {invite.storageLimit === null && (
+                                            <span className="text-muted-foreground/60">
+                                                {' '}
+                                                (default)
+                                            </span>
+                                        )}
                                     </TableCell>
                                     <TableCell className="text-muted-foreground">
                                         {formatRelativeTime(invite.createdAt)}
@@ -224,7 +231,7 @@ interface CreateInviteFormProps {
 function CreateInviteForm({ onCreated }: CreateInviteFormProps) {
     const trpc = useTRPC();
     const [email, setEmail] = useState('');
-    const [storageGb, setStorageGb] = useState('');
+    const [storageTb, setStorageTb] = useState('');
     const [expiresInDays, setExpiresInDays] = useState<number | undefined>();
     const [lastCreated, setLastCreated] = useState<{
         url: string;
@@ -236,7 +243,7 @@ function CreateInviteForm({ onCreated }: CreateInviteFormProps) {
             onSuccess(data) {
                 setLastCreated({ url: data.url, email: data.invite.email });
                 setEmail('');
-                setStorageGb('');
+                setStorageTb('');
                 setExpiresInDays(undefined);
                 toast.success('Invite created');
                 onCreated();
@@ -246,11 +253,11 @@ function CreateInviteForm({ onCreated }: CreateInviteFormProps) {
 
     function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
-        const gb = Number(storageGb);
+        const tb = Number(storageTb);
         createMutation.mutate({
             email: email.trim() || undefined,
             storageLimit:
-                storageGb && gb > 0 ? Math.round(gb * BYTES_PER_GB) : undefined,
+                storageTb && tb > 0 ? Math.round(tb * BYTES_PER_TB) : undefined,
             expiresAt: expiresInDays
                 ? addDays(new Date(), expiresInDays)
                 : undefined,
@@ -282,16 +289,17 @@ function CreateInviteForm({ onCreated }: CreateInviteFormProps) {
                             <Label htmlFor="invite-storage">
                                 Storage limit{' '}
                                 <span className="font-normal text-muted-foreground">
-                                    (GB)
+                                    (TB)
                                 </span>
                             </Label>
                             <Input
                                 id="invite-storage"
                                 type="number"
-                                min={1}
+                                min={0.1}
+                                step={0.1}
                                 placeholder={`Default (${formatBytes(SPONSORED_DEFAULT_STORAGE_LIMIT)})`}
-                                value={storageGb}
-                                onChange={(e) => setStorageGb(e.target.value)}
+                                value={storageTb}
+                                onChange={(e) => setStorageTb(e.target.value)}
                             />
                         </div>
                     </div>
