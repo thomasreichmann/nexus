@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import type Stripe from 'stripe';
 import { createWebhookRepo, type WebhookEvent } from '@nexus/db/repo/webhooks';
+import { alerts } from '@/lib/alerts';
 import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import { stripe } from '@/lib/stripe';
@@ -120,6 +121,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             status: isHandled ? 'processed' : 'unhandled',
         });
 
+        if (!isHandled) {
+            await alerts.send({
+                severity: 'warning',
+                title: 'Unhandled Stripe event type',
+                message:
+                    'A Stripe webhook delivered an event type no handler matches; the event row is marked unhandled.',
+                context: {
+                    source: 'stripe',
+                    eventType: event.type,
+                    externalId: event.id,
+                },
+            });
+        }
+
         log.info(
             {
                 eventId: event.id,
@@ -136,9 +151,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             'Webhook processing failed'
         );
 
+        const errorMessage =
+            error instanceof Error ? error.message : String(error);
         await webhookRepo.update(webhookEvent.id, {
             status: 'failed',
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage,
+        });
+
+        await alerts.send({
+            severity: 'error',
+            title: 'Stripe webhook processing failed',
+            message:
+                'Handler threw while processing a Stripe webhook; the event row is marked failed.',
+            context: {
+                source: 'stripe',
+                eventType: event.type,
+                externalId: event.id,
+                error: errorMessage,
+            },
         });
 
         return NextResponse.json({ received: true });

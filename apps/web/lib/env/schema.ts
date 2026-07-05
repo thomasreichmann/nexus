@@ -19,6 +19,8 @@ export const serverSchema = z.object({
     RESEND_FROM_EMAIL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32),
     LOG_ERROR_VERBOSITY: logErrorVerbositySchema.optional(),
+    // Unset (local dev, tests, preview) disables the Discord alert transport.
+    DISCORD_ALERT_WEBHOOK_URL: z.string().url().optional(),
 });
 
 // Client-side env vars (NEXT_PUBLIC_ prefix)

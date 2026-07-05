@@ -12,6 +12,7 @@ const hoisted = await vi.hoisted(async () => {
         ...createMockStripe(),
         mockDb: createMockDb(),
         dispatchWebhookEvent: vi.fn(),
+        alertsSend: vi.fn(),
     };
 });
 
@@ -23,6 +24,10 @@ vi.mock('@/lib/env', () => ({
 }));
 
 vi.mock('@/server/lib/logger', () => ({ logger: hoisted.logger }));
+
+vi.mock('@/lib/alerts', () => ({
+    alerts: { send: hoisted.alertsSend },
+}));
 
 vi.mock('@/lib/stripe', () => ({
     stripe: hoisted.stripe,
@@ -286,6 +291,24 @@ describe('POST /api/webhooks/stripe', () => {
                 { eventId: sampleEvent.id, eventType: sampleEvent.type },
                 'Unhandled Stripe event type'
             );
+            expect(hoisted.alertsSend).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'warning',
+                    context: expect.objectContaining({
+                        source: 'stripe',
+                        eventType: sampleEvent.type,
+                        externalId: sampleEvent.id,
+                    }),
+                })
+            );
+        });
+
+        it('does not alert on handled events', async () => {
+            dispatchWebhookEvent.mockResolvedValue(true);
+
+            await POST(makeRequest(sampleEvent));
+
+            expect(hoisted.alertsSend).not.toHaveBeenCalled();
         });
 
         it('marks event failed with error message on dispatch error', async () => {
@@ -302,6 +325,15 @@ describe('POST /api/webhooks/stripe', () => {
                 status: 'failed',
                 error: 'downstream exploded',
             });
+            expect(hoisted.alertsSend).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'error',
+                    context: expect.objectContaining({
+                        externalId: sampleEvent.id,
+                        error: 'downstream exploded',
+                    }),
+                })
+            );
         });
 
         it('stringifies non-Error throws when marking failed', async () => {

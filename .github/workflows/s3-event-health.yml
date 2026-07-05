@@ -44,6 +44,11 @@ jobs:
             RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
             BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
             NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+            # Discord delivery for health-check findings (#288); unset secret
+            # degrades to a no-op. VERCEL_ENV labels the alert's environment —
+            # the same field Vercel sets at runtime.
+            DISCORD_ALERT_WEBHOOK_URL: ${{ secrets.DISCORD_ALERT_WEBHOOK_URL }}
+            VERCEL_ENV: ${{ matrix.env }}
         steps:
             # DATABASE_URL comes from the job env above (matrixed secret).
             - name: Verify database secret is configured

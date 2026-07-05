@@ -22,6 +22,7 @@
 
 import { and, count, eq, gte, inArray, lt } from 'drizzle-orm';
 
+import { alerts } from '@/lib/alerts';
 import { db } from '@/server/db';
 import { s3RestoreService } from '@/server/services/s3-restore';
 import { retrievals, webhookEvents } from '@nexus/db/schema';
@@ -127,9 +128,31 @@ async function main(): Promise<void> {
     if (hasFailure) {
         console.log('\nCheck failed: S3 event pipeline needs attention.');
         process.exitCode = 1;
+
+        // The exit-1 (and its workflow-failure email) stays as the dead-man
+        // backup for the check itself; this pushes the findings where they
+        // get seen (#288).
+        const runUrl = getWorkflowRunUrl();
+        await alerts.send({
+            severity: 'error',
+            title: 'S3 event pipeline health check failed',
+            message: `${failedWebhooks.length} failed/unhandled SNS webhook event(s) in the last ${FAILED_WEBHOOK_WINDOW_DAYS}d; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h.`,
+            context: {
+                source: 'check-s3-event-health',
+                ...(runUrl && { workflowRun: runUrl }),
+            },
+        });
     } else {
         console.log('\nAll checks passed.');
     }
+}
+
+function getWorkflowRunUrl(): string | undefined {
+    const { GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID } = process.env;
+    if (!GITHUB_SERVER_URL || !GITHUB_REPOSITORY || !GITHUB_RUN_ID) {
+        return undefined;
+    }
+    return `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`;
 }
 
 main()

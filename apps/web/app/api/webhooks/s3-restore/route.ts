@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createWebhookRepo } from '@nexus/db/repo/webhooks';
+import { alerts } from '@/lib/alerts';
 import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import { verifySnsMessage } from '@/lib/sns/webhooks';
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
 
     try {
-        let hasUnhandledRecord = false;
+        const unhandledEventNames: string[] = [];
         for (const record of s3Event.Records ?? []) {
             const isHandled = await s3RestoreService.dispatch(db, record);
 
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                         'Expected-unhandled S3 event type'
                     );
                 } else {
-                    hasUnhandledRecord = true;
+                    unhandledEventNames.push(record.eventName);
                     log.warn(
                         { eventName: record.eventName },
                         'Unhandled S3 event type'
@@ -112,9 +113,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             }
         }
 
+        const hasUnhandledRecord = unhandledEventNames.length > 0;
         await webhookRepo.update(webhookEvent.id, {
             status: hasUnhandledRecord ? 'unhandled' : 'processed',
         });
+
+        if (hasUnhandledRecord) {
+            await alerts.send({
+                severity: 'warning',
+                title: 'Unhandled S3 event type',
+                message:
+                    'An SNS webhook delivered S3 event types no handler matches; the event row is marked unhandled.',
+                context: {
+                    source: 'sns',
+                    eventType: unhandledEventNames.join(', '),
+                    externalId: notification.MessageId,
+                },
+            });
+        }
 
         log.info(
             {
@@ -132,9 +148,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             'Webhook processing failed'
         );
 
+        const errorMessage =
+            error instanceof Error ? error.message : String(error);
         await webhookRepo.update(webhookEvent.id, {
             status: 'failed',
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage,
+        });
+
+        await alerts.send({
+            severity: 'error',
+            title: 'S3 webhook processing failed',
+            message:
+                'Handler threw while processing an SNS webhook; the event row is marked failed.',
+            context: {
+                source: 'sns',
+                eventType,
+                externalId: notification.MessageId,
+                error: errorMessage,
+            },
         });
 
         return NextResponse.json({ received: true });
