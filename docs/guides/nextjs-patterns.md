@@ -109,11 +109,12 @@ Use Server Actions for mutations:
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { eq } from 'drizzle-orm';
+import { db } from '@/server/db';
+import { files } from '@nexus/db/schema';
 
 export async function deleteFile(fileId: string) {
-    const supabase = createServerClient();
-
-    await supabase.from('files').delete().eq('id', fileId);
+    await db.delete(files).where(eq(files.id, fileId));
 
     revalidatePath('/dashboard/files');
 }
@@ -220,33 +221,27 @@ revalidateTag('user-files');
 
 Next.js 16 replaces `middleware.ts` with `proxy.ts` for explicit network boundary control.
 
+The proxy is an optimistic UX gate only: it reads the BetterAuth session cookie's
+presence (no DB hit) to keep signed-out users out of the dashboard shell. Real
+enforcement stays in tRPC's `protectedProcedure` — a forged cookie gets past the
+proxy but sees an empty shell and 401s.
+
 ```typescript
 // proxy.ts
-import { createServerClient } from '@supabase/ssr';
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
+import { getSessionCookie } from 'better-auth/cookies';
 
-export async function proxy(req: NextRequest) {
-    const res = NextResponse.next();
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-            cookies: {
-                /* cookie config */
-            },
-        }
-    );
+export function proxy(req: NextRequest): NextResponse {
+    const { pathname } = req.nextUrl;
+    const hasSession = Boolean(getSessionCookie(req));
 
-    const {
-        data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session && req.nextUrl.pathname.startsWith('/dashboard')) {
-        return NextResponse.redirect(new URL('/login', req.url));
+    if (!hasSession && pathname.startsWith('/dashboard')) {
+        const signInUrl = new URL('/sign-in', req.url);
+        signInUrl.searchParams.set('redirect', pathname);
+        return NextResponse.redirect(signInUrl);
     }
 
-    return res;
+    return NextResponse.next();
 }
 
 export const config = {
