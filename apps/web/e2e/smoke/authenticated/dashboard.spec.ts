@@ -77,12 +77,15 @@ test.describe('Dashboard Pages', () => {
 
             // Subscription section renders once tRPC resolves; seeded users get a
             // starter trial row so all three checkout tiers should be visible.
+            // The card header renders before the query resolves, so the first
+            // heading gates on subscriptions.current — give it the suite's 15s
+            // cold-start allowance (see auth-flows/invite specs).
             await expect(
                 page.getByText('Manage your storage plan')
             ).toBeVisible();
             await expect(
                 page.getByRole('heading', { name: 'Starter', exact: true })
-            ).toBeVisible();
+            ).toBeVisible({ timeout: 15_000 });
             await expect(
                 page.getByRole('heading', { name: 'Pro', exact: true })
             ).toBeVisible();
