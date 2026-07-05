@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { findUserByEmail, type File } from '@nexus/db/test-db';
 import { ADMIN_USER } from '../helpers/auth';
 import { seedFiles, cleanupFiles } from '../helpers/scenarios';
+import { waitForTableLoad } from '../helpers/table';
 
 const PAGE_URL = '/dashboard/files';
 
@@ -27,7 +28,7 @@ test.describe('sequential file deletion', () => {
         { tag: ['@page:/dashboard/files', '@uc:files-delete-single'] },
         async ({ page }) => {
             await page.goto(PAGE_URL);
-            await waitForFileList(page);
+            await waitForTableLoad(page, 'No files yet');
 
             // Verify all 3 seeded files are visible
             for (const file of seededFiles) {
@@ -58,14 +59,6 @@ test.describe('sequential file deletion', () => {
         }
     );
 });
-
-async function waitForFileList(page: Page): Promise<void> {
-    await page
-        .locator('table')
-        .or(page.getByText('No files yet'))
-        .first()
-        .waitFor({ timeout: 10_000 });
-}
 
 async function deleteFileByName(page: Page, name: string): Promise<void> {
     // Find the row containing the file name and click its actions menu

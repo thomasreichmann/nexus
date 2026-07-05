@@ -5,6 +5,7 @@ import {
     type JobType,
     type SqsMessageBody,
 } from '@nexus/db/repo/jobs';
+import { createInviteRepo } from '@nexus/db/repo/invites';
 import { sendToQueue } from '@/lib/jobs/publish';
 import { inviteService } from '@/server/services/invites';
 import { adminProcedure, router } from '../init';
@@ -17,9 +18,38 @@ const jobStatusSchema = z.enum([
     'failed',
 ]);
 
+const inviteStatusSchema = z.enum(['pending', 'redeemed', 'revoked']);
+
 export const adminRouter = router({
     devTools: devToolsRouter,
     invites: router({
+        list: adminProcedure
+            .input(
+                z
+                    .object({
+                        limit: z.number().min(1).max(100).default(20),
+                        offset: z.number().min(0).default(0),
+                        status: inviteStatusSchema.optional(),
+                    })
+                    .optional()
+            )
+            .query(async ({ ctx, input }) => {
+                const inviteRepo = createInviteRepo(ctx.db);
+                const limit = input?.limit ?? 20;
+                const offset = input?.offset ?? 0;
+
+                const result = await inviteRepo.findMany({
+                    limit,
+                    offset,
+                    status: input?.status,
+                });
+
+                return {
+                    invites: result.invites,
+                    total: result.total,
+                };
+            }),
+
         create: adminProcedure
             .input(
                 z

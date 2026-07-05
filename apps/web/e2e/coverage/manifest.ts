@@ -34,6 +34,7 @@ export type Area =
     | 'upload'
     | 'billing'
     | 'settings'
+    | 'admin-invites'
     | 'admin-jobs'
     | 'admin-dev-tools'
     | 'errors'
@@ -66,6 +67,11 @@ export const PAGES: PageEntry[] = [
     { route: '/dashboard/files', title: 'Files', auth: 'user' },
     { route: '/dashboard/upload', title: 'Upload', auth: 'user' },
     { route: '/dashboard/settings', title: 'Settings', auth: 'user' },
+    {
+        route: '/dashboard/admin/invites',
+        title: 'Admin · Invites',
+        auth: 'admin',
+    },
     { route: '/dashboard/admin/jobs', title: 'Admin · Jobs', auth: 'admin' },
     {
         route: '/dashboard/admin/dev-tools',
@@ -457,6 +463,34 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/settings'],
         excluded:
             'Placeholder UI — no backend wired up yet (button is a no-op)',
+    },
+
+    /* ---------------------------------------------------------------- */
+    /* Admin · Invites                                                   */
+    /* ---------------------------------------------------------------- */
+    {
+        id: 'admin-invites-create',
+        title: 'Create an invite (email-bound or link-only) and get the invite URL',
+        area: 'admin-invites',
+        routes: ['/dashboard/admin/invites'],
+    },
+    {
+        id: 'admin-invites-table',
+        title: 'Invites table renders seeded invites with recipient, status, and details',
+        area: 'admin-invites',
+        routes: ['/dashboard/admin/invites'],
+    },
+    {
+        id: 'admin-invites-filter',
+        title: 'Status filters update the invites table',
+        area: 'admin-invites',
+        routes: ['/dashboard/admin/invites'],
+    },
+    {
+        id: 'admin-invites-revoke',
+        title: 'Revoke a pending invite from the table',
+        area: 'admin-invites',
+        routes: ['/dashboard/admin/invites'],
     },
 
     /* ---------------------------------------------------------------- */

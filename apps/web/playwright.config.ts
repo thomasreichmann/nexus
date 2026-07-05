@@ -56,15 +56,25 @@ export default defineConfig({
             dependencies: ['admin-files'],
             testMatch: /admin\/jobs\.spec\.ts/,
         },
+        {
+            name: 'admin-invites',
+            use: adminChrome,
+            dependencies: ['admin-jobs'],
+            testMatch: /admin\/invites\.spec\.ts/,
+        },
         // Catch-all tail of the chain: new admin specs land here
         // automatically. If this project ever holds more than one spec file,
         // give the new file its own chain link above.
         {
             name: 'admin',
             use: adminChrome,
-            dependencies: ['admin-jobs'],
+            dependencies: ['admin-invites'],
             testMatch: /admin\/.*/,
-            testIgnore: [/admin\/files\.spec\.ts/, /admin\/jobs\.spec\.ts/],
+            testIgnore: [
+                /admin\/files\.spec\.ts/,
+                /admin\/jobs\.spec\.ts/,
+                /admin\/invites\.spec\.ts/,
+            ],
         },
         // Interactive user flows with dedicated per-spec users (created in
         // each spec's beforeAll via provisionDedicatedUser) — isolated from

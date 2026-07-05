@@ -84,6 +84,24 @@ export async function deleteInvite(db: DB, id: string): Promise<void> {
     await db.delete(schema.invites).where(eq(schema.invites.id, id));
 }
 
+// Cleanup for invites created through the UI, where the test never sees the
+// row id: email-bound ones are found by their unique test email, link-only
+// ones by the token extracted from the displayed invite URL.
+
+export async function deleteInvitesByEmail(
+    db: DB,
+    email: string
+): Promise<void> {
+    await db.delete(schema.invites).where(eq(schema.invites.email, email));
+}
+
+export async function deleteInviteByToken(
+    db: DB,
+    token: string
+): Promise<void> {
+    await db.delete(schema.invites).where(eq(schema.invites.token, token));
+}
+
 /**
  * Upserts the user's subscription to a fresh trial. Used by global setup (the
  * shared e2e users are reused across runs and may pre-date the signup trial

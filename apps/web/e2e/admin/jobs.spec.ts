@@ -1,6 +1,7 @@
 import { test, expect } from '../fixtures';
 import type { Page } from '@playwright/test';
 import { USER_STATE_PATH } from '../helpers/auth';
+import { waitForTableLoad } from '../helpers/table';
 import { waitForTrpcRequest } from '../helpers/trpc';
 import { countJobsByStatus, type Job } from '@nexus/db/test-db';
 import { seedJobs, cleanupJobs } from '../helpers/scenarios';
@@ -76,7 +77,7 @@ test.describe('dashboard with seeded data', () => {
             const dbCounts = await countJobsByStatus(db);
 
             await page.goto(PAGE_URL);
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
 
             await assertStatusCard(page, 'Pending', dbCounts.pending);
             await assertStatusCard(page, 'Processing', dbCounts.processing);
@@ -90,7 +91,7 @@ test.describe('dashboard with seeded data', () => {
         { tag: ['@uc:admin-jobs-table'] },
         async ({ page }) => {
             await page.goto(PAGE_URL);
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
 
             const headers = page.locator('thead th');
             await expect(headers.nth(0)).toHaveText('Type');
@@ -110,12 +111,12 @@ test.describe('dashboard with seeded data', () => {
         { tag: ['@uc:admin-jobs-filter'] },
         async ({ page }) => {
             await page.goto(PAGE_URL);
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
 
             await page
                 .getByRole('button', { name: 'Failed', exact: true })
                 .click();
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
 
             const badges = page.locator('tbody td:nth-child(2)');
             const count = await badges.count();
@@ -127,7 +128,7 @@ test.describe('dashboard with seeded data', () => {
             await page
                 .getByRole('button', { name: 'All', exact: true })
                 .click();
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
         }
     );
 
@@ -136,7 +137,7 @@ test.describe('dashboard with seeded data', () => {
         { tag: ['@uc:admin-jobs-filter'] },
         async ({ page }) => {
             await page.goto(PAGE_URL);
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
 
             // "Processing" was not seeded — filtering to it should show empty state
             await page
@@ -167,12 +168,12 @@ test.describe('pagination', () => {
             const totalPending = dbCounts.pending;
 
             await page.goto(PAGE_URL);
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
 
             await page
                 .getByRole('button', { name: 'Pending', exact: true })
                 .click();
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
 
             const totalPages = Math.ceil(totalPending / 20);
             await expect(
@@ -188,7 +189,7 @@ test.describe('pagination', () => {
             ).toBeVisible();
 
             await page.getByRole('button', { name: 'Next page' }).click();
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
 
             await expect(
                 page.getByText(`Page 2 of ${totalPages}`)
@@ -202,7 +203,7 @@ test.describe('pagination', () => {
             ).toBeVisible();
 
             await page.getByRole('button', { name: 'Previous page' }).click();
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
 
             await expect(
                 page.getByText(`Page 1 of ${totalPages}`)
@@ -217,7 +218,7 @@ test.describe('refresh', () => {
         { tag: ['@uc:admin-jobs-refresh'] },
         async ({ page }) => {
             await page.goto(PAGE_URL);
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
 
             // Refresh must refetch BOTH procedures the page renders from.
             // Waits start before the click so the requests are attributable
@@ -231,7 +232,7 @@ test.describe('refresh', () => {
             await listRefetch;
             await countsRefetch;
             // Refetched data renders (not an error/blank state).
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
         }
     );
 });
@@ -252,13 +253,13 @@ test.describe('retry', () => {
         { tag: ['@uc:admin-jobs-retry'] },
         async ({ page }) => {
             await page.goto(PAGE_URL);
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
 
             // Filter to completed — retry button should NOT appear
             await page
                 .getByRole('button', { name: 'Completed', exact: true })
                 .click();
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
             await expect(
                 page.getByRole('button', { name: 'Retry job' })
             ).toHaveCount(0);
@@ -267,7 +268,7 @@ test.describe('retry', () => {
             await page
                 .getByRole('button', { name: 'Failed', exact: true })
                 .click();
-            await waitForDataLoad(page);
+            await waitForTableLoad(page, 'No jobs found');
 
             const retryButton = page.getByRole('button', { name: 'Retry job' });
             await expect(retryButton.first()).toBeVisible();
@@ -282,14 +283,6 @@ test.describe('retry', () => {
         }
     );
 });
-
-async function waitForDataLoad(page: Page): Promise<void> {
-    await page
-        .locator('table')
-        .or(page.getByText('No jobs found'))
-        .first()
-        .waitFor({ timeout: 10_000 });
-}
 
 async function assertStatusCard(
     page: Page,

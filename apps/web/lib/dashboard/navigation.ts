@@ -5,6 +5,7 @@ import {
     ListChecks,
     Settings,
     Upload,
+    UserPlus,
     Wrench,
 } from 'lucide-react';
 
@@ -20,6 +21,12 @@ export const dashboardNavigation: NavItem[] = [
     { name: 'Files', href: '/dashboard/files', icon: FolderOpen },
     { name: 'Upload', href: '/dashboard/upload', icon: Upload },
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+    {
+        name: 'Invites',
+        href: '/dashboard/admin/invites',
+        icon: UserPlus,
+        isAdminOnly: true,
+    },
     {
         name: 'Jobs',
         href: '/dashboard/admin/jobs',
