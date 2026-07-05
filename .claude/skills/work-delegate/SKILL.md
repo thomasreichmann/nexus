@@ -42,9 +42,16 @@ Implement a GitHub issue as a delegator: you orchestrate and judge; an explore a
 
 6. **Self-review (never skip).** Spawn 3 parallel Task agents, each given the changed files and diff: `conventions-review`, `code-quality-review`, `reuse-review`. Present findings grouped by category and ask: fix all / fix selected / skip (note in PR). Continue the executor with ALL approved fixes in one message (it has the implementation context; its continues are cheap), then re-run `pnpm check`.
 
-7. **Commit & push.** Invoke the `/commit` skill (runs on a cheap model in a forked context). Message format: `<type>: <description> (#<n>)`. Stage only related files.
+7. **Gather evidence (delegator does this, not the executor).** Drive the actual feature and capture proof that the acceptance criteria hold. Evidence produced by the agent that wrote the code is a demo, not a check — independent hands on the feature is the point, and it makes step 5's verification durable instead of an assertion that evaporates. Proportional to the change:
+    - **UI change** — record a temporary Playwright capture spec in `apps/web/e2e/smoke/authenticated/` reusing the e2e fixtures: `test.use({ userRole: 'user', video: 'on', colorScheme: 'dark', viewport: { width: 1440, height: 900 } })`; drive before/after states via `@nexus/db/test-db` helpers with the existing `afterEach` reset; `page.waitForTimeout(~2s)` holds before each `page.screenshot()` so the video is readable. Three details people relearn the hard way: capture in **dark mode** (standing preference); **scope text assertions** to a container (`.locator('..')`) — values like a storage limit often render twice (panel + sidebar) and unscoped `getByText` fails on strict mode; **delete the spec** after recording so it's never committed. Upload video + stills with `/attach-video`.
+    - **Behavioral/backend change** — whatever proves the criterion: the new test's output, a before/after DB query, a `curl` against the dev server, a log excerpt showing the code path firing.
+    - **Refactor/test-only change** — the check output tails from step 4 are already enough; skip this step.
 
-8. **PR.** `gh pr create` with body:
+    One `## Evidence` section in the PR, and only artifacts that demonstrate an acceptance criterion — logs nobody reads are padding. (Post-merge validation against the dev environment is `/validate`'s job; this step is its cheaper pre-merge cousin — don't grow it into a duplicate.)
+
+8. **Commit & push.** Invoke the `/commit` skill (runs on a cheap model in a forked context). Message format: `<type>: <description> (#<n>)`. Stage only related files.
+
+9. **PR.** `gh pr create` with body:
 
     ```
     ## Summary
@@ -57,4 +64,7 @@ Implement a GitHub issue as a delegator: you orchestrate and judge; an explore a
 
     ## Test Plan
     - [ ] <how to verify>
+
+    ## Evidence
+    <inline video / stills / output proving the acceptance criteria — omit only for refactor/test-only changes>
     ```
