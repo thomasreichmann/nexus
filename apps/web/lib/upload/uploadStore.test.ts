@@ -59,6 +59,12 @@ describe('uploadStore', () => {
         expect((await getUpload('file-1'))?.fileHandle).toEqual(fileHandle);
     });
 
+    it('round-trips a persisted batchId', async () => {
+        await putUpload(makeRecord({ batchId: 'batch-1' }));
+
+        expect((await getUpload('file-1'))?.batchId).toBe('batch-1');
+    });
+
     it('lists all records', async () => {
         await putUpload(makeRecord({ fileId: 'a' }));
         await putUpload(makeRecord({ fileId: 'b' }));

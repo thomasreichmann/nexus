@@ -14,6 +14,8 @@
  *    with fallback name `Upload YYYY-MM-DD HH:MM`, `files.batch_id` set,
  *    `storage_usage` incremented by the file's bytes.
  *  - Dashboard "Storage Usage" widget renders after the upload.
+ *  - Multi-file upload in one click (#268): both files land in a single
+ *    `upload_batches` row and share the `${userId}/${batchId}/` key prefix.
  *  - Quota soft cap: with `storage_usage` parked at 105%, attempting an
  *    upload through the UI surfaces an error and creates no DB row.
  *
@@ -165,6 +167,94 @@ test.describe('upload batches + storage quota', () => {
                 path: `${SCREENSHOTS}/05-grouped-files-page.png`,
                 fullPage: true,
             });
+        }
+    );
+
+    test(
+        'multi-file upload in one click creates a single shared batch',
+        {
+            tag: [
+                '@page:/dashboard/upload',
+                '@uc:upload-multi-file-single-batch',
+            ],
+        },
+        async ({ page, db, seedUserId: userId }) => {
+            // Reset so "exactly one batch" is a strict assertion rather than a
+            // delta over the single-file test's leftover batch. Runs before
+            // the quota test, which re-parks usage itself.
+            await resetUserState(db, userId);
+
+            await page.goto('/dashboard/upload');
+            await expect(
+                page.getByRole('heading', { name: 'Upload Files', exact: true })
+            ).toBeVisible();
+
+            const stamp = Date.now();
+            const filesToUpload = [
+                {
+                    name: `validate-multi-a-${stamp}.txt`,
+                    mimeType: 'text/plain',
+                    buffer: Buffer.from('multi-file batch validate: file a\n'),
+                },
+                {
+                    name: `validate-multi-b-${stamp}.txt`,
+                    mimeType: 'text/plain',
+                    buffer: Buffer.from('multi-file batch validate: file b!\n'),
+                },
+            ];
+
+            await page.setInputFiles('input[type="file"]', filesToUpload);
+            await expect(page.getByText('Selected Files (2)')).toBeVisible();
+            await page.screenshot({
+                path: `${SCREENSHOTS}/06-multi-after-select.png`,
+                fullPage: true,
+            });
+
+            await page
+                .getByRole('button', { name: /^Upload \d+ files?$/ })
+                .click();
+            await expect(
+                page.getByText('Uploaded', { exact: true })
+            ).toHaveCount(2, { timeout: 30_000 });
+            await page.screenshot({
+                path: `${SCREENSHOTS}/07-multi-after-upload.png`,
+                fullPage: true,
+            });
+
+            // ---- DB assertions ----
+            // One click → one batch (not one per file, the #268 regression).
+            const batches = await db.query.uploadBatches.findMany({
+                where: (b, { eq }) => eq(b.userId, userId),
+            });
+            expect(batches).toHaveLength(1);
+            const batch = batches[0];
+            expect(batch.name).toMatch(
+                /^Upload \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/
+            );
+
+            const names = filesToUpload.map((f) => f.name);
+            const files = await db.query.files.findMany({
+                where: (f, { eq, and, inArray }) =>
+                    and(eq(f.userId, userId), inArray(f.name, names)),
+            });
+            expect(files).toHaveLength(2);
+            for (const file of files) {
+                expect(file.status).toBe('available');
+                expect(file.batchId).toBe(batch.id);
+                expect(file.s3Key).toBe(
+                    `${userId}/${batch.id}/${file.id}/${file.name}`
+                );
+            }
+
+            const totalBytes = filesToUpload.reduce(
+                (sum, f) => sum + f.buffer.byteLength,
+                0
+            );
+            const usage = await db.query.storageUsage.findFirst({
+                where: (u, { eq }) => eq(u.userId, userId),
+            });
+            expect(usage?.usedBytes).toBe(totalBytes);
+            expect(usage?.fileCount).toBe(2);
         }
     );
 

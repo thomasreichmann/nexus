@@ -2,7 +2,10 @@ import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
 import { createStorageUsageRepo } from '@nexus/db/repo/storage-usage';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
-import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
+import {
+    createUploadBatchRepo,
+    type UploadBatch,
+} from '@nexus/db/repo/uploadBatches';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
 import { quotaService } from './quota';
@@ -29,25 +32,45 @@ export function formatFallbackBatchName(date: Date): string {
     return `Upload ${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
 }
 
+// Single insert point for new batches; the name falls back to the timestamp
+// label when the caller doesn't supply one.
+async function insertBatch(
+    db: DB,
+    userId: string,
+    name?: string
+): Promise<UploadBatch> {
+    const batchRepo = createUploadBatchRepo(db);
+    return batchRepo.insert({
+        id: crypto.randomUUID(),
+        userId,
+        name: name ?? formatFallbackBatchName(new Date()),
+    });
+}
+
 async function resolveBatchId(
     db: DB,
     userId: string,
     input: UploadInput
 ): Promise<string> {
-    const batchRepo = createUploadBatchRepo(db);
     if (input.batchId) {
+        const batchRepo = createUploadBatchRepo(db);
         const existing = await batchRepo.findByUserAndId(userId, input.batchId);
         if (!existing) {
             throw new NotFoundError('UploadBatch', input.batchId);
         }
         return existing.id;
     }
-    const batch = await batchRepo.insert({
-        id: crypto.randomUUID(),
-        userId,
-        name: input.batchName ?? formatFallbackBatchName(new Date()),
-    });
-    return batch.id;
+    return (await insertBatch(db, userId, input.batchName)).id;
+}
+
+interface CreateBatchResult {
+    batchId: string;
+}
+
+// Pre-create a session batch so every file in a multi-file upload joins the
+// same batch (the per-file initiate calls pass this id back as input.batchId).
+async function createBatch(db: DB, userId: string): Promise<CreateBatchResult> {
+    return { batchId: (await insertBatch(db, userId)).id };
 }
 
 interface InitiateUploadResult {
@@ -391,6 +414,7 @@ async function deleteUserFile(
 }
 
 export const fileService = {
+    createBatch,
     initiateUpload,
     confirmUpload,
     initiateMultipartUpload,

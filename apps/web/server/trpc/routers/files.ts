@@ -89,6 +89,12 @@ export const filesRouter = router({
             return fileRepo.findByUserAndId(ctx.session.user.id, input.id);
         }),
 
+    // Pre-create a session batch (fallback-named) so a multi-file upload can
+    // pass one batchId to every per-file initiate call.
+    createBatch: protectedProcedure.mutation(({ ctx }) =>
+        fileService.createBatch(ctx.db, ctx.session.user.id)
+    ),
+
     upload: protectedProcedure
         .input(uploadInputSchema)
         .mutation(async ({ ctx, input }) => {

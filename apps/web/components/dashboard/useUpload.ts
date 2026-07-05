@@ -76,6 +76,9 @@ interface InternalUploadFile extends UploadFile {
     // Identity field a reopened handle must match before we trust it to resume.
     lastModified?: number;
     fileId?: string;
+    // Session batch the file belongs to — set once per Upload click and kept
+    // across failures so a retry/resume rejoins the same batch.
+    batchId?: string;
     uploadId?: string;
     chunkSize?: number;
     totalParts?: number;
@@ -99,6 +102,9 @@ export function useUpload() {
     const invalidateFileList = useInvalidateFileList();
 
     const uploadMutation = useMutation(trpc.files.upload.mutationOptions());
+    const createBatchMutation = useMutation(
+        trpc.files.createBatch.mutationOptions()
+    );
     const confirmMutation = useMutation(
         trpc.files.confirmUpload.mutationOptions()
     );
@@ -128,9 +134,13 @@ export function useUpload() {
     );
 
     const uploadSingleFile = useCallback(
-        async (uploadFile: InternalUploadFile) => {
+        // batchId is threaded explicitly (not read back via filesRef) because a
+        // just-issued updateFile isn't visible until the next render commit.
+        // Callers without a session batch (retry) fall back to the row's own.
+        async (uploadFile: InternalUploadFile, batchId?: string) => {
             const file = uploadFile.file;
             if (!file) return;
+            const sessionBatchId = batchId ?? uploadFile.batchId;
             const abortController = new AbortController();
             updateFile(uploadFile.id, {
                 status: 'uploading',
@@ -142,6 +152,7 @@ export function useUpload() {
                     name: file.name,
                     sizeBytes: file.size,
                     mimeType: file.type || undefined,
+                    batchId: sessionBatchId,
                 });
 
                 updateFile(uploadFile.id, { fileId });
@@ -183,9 +194,13 @@ export function useUpload() {
     );
 
     const uploadMultipartFile = useCallback(
-        async (uploadFile: InternalUploadFile) => {
+        // Same explicit batchId threading as uploadSingleFile; only the
+        // fresh-start branch uses it (a resume already committed membership
+        // server-side at the original init).
+        async (uploadFile: InternalUploadFile, batchId?: string) => {
             const file = uploadFile.file;
             if (!file) return;
+            const sessionBatchId = batchId ?? uploadFile.batchId;
 
             const abortController = new AbortController();
             updateFile(uploadFile.id, {
@@ -212,6 +227,7 @@ export function useUpload() {
                         name: file.name,
                         sizeBytes: file.size,
                         mimeType: file.type || undefined,
+                        batchId: sessionBatchId,
                     });
                     fileId = result.fileId;
                     uploadId = result.uploadId;
@@ -238,12 +254,15 @@ export function useUpload() {
                         // Persist the handle (when we have one) so an interruption
                         // is zero-touch resumable, not just re-add resumable.
                         fileHandle: uploadFile.fileHandle,
+                        // Persist the batch so a post-reload resume rejoins it.
+                        batchId: sessionBatchId,
                     });
                     updateFile(uploadFile.id, {
                         fileId,
                         uploadId,
                         chunkSize,
                         totalParts,
+                        batchId: sessionBatchId,
                     });
                 } else {
                     // Resume: reconcile against S3 (authoritative even if local
@@ -422,15 +441,34 @@ export function useUpload() {
     );
 
     const runUpload = useCallback(
-        (uploadFile: InternalUploadFile) =>
+        (uploadFile: InternalUploadFile, batchId?: string) =>
             uploadFile.size >= MULTIPART_THRESHOLD
-                ? uploadMultipartFile(uploadFile)
-                : uploadSingleFile(uploadFile),
+                ? uploadMultipartFile(uploadFile, batchId)
+                : uploadSingleFile(uploadFile, batchId),
         [uploadMultipartFile, uploadSingleFile]
     );
 
     const processQueue = useCallback(async () => {
         setIsUploading(true);
+
+        // One batch per Upload click: every pending file in this pass joins
+        // it, so a multi-file selection lands in a single upload_batches row.
+        // Created fresh per invocation — files queued later get a new batch on
+        // the next click. On failure we proceed without an id and each file
+        // falls back to the server's auto-created single-file batch.
+        let batchId: string | undefined;
+        // Rows that already have a batch (retries, re-added resumables) keep
+        // it, so only mint a session batch when some file still needs one.
+        const hasPending = filesRef.current.some(
+            (f) => f.status === 'pending' && f.file && !f.batchId
+        );
+        if (hasPending) {
+            try {
+                ({ batchId } = await createBatchMutation.mutateAsync());
+            } catch {
+                batchId = undefined;
+            }
+        }
 
         for (const file of filesRef.current) {
             if (file.status !== 'pending') continue;
@@ -441,11 +479,17 @@ export function useUpload() {
                 continue;
             }
 
-            await runUpload(current);
+            // Retried/resumed rows keep their original batch; only rows
+            // without one join this session's batch. Written to the row for
+            // retry/persistence, but threaded to runUpload explicitly — the
+            // ref won't reflect this update until the next render commit.
+            const rowBatchId = current.batchId ?? batchId;
+            updateFile(current.id, { batchId: rowBatchId });
+            await runUpload(current, rowBatchId);
         }
 
         setIsUploading(false);
-    }, [runUpload]);
+    }, [runUpload, createBatchMutation, updateFile]);
 
     // Surface interrupted uploads found in IndexedDB on mount as `resumable`
     // rows. Records that persisted a File System Access handle (and run on a
@@ -480,6 +524,7 @@ export function useUpload() {
                         fileHandle: r.fileHandle,
                         lastModified: r.lastModified,
                         fileId: r.fileId,
+                        batchId: r.batchId,
                         uploadId: r.uploadId,
                         chunkSize: r.chunkSize,
                         totalParts: r.totalParts,
@@ -572,6 +617,7 @@ export function useUpload() {
                         file,
                         fileHandle: handle,
                         fileId: match.fileId,
+                        batchId: match.batchId,
                         uploadId: match.uploadId,
                         chunkSize: match.chunkSize,
                         totalParts: match.totalParts,

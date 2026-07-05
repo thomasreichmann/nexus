@@ -314,6 +314,13 @@ export const USE_CASES: UseCaseEntry[] = [
         manual: 'Writes real S3 objects + DB rows in the dev environment; exercised by the validate tier',
     },
     {
+        id: 'upload-multi-file-single-batch',
+        title: 'Multi-file upload in one click creates a single batch',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+        manual: 'Writes real S3 objects + DB rows in the dev environment; exercised by the validate tier',
+    },
+    {
         id: 'upload-batch-grouping',
         title: 'Upload creates a batch visible on the files page',
         area: 'upload',

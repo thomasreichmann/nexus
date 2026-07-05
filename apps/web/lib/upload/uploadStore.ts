@@ -33,6 +33,11 @@ export interface ResumableUpload {
     completedParts: CompletedPart[];
     createdAt: number;
     updatedAt: number;
+    // Session batch the file joined at init, so a retry/resume after reload
+    // rejoins the original batch instead of falling back to a new one.
+    // Optional plain field (not an index) — no DB_VERSION bump needed; absent
+    // on pre-batch records.
+    batchId?: string;
     // Chromium-only: the File System Access handle for zero-touch resume. It's
     // structured-cloneable, so IndexedDB persists it directly — no schema bump.
     // Absent on other browsers and pre-handle records, which fall back to re-add.

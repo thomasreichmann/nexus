@@ -229,6 +229,26 @@ describe('files service', () => {
         });
     });
 
+    describe('createBatch', () => {
+        it('inserts a batch with the fallback name and returns its id', async () => {
+            const batch = createUploadBatchFixture();
+            mocks.returning.mockResolvedValueOnce([batch]);
+
+            const result = await fileService.createBatch(db, TEST_USER_ID);
+
+            expect(result).toEqual({ batchId: batch.id });
+            expect(mocks.insert).toHaveBeenCalledTimes(1);
+            expect(mocks.values).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    userId: TEST_USER_ID,
+                    name: expect.stringMatching(
+                        /^Upload \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/
+                    ),
+                })
+            );
+        });
+    });
+
     describe('formatFallbackBatchName', () => {
         it('formats UTC timestamp at minute precision', () => {
             // 2026-05-08T14:32:11.000Z
