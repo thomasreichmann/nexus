@@ -32,7 +32,7 @@ Both projects are on the free (pausing) plan, so both are pinged by `.github/wor
 
 1. [Supabase dashboard](https://supabase.com/dashboard) → **New project** in the same organization as the dev project.
 2. Name: `nexus-prod`.
-3. Region: match the dev project's region (and `us-east-1` AWS resources).
+3. Region: `sa-east-1` (São Paulo) — chosen 2026-07 because the alpha testers are in Brazil. Note this deliberately differs from dev (`us-east-1`) and from the shared AWS resources; cross-region S3 latency is acceptable until prod AWS resources exist (see Follow-Ups).
 4. Generate a strong database password and store it in the password manager — it is embedded in the connection string below.
 
 No data migration is needed: prod starts empty and gets its schema from the migration pipeline (see below).
@@ -106,7 +106,7 @@ gh workflow run supabase-keepalive.yml
 ## Follow-Ups
 
 - **Repoint the Vercel production deployment** at the prod project: after setting the Production env vars above, redeploy production so it picks up the prod `DATABASE_URL`. Until then, the production deployment still points at dev.
-- **Prod AWS resources**: `s3-event-health.yml` runs its prod leg with dev AWS credentials (no prod S3 bucket exists yet — trivially green while prod is empty). Provision prod AWS resources and secrets when a prod bucket exists; see [[aws-manual-setup|AWS Manual Setup]] for the dev pattern.
+- **Prod AWS resources**: `s3-event-health.yml` runs its prod leg with dev AWS credentials (no prod S3 bucket exists yet — trivially green while prod is empty). Provision prod AWS resources and secrets when a prod bucket exists; see [[aws-manual-setup|AWS Manual Setup]] for the dev pattern. Put them in `sa-east-1` to match the prod database and the Brazilian user base — uploads go browser → S3 directly, so bucket proximity to users matters more than proximity to dev infrastructure.
 
 ## Related
 
