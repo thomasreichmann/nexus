@@ -8,6 +8,7 @@ config({
 });
 
 import { createDb } from '../connection';
+import { checkSeedEnv } from './envGuard';
 import {
     SCENARIO_DEFINITIONS,
     runScenario,
@@ -18,6 +19,12 @@ import {
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
     console.error('DATABASE_URL is not set. Check apps/web/.env.local exists.');
+    process.exit(1);
+}
+
+const guard = checkSeedEnv(process.env.DB_ENV);
+if (!guard.isOk) {
+    console.error(guard.message);
     process.exit(1);
 }
 

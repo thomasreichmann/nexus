@@ -7,15 +7,25 @@ on:
 
 jobs:
     drift-check:
-        name: Check migration drift
+        name: Check migration drift (${{ matrix.env }})
         runs-on: ubuntu-latest
+        strategy:
+            # Check both DBs even if one drifts — one env's drift must not
+            # mask the other's result.
+            fail-fast: false
+            matrix:
+                include:
+                    - env: dev
+                      db-secret: DATABASE_URL
+                    - env: prod
+                      db-secret: DATABASE_URL_PROD
         steps:
             - name: Checkout
               uses: actions/checkout@v4
 
             - name: Read Node version
               id: node-version
-              run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+              run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
 
             - name: Setup pnpm
               uses: pnpm/action-setup@v4
@@ -29,7 +39,16 @@ jobs:
             - name: Install dependencies
               run: pnpm install --frozen-lockfile
 
+            - name: Verify database secret is configured
+              env:
+                  DATABASE_URL: ${{ secrets[matrix.db-secret] }}
+              run: |
+                  if [ -z "$DATABASE_URL" ]; then
+                      echo "::error::secret ${{ matrix.db-secret }} is not configured (see docs/infra/supabase-manual-setup.md)"
+                      exit 1
+                  fi
+
             - name: Check migration drift
               run: pnpm -F db db:drift
               env:
-                  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+                  DATABASE_URL: ${{ secrets[matrix.db-secret] }}

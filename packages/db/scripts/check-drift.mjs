@@ -34,7 +34,9 @@ try {
     console.error(
         `DRIFT: repo has ${expected} migrations in _journal.json, DB has ${applied} applied.`
     );
-    console.error('Run `pnpm -F db db:migrate` against the prod DB.');
+    console.error(
+        'Run `pnpm -F db db:migrate` with DATABASE_URL pointed at this database.'
+    );
     process.exit(1);
 } finally {
     await sql.end();

@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
     migrate:
-        name: Apply DB migrations
+        name: Apply DB migrations (dev)
         runs-on: ubuntu-latest
         timeout-minutes: 10
         steps:
@@ -20,7 +20,7 @@ jobs:
 
             - name: Read Node version
               id: node-version
-              run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+              run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
 
             - name: Setup pnpm
               uses: pnpm/action-setup@v4
@@ -38,6 +38,49 @@ jobs:
               run: pnpm -F db db:migrate
               env:
                   DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+    # Prod gates on the dev apply (same SQL against a schema-identical DB acts
+    # as a canary) but deliberately NOT on smoke-tests: e2e can fail for
+    # reasons unrelated to migrations (browsers, S3, Stripe), and gating prod
+    # on it would leave prod drifted whenever e2e flakes.
+    migrate-prod:
+        name: Apply DB migrations (prod)
+        needs: migrate
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Read Node version
+              id: node-version
+              run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: ${{ steps.node-version.outputs.version }}
+                  cache: 'pnpm'
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Verify DATABASE_URL_PROD secret is configured
+              env:
+                  DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
+              run: |
+                  if [ -z "$DATABASE_URL" ]; then
+                      echo "::error::secret DATABASE_URL_PROD is not configured (see docs/infra/supabase-manual-setup.md)"
+                      exit 1
+                  fi
+
+            - name: Apply migrations
+              run: pnpm -F db db:migrate
+              env:
+                  DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
 
     smoke-tests:
         name: Smoke Tests
@@ -66,7 +109,7 @@ jobs:
 
             - name: Read Node version
               id: node-version
-              run: echo "version=$(cat .nvmrc)" >> $GITHUB_OUTPUT
+              run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
 
             - name: Setup pnpm
               uses: pnpm/action-setup@v4
@@ -82,7 +125,7 @@ jobs:
 
             - name: Get Playwright version
               id: playwright-version
-              run: echo "version=$(pnpm -F web exec playwright --version | awk '{print $2}')" >> $GITHUB_OUTPUT
+              run: echo "version=$(pnpm -F web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
 
             - name: Cache Playwright browsers
               uses: actions/cache@v4

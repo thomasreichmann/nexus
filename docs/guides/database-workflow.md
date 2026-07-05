@@ -1,7 +1,7 @@
 ---
 title: Database Workflow
 created: 2025-12-30
-updated: 2025-12-30
+updated: 2026-07-05
 status: active
 tags:
     - guide
@@ -18,9 +18,9 @@ How to work with the database using Drizzle ORM.
 
 ## Environment Strategy
 
-**Single environment approach:** All development runs against the cloud Supabase database. No local database setup.
+**Two cloud databases, no local setup:** development work runs against the shared dev Supabase project; a separate prod project is migrated by CI (`post-merge.yml`) on merge to main. Local tooling never touches prod — see [[environment-setup|Environment Setup]] and [[../infra/supabase-manual-setup|Supabase Manual Setup]].
 
-- `.env.local` contains cloud credentials (pulled from Vercel)
+- `.env.local` contains cloud dev credentials (pulled from Vercel)
 - Run `pnpm env:pull` to get credentials
 - Requires internet connection for development
 
