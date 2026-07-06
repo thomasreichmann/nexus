@@ -12,7 +12,7 @@ export function Hero() {
                             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
                             <span className="relative inline-flex h-2 w-2 rounded-full bg-primary"></span>
                         </span>
-                        Now with dark mode
+                        Built on AWS S3 Glacier Deep Archive
                     </div>
                     <h1 className="mb-6 text-4xl font-bold tracking-tight text-balance md:text-5xl lg:text-6xl">
                         Store everything.
@@ -22,9 +22,9 @@ export function Hero() {
                         </span>
                     </h1>
                     <p className="mb-10 text-lg text-muted-foreground text-balance md:text-xl">
-                        Nexus is deep storage that just works. Enterprise-grade
-                        durability without the complexity — up to 60% cheaper
-                        than traditional cloud storage.
+                        Nexus is deep storage for the files you need to keep but
+                        rarely open. Archival-grade durability without touching
+                        AWS — up to 60% cheaper than traditional cloud storage.
                     </p>
                     <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
                         <Link href="/sign-up" className="w-full sm:w-auto">
@@ -46,17 +46,15 @@ export function Hero() {
                     <div className="mt-12 flex flex-wrap items-center justify-center gap-8 text-sm text-muted-foreground">
                         <div className="flex items-center gap-2">
                             <DollarSign className="h-4 w-4 text-primary" />
-                            <span>
-                                Up to 60% cheaper than cloud storage
-                            </span>
+                            <span>1 TB for $3/month</span>
                         </div>
                         <div className="flex items-center gap-2">
                             <Shield className="h-4 w-4 text-primary" />
-                            <span>11 nines durability</span>
+                            <span>AWS S3&apos;s 11-nines durability</span>
                         </div>
                         <div className="flex items-center gap-2">
                             <Zap className="h-4 w-4 text-primary" />
-                            <span>No technical setup required</span>
+                            <span>No AWS account, no setup</span>
                         </div>
                     </div>
                 </div>

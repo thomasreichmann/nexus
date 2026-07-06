@@ -1,48 +1,39 @@
 import Link from 'next/link';
 import { Logo } from './Logo';
+import { GITHUB_ISSUES_URL, GITHUB_REPO_URL } from './links';
 
-const footerLinks = {
-    product: [
-        { label: 'Features', href: '#features' },
-        { label: 'Pricing', href: '#pricing' },
-        { label: 'Security', href: '#' },
-        { label: 'Roadmap', href: '#' },
-    ],
-    company: [
-        { label: 'About', href: '#' },
-        { label: 'Blog', href: '#' },
-        { label: 'Careers', href: '#' },
-        { label: 'Contact', href: '#' },
-    ],
-    resources: [
-        { label: 'Documentation', href: '#' },
-        { label: 'Help Center', href: '#' },
-        { label: 'API Reference', href: '#' },
-        { label: 'Status', href: '#' },
-    ],
-    legal: [
-        { label: 'Privacy', href: '#' },
-        { label: 'Terms', href: '#' },
-        { label: 'DPA', href: '#' },
-    ],
-};
+const productLinks = [
+    { label: 'Features', href: '#features' },
+    { label: 'Pricing', href: '#pricing' },
+    { label: 'How it works', href: '#how-it-works' },
+];
+
+const accountLinks = [
+    { label: 'Sign in', href: '/sign-in' },
+    { label: 'Create account', href: '/sign-up' },
+];
+
+const projectLinks = [
+    { label: 'GitHub', href: GITHUB_REPO_URL },
+    { label: 'Issues & roadmap', href: GITHUB_ISSUES_URL },
+];
 
 export function Footer() {
     return (
         <footer className="border-t border-border bg-muted/30 py-12">
             <div className="container mx-auto px-4">
-                <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-6">
+                <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-5">
                     <div className="lg:col-span-2">
                         <Logo className="mb-4" />
                         <p className="text-sm text-muted-foreground">
-                            Deep storage made simple. Store your files forever
-                            for almost nothing.
+                            Deep storage made simple. Keep everything, pay
+                            almost nothing.
                         </p>
                     </div>
                     <div>
                         <h4 className="mb-4 text-sm font-semibold">Product</h4>
                         <ul className="space-y-2">
-                            {footerLinks.product.map((link) => (
+                            {productLinks.map((link) => (
                                 <li key={link.label}>
                                     <Link
                                         href={link.href}
@@ -55,9 +46,9 @@ export function Footer() {
                         </ul>
                     </div>
                     <div>
-                        <h4 className="mb-4 text-sm font-semibold">Company</h4>
+                        <h4 className="mb-4 text-sm font-semibold">Account</h4>
                         <ul className="space-y-2">
-                            {footerLinks.company.map((link) => (
+                            {accountLinks.map((link) => (
                                 <li key={link.label}>
                                     <Link
                                         href={link.href}
@@ -70,33 +61,18 @@ export function Footer() {
                         </ul>
                     </div>
                     <div>
-                        <h4 className="mb-4 text-sm font-semibold">
-                            Resources
-                        </h4>
+                        <h4 className="mb-4 text-sm font-semibold">Project</h4>
                         <ul className="space-y-2">
-                            {footerLinks.resources.map((link) => (
+                            {projectLinks.map((link) => (
                                 <li key={link.label}>
-                                    <Link
+                                    <a
                                         href={link.href}
+                                        target="_blank"
+                                        rel="noreferrer"
                                         className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                                     >
                                         {link.label}
-                                    </Link>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                    <div>
-                        <h4 className="mb-4 text-sm font-semibold">Legal</h4>
-                        <ul className="space-y-2">
-                            {footerLinks.legal.map((link) => (
-                                <li key={link.label}>
-                                    <Link
-                                        href={link.href}
-                                        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                                    >
-                                        {link.label}
-                                    </Link>
+                                    </a>
                                 </li>
                             ))}
                         </ul>

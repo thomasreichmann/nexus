@@ -1,39 +1,41 @@
-import { Shield, Wallet, Clock, Lock, Globe, Headphones } from 'lucide-react';
+import { Shield, Wallet, Clock, Lock, Globe, Download } from 'lucide-react';
 
 const features = [
     {
         icon: Wallet,
         title: 'Up to 60% cheaper',
         description:
-            'Starting at $3/month for 1TB. Pay less than traditional cloud storage.',
+            'Starting at $3/month for 1 TB. Archival prices without the archival complexity.',
     },
     {
         icon: Shield,
         title: '11 nines durability',
         description:
-            "99.999999999% durability. Your files aren't going anywhere.",
+            'Files live on AWS S3 Glacier Deep Archive, designed for 99.999999999% durability.',
     },
     {
         icon: Clock,
-        title: '12-48 hour retrieval',
+        title: 'Retrieval within 12 hours',
         description:
-            "Request your files anytime. They're available within hours.",
+            'Request files anytime. Archived files are ready within 12 hours; recent uploads in minutes.',
     },
     {
-        icon: Lock,
-        title: 'End-to-end encryption',
-        description: 'Your files are encrypted at rest and in transit. Always.',
+        icon: Download,
+        title: 'Unlimited retrievals',
+        description:
+            'Retrieval is baked into the price. No egress bills, no per-GB surprises.',
     },
     {
         icon: Globe,
         title: 'No technical setup',
         description:
-            'We handle all the complexity. You just upload and download.',
+            'No AWS account, no lifecycle policies, no SDK. Upload, and we handle the rest.',
     },
     {
-        icon: Headphones,
-        title: 'Human support',
-        description: 'Real people ready to help when you need it.',
+        icon: Lock,
+        title: 'Private by default',
+        description:
+            'Files are reachable only through your account, via time-limited signed download links.',
     },
 ];
 
@@ -49,7 +51,7 @@ export function Features() {
                         Everything you need
                     </h2>
                     <p className="text-lg text-muted-foreground">
-                        Enterprise-grade archival storage, made simple.
+                        Serious archival storage, made simple.
                     </p>
                 </div>
                 <div className="mx-auto grid max-w-5xl gap-8 md:grid-cols-2 lg:grid-cols-3">

@@ -4,7 +4,7 @@ import { ProblemSolution } from '@/components/landing/problem-solution';
 import { HowItWorks } from '@/components/landing/how-it-works';
 import { Features } from '@/components/landing/features';
 import { Pricing } from '@/components/landing/pricing';
-import { Trust } from '@/components/landing/trust';
+import { Comparison } from '@/components/landing/comparison';
 import { CTA } from '@/components/landing/cta';
 import { Footer } from '@/components/landing/footer';
 
@@ -18,7 +18,7 @@ export default function LandingPage() {
                 <HowItWorks />
                 <Features />
                 <Pricing />
-                <Trust />
+                <Comparison />
                 <CTA />
             </main>
             <Footer />

@@ -5,18 +5,19 @@ const steps = [
         icon: Upload,
         title: 'Upload',
         description:
-            'Drag and drop your files. We accept any file type, any size.',
+            'Drag and drop your files. Any type, any size — large files upload in parallel chunks.',
     },
     {
         icon: Database,
         title: 'We archive',
         description:
-            'Your files are automatically stored in cold storage with 11 nines durability.',
+            'Files move automatically into AWS deep archive storage, designed for 11 nines of durability.',
     },
     {
         icon: Download,
         title: 'Retrieve',
-        description: "Request your files anytime. They're ready in 3-12 hours.",
+        description:
+            'Request files anytime. Ready within 12 hours, then downloadable for 7 days.',
     },
 ];
 
