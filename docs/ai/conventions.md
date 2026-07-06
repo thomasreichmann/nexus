@@ -87,6 +87,12 @@ Terse reference for AI agents. Detailed examples with code: [[../conventions/nam
 
 See [[../guides/server-architecture|Server Architecture Guide]] for the full layered pattern.
 
+## Namespace Patterns
+
+- **Repository factories**: `@nexus/db` repositories export `create<Entity>Repo(db)` factories that return typed namespace objects with short method names.
+- **Stateless utilities**: barrel files build namespace objects from explicit named imports, not `import * as`. Example: `import { put as presignedPut } from './presigned'`, then `const presigned = { put: presignedPut } as const`.
+- **Public API stability**: keep nested namespaces stable (`s3.presigned.put()`, `s3.glacier.restore()`, `s3.objects.remove()`) even when internal imports change.
+
 ## Auth Enforcement
 
 - `apps/web/proxy.ts` guards `/dashboard/*` with an **optimistic** cookie-presence check (no DB hit) — a UX layer only. It redirects signed-out users to `/sign-in?redirect=<path>` and signed-in users away from the auth pages.
