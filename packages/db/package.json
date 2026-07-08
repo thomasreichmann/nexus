@@ -87,6 +87,7 @@
         "db:custom": "drizzle-kit generate --custom --name",
         "db:drift": "node scripts/check-drift.mjs",
         "db:seed": "npx tsx src/seed/cli.ts",
+        "db:query": "npx tsx src/scripts/query.ts",
         "test": "vitest",
         "test:run": "vitest run",
         "test:coverage": "vitest run --coverage",

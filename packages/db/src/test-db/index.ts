@@ -16,6 +16,7 @@
 export * from './inserts';
 export * from './queries';
 export * from './scenarios';
+export * from './adversarial';
 export { createDb, type DB, type Connection } from '../connection';
 export * from '../repositories/fixtures';
 

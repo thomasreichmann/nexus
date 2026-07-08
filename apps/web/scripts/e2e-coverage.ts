@@ -23,11 +23,16 @@ import { tmpdir } from 'node:os';
 import { PAGES, USE_CASES } from '../e2e/coverage/manifest';
 
 /**
- * Tests under e2e/validate/ are the manual tier — never run in CI or
- * `pnpm check`. They only count as coverage when the manifest entry
- * acknowledges it with a `manual` reason.
+ * Tests under e2e/validate/ and e2e/repro/ never run in CI or `pnpm check`.
+ * Validate is the manual tier — it only counts as coverage when the
+ * manifest entry acknowledges it with a `manual` reason. Repro specs are
+ * untagged by convention (they graduate out of repro/ before earning tags),
+ * so treating them as manual means a prematurely-tagged repro spec trips
+ * the unacknowledged-manual gate instead of silently counting as automated
+ * coverage.
  */
-const isManualTier = (file: string) => file.includes('validate/');
+const isManualTier = (file: string) =>
+    file.includes('validate/') || file.includes('repro/');
 
 interface ListedTest {
     file: string;
@@ -52,9 +57,11 @@ function listTests(): ListedTest[] {
                 env: {
                     ...process.env,
                     PLAYWRIGHT_JSON_OUTPUT_NAME: outFile,
-                    // The validate project is env-gated out of normal runs;
-                    // include it here so manual-tier coverage is reported.
+                    // The validate/repro projects are env-gated out of
+                    // normal runs; include them here so manual-tier
+                    // coverage is reported and repro tags get typo-checked.
                     E2E_VALIDATE: '1',
+                    E2E_REPRO: '1',
                 },
                 stdio: 'ignore',
             }

@@ -43,6 +43,46 @@ export async function readyRetrieval(
     return { file, retrieval };
 }
 
+/** A curated retrieval to seed against an already-inserted file, by name. */
+export interface RetrievalSpec {
+    file: string;
+    status: 'ready' | 'in_progress' | 'pending';
+    init: Date;
+}
+
+/**
+ * Inserts curated retrievals against files already seeded by name, mapping
+ * `ready` to a plausible readyAt (+5h) and download window (now +6d).
+ * Shared by the curated seeds (tooling/capture's demo library, the
+ * adversarial library); specs missing from `fileIdByName` are skipped.
+ */
+export async function insertRetrievalSpecs(
+    db: DB,
+    userId: string,
+    fileIdByName: Record<string, string>,
+    specs: RetrievalSpec[]
+): Promise<void> {
+    for (const r of specs) {
+        const fileId = fileIdByName[r.file];
+        if (!fileId) continue;
+        await insertRetrieval(db, {
+            userId,
+            fileId,
+            status: r.status,
+            tier: 'standard',
+            initiatedAt: r.init,
+            readyAt:
+                r.status === 'ready'
+                    ? new Date(r.init.getTime() + 5 * 3_600_000)
+                    : null,
+            expiresAt:
+                r.status === 'ready'
+                    ? new Date(Date.now() + 6 * 86_400_000)
+                    : null,
+        });
+    }
+}
+
 /**
  * Drives a user to an active paid subscription from scratch: ensures a trial
  * row exists, then promotes it. For dedicated-user specs that start with no
