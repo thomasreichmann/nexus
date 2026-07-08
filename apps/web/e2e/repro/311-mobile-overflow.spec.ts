@@ -9,7 +9,7 @@
  * user — adversarial seeding must never touch the shared smoke user.
  *
  * This spec doubles as the copy-and-extend exemplar for the repro tier
- * (see "Reproducing a bug with data" in apps/web/CLAUDE.md):
+ * (see "Bug Repro" in the root CLAUDE.md):
  * - dedicated user via `dedicatedUserConfig`, so seeding races nothing
  * - adversarial library seeding (`seedAdversarialLibrary`) — the bug is
  *   data-dependent; an empty account renders fine and false-passes

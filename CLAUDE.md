@@ -34,25 +34,14 @@ Stripe CLI is installed and authenticated to the sandbox (test-mode only; live m
 
 ## Bug Repro
 
-Reproduce bugs as specs in `apps/web/e2e/repro/`, not scratch scripts — specs
-inherit auth/db/seeding from `e2e/fixtures` and become the regression guard.
-The tier (`pnpm -F web test:e2e:repro`, env-gated behind `E2E_REPRO`) never
-runs in `test:e2e` or CI, so red specs are safe. Exemplar:
-`311-mobile-overflow.spec.ts`.
+Reproduce bugs as specs in `apps/web/e2e/repro/`, never scratch scripts. The
+tier (`pnpm -F web test:e2e:repro`, env-gated) doesn't run in CI, so red specs
+are safe to commit. Copy the exemplar `311-mobile-overflow.spec.ts` — its
+header and the `e2e/helpers` docblocks document the rest.
 
-- Seed before measuring — empty accounts hide data bugs:
-  `seedAdversarialLibrary(db, userId)` from `@nexus/db/test-db`.
-- Layout blowouts: `expectNoHorizontalOverflow(page)` from
-  `e2e/helpers/overflow`, never `document.scrollWidth` (the dashboard shell's
-  `overflow-hidden` makes it read zero on a broken page).
-- Real S3 state: `createTestS3()` / `moveToTier()` / `getStorageClass()` from
-  `e2e/helpers/s3`.
-- Red specs carry no `@page`/`@uc` tags. Once green: graduate (tags, running
-  tier, dedicated user) or delete.
-- Scratch scripts (last resort): run from inside a workspace package, never
-  `/tmp`; import `@playwright/test`, not `playwright`; wrap in
-  `main().catch(...)` (CJS — no top-level await); arrow functions only inside
-  `page.evaluate`; target this worktree's `$PORT`, never `:3000`.
+If a scratch script is unavoidable: run it from inside a workspace package,
+import `@playwright/test` (not `playwright`), wrap in `main().catch(...)` (no
+top-level await), arrows only in `page.evaluate`, target `$PORT` not `:3000`.
 
 ## Required Reading
 
