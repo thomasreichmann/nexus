@@ -31,8 +31,9 @@ Do NOT run `test:e2e:validate` unless explicitly asked — it's destructive
 `test:e2e` or CI. See "Bug Repro" in the root CLAUDE.md.
 
 **Test data is back-door, typed.** Import `{ test, expect }` from `e2e/fixtures`
-and seed preconditions through `@nexus/db/test-db` (factories + insert/query/
-scenario helpers) or the precondition fixtures — never hand-written SQL or a raw
+and seed preconditions through `@nexus/db/test-db` (factories, insert/query/
+scenario helpers, `seedAdversarialLibrary`) or the precondition fixtures —
+never hand-written SQL or a raw
 `postgres` driver. Only the behavior under test goes through the UI. See
 `docs/conventions/testing.md` for the factory/fixture/scenario layers.
 
