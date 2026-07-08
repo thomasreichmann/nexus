@@ -15,7 +15,7 @@
         "test:e2e:admin": "playwright test --project=admin",
         "test:e2e:flows": "playwright test --project=setup --project=flows",
         "test:e2e:validate": "E2E_VALIDATE=1 playwright test --project=validate --workers=1",
-        "test:e2e:repro": "E2E_REPRO=1 playwright test --project=repro --workers=1",
+        "test:e2e:repro": "E2E_REPRO=1 playwright test --project=repro --workers=1 --pass-with-no-tests",
         "test:e2e:ui": "playwright test --ui",
         "test:coverage": "vitest run --coverage",
         "e2e:coverage": "tsx scripts/e2e-coverage.ts",

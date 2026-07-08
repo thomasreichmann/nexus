@@ -36,8 +36,9 @@ Stripe CLI is installed and authenticated to the sandbox (test-mode only; live m
 
 Reproduce bugs as specs in `apps/web/e2e/repro/`, never scratch scripts. The
 tier (`pnpm -F web test:e2e:repro`, env-gated) doesn't run in CI, so red specs
-are safe to commit. Copy the exemplar `311-mobile-overflow.spec.ts` — its
-header and the `e2e/helpers` docblocks document the rest.
+are safe to commit. Copy the exemplar (a graduated repro spec,
+`e2e/smoke/authenticated/mobile-overflow.spec.ts`) — its header and the
+`e2e/helpers` docblocks document the rest.
 
 If a scratch script is unavoidable: run it from inside a workspace package,
 import `@playwright/test` (not `playwright`), wrap in `main().catch(...)` (no

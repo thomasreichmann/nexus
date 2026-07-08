@@ -190,6 +190,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard'],
         manual: 'Needs a real upload to move the usage number; exercised by the validate tier',
     },
+    {
+        id: 'mobile-no-horizontal-overflow',
+        title: 'Dashboard and files pages fit a mobile viewport with adversarial filenames (#311)',
+        area: 'dashboard',
+        routes: ['/dashboard', '/dashboard/files'],
+    },
 
     /* ---------------------------------------------------------------- */
     /* Files                                                             */
