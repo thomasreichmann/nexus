@@ -44,7 +44,7 @@ interface SeededLibrary {
 }
 
 const test = base.extend<
-    Record<string, never>,
+    NonNullable<unknown>,
     { seededLibrary: SeededLibrary }
 >({
     seededLibrary: [

@@ -39,7 +39,7 @@ const REPRO_USER: TestUser = {
 };
 
 const test = base.extend<
-    Record<string, never>,
+    NonNullable<unknown>,
     { adversarialLibrary: AdversarialLibrary }
 >({
     adversarialLibrary: [

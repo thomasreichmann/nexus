@@ -1,0 +1,19 @@
+{
+    // The app tsconfig excludes e2e/** so `next build` never compiles
+    // Playwright code — which also meant nothing ever typechecked this tree
+    // (Playwright transpiles without checking) and editors fell back to an
+    // inferred project with phantom errors. This project closes both holes:
+    // `pnpm -F web typecheck` runs it, and VSCode picks it up as the nearest
+    // tsconfig for files under e2e/.
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "noEmit": true,
+        "incremental": false
+    },
+    "include": [
+        "**/*.ts",
+        "../playwright.config.ts",
+        "../scripts/e2e-coverage.ts"
+    ],
+    "exclude": ["node_modules"]
+}
