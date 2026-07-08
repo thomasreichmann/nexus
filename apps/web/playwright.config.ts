@@ -108,8 +108,8 @@ export default defineConfig({
         // flips them green. Env-gated so an in-flight red spec can never
         // break a plain `playwright test` on main; run via
         // `pnpm -F web test:e2e:repro`, which sets E2E_REPRO. Specs here
-        // carry no @page/@uc tags until graduation. See "Reproducing a bug
-        // with data" in apps/web/CLAUDE.md.
+        // carry no @page/@uc tags until graduation. See "Bug Repro" in the
+        // root CLAUDE.md.
         ...(process.env.E2E_REPRO
             ? [
                   {
