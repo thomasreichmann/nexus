@@ -143,14 +143,19 @@ export default function AdminInvitesPage() {
                         <TableBody>
                             {data.invites.map((invite) => (
                                 <TableRow key={invite.id}>
+                                    {/* w-full + max-w-0: emails are unbounded
+                                        and unbreakable — truncate instead of
+                                        growing the column (#311). */}
                                     <TableCell
                                         className={cn(
-                                            'font-medium',
+                                            'w-full max-w-0 font-medium',
                                             !invite.email &&
                                                 'text-muted-foreground italic'
                                         )}
                                     >
-                                        {invite.email ?? 'Link only'}
+                                        <span className="block truncate">
+                                            {invite.email ?? 'Link only'}
+                                        </span>
                                     </TableCell>
                                     <TableCell>
                                         <InviteStatusBadge

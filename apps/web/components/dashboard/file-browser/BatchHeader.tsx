@@ -85,7 +85,10 @@ export function BatchHeaderRow({
 }: BatchHeaderProps & { colSpan: number }) {
     return (
         <TableRow className="border-b-0 hover:bg-transparent">
-            <TableCell colSpan={colSpan} className="p-0">
+            {/* max-w-0: without it a long nowrap batch name sets the spanned
+                columns' min-content and widens the table past the viewport
+                instead of truncating (#311). */}
+            <TableCell colSpan={colSpan} className="max-w-0 p-0">
                 <BatchHeader
                     group={group}
                     expanded={expanded}

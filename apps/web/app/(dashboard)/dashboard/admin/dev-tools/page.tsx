@@ -138,7 +138,7 @@ function TargetUserSelect({ users, value, onChange }: TargetUserSelectProps) {
                         <Select.Popup
                             className={cn(
                                 'max-h-[--available-height] min-w-(--anchor-width) origin-(--transform-origin)',
-                                'overflow-y-auto rounded-md border border-zinc-700/50 bg-zinc-800/80 p-1 shadow-lg backdrop-blur-sm',
+                                'overflow-x-hidden overflow-y-auto rounded-md border border-zinc-700/50 bg-zinc-800/80 p-1 shadow-lg backdrop-blur-sm',
                                 'data-open:animate-in data-closed:animate-out',
                                 'data-closed:fade-out-0 data-open:fade-in-0',
                                 'data-closed:zoom-out-95 data-open:zoom-in-95',

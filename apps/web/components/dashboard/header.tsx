@@ -97,10 +97,10 @@ export function DashboardHeader() {
                     <DropdownMenuPositioner align="end">
                         <DropdownMenuContent className="w-56">
                             <div className="px-2 py-1.5">
-                                <p className="text-sm font-medium">
+                                <p className="truncate text-sm font-medium">
                                     {session?.user?.name ?? 'User'}
                                 </p>
-                                <p className="text-xs text-muted-foreground">
+                                <p className="truncate text-xs text-muted-foreground">
                                     {session?.user?.email ?? ''}
                                 </p>
                             </div>

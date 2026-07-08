@@ -109,7 +109,7 @@ export default function DashboardPage() {
             <UploadHistory />
 
             <div className="flex flex-col gap-6 lg:flex-row">
-                <Card className="flex-1">
+                <Card className="min-w-0 flex-1">
                     <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
                             <div>
@@ -165,7 +165,13 @@ export default function DashboardPage() {
                                     <tbody className="divide-y">
                                         {filesData.files.map((file) => (
                                             <tr key={file.id} className="group">
-                                                <td className="py-3">
+                                                {/* w-full + max-w-0: the name
+                                                    column absorbs leftover
+                                                    width and its content
+                                                    truncates instead of
+                                                    growing the column to the
+                                                    full string (#311). */}
+                                                <td className="w-full max-w-0 py-3">
                                                     <div className="flex items-center gap-3">
                                                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted">
                                                             <FileIcon className="h-4 w-4 text-muted-foreground" />

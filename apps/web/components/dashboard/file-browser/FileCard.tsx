@@ -29,7 +29,9 @@ export function FileCard({
         <Card
             ref={ref}
             className={cn(
-                'group relative cursor-pointer py-0 transition-all',
+                // min-w-0: grid items default to min-width:auto, so a long
+                // unbreakable filename would widen the whole track (#311).
+                'group relative min-w-0 cursor-pointer py-0 transition-all',
                 isSelected
                     ? 'ring-2 ring-primary/30 bg-primary/2 dark:bg-primary/6'
                     : 'hover:border-border/80',

@@ -339,7 +339,7 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                 {filteredGroups.length === 0 && hasActiveSearch ? (
                     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16">
                         <Search className="mb-3 size-5 text-muted-foreground/60" />
-                        <p className="text-sm text-muted-foreground">
+                        <p className="max-w-full break-words px-4 text-sm text-muted-foreground">
                             No files match &ldquo;{debouncedSearch.trim()}
                             &rdquo;
                         </p>

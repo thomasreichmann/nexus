@@ -46,7 +46,9 @@ export function FileRow({
                     size="sm"
                 />
             </TableCell>
-            <TableCell>
+            {/* w-full + max-w-0: the name column absorbs leftover width and
+                truncates instead of growing to the full string (#311). */}
+            <TableCell className="w-full max-w-0">
                 <div className="min-w-0">
                     <p className="truncate font-medium leading-tight">
                         {file.name}
