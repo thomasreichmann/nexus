@@ -32,6 +32,28 @@ pnpm -F db db:query "<sql>"    # Read-only raw SQL against the current env's DB 
 
 Stripe CLI is installed and authenticated to the sandbox (test-mode only; live mode pending).
 
+## Bug Repro
+
+Reproduce bugs as specs in `apps/web/e2e/repro/`, not scratch scripts — specs
+inherit auth/db/seeding from `e2e/fixtures` and become the regression guard.
+The tier (`pnpm -F web test:e2e:repro`, env-gated behind `E2E_REPRO`) never
+runs in `test:e2e` or CI, so red specs are safe. Exemplar:
+`311-mobile-overflow.spec.ts`.
+
+- Seed before measuring — empty accounts hide data bugs:
+  `seedAdversarialLibrary(db, userId)` from `@nexus/db/test-db`.
+- Layout blowouts: `expectNoHorizontalOverflow(page)` from
+  `e2e/helpers/overflow`, never `document.scrollWidth` (the dashboard shell's
+  `overflow-hidden` makes it read zero on a broken page).
+- Real S3 state: `createTestS3()` / `moveToTier()` / `getStorageClass()` from
+  `e2e/helpers/s3`.
+- Red specs carry no `@page`/`@uc` tags. Once green: graduate (tags, running
+  tier, dedicated user) or delete.
+- Scratch scripts (last resort): run from inside a workspace package, never
+  `/tmp`; import `@playwright/test`, not `playwright`; wrap in
+  `main().catch(...)` (CJS — no top-level await); arrow functions only inside
+  `page.evaluate`; target this worktree's `$PORT`, never `:3000`.
+
 ## Required Reading
 
 - **Before writing code:** `docs/ai/conventions.md` — naming, structure, style
