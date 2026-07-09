@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import type Stripe from 'stripe';
 import { createWebhookRepo, type WebhookEvent } from '@nexus/db/repo/webhooks';
 import { alerts } from '@/lib/alerts';
+import { isLocalDevelopment } from '@/lib/env/runtime';
 import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import { stripe } from '@/lib/stripe';
@@ -29,7 +30,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     let event: Stripe.Event;
-    if (process.env.NODE_ENV !== 'development') {
+    // Signature verification is bypassed only on a local dev machine, where
+    // there is no Stripe signing secret to sign against. Every deployed
+    // environment (preview and production) always verifies — see
+    // `isLocalDevelopment`.
+    if (!isLocalDevelopment()) {
         const signature = request.headers.get('stripe-signature');
         if (!signature) {
             return NextResponse.json(

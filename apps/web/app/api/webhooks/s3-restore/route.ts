@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createWebhookRepo } from '@nexus/db/repo/webhooks';
 import { alerts } from '@/lib/alerts';
+import { isLocalDevelopment } from '@/lib/env/runtime';
 import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import { verifySnsMessage } from '@/lib/sns/webhooks';
@@ -21,7 +22,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
     }
 
-    if (process.env.NODE_ENV !== 'development') {
+    // Signature verification is bypassed only on a local dev machine — every
+    // deployed environment always verifies (see `isLocalDevelopment`).
+    if (!isLocalDevelopment()) {
         try {
             await verifySnsMessage(body);
         } catch (err) {
