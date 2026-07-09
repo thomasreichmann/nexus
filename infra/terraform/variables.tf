@@ -9,7 +9,7 @@ variable "environment" {
 }
 
 variable "region" {
-  description = "AWS region for all resources. Prod is sa-east-1 (uploads go browser -> S3 directly and the alpha testers are in Brazil); dev is us-east-1."
+  description = "AWS region for all resources. Both prod and dev are us-east-1; a sa-east-1 (São Paulo) prod deployment closer to the Brazil alpha testers was reverted 2026-07-09 pending multi-region validation."
   type        = string
 }
 

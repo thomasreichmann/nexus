@@ -58,7 +58,7 @@ fetching `SubscribeURL`, and Terraform waits for that.
 2. **Worker code** — Terraform ships a stub that throws on every invocation
    (so jobs retry into the DLQ instead of silently succeeding). Deploy the
    real worker per `docs/guides/background-jobs.md`, with
-   `--function-name nexus-worker-prod --region sa-east-1`. Later applies
+   `--function-name nexus-worker-prod --region us-east-1`. Later applies
    won't touch the deployed code (`ignore_changes` on the package), but the
    Lambda's environment (`DATABASE_URL`) **is** Terraform-managed — update it
    here, not with `aws lambda update-function-configuration`.

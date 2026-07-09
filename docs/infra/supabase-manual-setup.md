@@ -32,7 +32,7 @@ Both projects are on the free (pausing) plan, so both are pinged by `.github/wor
 
 1. [Supabase dashboard](https://supabase.com/dashboard) → **New project** in the same organization as the dev project.
 2. Name: `nexus-prod`.
-3. Region: `sa-east-1` (São Paulo) — chosen 2026-07 because the alpha testers are in Brazil. Note this deliberately differs from dev (`us-east-1`) and from the shared AWS resources; cross-region S3 latency is acceptable until prod AWS resources exist (see Follow-Ups).
+3. Region: `us-east-1` — matches dev and the prod AWS resources. A São Paulo (`sa-east-1`) deployment closer to the Brazil alpha testers was trialed 2026-07 but reverted 2026-07-09: the latency win didn't justify the ~3.2× Glacier Deep Archive cost markup in South America. Multi-region is deferred until we validate that tradeoff.
 4. Generate a strong database password and store it in the password manager — it is embedded in the connection string below.
 
 No data migration is needed: prod starts empty and gets its schema from the migration pipeline (see below).
@@ -106,7 +106,7 @@ gh workflow run supabase-keepalive.yml
 ## Follow-Ups
 
 - **Repoint the Vercel production deployment** at the prod project: after setting the Production env vars above, redeploy production so it picks up the prod `DATABASE_URL`. Until then, the production deployment still points at dev.
-- **Prod AWS resources**: provisioned 2026-07-05 via Terraform (`infra/terraform/`, #53) in `sa-east-1`. Remaining: repoint `s3-event-health.yml`'s prod leg and the Vercel Production env vars at the prod resources (#291) — until then the prod leg still runs with dev AWS credentials.
+- **Prod AWS resources**: provisioned via Terraform (`infra/terraform/`, #53) in `us-east-1`. Remaining: repoint `s3-event-health.yml`'s prod leg and the Vercel Production env vars at the prod resources (#291) — until then the prod leg still runs with dev AWS credentials.
 
 ## Related
 

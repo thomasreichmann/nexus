@@ -19,7 +19,7 @@ ai_summary: 'AWS resource ARNs, CLI provisioning commands, deployment, DLQ inspe
 Operational guide for the SQS + Lambda background job infrastructure. For development patterns and conventions, see [[lambda-development|Lambda Development]].
 
 > [!important] Scope: dev only — prod is Terraform-managed.
-> Prod's queues, Lambda (`nexus-worker-prod`), and IAM live in `sa-east-1` and come from [`infra/terraform/`](../../infra/terraform/README.md) (#53). The code-deploy flow below applies to prod too (use `--function-name nexus-worker-prod --region sa-east-1`), but prod resource changes go through Terraform — including Lambda env vars (`DATABASE_URL`), so don't use `update-function-configuration` against prod.
+> Prod's queues, Lambda (`nexus-worker-prod`), and IAM live in `us-east-1` and come from [`infra/terraform/`](../../infra/terraform/README.md) (#53). The code-deploy flow below applies to prod too (use `--function-name nexus-worker-prod --region us-east-1`), but prod resource changes go through Terraform — including Lambda env vars (`DATABASE_URL`), so don't use `update-function-configuration` against prod.
 
 ## Provisioned Resources
 
