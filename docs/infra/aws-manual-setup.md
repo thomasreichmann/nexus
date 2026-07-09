@@ -16,7 +16,7 @@ ai_summary: 'Manual AWS provisioning commands for S3, IAM, and SNS resources in 
 This documents the manual AWS setup for the dev environment. Created 2026-01-23.
 
 > [!important] Scope: dev only — prod is Terraform-managed.
-> The **prod** environment (`sa-east-1`, `-prod` suffixes) is provisioned by Terraform in [`infra/terraform/`](../../infra/terraform/README.md), which is the source of truth for prod (#53). This runbook remains the spec for the hand-built dev resources until #127 recreates dev from the same Terraform config.
+> The **prod** environment (`us-east-1`, `-prod` suffixes) is provisioned by Terraform in [`infra/terraform/`](../../infra/terraform/README.md), which is the source of truth for prod (#53). This runbook remains the spec for the hand-built dev resources until #127 recreates dev from the same Terraform config.
 
 ## Resources Created
 
