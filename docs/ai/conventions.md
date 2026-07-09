@@ -1,7 +1,7 @@
 ---
 title: Code Conventions
 created: 2025-12-29
-updated: 2026-03-07
+updated: 2026-07-09
 status: active
 tags:
     - ai
@@ -76,6 +76,28 @@ Terse reference for AI agents. Detailed examples with code: [[../conventions/nam
 - Unit test utilities/pure functions only; skip presentational components
 - Test commands: `pnpm -F web test`, `test:e2e:smoke`, `test:e2e:admin`, `test:e2e`
 - Full details: [[../conventions/testing|Testing]]
+
+## Layout / Responsive Safety
+
+Learned from #311: one long unbreakable filename pushed `/dashboard` and
+`/dashboard/files` to ~3x the viewport width on mobile — the empty account
+looked perfect, so it shipped.
+
+- **Flex/grid children that hold potentially-wide content (filenames, tables,
+  charts, user text) need `min-w-0`.** Both default to `min-width: auto`, so
+  the child refuses to shrink below its content and drags the whole layout
+  past the viewport. This silently defeats any `overflow-x-auto` wrapper
+  below it — the wrapper can never engage.
+- **`truncate` only works inside a width-constrained ancestor.** In an
+  auto-layout table the column just grows to the full string; constrain the
+  cell (`w-full max-w-0` for a greedy truncating column, or `table-fixed`).
+  Same trap in flex/grid without `min-w-0` up the chain.
+- **Prefer contained scroll over shell-level `overflow-hidden`.** An
+  `overflow-hidden` shell turns overflow into invisible clipping (and makes
+  `document.scrollWidth` lie), so the failure reads as "the frontend is
+  broken" instead of "this table scrolls".
+- Wide-content layouts are data-dependent: verify against
+  `seedAdversarialLibrary` at a ≤390px viewport, not an empty account.
 
 ## Server Architecture
 

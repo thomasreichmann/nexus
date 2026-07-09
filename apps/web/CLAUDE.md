@@ -26,9 +26,14 @@ Pick the smallest tier that covers your change:
 Do NOT run `test:e2e:validate` unless explicitly asked — it's destructive
 (real S3 objects, mutates the dev user's quota).
 
+`test:e2e:repro` is the bug-repro tier (`e2e/repro/`, env-gated behind
+`E2E_REPRO`): specs there are born red on live bugs and never run in
+`test:e2e` or CI. See "Bug Repro" in the root CLAUDE.md.
+
 **Test data is back-door, typed.** Import `{ test, expect }` from `e2e/fixtures`
-and seed preconditions through `@nexus/db/test-db` (factories + insert/query/
-scenario helpers) or the precondition fixtures — never hand-written SQL or a raw
+and seed preconditions through `@nexus/db/test-db` (factories, insert/query/
+scenario helpers, `seedAdversarialLibrary`) or the precondition fixtures —
+never hand-written SQL or a raw
 `postgres` driver. Only the behavior under test goes through the UI. See
 `docs/conventions/testing.md` for the factory/fixture/scenario layers.
 

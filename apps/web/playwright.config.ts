@@ -103,6 +103,31 @@ export default defineConfig({
                   },
               ]
             : []),
+        // Repro tier — bug reproductions born RED while the bug lives
+        // (#312), graduating into a running tier (or deleted) once the fix
+        // flips them green. Env-gated so an in-flight red spec can never
+        // break a plain `playwright test` on main; run via
+        // `pnpm -F web test:e2e:repro`, which sets E2E_REPRO. Specs here
+        // carry no @page/@uc tags until graduation. See "Bug Repro" in the
+        // root CLAUDE.md.
+        ...(process.env.E2E_REPRO
+            ? [
+                  {
+                      name: 'repro',
+                      use: { ...devices['Desktop Chrome'] },
+                      dependencies: ['setup'],
+                      testMatch: /repro\/.*/,
+                      // Repro specs follow the exemplar's shape: one
+                      // worker-scoped dedicated user + seed shared by the
+                      // file's tests. Same-file tests must stay in one
+                      // worker or each worker re-provisions the same user
+                      // concurrently and races the deletes/inserts — and
+                      // unlike `mode: 'serial'`, this still reports every
+                      // red test instead of skipping after the first.
+                      fullyParallel: false,
+                  },
+              ]
+            : []),
     ],
     // Run e2e against a production build (next build + next start), never the
     // dev server. `next dev`'s on-demand Turbopack compilation deadlocks under

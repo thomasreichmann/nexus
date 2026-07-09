@@ -1,13 +1,5 @@
-import { resolve } from 'node:path';
-import { config } from 'dotenv';
-
-// Dev-only tool: loads the web app's .env.local, the single env source for
-// all local tooling — see docs/guides/environment-setup.md.
-config({
-    path: resolve(import.meta.dirname, '../../../../apps/web/.env.local'),
-});
-
 import { createDb } from '../connection';
+import { requireDatabaseUrl } from '../scripts/env';
 import { checkSeedEnv } from './envGuard';
 import {
     SCENARIO_DEFINITIONS,
@@ -16,11 +8,7 @@ import {
     getSeedSummary,
 } from './index';
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
-    console.error('DATABASE_URL is not set. Check apps/web/.env.local exists.');
-    process.exit(1);
-}
+const databaseUrl = requireDatabaseUrl();
 
 const guard = checkSeedEnv(process.env.DB_ENV);
 if (!guard.isOk) {

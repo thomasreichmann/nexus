@@ -1,9 +1,10 @@
 import {
     deleteUserData,
     insertFile,
-    insertRetrieval,
+    insertRetrievalSpecs,
     insertStorageUsage,
     insertUploadBatch,
+    type RetrievalSpec,
 } from '@nexus/db/test-db';
 
 import type { Db } from './db';
@@ -233,11 +234,7 @@ const SHOOTS: Shoot[] = [
 ];
 
 // A mix of retrieval states surfaces the restore UX — the engineering centerpiece.
-const RETRIEVALS: {
-    file: string;
-    status: 'ready' | 'in_progress' | 'pending';
-    init: Date;
-}[] = [
+const RETRIEVALS: RetrievalSpec[] = [
     { file: 'glacier-lagoon-pano.tiff', status: 'ready', init: hoursAgo(14) },
     { file: 'ceremony-0212.NEF', status: 'ready', init: hoursAgo(9) },
     { file: 'first-dance.NEF', status: 'in_progress', init: hoursAgo(2) },
@@ -295,25 +292,7 @@ export async function seedDemoLibrary(
         }
     }
 
-    for (const r of RETRIEVALS) {
-        const fileId = fileIdByName[r.file];
-        if (!fileId) continue;
-        await insertRetrieval(db, {
-            userId: user.id,
-            fileId,
-            status: r.status,
-            tier: 'standard',
-            initiatedAt: r.init,
-            readyAt:
-                r.status === 'ready'
-                    ? new Date(r.init.getTime() + 5 * 3_600_000)
-                    : null,
-            expiresAt:
-                r.status === 'ready'
-                    ? new Date(Date.now() + 6 * 86_400_000)
-                    : null,
-        });
-    }
+    await insertRetrievalSpecs(db, user.id, fileIdByName, RETRIEVALS);
 
     await insertStorageUsage(db, { userId: user.id, usedBytes, fileCount });
 }

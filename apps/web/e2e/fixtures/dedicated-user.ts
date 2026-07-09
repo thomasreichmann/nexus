@@ -24,7 +24,7 @@ type DedicatedUserWorkerFixtures = {
  * precondition fixtures serve both flows (dedicated) and smoke/admin (shared).
  */
 export const test = base.extend<
-    Record<string, never>,
+    NonNullable<unknown>,
     DedicatedUserWorkerFixtures
 >({
     dedicatedUserConfig: [null, { option: true, scope: 'worker' }],

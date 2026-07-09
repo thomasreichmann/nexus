@@ -39,6 +39,18 @@ Review code changes against project conventions defined in `docs/ai/conventions.
 - Prefer interfaces for objects, types for unions
 - Avoid `any`, use `unknown` for truly unknown types
 
+### Layout / Responsive Safety (#311)
+
+- Flex/grid containers wrapping tables, charts, or user-provided text
+  (filenames, emails) must put `min-w-0` on the flex/grid child — without it
+  `min-width: auto` stops the child from shrinking and one long unbreakable
+  string pushes the layout past a mobile viewport
+- `truncate` without a width-constrained ancestor is inert: inside an
+  auto-layout table the cell needs `w-full max-w-0` (or the table
+  `table-fixed`); inside flex/grid the chain above needs `min-w-0`
+- Flag new shell-level `overflow-hidden` that would mask content overflow as
+  clipping — prefer contained scroll (`overflow-x-auto`) on the wide element
+
 ## Input
 
 You will receive:

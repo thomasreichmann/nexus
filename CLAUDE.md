@@ -25,11 +25,24 @@ pnpm -F db db:generate         # Generate migration from schema changes
 pnpm -F db db:migrate          # Apply pending migrations
 pnpm -F db db:studio           # Open Drizzle Studio
 pnpm -F db db:custom <name>    # Empty migration for RLS/functions
+pnpm -F db db:query "<sql>"    # Read-only raw SQL against the current env's DB (forensics)
 ```
 
 ## Stripe
 
 Stripe CLI is installed and authenticated to the sandbox (test-mode only; live mode pending).
+
+## Bug Repro
+
+Reproduce bugs as specs in `apps/web/e2e/repro/`, never scratch scripts. The
+tier (`pnpm -F web test:e2e:repro`, env-gated) doesn't run in CI, so red specs
+are safe to commit. Copy the exemplar (a graduated repro spec,
+`e2e/smoke/authenticated/mobile-overflow.spec.ts`) — its header and the
+`e2e/helpers` docblocks document the rest.
+
+If a scratch script is unavoidable: run it from inside a workspace package,
+import `@playwright/test` (not `playwright`), wrap in `main().catch(...)` (no
+top-level await), arrows only in `page.evaluate`, target `$PORT` not `:3000`.
 
 ## Required Reading
 

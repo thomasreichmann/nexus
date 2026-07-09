@@ -17,6 +17,10 @@ image) directly in issue / PR / comment markdown — no click-out.
 ./tooling/media-attach/run.sh path/to/clip.mp4
 ```
 
+The path is relative to the **repo root** (`tooling/media-attach/` in the
+checkout you're working in), not this skill's directory — run it from the repo
+root or use an absolute path.
+
 It prints one URL. Drop that URL on its own line (blank line above and below) in
 the markdown body and GitHub renders a player:
 
