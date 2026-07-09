@@ -152,13 +152,39 @@ const authSecret = env.BETTER_AUTH_SECRET;
 
 ## Vercel Environment Management
 
-### Initial Setup
+Three Vercel tiers back the two infrastructure environments (#291):
 
-1. Go to Vercel Dashboard → Project Settings → Environment Variables
-2. Add all variables for each environment:
-    - **Production** - Live site values
-    - **Preview** - PR deployment values
-    - **Development** - Local development values
+- **Production** → the isolated **prod** infra (prod Supabase, `-prod` AWS resources).
+- **Preview** and **Development** → the shared **dev** infra. `pnpm env:pull` pulls Development, so local tooling always lands on dev.
+
+### Which values differ per tier
+
+Only the vars below hold prod-specific values on Production; everything else is
+shared with dev (or is out of scope for the split).
+
+| Variable                                      | Production                                                | Preview / Development     |
+| --------------------------------------------- | --------------------------------------------------------- | ------------------------- |
+| `DATABASE_URL`                                | prod Supabase pooler                                      | dev Supabase pooler       |
+| `DB_ENV`                                      | `production`                                              | `development`             |
+| `S3_BUCKET`                                   | `nexus-storage-files-prod`                                | `nexus-storage-files-dev` |
+| `SQS_QUEUE_URL`                               | `…/nexus-jobs-prod`                                       | `…/nexus-jobs-dev`        |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key on the `nexus-app-prod` IAM user               | `nexus-app-dev` key       |
+| `BETTER_AUTH_SECRET`                          | prod-only secret (rotating it never touches dev sessions) | dev secret                |
+| `NEXT_PUBLIC_APP_URL`                         | `https://nexus.thomasar.dev`                              | `http://localhost:3000`   |
+
+Same on every tier: `AWS_REGION` (`us-east-1`), Resend. **Out of scope:** Stripe
+stays test-mode on Production until live mode ships (#213). The prod AWS resource
+names come from `infra/terraform/outputs.tf`; create the `nexus-app-prod` access
+key manually (`aws iam create-access-key --user-name nexus-app-prod`).
+
+> [!warning] Per-tier edits via the CLI
+> Some vars are stored as a **single entry attached to all three tiers** (they
+> show one row spanning `Production, Preview, Development` in `vercel env ls`).
+> `vercel env rm NAME production` on such a var removes it from **every** tier,
+> not just Production. To give one tier a distinct value, remove and re-add it
+> **per environment** (`vercel env add NAME development`, `… preview`,
+> `… production`) so the others keep theirs. After any change, `vercel env pull
+--environment=development` and confirm dev is intact.
 
 ### Adding New Variables
 

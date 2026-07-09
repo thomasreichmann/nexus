@@ -129,6 +129,22 @@ describe('POST /api/webhooks/stripe', () => {
                 sampleEvent
             );
         });
+
+        // A Vercel deployment must never open the signature bypass, even if
+        // NODE_ENV is misconfigured to 'development' — VERCEL_ENV being set
+        // means we are deployed, so verification still runs.
+        it('still verifies when NODE_ENV=development but running on Vercel', async () => {
+            vi.stubEnv('NODE_ENV', 'development');
+            vi.stubEnv('VERCEL_ENV', 'preview');
+
+            const response = await POST(makeRequest(sampleEvent));
+
+            expect(response.status).toBe(400);
+            await expect(response.json()).resolves.toEqual({
+                error: 'Missing stripe-signature header',
+            });
+            expect(dispatchWebhookEvent).not.toHaveBeenCalled();
+        });
     });
 
     describe('development mode (signature bypass)', () => {
