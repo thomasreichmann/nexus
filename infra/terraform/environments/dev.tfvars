@@ -11,6 +11,11 @@ environment = "dev"
 region      = "us-east-1"
 app_domain  = "nexus-web-git-dev-thomasreichmanns-projects.vercel.app"
 
+# The dev-branch deployment also carries a branch-scoped NEXT_PUBLIC_APP_URL
+# (Vercel Preview tier, git branch "dev") pointing at this same URL, so links
+# in dev-triggered emails (e.g. restore-completed) don't say localhost like
+# ordinary previews do.
+
 # Local dev + every Vercel preview deployment may talk to the dev bucket.
 cors_allowed_origins = [
   "http://localhost:*",

@@ -159,16 +159,15 @@ Key build settings:
 
 ## Deployment
 
-**Deploy workflow:** `pnpm -F worker build` → `terraform apply`
-
-Terraform uses `archive_file` to zip the built artifact and deploy it as a Lambda function. Infrastructure provisioning is tracked separately. Before IaC is in place, manual deployment via the AWS CLI is possible:
+Terraform provisions the function but never ships worker code — `lambda.tf` creates it with a throwing stub and `ignore_changes` on the package, so a `terraform apply` will not deploy (or clobber) your build. Code deploys via the AWS CLI against the per-environment function name (`nexus-worker-dev` / `nexus-worker-prod`) — full recipe in [[background-jobs|Background Jobs Runbook]]:
 
 ```bash
-cd apps/worker && pnpm build
-cd dist && zip -r ../worker.zip .
+pnpm -F worker build
+cd apps/worker/dist && echo '{"type":"module"}' > package.json && zip -r ../worker.zip .
 aws lambda update-function-code \
-    --function-name nexus-worker \
-    --zip-file fileb://../worker.zip
+    --function-name nexus-worker-dev \
+    --zip-file fileb://../worker.zip \
+    --region us-east-1
 ```
 
 ## Local Testing
