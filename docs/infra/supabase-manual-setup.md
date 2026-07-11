@@ -105,8 +105,8 @@ gh workflow run supabase-keepalive.yml
 
 ## Follow-Ups
 
-- **Repoint the Vercel production deployment** at the prod project: after setting the Production env vars above, redeploy production so it picks up the prod `DATABASE_URL`. Until then, the production deployment still points at dev.
-- **Prod AWS resources**: provisioned via Terraform (`infra/terraform/`, #53) in `us-east-1`. Remaining: repoint `s3-event-health.yml`'s prod leg and the Vercel Production env vars at the prod resources (#291) — until then the prod leg still runs with dev AWS credentials.
+- ~~Repoint the Vercel production deployment at the prod project~~ — done in #291 (PR #315); Production runs on the prod `DATABASE_URL` and prod AWS resources.
+- **`s3-event-health.yml` prod leg**: still runs with dev AWS credentials (only `DATABASE_URL` is matrixed), so its prod storage-tier check is false-green — tracked in #318.
 
 ## Related
 

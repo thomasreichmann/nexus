@@ -1,7 +1,7 @@
 ---
 title: Background Jobs Runbook
 created: 2026-02-15
-updated: 2026-07-05
+updated: 2026-07-11
 status: active
 tags:
     - guide
@@ -11,44 +11,29 @@ tags:
 aliases:
     - Background Jobs
     - SQS Runbook
-ai_summary: 'AWS resource ARNs, CLI provisioning commands, deployment, DLQ inspection, and test job instructions'
+ai_summary: 'Worker deployment, DLQ inspection, test jobs, logs, and integration tests; provisioning lives in Terraform'
 ---
 
 # Background Jobs Runbook
 
 Operational guide for the SQS + Lambda background job infrastructure. For development patterns and conventions, see [[lambda-development|Lambda Development]].
 
-> [!important] Scope: dev only — prod is Terraform-managed.
-> Prod's queues, Lambda (`nexus-worker-prod`), and IAM live in `us-east-1` and come from [`infra/terraform/`](../../infra/terraform/README.md) (#53). The code-deploy flow below applies to prod too (use `--function-name nexus-worker-prod --region us-east-1`), but prod resource changes go through Terraform — including Lambda env vars (`DATABASE_URL`), so don't use `update-function-configuration` against prod.
+> [!important] Provisioning lives in Terraform — this doc is operations only.
+> Both environments' queues, Lambdas, and IAM come from [`infra/terraform/`](../../infra/terraform/README.md) (prod #53, dev #127) — queue/Lambda definitions in `sqs.tf` and `lambda.tf`. Resource changes go through Terraform, including Lambda env vars (`DATABASE_URL`) — never `aws lambda update-function-configuration`. Only worker **code** deploys via the CLI (below); Terraform ignores the code package on later applies.
 
 ## Provisioned Resources
 
-| Resource              | Name / ARN                                                                       |
-| --------------------- | -------------------------------------------------------------------------------- |
-| SQS Queue             | `nexus-jobs-dev` — `arn:aws:sqs:us-east-1:391615358272:nexus-jobs-dev`           |
-| SQS Dead Letter Queue | `nexus-jobs-dlq-dev` — `arn:aws:sqs:us-east-1:391615358272:nexus-jobs-dlq-dev`   |
-| Lambda Function       | `nexus-worker` — `arn:aws:lambda:us-east-1:391615358272:function:nexus-worker`   |
-| IAM Role (Lambda)     | `nexus-worker-role-dev` — `arn:aws:iam::391615358272:role/nexus-worker-role-dev` |
-| IAM Policy (SQS user) | `nexus-sqs-access-dev` (inline on `nexus-app-dev` user)                          |
-| SQS Queue URL         | `https://sqs.us-east-1.amazonaws.com/391615358272/nexus-jobs-dev`                |
-| Region                | `us-east-1`                                                                      |
+One set per environment, in `us-east-1`, account `391615358272`, suffixed `-dev` / `-prod` (exact definitions: `infra/terraform/sqs.tf`, `lambda.tf`):
 
-### Lambda Configuration
+| Resource              | Name pattern                                                      |
+| --------------------- | ----------------------------------------------------------------- |
+| SQS Queue             | `nexus-jobs-<env>` (visibility timeout 60s, 3 retries → DLQ)      |
+| SQS Dead Letter Queue | `nexus-jobs-dlq-<env>`                                            |
+| Lambda Function       | `nexus-worker-<env>` (Node 22, 30s timeout, 256 MB, batch size 1) |
+| IAM Role (Lambda)     | `nexus-worker-role-<env>` (SQS consume, S3 CRUD, CloudWatch Logs) |
+| IAM Policy (SQS user) | `nexus-sqs-access-<env>` (inline on the `nexus-app-<env>` user)   |
 
-- **Runtime:** Node.js 22.x
-- **Handler:** `handler.handler`
-- **Timeout:** 30 seconds
-- **Memory:** 256 MB
-- **SQS Trigger:** Batch size 1 (one job per invocation)
-- **DLQ Policy:** Messages retry 3 times before moving to DLQ
-
-### IAM Policies on Lambda Role
-
-| Policy Name             | Permissions                                                           |
-| ----------------------- | --------------------------------------------------------------------- |
-| `nexus-worker-sqs-dev`  | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:GetQueueAttributes`   |
-| `nexus-worker-s3-dev`   | S3 CRUD on `nexus-storage-files-dev`                                  |
-| `nexus-worker-logs-dev` | CloudWatch Logs (`CreateLogGroup`, `CreateLogStream`, `PutLogEvents`) |
+The examples below use dev (`nexus-worker-dev`, `nexus-jobs-dev`, …); substitute `-prod` to operate on prod.
 
 ## Deploy Updated Worker Code
 
@@ -64,26 +49,18 @@ cd ..
 
 # 3. Update Lambda function code
 aws lambda update-function-code \
-    --function-name nexus-worker \
+    --function-name nexus-worker-dev \
     --zip-file fileb://worker.zip \
     --region us-east-1
 
 # 4. Verify deployment
-aws lambda get-function --function-name nexus-worker --region us-east-1 \
+aws lambda get-function --function-name nexus-worker-dev --region us-east-1 \
     --query 'Configuration.{State:State,LastModified:LastModified,CodeSize:CodeSize}'
 ```
 
-## Update Lambda Environment Variables
+## Lambda Environment Variables
 
-```bash
-# Add or update environment variables
-aws lambda update-function-configuration \
-    --function-name nexus-worker \
-    --environment 'Variables={DATABASE_URL=<pooler-url>,NEW_VAR=value}' \
-    --region us-east-1
-```
-
-> **Note:** This replaces all environment variables — include existing ones when updating.
+The Lambda environment (`DATABASE_URL`) is Terraform-managed — change it with a `terraform apply` (`TF_VAR_database_url`), never `aws lambda update-function-configuration`, which Terraform would revert on the next apply.
 
 ## Inspect Dead Letter Queue
 
@@ -127,170 +104,27 @@ aws sqs send-message \
 ```bash
 # Recent log streams
 aws logs describe-log-streams \
-    --log-group-name /aws/lambda/nexus-worker \
+    --log-group-name /aws/lambda/nexus-worker-dev \
     --order-by LastEventTime --descending \
     --limit 5 \
     --region us-east-1 | jq '.logStreams[].logStreamName'
 
 # Tail recent logs (requires aws logs CLI v2)
-aws logs tail /aws/lambda/nexus-worker --since 1h --region us-east-1
+aws logs tail /aws/lambda/nexus-worker-dev --since 1h --region us-east-1
 
 # Get logs from a specific invocation
 aws logs get-log-events \
-    --log-group-name /aws/lambda/nexus-worker \
+    --log-group-name /aws/lambda/nexus-worker-dev \
     --log-stream-name '<stream-name>' \
     --region us-east-1 | jq '.events[].message'
 ```
 
-## Provisioning Commands (Reproducible)
+## Provisioning and Decommissioning
 
-These are the CLI commands used to create the infrastructure. Run them to recreate in a new environment.
-
-### 1. Dead Letter Queue
-
-```bash
-aws sqs create-queue --queue-name nexus-jobs-dlq-dev --region us-east-1
-```
-
-### 2. Standard Queue with Redrive Policy
-
-```bash
-DLQ_ARN=$(aws sqs get-queue-attributes \
-    --queue-url https://sqs.us-east-1.amazonaws.com/<ACCOUNT_ID>/nexus-jobs-dlq-dev \
-    --attribute-names QueueArn --region us-east-1 \
-    --query 'Attributes.QueueArn' --output text)
-
-aws sqs create-queue \
-    --queue-name nexus-jobs-dev \
-    --region us-east-1 \
-    --attributes "{
-        \"RedrivePolicy\": \"{\\\"deadLetterTargetArn\\\":\\\"$DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\",
-        \"VisibilityTimeout\": \"60\"
-    }"
-```
-
-### 3. IAM Execution Role
-
-```bash
-aws iam create-role \
-    --role-name nexus-worker-role-dev \
-    --assume-role-policy-document '{
-        "Version": "2012-10-17",
-        "Statement": [{
-            "Effect": "Allow",
-            "Principal": {"Service": "lambda.amazonaws.com"},
-            "Action": "sts:AssumeRole"
-        }]
-    }'
-```
-
-### 4. IAM Policies
-
-```bash
-# SQS consume
-aws iam put-role-policy \
-    --role-name nexus-worker-role-dev \
-    --policy-name nexus-worker-sqs-dev \
-    --policy-document '{
-        "Version": "2012-10-17",
-        "Statement": [{
-            "Effect": "Allow",
-            "Action": ["sqs:ReceiveMessage","sqs:DeleteMessage","sqs:GetQueueAttributes"],
-            "Resource": "arn:aws:sqs:us-east-1:<ACCOUNT_ID>:nexus-jobs-dev"
-        }]
-    }'
-
-# S3 access
-aws iam put-role-policy \
-    --role-name nexus-worker-role-dev \
-    --policy-name nexus-worker-s3-dev \
-    --policy-document '{
-        "Version": "2012-10-17",
-        "Statement": [{
-            "Effect": "Allow",
-            "Action": ["s3:PutObject","s3:GetObject","s3:DeleteObject","s3:ListBucket","s3:RestoreObject","s3:GetObjectAttributes"],
-            "Resource": ["arn:aws:s3:::nexus-storage-files-dev","arn:aws:s3:::nexus-storage-files-dev/*"]
-        }]
-    }'
-
-# CloudWatch Logs
-aws iam put-role-policy \
-    --role-name nexus-worker-role-dev \
-    --policy-name nexus-worker-logs-dev \
-    --policy-document '{
-        "Version": "2012-10-17",
-        "Statement": [{
-            "Effect": "Allow",
-            "Action": ["logs:CreateLogGroup","logs:CreateLogStream","logs:PutLogEvents"],
-            "Resource": "arn:aws:logs:us-east-1:<ACCOUNT_ID>:*"
-        }]
-    }'
-
-# SQS send (for web app IAM user)
-aws iam put-user-policy \
-    --user-name nexus-app-dev \
-    --policy-name nexus-sqs-access-dev \
-    --policy-document '{
-        "Version": "2012-10-17",
-        "Statement": [{
-            "Effect": "Allow",
-            "Action": "sqs:SendMessage",
-            "Resource": "arn:aws:sqs:us-east-1:<ACCOUNT_ID>:nexus-jobs-dev"
-        }]
-    }'
-```
-
-### 5. Lambda Function
-
-```bash
-# Build and zip (see "Deploy Updated Worker Code" above)
-aws lambda create-function \
-    --function-name nexus-worker \
-    --runtime nodejs22.x \
-    --handler handler.handler \
-    --role arn:aws:iam::<ACCOUNT_ID>:role/nexus-worker-role-dev \
-    --zip-file fileb://apps/worker/worker.zip \
-    --timeout 30 \
-    --memory-size 256 \
-    --environment 'Variables={DATABASE_URL=<pooler-url>}' \
-    --region us-east-1
-```
-
-### 6. SQS Trigger
-
-```bash
-aws lambda create-event-source-mapping \
-    --function-name nexus-worker \
-    --event-source-arn arn:aws:sqs:us-east-1:<ACCOUNT_ID>:nexus-jobs-dev \
-    --batch-size 1 \
-    --region us-east-1
-```
-
-## Cleanup
-
-```bash
-# Remove event source mapping
-UUID=$(aws lambda list-event-source-mappings \
-    --function-name nexus-worker --region us-east-1 \
-    --query 'EventSourceMappings[0].UUID' --output text)
-aws lambda delete-event-source-mapping --uuid $UUID --region us-east-1
-
-# Delete Lambda
-aws lambda delete-function --function-name nexus-worker --region us-east-1
-
-# Delete IAM policies and role
-aws iam delete-role-policy --role-name nexus-worker-role-dev --policy-name nexus-worker-sqs-dev
-aws iam delete-role-policy --role-name nexus-worker-role-dev --policy-name nexus-worker-s3-dev
-aws iam delete-role-policy --role-name nexus-worker-role-dev --policy-name nexus-worker-logs-dev
-aws iam delete-role --role-name nexus-worker-role-dev
-
-# Delete SQS queues
-aws sqs delete-queue --queue-url https://sqs.us-east-1.amazonaws.com/<ACCOUNT_ID>/nexus-jobs-dev --region us-east-1
-aws sqs delete-queue --queue-url https://sqs.us-east-1.amazonaws.com/<ACCOUNT_ID>/nexus-jobs-dlq-dev --region us-east-1
-
-# Remove web app SQS permission
-aws iam delete-user-policy --user-name nexus-app-dev --policy-name nexus-sqs-access-dev
-```
+All of it is Terraform: `infra/terraform/` defines the queues, DLQ, Lambda,
+IAM role, and event source mapping per environment ([README](../../infra/terraform/README.md)
+has the apply/destroy flow). The CLI provisioning commands that used to live
+here built the original hand-made dev stack, decommissioned in #127.
 
 ## Integration Tests
 
@@ -321,5 +155,5 @@ pnpm -F web test:integration
 ## Related
 
 - [[lambda-development|Lambda Development]] — Worker conventions and job handler patterns
-- [[../infra/aws-manual-setup|AWS Manual Setup]] — S3 and IAM user setup
+- [`infra/terraform/`](../../infra/terraform/README.md) — resource definitions for both environments
 - [[../architecture/system-design|System Design]] — High-level architecture

@@ -190,7 +190,7 @@ CI ([`.github/workflows/`](.github/workflows)) runs lint/build/test/e2e on every
 
 - **Working** — single + multipart uploads to Glacier, the async retrieval flow with status tracking, Stripe subscriptions and webhooks, a file browser grouped by upload batch, and admin tooling.
 - **In progress** — the Lambda worker. The SQS dispatch and a typed, tested job registry are wired end to end; the first concrete job handler (account deletion) is landing now.
-- **Planned** — infrastructure as code. AWS is currently provisioned by hand following [`docs/infra/aws-manual-setup.md`](docs/infra/aws-manual-setup.md); codifying the bucket, lifecycle, SNS/SQS, and IAM in Terraform is the next infra step.
+- **Working** — infrastructure as code. Both AWS environments (bucket, lifecycle, SNS/SQS, Lambda, IAM) are stamped from one Terraform module set in [`infra/terraform/`](infra/terraform/README.md).
 
 ## Documentation
 

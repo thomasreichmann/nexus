@@ -1,4 +1,4 @@
-# Web-app IAM user — spec: docs/infra/aws-manual-setup.md
+# Web-app IAM user
 #
 # Access keys are created manually (`aws iam create-access-key`) so the secret
 # never lands in Terraform state. See README.md.

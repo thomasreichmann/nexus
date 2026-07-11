@@ -1,4 +1,5 @@
-# Vercel Production env mapping (#291):
+# Env var mapping — prod values go to the Vercel Production tier (#291), dev
+# values to Preview + Development and the GitHub Actions secrets (#127):
 #   S3_BUCKET     <- s3_bucket
 #   AWS_REGION    <- aws_region
 #   SQS_QUEUE_URL <- sqs_queue_url

@@ -2,10 +2,10 @@
 
 Provisions one full Nexus AWS environment (S3 files bucket, SNS restore-events
 topic + webhook subscription, SQS jobs queues, worker Lambda, app IAM user),
-parameterized by `environment` and `region`. **Prod is managed here and is the
-source of truth** (#53). Dev is still the hand-built setup documented in
-`docs/infra/aws-manual-setup.md` and `docs/guides/background-jobs.md` until
-#127 recreates it from these same files.
+parameterized by `environment` and `region`. **Both environments are managed
+here and this is the source of truth**: prod since #53, dev since #127 (the
+hand-built dev resources were decommissioned and recreated from these files,
+which closed the main drift vector between environments).
 
 State lives in S3 (`nexus-terraform-state-391615358272`, us-east-1) with one
 workspace per environment. A guard resource fails the plan if the selected
@@ -27,55 +27,59 @@ aws s3api put-public-access-block --bucket nexus-terraform-state-391615358272 \
     --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 ```
 
-## Apply (prod)
+## Apply
 
 ```bash
 cd infra/terraform
 terraform init
-terraform workspace select prod || terraform workspace new prod
+terraform workspace select prod || terraform workspace new prod   # or dev
 
-# The worker Lambda's DATABASE_URL — the prod Supabase transaction-pooler URL
-# (port 6543, see docs/infra/supabase-manual-setup.md). Never commit it.
-# It is also stored (encrypted at rest) in the Terraform state bucket.
+# The worker Lambda's DATABASE_URL — this environment's Supabase
+# transaction-pooler URL (port 6543, see docs/infra/supabase-manual-setup.md).
+# Never commit it. It is also stored (encrypted at rest) in the Terraform
+# state bucket.
 set -x TF_VAR_database_url "postgresql://..."   # fish; bash: export TF_VAR_database_url=...
 
-terraform plan -var-file=environments/prod.tfvars
-terraform apply -var-file=environments/prod.tfvars
+# Dev only: the SNS webhook endpoint is a protected Vercel preview URL, so the
+# subscription carries the Protection Bypass for Automation token (Vercel
+# dashboard: nexus-web > Settings > Deployment Protection). Never commit it.
+set -x TF_VAR_webhook_bypass_query "?x-vercel-protection-bypass=<token>"
+
+terraform plan -var-file=environments/prod.tfvars    # or dev.tfvars
+terraform apply -var-file=environments/prod.tfvars   # or dev.tfvars
 ```
 
 The SNS subscription only confirms if the app is already deployed and serving
 `https://<app_domain>/api/webhooks/s3-restore` — the route auto-confirms by
-fetching `SubscribeURL`, and Terraform waits for that.
+fetching `SubscribeURL`, and Terraform waits for that. For dev, `app_domain`
+is the stable branch URL of the long-lived `dev` branch (Preview tier = dev
+Supabase + dev AWS); the post-merge workflow fast-forwards `dev` to `main` on
+every merge so that deployment tracks production code.
 
 ## After apply
 
 1. **App access key** (kept out of Terraform state on purpose):
 
     ```bash
-    aws iam create-access-key --user-name nexus-app-prod
+    aws iam create-access-key --user-name nexus-app-<env>
     ```
 
 2. **Worker code** — Terraform ships a stub that throws on every invocation
    (so jobs retry into the DLQ instead of silently succeeding). Deploy the
    real worker per `docs/guides/background-jobs.md`, with
-   `--function-name nexus-worker-prod --region us-east-1`. Later applies
+   `--function-name nexus-worker-<env> --region us-east-1`. Later applies
    won't touch the deployed code (`ignore_changes` on the package), but the
    Lambda's environment (`DATABASE_URL`) **is** Terraform-managed — update it
    here, not with `aws lambda update-function-configuration`.
 
-3. **Vercel Production env vars** (#291) from `terraform output`:
+3. **Env vars** from `terraform output` — prod values go to the Vercel
+   Production tier (#291), dev values to Preview + Development (and GitHub
+   Actions secrets `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`S3_BUCKET`/
+   `SQS_QUEUE_URL`, which are dev-scoped):
 
-    | Vercel var                                    | Source                 |
+    | Var                                           | Source                 |
     | --------------------------------------------- | ---------------------- |
     | `S3_BUCKET`                                   | `s3_bucket` output     |
     | `AWS_REGION`                                  | `aws_region` output    |
     | `SQS_QUEUE_URL`                               | `sqs_queue_url` output |
     | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1 |
-
-## Dev
-
-Dev is not in state yet (#127). The `environment`/`region` variables and the
-`dev` workspace exist for that migration; don't apply dev until #127 — the
-resource names would collide with the hand-built ones (and the dev Lambda is
-named `nexus-worker`, unsuffixed, so it specifically needs a
-create-before-destroy plan).

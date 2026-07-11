@@ -170,7 +170,12 @@ shared with dev (or is out of scope for the split).
 | `SQS_QUEUE_URL`                               | `…/nexus-jobs-prod`                                       | `…/nexus-jobs-dev`        |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key on the `nexus-app-prod` IAM user               | `nexus-app-dev` key       |
 | `BETTER_AUTH_SECRET`                          | prod-only secret (rotating it never touches dev sessions) | dev secret                |
-| `NEXT_PUBLIC_APP_URL`                         | `https://nexus.thomasar.dev`                              | `http://localhost:3000`   |
+| `NEXT_PUBLIC_APP_URL`                         | `https://nexus.thomasar.dev`                              | `http://localhost:3000`\* |
+
+\* Exception: the long-lived `dev` branch (the deployment that receives dev SNS
+webhooks, #127) has a branch-scoped Preview value pointing at its own URL
+(`https://nexus-web-git-dev-…vercel.app`) so dev-triggered emails don't link to
+localhost. It shows as `Preview (dev)` in `vercel env ls`.
 
 Same on every tier: `AWS_REGION` (`us-east-1`), Resend. **Out of scope:** Stripe
 stays test-mode on Production until live mode ships (#213). The prod AWS resource
