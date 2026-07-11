@@ -40,11 +40,6 @@ terraform workspace select prod || terraform workspace new prod   # or dev
 # state bucket.
 set -x TF_VAR_database_url "postgresql://..."   # fish; bash: export TF_VAR_database_url=...
 
-# Dev only: the SNS webhook endpoint is a protected Vercel preview URL, so the
-# subscription carries the Protection Bypass for Automation token (Vercel
-# dashboard: nexus-web > Settings > Deployment Protection). Never commit it.
-set -x TF_VAR_webhook_bypass_query "?x-vercel-protection-bypass=<token>"
-
 terraform plan -var-file=environments/prod.tfvars    # or dev.tfvars
 terraform apply -var-file=environments/prod.tfvars   # or dev.tfvars
 ```
@@ -52,9 +47,14 @@ terraform apply -var-file=environments/prod.tfvars   # or dev.tfvars
 The SNS subscription only confirms if the app is already deployed and serving
 `https://<app_domain>/api/webhooks/s3-restore` — the route auto-confirms by
 fetching `SubscribeURL`, and Terraform waits for that. For dev, `app_domain`
-is the stable branch URL of the long-lived `dev` branch (Preview tier = dev
-Supabase + dev AWS); the post-merge workflow fast-forwards `dev` to `main` on
-every merge so that deployment tracks production code.
+is `dev.nexus.thomasar.dev` (a Cloudflare CNAME → Vercel custom domain pinned
+to the long-lived `dev` branch; Preview tier = dev Supabase + dev AWS). It
+confirms without a bypass token because Vercel Authentication is disabled on the
+nexus-web project — a custom domain on a preview branch is NOT auto-exempt (only
+the production domain is), and the Hobby plan offers no per-domain exception, so
+#317 turned deployment protection off project-wide. The post-merge workflow
+fast-forwards `dev` to `main` on every merge so that deployment tracks
+production code.
 
 ## After apply
 

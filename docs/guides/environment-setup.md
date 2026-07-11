@@ -174,8 +174,9 @@ shared with dev (or is out of scope for the split).
 
 \* Exception: the long-lived `dev` branch (the deployment that receives dev SNS
 webhooks, #127) has a branch-scoped Preview value pointing at its own URL
-(`https://nexus-web-git-dev-…vercel.app`) so dev-triggered emails don't link to
-localhost. It shows as `Preview (dev)` in `vercel env ls`.
+(`https://dev.nexus.thomasar.dev`, the custom domain #317 pinned to the branch)
+so dev-triggered emails don't link to localhost. It shows as `Preview (dev)` in
+`vercel env ls`.
 
 Same on every tier: `AWS_REGION` (`us-east-1`), Resend. **Out of scope:** Stripe
 stays test-mode on Production until live mode ships (#213). The prod AWS resource
