@@ -22,7 +22,7 @@
 
 import { and, count, eq, gte, inArray, lt } from 'drizzle-orm';
 
-import { alerts } from '@/lib/alerts';
+import { alerts, getWorkflowRunUrl } from '@/lib/alerts';
 import { db } from '@/server/db';
 import { s3RestoreService } from '@/server/services/s3-restore';
 import { retrievals, webhookEvents } from '@nexus/db/schema';
@@ -145,14 +145,6 @@ async function main(): Promise<void> {
     } else {
         console.log('\nAll checks passed.');
     }
-}
-
-function getWorkflowRunUrl(): string | undefined {
-    const { GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID } = process.env;
-    if (!GITHUB_SERVER_URL || !GITHUB_REPOSITORY || !GITHUB_RUN_ID) {
-        return undefined;
-    }
-    return `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`;
 }
 
 main()

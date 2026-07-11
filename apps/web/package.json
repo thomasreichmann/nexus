@@ -23,7 +23,9 @@
         "screenshots": "tsx scripts/screenshots.ts",
         "backfill:trial-subscriptions": "tsx --env-file=.env.local scripts/backfill-trial-subscriptions.ts",
         "backfill:storage-tier": "tsx --env-file=.env.local scripts/backfill-storage-tier.ts",
-        "check:s3-event-health": "tsx --env-file=.env.local scripts/check-s3-event-health.ts"
+        "check:s3-event-health": "tsx --env-file=.env.local scripts/check-s3-event-health.ts",
+        "check:stripe-config": "tsx --env-file=.env.local scripts/check-stripe-config.ts",
+        "check:vercel-env-parity": "tsx --env-file=.env.local scripts/check-vercel-env-parity.ts"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.975.0",

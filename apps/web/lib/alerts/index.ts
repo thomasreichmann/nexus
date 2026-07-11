@@ -27,6 +27,8 @@ export const alerts = {
     send,
 } as const;
 
+export { getWorkflowRunUrl } from './workflowRun';
+
 export type {
     Alert,
     AlertSeverity,
