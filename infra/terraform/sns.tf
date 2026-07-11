@@ -50,7 +50,7 @@ resource "aws_sqs_queue_policy" "s3_restore_events_dlq" {
 resource "aws_sns_topic_subscription" "s3_restore_webhook" {
   topic_arn              = aws_sns_topic.s3_restore_events.arn
   protocol               = "https"
-  endpoint               = "https://${var.app_domain}/api/webhooks/s3-restore${var.webhook_bypass_query}"
+  endpoint               = "https://${var.app_domain}/api/webhooks/s3-restore"
   endpoint_auto_confirms = true
   raw_message_delivery   = false
 
