@@ -23,6 +23,13 @@ variable "cors_allowed_origins" {
   type        = list(string)
 }
 
+variable "webhook_bypass_query" {
+  description = "Optional query string (with leading '?') appended to the SNS webhook endpoint. Dev needs it: the dev app runs on a Vercel preview URL behind deployment protection, so the subscription carries the project's Protection Bypass for Automation token (?x-vercel-protection-bypass=...). Pass via TF_VAR_webhook_bypass_query; never commit. Persisted in Terraform state and visible in the SNS subscription config."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "database_url" {
   description = "Supabase transaction-pooler URL (port 6543) injected into the worker Lambda. Pass via TF_VAR_database_url; never commit. Note: persisted in Terraform state."
   type        = string

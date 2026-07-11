@@ -10,6 +10,25 @@ concurrency:
     cancel-in-progress: false
 
 jobs:
+    # The long-lived `dev` branch backs the stable Vercel Preview deployment
+    # that receives dev SNS webhooks (infra/terraform/README.md, #127). Keep
+    # it pointing at main so that deployment always runs production code.
+    sync-dev-branch:
+        name: Fast-forward dev branch to main
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        permissions:
+            contents: write
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            # Force: dev is a mirror of main, never a place for real work —
+            # anything stranded on it (e.g. a build-trigger commit) is
+            # disposable by definition.
+            - name: Push main to dev
+              run: git push --force origin HEAD:refs/heads/dev
+
     migrate:
         name: Apply DB migrations (dev)
         runs-on: ubuntu-latest

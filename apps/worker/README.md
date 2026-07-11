@@ -75,4 +75,4 @@ aws lambda update-function-code \
 - **Runtime:** Node.js 22, ES modules
 - **Database:** Connects via Supabase PgBouncer (port 6543) with `prepare: false` to handle Lambda's concurrent execution model
 - **Bundler:** tsup (esbuild) — bundles all dependencies into a single file
-- **Infrastructure:** Provisioned manually — see `docs/infra/aws-manual-setup.md` (Terraform is planned but not yet in the repo)
+- **Infrastructure:** Terraform-managed — see `infra/terraform/` (queues, Lambda, IAM for both environments)

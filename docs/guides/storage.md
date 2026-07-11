@@ -193,7 +193,7 @@ returned ETags feed straight back into `complete`.
 Finalize the upload with the collected `{ partNumber, etag }[]`, or abort to
 discard all uploaded parts. Incomplete uploads that are never completed or
 aborted are cleaned up by the bucket's `abort-incomplete-multipart` lifecycle
-rule (7 days) — see `docs/infra/aws-manual-setup.md`.
+rule (7 days) — see `infra/terraform/s3.tf`.
 
 ## Types
 

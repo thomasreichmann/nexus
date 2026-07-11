@@ -1,4 +1,4 @@
-# Files bucket — spec: docs/infra/aws-manual-setup.md
+# Files bucket — behavior context: docs/guides/storage.md
 
 resource "aws_s3_bucket" "files" {
   bucket = "nexus-storage-files-${var.environment}"
