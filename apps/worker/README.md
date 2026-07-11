@@ -47,28 +47,17 @@ function configuration:
 | `DATABASE_URL` | Postgres connection string (pooled, port 6543 — PgBouncer) |
 
 `DATABASE_URL` is validated at first invocation (`src/handler.ts`) and throws
-a descriptive error if missing. To set it:
-
-```bash
-aws lambda update-function-configuration \
-    --function-name nexus-worker \
-    --environment "Variables={DATABASE_URL=postgresql://...}" \
-    --region us-east-1
-```
+a descriptive error if missing. The Lambda environment is Terraform-managed —
+change it with a `terraform apply` (`TF_VAR_database_url`, see
+`infra/terraform/README.md`), never `aws lambda update-function-configuration`,
+which Terraform would revert on the next apply.
 
 ## Deployment
 
-The build produces a single self-contained ES module (`dist/handler.js`) with all dependencies bundled. Deploy to Lambda:
-
-```bash
-cd apps/worker/dist
-echo '{"type":"module"}' > package.json
-zip -r ../worker.zip .
-aws lambda update-function-code \
-    --function-name nexus-worker \
-    --zip-file fileb://worker.zip \
-    --region us-east-1
-```
+The build produces a single self-contained ES module (`dist/handler.js`) with
+all dependencies bundled. Deploy with `aws lambda update-function-code`
+against `nexus-worker-<env>` — full recipe in the
+[Background Jobs Runbook](../../docs/guides/background-jobs.md#deploy-updated-worker-code).
 
 ## Key Details
 

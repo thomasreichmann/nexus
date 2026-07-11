@@ -28,6 +28,18 @@ variable "webhook_bypass_query" {
   type        = string
   default     = ""
   sensitive   = true
+
+  # Guardrails: the var is sensitive, so a bad value would hide inside
+  # "endpoint = (sensitive value)" in the plan instead of being visible.
+  validation {
+    condition     = var.environment != "prod" || var.webhook_bypass_query == ""
+    error_message = "webhook_bypass_query is dev-only; unset TF_VAR_webhook_bypass_query for prod applies."
+  }
+
+  validation {
+    condition     = can(regex("^$|^\\?", var.webhook_bypass_query))
+    error_message = "webhook_bypass_query must be empty or start with '?'."
+  }
 }
 
 variable "database_url" {
