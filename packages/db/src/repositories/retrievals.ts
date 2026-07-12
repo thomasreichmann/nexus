@@ -1,4 +1,14 @@
-import { eq, and, or, inArray, isNull, gt, desc } from 'drizzle-orm';
+import {
+    eq,
+    and,
+    or,
+    not,
+    inArray,
+    isNull,
+    gt,
+    desc,
+    type SQL,
+} from 'drizzle-orm';
 import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
@@ -16,14 +26,20 @@ export type NewRetrieval = typeof schema.retrievals.$inferInsert;
 export function activeRetrievalFilter() {
     return or(
         inArray(schema.retrievals.status, ['pending', 'in_progress']),
-        and(
-            eq(schema.retrievals.status, 'ready'),
-            or(
-                isNull(schema.retrievals.expiresAt),
-                gt(schema.retrievals.expiresAt, new Date())
-            )
-        )
+        and(eq(schema.retrievals.status, 'ready'), readyWindowOpen())
     );
+}
+
+// The download window on a `ready` row is open while `expiresAt` is unset (a
+// malformed restore-completed event: better a stale entry than a download cut
+// off early) or still in the future. Shared with expireLapsedByFileIds so the
+// active predicate and the expiry transition can't drift apart.
+function readyWindowOpen(): SQL {
+    // or() is only `undefined` when called with no arguments
+    return or(
+        isNull(schema.retrievals.expiresAt),
+        gt(schema.retrievals.expiresAt, new Date())
+    )!;
 }
 
 function findByFileId(db: DB, fileId: string): Promise<Retrieval | undefined> {
@@ -112,12 +128,39 @@ async function insert(db: DB, data: NewRetrieval): Promise<Retrieval> {
     return retrieval;
 }
 
+// ON CONFLICT DO NOTHING against the partial unique index on active
+// retrievals (retrievals_active_file_id_idx): when a concurrent request has
+// already inserted an active row for a file, that row is skipped and omitted
+// from the result — callers reconcile missing fileIds against the surviving
+// row via findByFileIds.
 async function insertMany(
     db: DB,
     dataArray: NewRetrieval[]
 ): Promise<Retrieval[]> {
     if (dataArray.length === 0) return [];
-    return db.insert(schema.retrievals).values(dataArray).returning();
+    return db
+        .insert(schema.retrievals)
+        .values(dataArray)
+        .onConflictDoNothing()
+        .returning();
+}
+
+// A lapsed `ready` row is inactive to reads (see activeRetrievalFilter) but
+// still holds the unique-index slot for its file — the index predicate can't
+// see `expiresAt`. Flip such rows to `expired` so a fresh retrieval for the
+// file can insert. Idempotent, safe to race.
+async function expireLapsedByFileIds(db: DB, fileIds: string[]): Promise<void> {
+    if (fileIds.length === 0) return;
+    await db
+        .update(schema.retrievals)
+        .set({ status: 'expired' })
+        .where(
+            and(
+                inArray(schema.retrievals.fileId, fileIds),
+                eq(schema.retrievals.status, 'ready'),
+                not(readyWindowOpen())
+            )
+        );
 }
 
 async function updateStatus(
@@ -144,6 +187,7 @@ export const createRetrievalRepo = createRepository({
     findActiveByUserWithFiles,
     insert,
     insertMany,
+    expireLapsedByFileIds,
     updateStatus,
 });
 

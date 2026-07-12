@@ -138,6 +138,48 @@ describe('retrieval service', () => {
                 )
             ).rejects.toThrow(InvalidStateError);
         });
+
+        it('expires lapsed ready rows before inserting', async () => {
+            const file = createFileFixture({ storageTier: 'standard' });
+            const retrieval = createRetrievalFixture({ status: 'ready' });
+
+            mocks.files.findMany.mockResolvedValue([file]);
+            mocks.retrievals.findMany.mockResolvedValue([]);
+            mocks.returning.mockResolvedValue([retrieval]);
+
+            await retrievalService.requestRetrieval(
+                db,
+                TEST_USER_ID,
+                TEST_FILE_ID
+            );
+
+            expect(mocks.update).toHaveBeenCalledOnce();
+            expect(mocks.set).toHaveBeenCalledWith({ status: 'expired' });
+        });
+
+        it('returns the surviving row when a concurrent request wins the insert race', async () => {
+            const file = createFileFixture({ storageTier: 'standard' });
+            const survivor = createRetrievalFixture({ status: 'ready' });
+
+            mocks.files.findMany.mockResolvedValue([file]);
+            // First findMany: the pre-insert active check sees nothing; the
+            // competing request inserts between check and insert, so the
+            // conflict-skipped insert returns [] and the reconciliation
+            // lookup finds the winner's row.
+            mocks.retrievals.findMany
+                .mockResolvedValueOnce([])
+                .mockResolvedValueOnce([survivor]);
+            mocks.returning.mockResolvedValue([]);
+
+            const result = await retrievalService.requestRetrieval(
+                db,
+                TEST_USER_ID,
+                TEST_FILE_ID
+            );
+
+            expect(result).toEqual(survivor);
+            expect(mocks.retrievals.findMany).toHaveBeenCalledTimes(2);
+        });
     });
 
     describe('requestBulkRetrieval', () => {
