@@ -1,9 +1,17 @@
 import postgres from 'postgres';
+import { config } from 'dotenv';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// CI passes DATABASE_URL explicitly (dotenv never overrides an existing env
+// var); locally, fall back to the web app's .env.local — the single env
+// source for all local tooling (docs/guides/environment-setup.md).
+config({
+    path: join(__dirname, '..', '..', '..', 'apps', 'web', '.env.local'),
+});
 const journalPath = join(
     __dirname,
     '..',
@@ -16,7 +24,7 @@ const journal = JSON.parse(readFileSync(journalPath, 'utf8'));
 const expected = journal.entries.length;
 
 if (!process.env.DATABASE_URL) {
-    console.error('DATABASE_URL is not set.');
+    console.error('DATABASE_URL is not set. Check apps/web/.env.local exists.');
     process.exit(2);
 }
 
