@@ -9,7 +9,12 @@ concurrency:
 
 jobs:
     ci:
-        name: Lint, Typecheck, Test
+        # Required status check in branch protection. The name is deliberately
+        # generic and task-independent: this job's step list evolves (lint,
+        # typecheck, build, test, e2e coverage today), and coupling the
+        # required-check name to that list turns every step addition into a
+        # branch-protection migration. Keep this name stable; change steps freely.
+        name: Checks
         runs-on: ubuntu-latest
         env:
             TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
@@ -22,8 +27,29 @@ jobs:
             - name: Setup Node and pnpm
               uses: ./.github/actions/setup-node-pnpm
 
+            # trpc-devtools ships built types from dist/ (its package `exports`
+            # resolve to dist/*.d.ts) and web imports it in real source, so
+            # lint/typecheck/build all need its dist on disk first. Only the
+            # `build` task declares `^build`; `typecheck` does not, so it can
+            # race an in-graph build — build it explicitly up front instead.
             - name: Build trpc-devtools
               run: pnpm -F trpc-devtools build
 
-            - name: Lint, Typecheck, Test
-              run: pnpm exec turbo lint typecheck test --continue
+            # Pre-merge gate. Same tasks as `pnpm check` (lint + build + test)
+            # plus typecheck — typecheck uniquely covers the Playwright specs
+            # (`tsc -p e2e`), which `next build` never type-checks. Adding
+            # `build` here is what catches broken config / build regressions
+            # that lint+typecheck alone miss. --continue so one failing task
+            # doesn't hide the others.
+            - name: Lint, typecheck, build, test
+              run: pnpm exec turbo lint typecheck build test --continue
+
+            # Static coverage gate: `playwright test --list` cross-referenced
+            # against e2e/coverage/manifest.ts. No browser, no server, no build
+            # — runs in seconds. Fails a PR that tags a test with a @page/@uc
+            # id missing from the manifest (or leaves a page/use-case
+            # untested). `!cancelled()` so this still reports when the checks
+            # above fail, surfacing both signals on one red PR.
+            - name: E2E coverage gate
+              if: ${{ !cancelled() }}
+              run: pnpm -F web e2e:coverage --check
