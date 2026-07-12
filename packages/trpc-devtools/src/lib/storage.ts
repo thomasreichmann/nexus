@@ -4,7 +4,13 @@ const STORAGE_KEY = 'trpc-devtools-history';
 const PANEL_SIZES_KEY = 'trpc-devtools-panel-sizes';
 const SUPERJSON_KEY = 'trpc-devtools-superjson';
 const COLLAPSED_GROUPS_KEY = 'trpc-devtools-collapsed-groups';
+// Also read by the inline FOUC-prevention script in server/handler.ts —
+// keep the key and value format in sync with it.
+export const THEME_KEY = 'trpc-devtools-theme';
 const MAX_HISTORY_ITEMS = 50;
+
+const THEME_MODES = ['light', 'dark', 'system'] as const;
+type StoredThemeMode = (typeof THEME_MODES)[number];
 
 export interface HistoryItem {
     id: string;
@@ -191,6 +197,38 @@ export function saveSuperJSONPreference(
             : {};
         prefs[trpcUrl] = usesSuperJSON;
         localStorage.setItem(SUPERJSON_KEY, JSON.stringify(prefs));
+    } catch {
+        // Storage might be full or disabled
+    }
+}
+
+// Theme preference storage
+
+/**
+ * Load the persisted theme mode, or null if unset/invalid
+ */
+export function loadThemePreference(): StoredThemeMode | null {
+    if (typeof window === 'undefined') return null;
+
+    try {
+        const stored = localStorage.getItem(THEME_KEY);
+        if (stored && THEME_MODES.includes(stored as StoredThemeMode)) {
+            return stored as StoredThemeMode;
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Persist the theme mode
+ */
+export function saveThemePreference(mode: StoredThemeMode): void {
+    if (typeof window === 'undefined') return;
+
+    try {
+        localStorage.setItem(THEME_KEY, mode);
     } catch {
         // Storage might be full or disabled
     }

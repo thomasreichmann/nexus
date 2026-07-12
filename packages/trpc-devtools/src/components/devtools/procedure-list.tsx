@@ -182,9 +182,14 @@ export function ProcedureList({
     // Global "/" shortcut to focus search
     React.useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
-            // "/" focuses search (ignore if in text input)
+            // "/" focuses search (ignore if in text input or when held with
+            // modifiers — Cmd+Shift+/ is the shortcuts-help toggle)
             if (
                 e.key === '/' &&
+                !e.metaKey &&
+                !e.ctrlKey &&
+                !e.altKey &&
+                !e.shiftKey &&
                 document.activeElement?.tagName !== 'INPUT' &&
                 document.activeElement?.tagName !== 'TEXTAREA'
             ) {

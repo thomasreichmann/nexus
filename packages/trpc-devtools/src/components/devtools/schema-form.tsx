@@ -4,7 +4,9 @@ import * as React from 'react';
 import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { JsonEditor } from '@/components/ui/json-editor';
+import { Kbd } from '@/components/ui/kbd';
 import { Spinner } from '@/components/ui/spinner';
+import { formatShortcut, useIsApplePlatform } from '@/lib/platform';
 import { generateSample, parseJsonWithPosition } from '@/lib/sample-generator';
 import { formatIssuePath, type ZodIssue } from '@/lib/zod-error';
 import type { JSONSchema } from '@/server/types';
@@ -30,6 +32,7 @@ export function SchemaForm({
 }: SchemaFormProps) {
     const [showSchema, setShowSchema] = React.useState(true);
     const hasInput = schema !== null;
+    const isApple = useIsApplePlatform();
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         // Cmd/Ctrl + Enter to submit
@@ -113,7 +116,8 @@ export function SchemaForm({
                         <ValidationErrorBanner errors={validationErrors} />
                     )}
                     <p className="text-xs text-muted-foreground">
-                        Cmd+Shift+F to format
+                        {formatShortcut('F', { isApple, shift: true })} to
+                        format
                     </p>
                 </div>
             ) : (
@@ -137,7 +141,7 @@ export function SchemaForm({
                         `Execute ${procedureType === 'query' ? 'Query' : 'Mutation'}`
                     )}
                 </Button>
-                <span className="text-xs text-muted-foreground">⌘ + Enter</span>
+                <Kbd>{formatShortcut('↵', { isApple })}</Kbd>
             </div>
         </div>
     );

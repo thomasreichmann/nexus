@@ -2,13 +2,17 @@
 
 import * as React from 'react';
 import { motion } from 'framer-motion';
+import { Check, Download, Terminal } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ResizablePanels } from '@/components/ui/resizable-panels';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SchemaForm } from './schema-form';
 import { ResponseViewer } from './response-viewer';
+import { buildCurlCommand } from '@/lib/curl';
 import { executeRequest, type TRPCResponse } from '@/lib/request';
+import { useCopyToClipboard } from '@/lib/use-copy-to-clipboard';
 import { parseZodError } from '@/lib/zod-error';
 import {
     saveToHistory,
@@ -25,17 +29,29 @@ interface ProcedureViewProps {
     onHistoryConsumed?: () => void;
 }
 
-export function ProcedureView({
-    procedure,
-    trpcUrl,
-    headers,
-    historyReplay,
-    onHistoryConsumed,
-}: ProcedureViewProps) {
+/** Imperative surface for global shortcuts and command palette actions */
+export interface ProcedureViewHandle {
+    execute: () => void;
+    clearResponse: () => void;
+    toggleRaw: () => void;
+    copyCurl: () => void;
+}
+
+export const ProcedureView = React.forwardRef<
+    ProcedureViewHandle,
+    ProcedureViewProps
+>(function ProcedureView(
+    { procedure, trpcUrl, headers, historyReplay, onHistoryConsumed },
+    ref
+) {
     const [input, setInput] = React.useState('');
     const [isLoading, setIsLoading] = React.useState(false);
     const [response, setResponse] = React.useState<TRPCResponse | null>(null);
     const [isFromHistory, setIsFromHistory] = React.useState(false);
+    const [showRaw, setShowRaw] = React.useState(false);
+    const [includeCookies, setIncludeCookies] = React.useState(false);
+    const { isCopied: isCurlCopied, copy: copyToClipboard } =
+        useCopyToClipboard();
 
     // Track whether we just consumed a history replay (to skip the reset
     // triggered by onHistoryConsumed setting historyReplay back to null)
@@ -166,6 +182,70 @@ export function ProcedureView({
         }
     };
 
+    // Input parsed for cURL export; ok=false means unparsable (button disabled)
+    const curlInput = React.useMemo(() => {
+        if (!input.trim()) return { ok: true as const, value: undefined };
+        try {
+            return { ok: true as const, value: JSON.parse(input) as unknown };
+        } catch {
+            return { ok: false as const, value: undefined };
+        }
+    }, [input]);
+
+    const canCopyCurl = procedure.type !== 'subscription' && curlInput.ok;
+
+    const handleCopyCurl = () => {
+        if (procedure.type === 'subscription' || !curlInput.ok) return;
+
+        const command = buildCurlCommand(
+            {
+                path: procedure.path,
+                type: procedure.type,
+                input: curlInput.value,
+            },
+            {
+                trpcUrl,
+                origin: window.location.origin,
+                headers,
+                useSuperJSON,
+                cookieHeader: includeCookies ? document.cookie : undefined,
+            }
+        );
+        copyToClipboard(command);
+    };
+
+    const handleDownload = () => {
+        if (!response) return;
+
+        // Mirror what the viewer currently shows: raw wire response, or the
+        // parsed data / error
+        const data = showRaw
+            ? response.rawResponse
+            : response.ok
+              ? response.data
+              : response.error;
+
+        const blob = new Blob([`${JSON.stringify(data, null, 2)}\n`], {
+            type: 'application/json',
+        });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `${procedure.path}-response.json`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+    };
+
+    React.useImperativeHandle(ref, () => ({
+        execute: () => void handleSubmit(),
+        clearResponse: () => {
+            setResponse(null);
+            setIsFromHistory(false);
+        },
+        toggleRaw: () => setShowRaw((prev) => !prev),
+        copyCurl: handleCopyCurl,
+    }));
+
     return (
         <motion.div
             key={procedure.path}
@@ -219,10 +299,45 @@ export function ProcedureView({
                 className="flex-1"
                 first={
                     <Card className="flex flex-col overflow-hidden h-full">
-                        <CardHeader className="py-3 px-4 border-b border-border">
-                            <CardTitle className="text-sm font-medium">
-                                Request
-                            </CardTitle>
+                        <CardHeader className="py-2 px-4 border-b border-border">
+                            <div className="flex items-center justify-between gap-2 min-h-7">
+                                <CardTitle className="text-sm font-medium">
+                                    Request
+                                </CardTitle>
+                                <div className="flex items-center gap-2">
+                                    <label
+                                        className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted-foreground"
+                                        title="Include browser cookies in the cURL command (only cookies readable by JavaScript)"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={includeCookies}
+                                            onChange={(e) =>
+                                                setIncludeCookies(
+                                                    e.target.checked
+                                                )
+                                            }
+                                            className="h-3.5 w-3.5 accent-primary"
+                                        />
+                                        Cookies
+                                    </label>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={handleCopyCurl}
+                                        disabled={!canCopyCurl}
+                                        title="Copy request as cURL command"
+                                        className="h-7 gap-1.5 px-2 text-xs"
+                                    >
+                                        {isCurlCopied ? (
+                                            <Check className="h-3.5 w-3.5" />
+                                        ) : (
+                                            <Terminal className="h-3.5 w-3.5" />
+                                        )}
+                                        {isCurlCopied ? 'Copied!' : 'cURL'}
+                                    </Button>
+                                </div>
+                            </div>
                         </CardHeader>
                         <CardContent className="flex-1 p-4 overflow-auto">
                             <SchemaForm
@@ -239,16 +354,31 @@ export function ProcedureView({
                 }
                 second={
                     <Card className="flex flex-col overflow-hidden h-full">
-                        <CardHeader className="py-3 px-4 border-b border-border">
-                            <CardTitle className="text-sm font-medium">
-                                Response
-                            </CardTitle>
+                        <CardHeader className="py-2 px-4 border-b border-border">
+                            <div className="flex items-center justify-between gap-2 min-h-7">
+                                <CardTitle className="text-sm font-medium">
+                                    Response
+                                </CardTitle>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={handleDownload}
+                                    disabled={!response}
+                                    title={`Download response as ${procedure.path}-response.json`}
+                                    className="h-7 gap-1.5 px-2 text-xs"
+                                >
+                                    <Download className="h-3.5 w-3.5" />
+                                    Download
+                                </Button>
+                            </div>
                         </CardHeader>
                         <CardContent className="flex-1 p-0 overflow-hidden">
                             <ResponseViewer
                                 response={response}
                                 zodIssues={validationErrors}
                                 fromHistory={isFromHistory}
+                                showRaw={showRaw}
+                                onToggleRaw={() => setShowRaw((prev) => !prev)}
                             />
                         </CardContent>
                     </Card>
@@ -256,7 +386,7 @@ export function ProcedureView({
             />
         </motion.div>
     );
-}
+});
 
 export function ProcedureViewSkeleton() {
     return (

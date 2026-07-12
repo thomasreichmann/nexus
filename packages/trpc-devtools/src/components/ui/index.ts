@@ -11,6 +11,8 @@ export {
 } from './card';
 export { Badge, type BadgeProps } from './badge';
 export { Drawer, type DrawerProps } from './drawer';
+export { Dialog, type DialogProps } from './dialog';
+export { Kbd } from './kbd';
 export { ScrollArea } from './scroll-area';
 export { Skeleton } from './skeleton';
 export { Spinner, type SpinnerProps } from './spinner';
