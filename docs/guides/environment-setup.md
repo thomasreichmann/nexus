@@ -200,6 +200,25 @@ key manually (`aws iam create-access-key --user-name nexus-app-prod`).
 4. Update `.env.example` for reference
 5. Update this documentation
 
+### Parity Checks (CI)
+
+`env-parity.yml` runs nightly (#293) and backstops the manual processes above:
+
+- `pnpm -F web check:stripe-config` — asserts products/prices/webhook wiring
+  in whichever Stripe mode its `STRIPE_SECRET_KEY` selects (test mode until
+  #213 adds a live leg).
+- `pnpm -F web check:vercel-env-parity` — fails when an env-var **key**
+  exists in some tiers but not others (values may differ per tier; keys may
+  not). Intentional asymmetries go in the script's `ASYMMETRY_ALLOWLIST`.
+  Needs the `VERCEL_TOKEN` GitHub Actions secret — a token from
+  vercel.com/account/tokens, team-scoped and with an expiry. Vercel tokens
+  can't be scoped read-only: this token can also _write_ env vars, so treat
+  it as a real credential.
+
+The prod DB health leg (`check:s3-event-health`) already runs nightly for
+both environments via the dev/prod matrix in `s3-event-health.yml`
+(`DATABASE_URL_PROD` secret).
+
 ## Related
 
 - [[getting-started|Getting Started]]

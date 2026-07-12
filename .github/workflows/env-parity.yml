@@ -1,0 +1,111 @@
+name: Environment Parity
+
+# Nightly drift checks for config layers with no shared source of truth
+# (#293): Stripe products/prices/webhook wiring, and Vercel env-var key
+# parity across tiers. A failed run is the alert; alerts.send (Discord) is
+# the faster secondary channel. The prod DB health leg lives in
+# s3-event-health.yml (dev/prod matrix).
+
+on:
+    schedule:
+        - cron: '0 6 * * *'
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    stripe-config:
+        name: Stripe config (${{ matrix.mode }} mode)
+        runs-on: ubuntu-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - mode: test
+                      stripe-secret: STRIPE_SECRET_KEY
+                    # live mode joins once #213 lands:
+                    # - mode: live
+                    #   stripe-secret: STRIPE_SECRET_KEY_LIVE
+        # The script only talks to Stripe, but importing @/lib/env validates
+        # the full server schema, so the whole (dev-scoped) env block rides
+        # along — same as s3-event-health.yml.
+        env:
+            DATABASE_URL: ${{ secrets.DATABASE_URL }}
+            AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            AWS_REGION: ${{ secrets.AWS_REGION }}
+            S3_BUCKET: ${{ secrets.S3_BUCKET }}
+            SQS_QUEUE_URL: ${{ secrets.SQS_QUEUE_URL }}
+            STRIPE_SECRET_KEY: ${{ secrets[matrix.stripe-secret] }}
+            STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+            RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+            RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+            BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+            NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+            DISCORD_ALERT_WEBHOOK_URL: ${{ secrets.DISCORD_ALERT_WEBHOOK_URL }}
+            VERCEL_ENV: stripe-${{ matrix.mode }}
+        steps:
+            - name: Verify Stripe secret is configured
+              run: |
+                  if [ -z "$STRIPE_SECRET_KEY" ]; then
+                      echo "::error::secret ${{ matrix.stripe-secret }} is not configured"
+                      exit 1
+                  fi
+
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Node and pnpm
+              uses: ./.github/actions/setup-node-pnpm
+
+            # The scripts load env via `tsx --env-file=.env.local`, which
+            # errors if the file is missing; real values come from the job
+            # env above (process env wins over the file).
+            - name: Create empty env file
+              run: touch apps/web/.env.local
+
+            - name: Check Stripe config
+              run: pnpm -F web check:stripe-config
+
+    vercel-env-parity:
+        name: Vercel env-key parity
+        runs-on: ubuntu-latest
+        # The script only talks to the Vercel API, but importing @/lib/alerts
+        # validates the full server env schema, so the whole (dev-scoped)
+        # block rides along here too.
+        env:
+            DATABASE_URL: ${{ secrets.DATABASE_URL }}
+            AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            AWS_REGION: ${{ secrets.AWS_REGION }}
+            S3_BUCKET: ${{ secrets.S3_BUCKET }}
+            SQS_QUEUE_URL: ${{ secrets.SQS_QUEUE_URL }}
+            STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+            STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+            RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+            RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+            BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+            NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+            DISCORD_ALERT_WEBHOOK_URL: ${{ secrets.DISCORD_ALERT_WEBHOOK_URL }}
+            VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+            VERCEL_ENV: ci
+        steps:
+            - name: Verify Vercel token is configured
+              run: |
+                  if [ -z "$VERCEL_TOKEN" ]; then
+                      echo "::error::secret VERCEL_TOKEN is not configured (see docs/guides/environment-setup.md)"
+                      exit 1
+                  fi
+
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Node and pnpm
+              uses: ./.github/actions/setup-node-pnpm
+
+            - name: Create empty env file
+              run: touch apps/web/.env.local
+
+            - name: Check Vercel env-key parity
+              run: pnpm -F web check:vercel-env-parity
