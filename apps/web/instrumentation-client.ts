@@ -16,7 +16,16 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
         // Tracing is out of scope for #327 — errors and replay only.
         tracesSampleRate: 0,
         // Replay on-error only: the free plan has 50 replays/mo.
-        integrations: [Sentry.replayIntegration()],
+        // Masking/blocking off: replays exist to debug alpha testers'
+        // sessions, so visibility beats redaction — it's our own known
+        // testers, and the SDK keeps masking password inputs regardless.
+        integrations: [
+            Sentry.replayIntegration({
+                maskAllText: false,
+                maskAllInputs: false,
+                blockAllMedia: false,
+            }),
+        ],
         replaysSessionSampleRate: 0,
         replaysOnErrorSampleRate: 1.0,
     });
