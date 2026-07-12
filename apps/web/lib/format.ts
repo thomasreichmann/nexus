@@ -19,6 +19,26 @@ export function formatRelativeTime(date: Date | string): string {
 }
 
 /**
+ * Compact relative time for narrow layouts ("25m ago", "1d ago") where the
+ * full formatRelativeTime copy ("25 minutes ago") costs pixels it doesn't
+ * earn. Month/year buckets are calendar-approximate (30/365 days) — fine at
+ * this granularity.
+ */
+export function formatRelativeTimeCompact(date: Date | string): string {
+    const elapsedMinutes = Math.floor(
+        (Date.now() - new Date(date).getTime()) / 60_000
+    );
+    if (elapsedMinutes < 1) return 'just now';
+    if (elapsedMinutes < 60) return `${elapsedMinutes}m ago`;
+    const hours = Math.floor(elapsedMinutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d ago`;
+    if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+    return `${Math.floor(days / 365)}y ago`;
+}
+
+/**
  * Download-window copy for a ready retrieval, identical for both storage
  * tiers: standard fast-path rows carry a synthetic expiresAt, Deep Archive
  * rows the real S3 restore expiry (#257). Null when there is no window to
