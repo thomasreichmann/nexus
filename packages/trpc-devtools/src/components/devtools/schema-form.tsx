@@ -116,7 +116,7 @@ export function SchemaForm({
                         <ValidationErrorBanner errors={validationErrors} />
                     )}
                     <p className="text-xs text-muted-foreground">
-                        {formatShortcut('F', { isApple, shift: true })} to
+                        {formatShortcut('F', { isApple, isShift: true })} to
                         format
                     </p>
                 </div>

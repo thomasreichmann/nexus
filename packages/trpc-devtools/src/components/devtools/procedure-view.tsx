@@ -49,7 +49,7 @@ export const ProcedureView = React.forwardRef<
     const [response, setResponse] = React.useState<TRPCResponse | null>(null);
     const [isFromHistory, setIsFromHistory] = React.useState(false);
     const [showRaw, setShowRaw] = React.useState(false);
-    const [includeCookies, setIncludeCookies] = React.useState(false);
+    const [shouldIncludeCookies, setShouldIncludeCookies] = React.useState(false);
     const { isCopied: isCurlCopied, copy: copyToClipboard } =
         useCopyToClipboard();
 
@@ -208,7 +208,7 @@ export const ProcedureView = React.forwardRef<
                 origin: window.location.origin,
                 headers,
                 useSuperJSON,
-                cookieHeader: includeCookies ? document.cookie : undefined,
+                cookieHeader: shouldIncludeCookies ? document.cookie : undefined,
             }
         );
         copyToClipboard(command);
@@ -311,9 +311,9 @@ export const ProcedureView = React.forwardRef<
                                     >
                                         <input
                                             type="checkbox"
-                                            checked={includeCookies}
+                                            checked={shouldIncludeCookies}
                                             onChange={(e) =>
-                                                setIncludeCookies(
+                                                setShouldIncludeCookies(
                                                     e.target.checked
                                                 )
                                             }

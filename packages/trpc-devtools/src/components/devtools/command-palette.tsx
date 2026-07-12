@@ -3,12 +3,12 @@
 import * as React from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Search } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Dialog } from '@/components/ui/dialog';
 import { Kbd } from '@/components/ui/kbd';
 import { fuzzyFilter, type FuzzyMatch } from '@/lib/fuzzy';
 import { cn } from '@/lib/utils';
 import type { ProcedureSchema } from '@/server/types';
+import { ProcedureTypeBadge } from './procedure-type-badge';
 
 export interface PaletteAction {
     id: string;
@@ -155,7 +155,7 @@ export function CommandPalette({
                     {item.kind === 'action' ? (
                         <>
                             <item.action.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            <span className="flex-1 truncate">
+                            <span className="min-w-0 flex-1 truncate">
                                 <HighlightedText
                                     text={item.action.label}
                                     indices={item.match.indices}
@@ -167,13 +167,11 @@ export function CommandPalette({
                         </>
                     ) : (
                         <>
-                            <Badge
-                                variant={item.procedure.type}
-                                className="px-1.5 py-0 text-[10px]"
-                            >
-                                {item.procedure.type.slice(0, 1).toUpperCase()}
-                            </Badge>
-                            <span className="flex-1 truncate font-mono text-xs">
+                            <ProcedureTypeBadge
+                                type={item.procedure.type}
+                                className="shrink-0"
+                            />
+                            <span className="min-w-0 flex-1 truncate font-mono text-xs">
                                 <HighlightedText
                                     text={item.procedure.path}
                                     indices={item.match.indices}

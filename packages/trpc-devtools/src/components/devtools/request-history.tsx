@@ -12,6 +12,7 @@ import {
     type HistoryItem,
 } from '@/lib/storage';
 import { cn } from '@/lib/utils';
+import { ProcedureTypeBadge } from './procedure-type-badge';
 
 interface RequestHistoryPanelProps {
     onReplay: (item: HistoryItem) => void;
@@ -184,12 +185,7 @@ function HistoryItemRow({ item, onReplay }: HistoryItemRowProps) {
             )}
         >
             {/* Type badge */}
-            <Badge
-                variant={item.request.type}
-                className="text-[10px] px-1.5 py-0 shrink-0"
-            >
-                {item.request.type.slice(0, 1).toUpperCase()}
-            </Badge>
+            <ProcedureTypeBadge type={item.request.type} className="shrink-0" />
 
             {/* Procedure path */}
             <span className="flex-1 min-w-0 font-mono text-xs truncate">

@@ -1,12 +1,24 @@
 'use client';
 
 import * as React from 'react';
-import { loadThemePreference, saveThemePreference } from './storage';
+import {
+    loadThemePreference,
+    saveThemePreference,
+    THEME_MODES,
+    type ThemeMode,
+} from './storage';
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type { ThemeMode };
 export type ResolvedTheme = 'light' | 'dark';
 
-const MODE_CYCLE: ThemeMode[] = ['light', 'dark', 'system'];
+// Must stay >= the 150ms `.theme-transition` duration in styles/globals.css
+// (a little slack so the class outlives the CSS transition)
+const THEME_TRANSITION_CLEAR_MS = 200;
+
+/** The mode a toggle moves to next: Light → Dark → System → Light */
+export function nextThemeMode(mode: ThemeMode): ThemeMode {
+    return THEME_MODES[(THEME_MODES.indexOf(mode) + 1) % THEME_MODES.length];
+}
 
 export interface UseThemeResult {
     /** The user's selected mode (may be 'system') */
@@ -42,7 +54,7 @@ export function useTheme(): UseThemeResult {
     // hydration mismatch is never patched up by React.
     const [isMounted, setIsMounted] = React.useState(false);
     const [mode, setMode] = React.useState<ThemeMode>('system');
-    const [systemPrefersDark, setSystemPrefersDark] = React.useState(false);
+    const [isSystemDark, setIsSystemDark] = React.useState(false);
     const [isTransitioning, setIsTransitioning] = React.useState(false);
     const transitionTimeoutRef = React.useRef<number | undefined>(undefined);
 
@@ -51,7 +63,7 @@ export function useTheme(): UseThemeResult {
         setMode(loadThemePreference() ?? 'system');
 
         const query = window.matchMedia('(prefers-color-scheme: dark)');
-        const update = () => setSystemPrefersDark(query.matches);
+        const update = () => setIsSystemDark(query.matches);
         update();
         setIsMounted(true);
 
@@ -65,8 +77,7 @@ export function useTheme(): UseThemeResult {
 
     const cycleMode = React.useCallback(() => {
         setMode((prev) => {
-            const next =
-                MODE_CYCLE[(MODE_CYCLE.indexOf(prev) + 1) % MODE_CYCLE.length];
+            const next = nextThemeMode(prev);
             saveThemePreference(next);
             return next;
         });
@@ -75,14 +86,14 @@ export function useTheme(): UseThemeResult {
         window.clearTimeout(transitionTimeoutRef.current);
         transitionTimeoutRef.current = window.setTimeout(
             () => setIsTransitioning(false),
-            200
+            THEME_TRANSITION_CLEAR_MS
         );
     }, []);
 
     const resolvedTheme: ResolvedTheme | null = !isMounted
         ? null
         : mode === 'system'
-          ? systemPrefersDark
+          ? isSystemDark
               ? 'dark'
               : 'light'
           : mode;

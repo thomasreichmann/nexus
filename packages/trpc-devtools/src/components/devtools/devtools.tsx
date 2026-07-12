@@ -199,7 +199,7 @@ export function TRPCDevtools({
                 id: 'clear-response',
                 label: 'Clear response',
                 icon: Eraser,
-                shortcut: formatShortcut('L', { isApple, shift: true }),
+                shortcut: formatShortcut('L', { isApple, isShift: true }),
                 run: () => procedureViewRef.current?.clearResponse(),
             },
             {

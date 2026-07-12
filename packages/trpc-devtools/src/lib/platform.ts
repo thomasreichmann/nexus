@@ -31,10 +31,10 @@ export function useIsApplePlatform(): boolean {
  */
 export function formatShortcut(
     key: string,
-    options: { isApple: boolean; shift?: boolean }
+    options: { isApple: boolean; isShift?: boolean }
 ): string {
     if (options.isApple) {
-        return `⌘${options.shift ? '⇧' : ''}${key}`;
+        return `⌘${options.isShift ? '⇧' : ''}${key}`;
     }
-    return `Ctrl+${options.shift ? 'Shift+' : ''}${key}`;
+    return `Ctrl+${options.isShift ? 'Shift+' : ''}${key}`;
 }

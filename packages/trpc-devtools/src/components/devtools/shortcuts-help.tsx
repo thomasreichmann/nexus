@@ -26,7 +26,7 @@ export function ShortcutsHelp({ isOpen, onClose }: ShortcutsHelpProps) {
             description: 'Execute request',
         },
         {
-            keys: [formatShortcut('L', { isApple, shift: true })],
+            keys: [formatShortcut('L', { isApple, isShift: true })],
             description: 'Clear response',
         },
         {
@@ -37,7 +37,7 @@ export function ShortcutsHelp({ isOpen, onClose }: ShortcutsHelpProps) {
             description: 'Previous / next procedure',
         },
         {
-            keys: [formatShortcut('F', { isApple, shift: true })],
+            keys: [formatShortcut('F', { isApple, isShift: true })],
             description: 'Format JSON input (in editor)',
         },
         { keys: ['/'], description: 'Focus procedure search' },

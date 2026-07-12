@@ -28,6 +28,8 @@ describe('buildCurlCommand', () => {
             `curl 'https://app.example.com/api/trpc/files.list?input=%7B%22limit%22%3A10%7D'`
         );
         expect(cmd).not.toContain('-X POST');
+        // executeRequest sends Content-Type on queries too — keep parity
+        expect(cmd).toContain(`-H 'Content-Type: application/json'`);
     });
 
     it('omits the input param for queries without input', () => {
@@ -36,7 +38,10 @@ describe('buildCurlCommand', () => {
             { trpcUrl: '/api/trpc', origin: ORIGIN }
         );
 
-        expect(cmd).toBe(`curl 'https://app.example.com/api/trpc/health.ping'`);
+        expect(cmd).toContain(
+            `curl 'https://app.example.com/api/trpc/health.ping'`
+        );
+        expect(cmd).not.toContain('input=');
     });
 
     it('builds a POST with a JSON body for mutations', () => {

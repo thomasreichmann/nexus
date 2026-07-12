@@ -93,7 +93,9 @@
 }
 
 /* Applied only for a moment while the theme toggles, so color transitions
-   don't linger on hover effects and other state changes */
+   don't linger on hover effects and other state changes. The class is
+   removed by lib/use-theme.ts (THEME_TRANSITION_CLEAR_MS) — keep that
+   timeout >= the duration here */
 .trpc-devtools.theme-transition,
 .trpc-devtools.theme-transition * {
     transition:

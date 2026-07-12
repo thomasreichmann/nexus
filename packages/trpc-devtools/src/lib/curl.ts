@@ -1,4 +1,4 @@
-import type { TRPCRequest } from './request';
+import { buildRequestPayload, type TRPCRequest } from './request';
 
 export interface CurlOptions {
     /** tRPC endpoint URL (may be relative) */
@@ -22,38 +22,36 @@ export function shellQuote(value: string): string {
 }
 
 /**
- * Build a cURL command mirroring how executeRequest() issues the call:
- * GET with an `input` query param for queries, POST with a JSON body for
- * mutations, SuperJSON-wrapped when the server uses that transformer.
+ * Build a cURL command mirroring how executeRequest() issues the call
+ * (both delegate the wire format to buildRequestPayload): GET with an
+ * `input` query param for queries, POST with a JSON body for mutations.
  */
 export function buildCurlCommand(
     request: TRPCRequest,
     options: CurlOptions
 ): string {
-    const url = new URL(options.trpcUrl, options.origin);
-    url.pathname = `${url.pathname}/${request.path}`;
+    const { url, body } = buildRequestPayload(request, {
+        trpcUrl: options.trpcUrl,
+        origin: options.origin,
+        useSuperJSON: options.useSuperJSON,
+    });
 
     const parts: string[] = [];
 
-    if (request.type === 'query') {
-        if (request.input !== undefined) {
-            const queryInput = options.useSuperJSON
-                ? { json: request.input }
-                : request.input;
-            url.searchParams.set('input', JSON.stringify(queryInput));
-        }
+    if (body === undefined) {
         parts.push(`curl ${shellQuote(url.toString())}`);
     } else {
-        const body = options.useSuperJSON
-            ? { json: request.input ?? {} }
-            : (request.input ?? {});
         parts.push(`curl -X POST ${shellQuote(url.toString())}`);
-        parts.push(`-H ${shellQuote('Content-Type: application/json')}`);
-        parts.push(`--data ${shellQuote(JSON.stringify(body))}`);
     }
+
+    parts.push(`-H ${shellQuote('Content-Type: application/json')}`);
 
     for (const [name, value] of Object.entries(options.headers ?? {})) {
         parts.push(`-H ${shellQuote(`${name}: ${value}`)}`);
+    }
+
+    if (body !== undefined) {
+        parts.push(`--data ${shellQuote(JSON.stringify(body))}`);
     }
 
     if (options.cookieHeader) {
