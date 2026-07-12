@@ -41,7 +41,30 @@ jobs:
             # `build` here is what catches broken config / build regressions
             # that lint+typecheck alone miss. --continue so one failing task
             # doesn't hide the others.
+            #
+            # `next build` collects page data by evaluating route modules, and
+            # some read server env at module scope, so the build needs the full
+            # env schema satisfied — not just NEXT_PUBLIC_*. These are
+            # NON-SECRET placeholders that only have to pass zod validation: the
+            # build constructs DB/AWS/Stripe clients lazily and never connects.
+            # Literals (not `secrets.*`) on purpose — fork PRs run without repo
+            # secrets, so a real dev-env wiring would leave every outside
+            # contributor's build red. Nothing here runs the app; the tiers
+            # that do (smoke e2e) live in post-merge with real dev secrets.
             - name: Lint, typecheck, build, test
+              env:
+                  NEXT_PUBLIC_APP_URL: https://ci.example.com
+                  DATABASE_URL: postgres://user:pass@localhost:5432/ci
+                  AWS_ACCESS_KEY_ID: ci
+                  AWS_SECRET_ACCESS_KEY: ci
+                  AWS_REGION: us-east-1
+                  S3_BUCKET: ci-bucket
+                  SQS_QUEUE_URL: https://sqs.us-east-1.amazonaws.com/000000000000/ci
+                  STRIPE_SECRET_KEY: sk_test_ci
+                  STRIPE_WEBHOOK_SECRET: whsec_ci
+                  RESEND_API_KEY: re_ci
+                  RESEND_FROM_EMAIL: ci@example.com
+                  BETTER_AUTH_SECRET: ci_dummy_secret_least_thirty_two_chars_long_000
               run: pnpm exec turbo lint typecheck build test --continue
 
             # Static coverage gate: `playwright test --list` cross-referenced
