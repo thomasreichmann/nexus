@@ -1,7 +1,8 @@
 import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 
 import { log } from '@/lib/logger/client';
-import { reportUnexpectedClientError } from '@/lib/trpc/error-reporting';
+
+import { reportUnexpectedClientError } from './error-reporting';
 
 export function makeQueryClient(): QueryClient {
     return new QueryClient({

@@ -1,11 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { TRPCClientError } from '@trpc/client';
 
-const hoisted = vi.hoisted(() => ({ captureException: vi.fn() }));
+const hoisted = await vi.hoisted(async () => {
+    const { createMockSentry } = await import('@/lib/sentry/testing');
+    return { sentry: createMockSentry() };
+});
 
-vi.mock('@sentry/nextjs', () => ({
-    captureException: hoisted.captureException,
-}));
+vi.mock('@sentry/nextjs', () => hoisted.sentry);
 
 import {
     isUnexpectedClientError,
@@ -50,15 +51,15 @@ describe('isUnexpectedClientError', () => {
 
 describe('reportUnexpectedClientError', () => {
     beforeEach(() => {
-        hoisted.captureException.mockClear();
+        hoisted.sentry.captureException.mockClear();
     });
 
     it('captures unexpected errors with the cache context', () => {
         const error = makeClientError({ code: 'INTERNAL_SERVER_ERROR' });
         reportUnexpectedClientError(error, { queryKey: ['files', 'list'] });
 
-        expect(hoisted.captureException).toHaveBeenCalledOnce();
-        const [captured, options] = hoisted.captureException.mock.calls[0]!;
+        expect(hoisted.sentry.captureException).toHaveBeenCalledOnce();
+        const [captured, options] = hoisted.sentry.captureException.mock.calls[0]!;
         expect(captured).toBe(error);
         expect(options.contexts.trpc).toEqual({
             queryKey: ['files', 'list'],
@@ -72,6 +73,6 @@ describe('reportUnexpectedClientError', () => {
         });
         reportUnexpectedClientError(error, { mutationKey: ['upload'] });
 
-        expect(hoisted.captureException).not.toHaveBeenCalled();
+        expect(hoisted.sentry.captureException).not.toHaveBeenCalled();
     });
 });

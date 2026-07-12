@@ -1,17 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const hoisted = vi.hoisted(() => ({
-    logErrorMock: vi.fn(),
-    captureExceptionMock: vi.fn(),
-}));
+const hoisted = await vi.hoisted(async () => {
+    const { createMockSentry } = await import('@/lib/sentry/testing');
+    return { logErrorMock: vi.fn(), sentry: createMockSentry() };
+});
 
 vi.mock('@/lib/logger/client', () => ({
     log: { error: hoisted.logErrorMock },
 }));
 
-vi.mock('@sentry/nextjs', () => ({
-    captureException: hoisted.captureExceptionMock,
-}));
+vi.mock('@sentry/nextjs', () => hoisted.sentry);
 
 import { QueryClient } from '@tanstack/react-query';
 import { makeQueryClient } from './query-client';
@@ -68,7 +66,7 @@ describe('makeQueryClient', () => {
 
 describe('makeQueryClient Sentry reporting', () => {
     it('captures unexpected mutation errors', async () => {
-        hoisted.captureExceptionMock.mockClear();
+        hoisted.sentry.captureException.mockClear();
         const client: QueryClient = makeQueryClient();
 
         const error = makeClientError({ code: 'INTERNAL_SERVER_ERROR' });
@@ -84,11 +82,11 @@ describe('makeQueryClient Sentry reporting', () => {
             .execute(undefined)
             .catch(() => {});
 
-        expect(hoisted.captureExceptionMock).toHaveBeenCalledOnce();
+        expect(hoisted.sentry.captureException).toHaveBeenCalledOnce();
     });
 
     it('does not capture expected domain errors', async () => {
-        hoisted.captureExceptionMock.mockClear();
+        hoisted.sentry.captureException.mockClear();
         const client: QueryClient = makeQueryClient();
 
         const error = makeClientError({
@@ -105,6 +103,6 @@ describe('makeQueryClient Sentry reporting', () => {
             })
             .catch(() => {});
 
-        expect(hoisted.captureExceptionMock).not.toHaveBeenCalled();
+        expect(hoisted.sentry.captureException).not.toHaveBeenCalled();
     });
 });

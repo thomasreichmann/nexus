@@ -7,12 +7,11 @@ const config = { errorVerbosity: 'full' as 'minimal' | 'standard' | 'full' };
 
 const hoisted = await vi.hoisted(async () => {
     const { createMockLogger } = await import('@/server/lib/logger/testing');
-    return { logger: createMockLogger(), captureException: vi.fn() };
+    const { createMockSentry } = await import('@/lib/sentry/testing');
+    return { logger: createMockLogger(), sentry: createMockSentry() };
 });
 
-vi.mock('@sentry/nextjs', () => ({
-    captureException: hoisted.captureException,
-}));
+vi.mock('@sentry/nextjs', () => hoisted.sentry);
 
 vi.mock('@/server/lib/logger', () => ({
     get errorVerbosity() {
@@ -338,7 +337,7 @@ describe('isUnexpectedTrpcError', () => {
 
 describe('emitEvent Sentry reporting', () => {
     beforeEach(() => {
-        hoisted.captureException.mockClear();
+        hoisted.sentry.captureException.mockClear();
     });
 
     function emitFailure(error: TRPCError): void {
@@ -354,8 +353,8 @@ describe('emitEvent Sentry reporting', () => {
         const cause = new Error('boom');
         emitFailure(new TRPCError({ code: 'INTERNAL_SERVER_ERROR', cause }));
 
-        expect(hoisted.captureException).toHaveBeenCalledOnce();
-        const [captured, options] = hoisted.captureException.mock.calls[0]!;
+        expect(hoisted.sentry.captureException).toHaveBeenCalledOnce();
+        const [captured, options] = hoisted.sentry.captureException.mock.calls[0]!;
         expect(captured).toBe(cause);
         expect(options.tags).toMatchObject({
             path: 'files.list',
@@ -372,8 +371,8 @@ describe('emitEvent Sentry reporting', () => {
         const error = new TRPCError({ code: 'TIMEOUT' });
         emitFailure(error);
 
-        expect(hoisted.captureException).toHaveBeenCalledOnce();
-        expect(hoisted.captureException.mock.calls[0]![0]).toBe(error);
+        expect(hoisted.sentry.captureException).toHaveBeenCalledOnce();
+        expect(hoisted.sentry.captureException.mock.calls[0]![0]).toBe(error);
     });
 
     it('does not capture expected failures', () => {
@@ -385,7 +384,7 @@ describe('emitEvent Sentry reporting', () => {
         );
         emitFailure(new TRPCError({ code: 'UNAUTHORIZED' }));
 
-        expect(hoisted.captureException).not.toHaveBeenCalled();
+        expect(hoisted.sentry.captureException).not.toHaveBeenCalled();
     });
 
     it('does not capture successful events', () => {
@@ -396,6 +395,6 @@ describe('emitEvent Sentry reporting', () => {
         });
         emitEvent(true);
 
-        expect(hoisted.captureException).not.toHaveBeenCalled();
+        expect(hoisted.sentry.captureException).not.toHaveBeenCalled();
     });
 });
