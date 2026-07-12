@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { FileIcon, ArrowRight, RotateCw, Archive } from 'lucide-react';
@@ -339,31 +340,90 @@ function getRetrievalBadge(
    start. 12 graphemes covers "<counter>.<ext>". */
 const NAME_TAIL_GRAPHEMES = 12;
 
-interface MiddleTruncateNameProps {
-    name: string;
+let measureContext: CanvasRenderingContext2D | null = null;
+
+function getMeasureContext(): CanvasRenderingContext2D | null {
+    measureContext ??= document.createElement('canvas').getContext('2d');
+    return measureContext;
 }
 
-/* CSS can only end-truncate, so the name splits into a truncating head span
-   and a fixed tail span. Split on graphemes, not code units — filenames here
-   carry emoji and CJK, and a blind slice() can shear a surrogate pair. */
-function MiddleTruncateName({ name }: MiddleTruncateNameProps) {
+/* Longest "head…tail" that fits the wrapper, measured with canvas
+   measureText against the wrapper's computed font. Graphemes, not code
+   units — filenames here carry emoji and CJK, and a blind slice() can shear
+   a surrogate pair. */
+function fitMiddleTruncatedName(wrapper: HTMLElement, name: string): string {
+    const context = getMeasureContext();
+    if (!context) return name;
+    const style = getComputedStyle(wrapper);
+    context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    // 1px slack for subpixel rounding; the wrapper's overflow-hidden clips
+    // any residue.
+    const available = wrapper.clientWidth - 1;
+    if (context.measureText(name).width <= available) return name;
     const graphemes = Array.from(
         new Intl.Segmenter().segment(name),
         (segment) => segment.segment
     );
-    if (graphemes.length <= NAME_TAIL_GRAPHEMES) {
-        return (
-            <span className="truncate font-medium" title={name}>
-                {name}
-            </span>
-        );
-    }
-    const head = graphemes.slice(0, -NAME_TAIL_GRAPHEMES).join('');
     const tail = graphemes.slice(-NAME_TAIL_GRAPHEMES).join('');
+    const headGraphemes = graphemes.slice(0, -NAME_TAIL_GRAPHEMES);
+    let low = 0;
+    let high = headGraphemes.length;
+    while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        const candidate = headGraphemes.slice(0, mid).join('') + '…' + tail;
+        if (context.measureText(candidate).width <= available) {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    return headGraphemes.slice(0, low).join('') + '…' + tail;
+}
+
+interface MiddleTruncateNameProps {
+    name: string;
+}
+
+/* Middle truncation has to be JS-measured: the CSS two-span trick leaves a
+   hole at the seam, because text-overflow paints "…" after the last glyph
+   that fully fits and the rest of the head's box stays blank. Rendering the
+   fitted "head…tail" as one text run puts the ellipsis flush against the
+   tail. The full name stays in the DOM (sr-only + title) for screen readers,
+   hover, and the e2e specs that locate rows by full filename; the truncated
+   copy is aria-hidden. flex-1 keeps the wrapper's width set by the layout,
+   not its content, so refitting can't ratchet the available width down. */
+function MiddleTruncateName({ name }: MiddleTruncateNameProps) {
+    const wrapperRef = useRef<HTMLSpanElement>(null);
+    const [display, setDisplay] = useState(name);
+
+    useEffect(() => {
+        const wrapper = wrapperRef.current;
+        if (!wrapper) return;
+        let isActive = true;
+        const fit = () => {
+            if (isActive) {
+                setDisplay(fitMiddleTruncatedName(wrapper, name));
+            }
+        };
+        const observer = new ResizeObserver(fit);
+        observer.observe(wrapper);
+        fit();
+        // A web-font swap changes glyph widths without resizing the wrapper.
+        document.fonts.ready.then(fit, () => undefined);
+        return () => {
+            isActive = false;
+            observer.disconnect();
+        };
+    }, [name]);
+
     return (
-        <span className="flex min-w-0 font-medium" title={name}>
-            <span className="truncate">{head}</span>
-            <span className="shrink-0 whitespace-pre">{tail}</span>
+        <span
+            ref={wrapperRef}
+            className="block min-w-0 flex-1 overflow-hidden font-medium whitespace-nowrap"
+            title={name}
+        >
+            <span className="sr-only">{name}</span>
+            <span aria-hidden>{display}</span>
         </span>
     );
 }
@@ -372,14 +432,15 @@ interface MobileFileStatusProps {
     status: string;
 }
 
-/* "Available" is the happy default — on mobile it earns a dot, not a badge.
-   Transitional states (uploading, restoring) keep the text badge; those are
-   the ones the user needs to notice. */
+/* "Available" is the happy default — on mobile it earns a dot (with sr-only
+   text; color is never the only channel), not a badge. Transitional states
+   keep the text badge — those are the ones the user needs to notice — and
+   restoring adds a glyph so it differs from the rest by more than hue. */
 function MobileFileStatus({ status }: MobileFileStatusProps) {
     if (status === 'available') {
         return (
             <span
-                className="size-2 shrink-0 rounded-full bg-emerald-500"
+                className="size-2 shrink-0 self-center rounded-full bg-emerald-500"
                 title="Available"
             >
                 <span className="sr-only">Available</span>
@@ -387,7 +448,8 @@ function MobileFileStatus({ status }: MobileFileStatusProps) {
         );
     }
     return (
-        <Badge variant="secondary" className="shrink-0 capitalize">
+        <Badge variant="secondary" className="shrink-0 self-center capitalize">
+            {status === 'restoring' && <RotateCw aria-hidden />}
             {status}
         </Badge>
     );
