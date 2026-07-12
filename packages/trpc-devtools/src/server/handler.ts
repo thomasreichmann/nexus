@@ -2,6 +2,7 @@ import type { AnyRouter } from '@trpc/server';
 import type { NextRequest } from 'next/server';
 import { introspectRouter } from './introspect';
 import { getStandaloneJs, getStandaloneCss } from './assets';
+import { THEME_KEY } from '../lib/storage';
 import type { TRPCDevtoolsConfig, RouterSchema } from './types';
 
 // Cache the introspected schema to avoid re-processing on every request
@@ -32,11 +33,31 @@ function getDevtoolsHtml(config: {
     const css = getStandaloneCss();
 
     return `<!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>tRPC Devtools</title>
+    <script>
+        // FOUC prevention: resolve the persisted theme before first paint.
+        // The React app applies the theme class to the .trpc-devtools
+        // wrapper itself; this only colors the page shell until hydration.
+        (function () {
+            var dark = true;
+            try {
+                var mode = localStorage.getItem(${JSON.stringify(THEME_KEY)});
+                dark =
+                    mode === 'dark' ||
+                    (mode !== 'light' &&
+                        window.matchMedia('(prefers-color-scheme: dark)')
+                            .matches);
+            } catch (e) {
+                // Fall back to dark (previous hardcoded behavior)
+            }
+            document.documentElement.classList.add(dark ? 'dark' : 'light');
+        })();
+    </script>
+    <style>html.dark { background-color: hsl(222 84% 5%); }</style>
     <style>${css}</style>
 </head>
 <body>

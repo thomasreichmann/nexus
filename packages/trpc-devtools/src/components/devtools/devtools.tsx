@@ -1,17 +1,34 @@
 'use client';
 
 import * as React from 'react';
-import { Menu } from 'lucide-react';
+import {
+    Eraser,
+    FileJson,
+    Keyboard,
+    Menu,
+    SunMoon,
+    Terminal,
+} from 'lucide-react';
 import { Drawer } from '@/components/ui/drawer';
+import { Kbd } from '@/components/ui/kbd';
 import { Skeleton } from '@/components/ui/skeleton';
+import { formatShortcut, useIsApplePlatform } from '@/lib/platform';
 import { useIsMobile } from '@/lib/use-is-mobile';
+import { useTheme, type ThemeMode } from '@/lib/use-theme';
 import { cn } from '@/lib/utils';
 import type { HistoryItem } from '@/lib/storage';
 import type { TRPCResponse } from '@/lib/request';
 import type { ProcedureSchema, RouterSchema } from '@/server/types';
+import { CommandPalette, type PaletteAction } from './command-palette';
 import { ProcedureList, ProcedureListSkeleton } from './procedure-list';
-import { ProcedureView, ProcedureViewSkeleton } from './procedure-view';
+import {
+    ProcedureView,
+    ProcedureViewSkeleton,
+    type ProcedureViewHandle,
+} from './procedure-view';
 import { RequestHistoryPanel } from './request-history';
+import { ShortcutsHelp } from './shortcuts-help';
+import { ThemeToggle } from './theme-toggle';
 
 export interface TRPCDevtoolsProps {
     /** URL to fetch the schema from */
@@ -41,7 +58,22 @@ export function TRPCDevtools({
     const isMobile = useIsMobile();
     const [isDrawerOpen, setIsDrawerOpen] = React.useState(false);
 
+    const { mode, resolvedTheme, cycleMode, isTransitioning } = useTheme();
+    const isApple = useIsApplePlatform();
+
+    const [isPaletteOpen, setIsPaletteOpen] = React.useState(false);
+    const [isHelpOpen, setIsHelpOpen] = React.useState(false);
+    const procedureViewRef = React.useRef<ProcedureViewHandle>(null);
+
     const closeDrawer = React.useCallback(() => setIsDrawerOpen(false), []);
+    const closePalette = React.useCallback(() => setIsPaletteOpen(false), []);
+    const closeHelp = React.useCallback(() => setIsHelpOpen(false), []);
+
+    const openPalette = React.useCallback(() => {
+        setIsHelpOpen(false);
+        setIsDrawerOpen(false);
+        setIsPaletteOpen(true);
+    }, []);
 
     // Reset drawer state when the viewport expands past the mobile breakpoint
     React.useEffect(() => {
@@ -92,17 +124,131 @@ export function TRPCDevtools({
         // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run on mount, not when selectedPath changes
     }, [schemaUrl]);
 
+    // Cycle to the previous/next procedure in schema order (wraps around)
+    const selectByOffset = React.useCallback(
+        (offset: number) => {
+            if (!schema || schema.procedures.length === 0) return;
+
+            const procedures = schema.procedures;
+            const currentIndex = procedures.findIndex(
+                (p) => p.path === selectedPath
+            );
+            const nextIndex =
+                currentIndex === -1
+                    ? 0
+                    : (currentIndex + offset + procedures.length) %
+                      procedures.length;
+            setSelectedPath(procedures[nextIndex].path);
+        },
+        [schema, selectedPath]
+    );
+
+    // Global keyboard shortcuts. Skips events a more specific handler
+    // already claimed (e.defaultPrevented), e.g. Cmd+Enter inside the JSON
+    // editor, so nothing fires twice.
+    React.useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.defaultPrevented) return;
+            if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+
+            const key = e.key.toLowerCase();
+            const isModalOpen = isPaletteOpen || isHelpOpen;
+
+            if (key === 'k' && !e.shiftKey) {
+                e.preventDefault();
+                if (isPaletteOpen) {
+                    setIsPaletteOpen(false);
+                } else {
+                    openPalette();
+                }
+                return;
+            }
+
+            if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+                e.preventDefault();
+                setIsPaletteOpen(false);
+                setIsHelpOpen((prev) => !prev);
+                return;
+            }
+
+            // The rest act on the studio behind a modal — ignore while one is open
+            if (isModalOpen) return;
+
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                procedureViewRef.current?.execute();
+            } else if (key === 'l' && e.shiftKey) {
+                e.preventDefault();
+                procedureViewRef.current?.clearResponse();
+            } else if (e.key === '[') {
+                e.preventDefault();
+                selectByOffset(-1);
+            } else if (e.key === ']') {
+                e.preventDefault();
+                selectByOffset(1);
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [isPaletteOpen, isHelpOpen, openPalette, selectByOffset]);
+
+    const paletteActions = React.useMemo<PaletteAction[]>(
+        () => [
+            {
+                id: 'clear-response',
+                label: 'Clear response',
+                icon: Eraser,
+                shortcut: formatShortcut('L', { isApple, isShift: true }),
+                run: () => procedureViewRef.current?.clearResponse(),
+            },
+            {
+                id: 'toggle-theme',
+                label: 'Toggle theme',
+                icon: SunMoon,
+                run: cycleMode,
+            },
+            {
+                id: 'copy-curl',
+                label: 'Copy as cURL',
+                icon: Terminal,
+                run: () => procedureViewRef.current?.copyCurl(),
+            },
+            {
+                id: 'toggle-raw',
+                label: 'Toggle raw/parsed response',
+                icon: FileJson,
+                run: () => procedureViewRef.current?.toggleRaw(),
+            },
+            {
+                id: 'keyboard-shortcuts',
+                label: 'Keyboard shortcuts',
+                icon: Keyboard,
+                shortcut: formatShortcut('?', { isApple }),
+                run: () => setIsHelpOpen(true),
+            },
+        ],
+        [isApple, cycleMode]
+    );
+
     const selectedProcedure = React.useMemo<ProcedureSchema | null>(() => {
         if (!schema || !selectedPath) return null;
         return schema.procedures.find((p) => p.path === selectedPath) ?? null;
     }, [schema, selectedPath]);
 
+    const rootClassName = cn(
+        'trpc-devtools',
+        resolvedTheme,
+        isTransitioning && 'theme-transition',
+        className
+    );
+
     if (error) {
         return (
             <div
                 className={cn(
-                    'trpc-devtools flex items-center justify-center h-dvh bg-background',
-                    className
+                    rootClassName,
+                    'flex items-center justify-center h-dvh bg-background'
                 )}
             >
                 <div className="text-center space-y-2">
@@ -119,8 +265,8 @@ export function TRPCDevtools({
         return (
             <div
                 className={cn(
-                    'trpc-devtools flex flex-col md:flex-row h-dvh bg-background text-foreground',
-                    className
+                    rootClassName,
+                    'flex flex-col md:flex-row h-dvh bg-background text-foreground'
                 )}
             >
                 {isMobile ? (
@@ -153,14 +299,18 @@ export function TRPCDevtools({
             selectedPath={selectedPath}
             onSelect={handleSelect}
             onReplay={handleHistoryReplay}
+            onOpenPalette={openPalette}
+            paletteShortcut={formatShortcut('K', { isApple })}
+            themeMode={mode}
+            onCycleTheme={cycleMode}
         />
     );
 
     return (
         <div
             className={cn(
-                'trpc-devtools flex flex-col md:flex-row h-dvh bg-background text-foreground',
-                className
+                rootClassName,
+                'flex flex-col md:flex-row h-dvh bg-background text-foreground'
             )}
         >
             {isMobile ? (
@@ -184,6 +334,7 @@ export function TRPCDevtools({
             <div className="flex-1 overflow-hidden">
                 {selectedProcedure ? (
                     <ProcedureView
+                        ref={procedureViewRef}
                         procedure={selectedProcedure}
                         trpcUrl={trpcUrl}
                         headers={headers}
@@ -196,6 +347,15 @@ export function TRPCDevtools({
                     </div>
                 )}
             </div>
+
+            <CommandPalette
+                isOpen={isPaletteOpen}
+                onClose={closePalette}
+                procedures={schema.procedures}
+                actions={paletteActions}
+                onSelectProcedure={handleSelect}
+            />
+            <ShortcutsHelp isOpen={isHelpOpen} onClose={closeHelp} />
         </div>
     );
 }
@@ -230,6 +390,11 @@ interface SidebarContentProps {
     selectedPath: string | null;
     onSelect: (path: string) => void;
     onReplay: (item: HistoryItem) => void;
+    onOpenPalette: () => void;
+    /** Preformatted palette shortcut hint, e.g. "⌘K" */
+    paletteShortcut: string;
+    themeMode: ThemeMode;
+    onCycleTheme: () => void;
 }
 
 function SidebarContent({
@@ -237,14 +402,36 @@ function SidebarContent({
     selectedPath,
     onSelect,
     onReplay,
+    onOpenPalette,
+    paletteShortcut,
+    themeMode,
+    onCycleTheme,
 }: SidebarContentProps) {
     return (
         <>
-            <div className="p-4 border-b border-border">
-                <h1 className="text-lg font-semibold">tRPC Devtools</h1>
-                <p className="text-xs text-muted-foreground">
-                    {schema.procedures.length} procedures
-                </p>
+            <div className="p-4 border-b border-border flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                    <h1 className="text-lg font-semibold">tRPC Devtools</h1>
+                    <p className="text-xs text-muted-foreground">
+                        {schema.procedures.length} procedures
+                    </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                    <button
+                        type="button"
+                        onClick={onOpenPalette}
+                        title={`Command palette (${paletteShortcut})`}
+                        aria-label={`Open command palette (${paletteShortcut})`}
+                        className={cn(
+                            'flex h-9 items-center rounded-md px-1.5 transition-colors',
+                            'hover:bg-accent/50',
+                            'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
+                        )}
+                    >
+                        <Kbd>{paletteShortcut}</Kbd>
+                    </button>
+                    <ThemeToggle mode={themeMode} onCycle={onCycleTheme} />
+                </div>
             </div>
             <div className="flex-1 overflow-hidden">
                 <ProcedureList

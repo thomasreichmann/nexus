@@ -12,6 +12,7 @@ import {
     type HistoryItem,
 } from '@/lib/storage';
 import { cn } from '@/lib/utils';
+import { ProcedureTypeBadge } from './procedure-type-badge';
 
 interface RequestHistoryPanelProps {
     onReplay: (item: HistoryItem) => void;
@@ -77,39 +78,40 @@ export function RequestHistoryPanel({ onReplay }: RequestHistoryPanelProps) {
 
     return (
         <div className="border-t border-border flex flex-col min-h-0">
-            {/* Header */}
-            <button
-                onClick={() => setIsCollapsed((prev) => !prev)}
-                aria-expanded={!isCollapsed}
-                className={cn(
-                    'w-full flex items-center gap-1 px-4 py-1.5 min-h-11 text-xs font-semibold text-muted-foreground uppercase tracking-wider transition-colors',
-                    'hover:bg-accent/50',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
-                )}
-            >
-                <ChevronRight
+            {/* Header — clear-all is an absolutely-positioned sibling, not a
+                child of the toggle: a <button> inside a <button> is invalid
+                HTML and triggers a React hydration warning */}
+            <div className="relative">
+                <button
+                    onClick={() => setIsCollapsed((prev) => !prev)}
+                    aria-expanded={!isCollapsed}
                     className={cn(
-                        'h-4 w-4 transition-transform duration-150',
-                        !isCollapsed && 'rotate-90'
+                        'w-full flex items-center gap-1 px-4 py-1.5 min-h-11 text-xs font-semibold text-muted-foreground uppercase tracking-wider transition-colors',
+                        'hover:bg-accent/50',
+                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
                     )}
-                />
-                <span>History</span>
-                {history.length > 0 && (
-                    <Badge
-                        variant="secondary"
-                        className="ml-1 text-[10px] px-1.5 py-0 min-w-0"
-                    >
-                        {history.length}
-                    </Badge>
-                )}
+                >
+                    <ChevronRight
+                        className={cn(
+                            'h-4 w-4 transition-transform duration-150',
+                            !isCollapsed && 'rotate-90'
+                        )}
+                    />
+                    <span>History</span>
+                    {history.length > 0 && (
+                        <Badge
+                            variant="secondary"
+                            className="ml-1 text-[10px] px-1.5 py-0 min-w-0"
+                        >
+                            {history.length}
+                        </Badge>
+                    )}
+                </button>
                 {history.length > 0 && !isCollapsed && (
                     <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            handleClearAll();
-                        }}
+                        onClick={handleClearAll}
                         className={cn(
-                            'ml-auto p-1 rounded-sm text-muted-foreground/70 hover:text-destructive transition-colors',
+                            'absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-sm text-muted-foreground/70 hover:text-destructive transition-colors',
                             'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring'
                         )}
                         aria-label="Clear all history"
@@ -117,7 +119,7 @@ export function RequestHistoryPanel({ onReplay }: RequestHistoryPanelProps) {
                         <Trash2 className="h-3.5 w-3.5" />
                     </button>
                 )}
-            </button>
+            </div>
 
             {/* Content */}
             <AnimatePresence initial={false}>
@@ -184,12 +186,7 @@ function HistoryItemRow({ item, onReplay }: HistoryItemRowProps) {
             )}
         >
             {/* Type badge */}
-            <Badge
-                variant={item.request.type}
-                className="text-[10px] px-1.5 py-0 shrink-0"
-            >
-                {item.request.type.slice(0, 1).toUpperCase()}
-            </Badge>
+            <ProcedureTypeBadge type={item.request.type} className="shrink-0" />
 
             {/* Procedure path */}
             <span className="flex-1 min-w-0 font-mono text-xs truncate">

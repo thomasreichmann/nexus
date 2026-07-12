@@ -9,20 +9,27 @@ import type { TRPCResponse } from '@/lib/request';
 import { HighlightedStackTrace } from '@/components/ui/highlighted-stack-trace';
 import { CollapsibleJsonViewer } from '@/components/ui/collapsible-json-viewer';
 import { hasAnsi } from '@/lib/ansi';
+import { useCopyToClipboard } from '@/lib/use-copy-to-clipboard';
 import { formatIssuePath, type ZodIssue } from '@/lib/zod-error';
 
 interface ResponseViewerProps {
     response: TRPCResponse | null;
     zodIssues?: ZodIssue[] | null;
     fromHistory?: boolean;
+    /** Raw/Parsed toggle state — owned by ProcedureView so the command
+     * palette and the Download button can respect it */
+    showRaw: boolean;
+    onToggleRaw: () => void;
 }
 
 export function ResponseViewer({
     response,
     zodIssues,
     fromHistory,
+    showRaw,
+    onToggleRaw,
 }: ResponseViewerProps) {
-    const [showRaw, setShowRaw] = React.useState(false);
+    const { isCopied, copy } = useCopyToClipboard();
 
     if (!response) {
         return (
@@ -69,20 +76,18 @@ export function ResponseViewer({
                     <Button
                         variant={showRaw ? 'secondary' : 'ghost'}
                         size="sm"
-                        onClick={() => setShowRaw(!showRaw)}
+                        onClick={onToggleRaw}
                     >
                         {showRaw ? 'Parsed' : 'Raw'}
                     </Button>
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => {
-                            navigator.clipboard.writeText(
-                                JSON.stringify(displayData, null, 2)
-                            );
-                        }}
+                        onClick={() =>
+                            copy(JSON.stringify(displayData, null, 2))
+                        }
                     >
-                        Copy
+                        {isCopied ? 'Copied!' : 'Copy'}
                     </Button>
                 </div>
             </div>

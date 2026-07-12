@@ -34,6 +34,39 @@ export interface RequestOptions {
 }
 
 /**
+ * Build the request URL (with the input query param for queries) and JSON
+ * body (for mutations), applying SuperJSON wrapping. Single source of truth
+ * for the wire format, shared by executeRequest and buildCurlCommand.
+ */
+export function buildRequestPayload(
+    request: TRPCRequest,
+    options: { trpcUrl: string; origin: string; useSuperJSON?: boolean }
+): { url: URL; body?: unknown } {
+    const url = new URL(options.trpcUrl, options.origin);
+
+    // tRPC uses the procedure path as the URL path
+    url.pathname = `${url.pathname}/${request.path}`;
+
+    if (request.type === 'query') {
+        // Queries use GET with input as query param
+        // Wrap in SuperJSON format if the server uses superjson transformer
+        if (request.input !== undefined) {
+            const queryInput = options.useSuperJSON
+                ? { json: request.input }
+                : request.input;
+            url.searchParams.set('input', JSON.stringify(queryInput));
+        }
+        return { url };
+    }
+
+    // Mutations use POST with input in body
+    const body = options.useSuperJSON
+        ? { json: request.input ?? {} }
+        : (request.input ?? {});
+    return { url, body };
+}
+
+/**
  * Execute a tRPC request directly from the browser
  */
 export async function executeRequest(
@@ -43,48 +76,21 @@ export async function executeRequest(
     const startedAt = Date.now();
 
     try {
-        const url = new URL(options.trpcUrl, window.location.origin);
+        const { url, body } = buildRequestPayload(request, {
+            trpcUrl: options.trpcUrl,
+            origin: window.location.origin,
+            useSuperJSON: options.useSuperJSON,
+        });
 
-        // tRPC uses the procedure path as the URL path
-        url.pathname = `${url.pathname}/${request.path}`;
-
-        let response: Response;
-
-        if (request.type === 'query') {
-            // Queries use GET with input as query param
-            // Wrap in SuperJSON format if the server uses superjson transformer
-            if (request.input !== undefined) {
-                const queryInput = options.useSuperJSON
-                    ? { json: request.input }
-                    : request.input;
-                url.searchParams.set('input', JSON.stringify(queryInput));
-            }
-
-            response = await fetch(url.toString(), {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...options.headers,
-                },
-                credentials: 'include',
-            });
-        } else {
-            // Mutations use POST with input in body
-            // Wrap in SuperJSON format if the server uses superjson transformer
-            const bodyInput = options.useSuperJSON
-                ? { json: request.input ?? {} }
-                : (request.input ?? {});
-
-            response = await fetch(url.toString(), {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...options.headers,
-                },
-                credentials: 'include',
-                body: JSON.stringify(bodyInput),
-            });
-        }
+        const response = await fetch(url.toString(), {
+            method: body === undefined ? 'GET' : 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...options.headers,
+            },
+            credentials: 'include',
+            ...(body !== undefined && { body: JSON.stringify(body) }),
+        });
 
         const completedAt = Date.now();
         const rawResponse = await response.json();

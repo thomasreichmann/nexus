@@ -3,15 +3,7 @@
 import * as React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-
-const FOCUSABLE_SELECTOR = [
-    'a[href]',
-    'button:not([disabled])',
-    'input:not([disabled])',
-    'textarea:not([disabled])',
-    'select:not([disabled])',
-    '[tabindex]:not([tabindex="-1"])',
-].join(', ');
+import { useFocusTrap } from '@/lib/use-focus-trap';
 
 export interface DrawerProps {
     isOpen: boolean;
@@ -38,56 +30,10 @@ export function Drawer({
 }: DrawerProps) {
     const panelRef = React.useRef<HTMLDivElement>(null);
 
-    React.useEffect(() => {
-        if (!isOpen) return;
-
-        const previouslyFocused = document.activeElement;
-
-        // Focus the panel itself rather than the first focusable element so
-        // opening the drawer doesn't pop the virtual keyboard via the search
-        // input on touch devices.
-        panelRef.current?.focus();
-
-        function handleKeyDown(e: KeyboardEvent) {
-            if (e.key === 'Escape') {
-                onClose();
-                return;
-            }
-
-            if (e.key !== 'Tab' || !panelRef.current) return;
-
-            const focusable = Array.from(
-                panelRef.current.querySelectorAll<HTMLElement>(
-                    FOCUSABLE_SELECTOR
-                )
-            );
-            if (focusable.length === 0) {
-                e.preventDefault();
-                return;
-            }
-
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            const active = document.activeElement;
-            const isOutside = !panelRef.current.contains(active);
-
-            if (e.shiftKey && (active === first || isOutside)) {
-                e.preventDefault();
-                last.focus();
-            } else if (!e.shiftKey && (active === last || isOutside)) {
-                e.preventDefault();
-                first.focus();
-            }
-        }
-
-        document.addEventListener('keydown', handleKeyDown);
-        return () => {
-            document.removeEventListener('keydown', handleKeyDown);
-            if (previouslyFocused instanceof HTMLElement) {
-                previouslyFocused.focus();
-            }
-        };
-    }, [isOpen, onClose]);
+    // The trap focuses the panel itself rather than the first focusable
+    // element so opening the drawer doesn't pop the virtual keyboard via
+    // the search input on touch devices.
+    useFocusTrap(panelRef, { isOpen, onClose });
 
     return (
         <AnimatePresence>

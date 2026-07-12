@@ -3,13 +3,13 @@
 import * as React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { loadCollapsedGroups, saveCollapsedGroups } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 import type { ProcedureSchema } from '@/server/types';
+import { ProcedureTypeBadge } from './procedure-type-badge';
 
 interface ProcedureListProps {
     procedures: ProcedureSchema[];
@@ -182,9 +182,14 @@ export function ProcedureList({
     // Global "/" shortcut to focus search
     React.useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
-            // "/" focuses search (ignore if in text input)
+            // "/" focuses search (ignore if in text input or when held with
+            // modifiers — Cmd+Shift+/ is the shortcuts-help toggle)
             if (
                 e.key === '/' &&
+                !e.metaKey &&
+                !e.ctrlKey &&
+                !e.altKey &&
+                !e.shiftKey &&
                 document.activeElement?.tagName !== 'INPUT' &&
                 document.activeElement?.tagName !== 'TEXTAREA'
             ) {
@@ -321,16 +326,9 @@ export function ProcedureList({
                                                                     : 'text-foreground hover:bg-accent/50'
                                                             )}
                                                         >
-                                                            <Badge
-                                                                variant={
-                                                                    proc.type
-                                                                }
-                                                                className="text-[10px] px-1.5 py-0"
-                                                            >
-                                                                {proc.type
-                                                                    .slice(0, 1)
-                                                                    .toUpperCase()}
-                                                            </Badge>
+                                                            <ProcedureTypeBadge
+                                                                type={proc.type}
+                                                            />
                                                             <span className="font-mono text-xs truncate">
                                                                 {displayPath}
                                                             </span>
