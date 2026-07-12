@@ -19,16 +19,18 @@ export default withSentryConfig(nextConfig, {
     org: process.env.SENTRY_ORG,
     project: process.env.SENTRY_PROJECT,
     authToken: process.env.SENTRY_AUTH_TOKEN,
-    // Only Vercel builds hold SENTRY_AUTH_TOKEN; disabling upload explicitly
-    // keeps local/CI builds from warning about a missing token on every run.
+    // Only Vercel builds hold SENTRY_AUTH_TOKEN. Disabling stops tokenless
+    // builds (local, CI, e2e) from generating source maps and injecting
+    // debug IDs at all — not just from uploading.
     sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
-    // Upload logs are useful in Vercel build output; everywhere else the
-    // plugin is inert, so keep it quiet.
+    // Turbopack builds run Sentry's after-compile hook on every production
+    // build — there is no webpack plugin to omit — and off-Vercel it warns
+    // about the missing auth token. `silent` is what keeps local/CI build
+    // output clean; on Vercel it stays off so the sentry-cli upload report
+    // lands in the build log.
     silent: !process.env.VERCEL,
-    // Upload the full client bundle so prod stack traces resolve through
-    // framework/vendor frames, not just app code.
-    widenClientFileUpload: true,
-    // Strip Sentry SDK debug-logger code from the client bundle.
-    disableLogger: true,
     telemetry: false,
+    // webpack-only options (widenClientFileUpload, disableLogger) are
+    // deliberately absent: Next 16 builds with Turbopack, where they are
+    // no-ops — Turbopack uploads the full client bundle unconditionally.
 });
