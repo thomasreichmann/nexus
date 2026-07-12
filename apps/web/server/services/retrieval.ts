@@ -40,6 +40,12 @@ async function restoreFiles(
         return existingRetrievals;
     }
 
+    // A lapsed `ready` row is invisible to findByFileIds but still holds the
+    // unique-index slot for its file; expire it or the insert below would
+    // conflict against a row that no longer counts as active.
+    const fileIdsToRestore = filesToRestore.map((f) => f.id);
+    await retrievalRepo.expireLapsedByFileIds(fileIdsToRestore);
+
     // Standard-class objects are downloadable as-is — RestoreObject would
     // fail with InvalidObjectState — so they skip S3 and become ready
     // immediately, entering the same download-window state as completed
@@ -88,6 +94,17 @@ async function restoreFiles(
             expiresAt: readyWindowEnd,
         })),
     ]);
+
+    // A concurrent request may have won the insert for some files (the
+    // unique index skips them via ON CONFLICT DO NOTHING); fetch the
+    // surviving rows so every requested file still maps to a retrieval.
+    if (newRetrievals.length < filesToRestore.length) {
+        const insertedFileIds = new Set(newRetrievals.map((r) => r.fileId));
+        const survivors = await retrievalRepo.findByFileIds(
+            fileIdsToRestore.filter((id) => !insertedFileIds.has(id))
+        );
+        return [...existingRetrievals, ...newRetrievals, ...survivors];
+    }
 
     return [...existingRetrievals, ...newRetrievals];
 }

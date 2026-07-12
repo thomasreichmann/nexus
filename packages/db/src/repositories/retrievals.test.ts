@@ -130,11 +130,43 @@ describe('retrievals repository', () => {
             expect(mocks.insert).toHaveBeenCalledOnce();
         });
 
+        it('skips conflicts instead of throwing', async () => {
+            mocks.returning.mockResolvedValue([]);
+
+            const result = await repo.insertMany([
+                {
+                    id: 'r1',
+                    fileId: 'file1',
+                    userId: TEST_USER_ID,
+                    tier: 'standard',
+                    status: 'pending',
+                },
+            ]);
+
+            expect(result).toEqual([]);
+            expect(mocks.onConflictDoNothing).toHaveBeenCalledOnce();
+        });
+
         it('returns empty array when given empty array', async () => {
             const result = await repo.insertMany([]);
 
             expect(result).toEqual([]);
             expect(mocks.insert).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('expireLapsedByFileIds', () => {
+        it('flips lapsed ready rows to expired', async () => {
+            await repo.expireLapsedByFileIds(['file1', 'file2']);
+
+            expect(mocks.update).toHaveBeenCalledOnce();
+            expect(mocks.set).toHaveBeenCalledWith({ status: 'expired' });
+        });
+
+        it('does nothing when given empty ids', async () => {
+            await repo.expireLapsedByFileIds([]);
+
+            expect(mocks.update).not.toHaveBeenCalled();
         });
     });
 

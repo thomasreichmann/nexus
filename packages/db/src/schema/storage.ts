@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
     pgTable,
     pgEnum,
@@ -6,6 +7,7 @@ import {
     bigint,
     integer,
     index,
+    uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { user } from './auth';
 import { timestamps } from './helpers';
@@ -154,5 +156,12 @@ export const retrievals = pgTable(
         index('retrievals_status_idx').on(table.status),
         index('retrievals_batch_id_idx').on(table.batchId),
         index('retrievals_expires_at_idx').on(table.expiresAt),
+        // At most one active retrieval per file. `expires_at > now()` isn't
+        // indexable (now() is not IMMUTABLE), so a lapsed `ready` row still
+        // occupies the index slot until the insert path flips it to
+        // `expired` — see expireLapsedByFileIds in repositories/retrievals.
+        uniqueIndex('retrievals_active_file_id_idx')
+            .on(table.fileId)
+            .where(sql`status IN ('pending', 'in_progress', 'ready')`),
     ]
 );
