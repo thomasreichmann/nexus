@@ -84,7 +84,7 @@ Surfaced and deferred during planning, so they don't sneak back in as scope cree
 
 - **Pricing optimization** — current $3/$12/$20 tiers are intentionally low to remove pricing as an objection; revisit after the test using observed retrieval data
 - **Unit economics protection** (allowance/overage pricing) — worst-case AWS exposure at this scale is a rounding error; revisit at 50+ paying users
-- **i18n / Portuguese localization** — testers are bilingual enough; revisit only if a tester explicitly asks
+- **Portuguese localization** — locale plumbing exists (`NEXT_LOCALE` cookie → `Accept-Language` → `en`), but Portuguese copy/string extraction, language switcher UI, `/pt-BR` routing, hreflang, and per-locale metadata are deferred until a tester explicitly asks
 - **Folder / tag / label systems** beyond batch grouping — over-built without user pull
 
 ## Pre-test work

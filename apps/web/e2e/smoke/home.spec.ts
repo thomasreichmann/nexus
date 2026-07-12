@@ -21,6 +21,24 @@ test.describe('Landing Page', () => {
     );
 
     test(
+        'resolves html lang from NEXT_LOCALE cookie',
+        { tag: ['@page:/', '@uc:i18n-locale'] },
+        async ({ context, page }) => {
+            await context.addCookies([
+                {
+                    name: 'NEXT_LOCALE',
+                    value: 'pt-BR',
+                    url: 'http://localhost',
+                },
+            ]);
+
+            await page.goto('/');
+
+            await expect(page.locator('html')).toHaveAttribute('lang', 'pt-BR');
+        }
+    );
+
+    test(
         'hero CTA navigates to sign-up',
         { tag: ['@page:/', '@uc:landing-cta-signup'] },
         async ({ page }) => {
