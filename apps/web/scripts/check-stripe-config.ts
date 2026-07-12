@@ -41,6 +41,13 @@ const EXPECTED_WEBHOOK_EVENTS = [
 
 const WEBHOOK_PATH = '/api/webhooks/stripe';
 
+// Hosts that may legitimately serve the webhook (prod + the dev branch's
+// custom domain). Pinning the host keeps a stale endpoint on a
+// decommissioned deployment from satisfying the check while events go
+// nowhere. Test mode currently points at the prod host (prod is test-mode
+// Stripe until #213), so both hosts are valid in either mode.
+const KNOWN_WEBHOOK_HOSTS = ['nexus.thomasar.dev', 'dev.nexus.thomasar.dev'];
+
 interface ExpectedPrice {
     tier: CheckoutTier;
     interval: BillingInterval;
@@ -116,15 +123,20 @@ function checkPrices(prices: Stripe.Price[]): string[] {
             continue;
         }
         const price = matching[0]!;
+        let isDrifted = false;
         if (price.unit_amount !== expected.unitAmount) {
+            isDrifted = true;
             failures.push(
                 `price ${price.id} (${label}): unit_amount ${price.unit_amount}, expected ${expected.unitAmount}`
             );
-        } else if (price.currency !== 'usd') {
+        }
+        if (price.currency !== 'usd') {
+            isDrifted = true;
             failures.push(
                 `price ${price.id} (${label}): currency '${price.currency}', expected 'usd'`
             );
-        } else {
+        }
+        if (!isDrifted) {
             console.log(
                 `  ✓ price ${label}: ${price.id} (${price.unit_amount} ${price.currency})`
             );
@@ -148,11 +160,14 @@ function checkPrices(prices: Stripe.Price[]): string[] {
 }
 
 function checkWebhookEndpoints(endpoints: Stripe.WebhookEndpoint[]): string[] {
-    const candidates = endpoints.filter(
-        (endpoint) =>
+    const candidates = endpoints.filter((endpoint) => {
+        const url = new URL(endpoint.url);
+        return (
             endpoint.status === 'enabled' &&
-            new URL(endpoint.url).pathname === WEBHOOK_PATH
-    );
+            url.pathname === WEBHOOK_PATH &&
+            KNOWN_WEBHOOK_HOSTS.includes(url.hostname)
+        );
+    });
 
     const covering = candidates.filter((endpoint) => {
         const events = new Set(endpoint.enabled_events);
@@ -186,9 +201,12 @@ function checkWebhookEndpoints(endpoints: Stripe.WebhookEndpoint[]): string[] {
 }
 
 async function main(): Promise<void> {
-    const mode = process.env.STRIPE_SECRET_KEY?.startsWith('sk_live_')
-        ? 'live'
-        : 'test';
+    const secretKey = process.env.STRIPE_SECRET_KEY ?? '';
+    // rk_ prefixes are restricted keys — still mode-carrying.
+    const mode =
+        secretKey.startsWith('sk_live_') || secretKey.startsWith('rk_live_')
+            ? 'live'
+            : 'test';
     console.log(`Checking Stripe config (${mode} mode)\n`);
 
     const [products, prices, webhookEndpoints] = await Promise.all([

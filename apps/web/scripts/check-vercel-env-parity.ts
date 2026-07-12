@@ -8,9 +8,11 @@
  * Fails (exit 1) on any key missing from a tier unless it's in
  * ASYMMETRY_ALLOWLIST.
  *
- * Requires VERCEL_TOKEN (a Vercel token with read access to the project).
- * VERCEL_PROJECT_ID / VERCEL_TEAM_ID default to nexus-web (the values in
- * .vercel/project.json; they identify, they don't authenticate).
+ * Requires VERCEL_TOKEN. Vercel tokens can't be scoped read-only — team-scope
+ * it and give it an expiry (it can also write env vars, so handle it as a
+ * real credential). VERCEL_PROJECT_ID / VERCEL_TEAM_ID default to nexus-web
+ * (the values in .vercel/project.json; they identify, they don't
+ * authenticate).
  *
  * Usage:
  *   VERCEL_TOKEN=... pnpm -F web check:vercel-env-parity
@@ -46,7 +48,7 @@ async function fetchEnvVars(): Promise<VercelEnvVar[]> {
     const token = process.env.VERCEL_TOKEN;
     if (!token) {
         throw new Error(
-            'VERCEL_TOKEN is not set — create a read-scoped token at vercel.com/account/tokens'
+            'VERCEL_TOKEN is not set — create a team-scoped token (with an expiry) at vercel.com/account/tokens'
         );
     }
     const projectId = process.env.VERCEL_PROJECT_ID ?? DEFAULT_PROJECT_ID;
@@ -71,6 +73,10 @@ function groupKeysByTier(envs: VercelEnvVar[]): Map<Tier, Set<string>> {
         TIERS.map((tier) => [tier, new Set<string>()])
     );
     for (const envVar of envs) {
+        // A branch-scoped var only exists on that one branch's deploys, so
+        // it can't make the key "present" for the tier in general — counting
+        // it would mask a key missing from every other preview.
+        if (envVar.gitBranch) continue;
         const targets = Array.isArray(envVar.target)
             ? envVar.target
             : [envVar.target];
@@ -89,6 +95,12 @@ async function main(): Promise<void> {
     console.log(
         `Checking ${allKeys.length} distinct env keys across ${TIERS.length} Vercel tiers\n`
     );
+
+    for (const envVar of envs.filter((e) => e.gitBranch)) {
+        console.log(
+            `  ~ ${envVar.key} (branch-scoped to '${envVar.gitBranch}') ignored for tier parity`
+        );
+    }
 
     const failures: string[] = [];
     for (const key of allKeys) {
