@@ -109,8 +109,10 @@ export default function DashboardPage() {
             <UploadHistory />
 
             <div className="flex flex-col gap-6 lg:flex-row">
-                <Card className="min-w-0 flex-1">
-                    <CardHeader className="pb-3">
+                {/* gap-4: tighten Card's default gap-6 so the table header
+                    sits closer to the card description. */}
+                <Card className="min-w-0 flex-1 gap-4">
+                    <CardHeader>
                         <div className="flex items-center justify-between">
                             <div>
                                 <CardTitle className="text-base">
@@ -148,13 +150,13 @@ export default function DashboardPage() {
                                 <table className="w-full">
                                     <thead>
                                         <tr className="border-b text-left text-xs text-muted-foreground">
-                                            <th className="pb-3 font-medium">
+                                            <th className="pr-4 pb-3 font-medium">
                                                 Name
                                             </th>
-                                            <th className="pb-3 font-medium">
+                                            <th className="pr-4 pb-3 font-medium">
                                                 Size
                                             </th>
-                                            <th className="pb-3 font-medium">
+                                            <th className="pr-4 pb-3 font-medium">
                                                 Uploaded
                                             </th>
                                             <th className="pb-3 text-right font-medium">
@@ -171,7 +173,7 @@ export default function DashboardPage() {
                                                     truncates instead of
                                                     growing the column to the
                                                     full string (#311). */}
-                                                <td className="w-full max-w-0 py-3">
+                                                <td className="w-full max-w-0 py-3 pr-4">
                                                     <div className="flex items-center gap-3">
                                                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted">
                                                             <FileIcon className="h-4 w-4 text-muted-foreground" />
@@ -181,15 +183,15 @@ export default function DashboardPage() {
                                                         </span>
                                                     </div>
                                                 </td>
-                                                <td className="py-3 text-sm text-muted-foreground">
+                                                <td className="py-3 pr-4 text-sm whitespace-nowrap text-muted-foreground">
                                                     {formatBytes(file.size)}
                                                 </td>
-                                                <td className="py-3 text-sm text-muted-foreground">
+                                                <td className="py-3 pr-4 text-sm whitespace-nowrap text-muted-foreground">
                                                     {formatRelativeTime(
                                                         file.createdAt
                                                     )}
                                                 </td>
-                                                <td className="py-3 text-right">
+                                                <td className="py-3 text-right whitespace-nowrap">
                                                     <Badge
                                                         variant="secondary"
                                                         className="capitalize"
