@@ -32,6 +32,14 @@ const ASYMMETRY_ALLOWLIST: Record<string, string> = {
     // lib/env/schema.ts: unset disables the Discord alert transport, which
     // is the intended state for preview/dev runtimes; CI injects its own.
     DISCORD_ALERT_WEBHOOK_URL: 'prod-only by design',
+    // Sentry is production+preview only: a key in the development tier would
+    // flow into .env.local via env:pull and turn Sentry on for local/e2e
+    // production builds (DSN) or make local builds attempt source-map upload
+    // (auth token). See instrumentation-client.ts / next.config.ts.
+    NEXT_PUBLIC_SENTRY_DSN: 'production+preview only by design',
+    SENTRY_ORG: 'production+preview only by design',
+    SENTRY_PROJECT: 'production+preview only by design',
+    SENTRY_AUTH_TOKEN: 'production+preview only by design',
 };
 
 const DEFAULT_PROJECT_ID = 'prj_RuKjFko6iKwbyyIy55HYL5S5AabG';

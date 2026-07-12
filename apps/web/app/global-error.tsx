@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import * as Sentry from '@sentry/nextjs';
 
 import { log } from '@/lib/logger/client';
 
@@ -24,6 +25,9 @@ export default function GlobalError({
             { err: error, digest: error.digest },
             error.message || 'global error boundary'
         );
+        // React catches render errors before window.onerror fires, so the
+        // boundary is the only capture point for them.
+        Sentry.captureException(error);
     }, [error]);
 
     return (

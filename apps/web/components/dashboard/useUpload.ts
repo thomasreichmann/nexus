@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import * as Sentry from '@sentry/nextjs';
 import { toast } from 'sonner';
 import { useTRPC } from '@/lib/trpc/client';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
@@ -90,6 +91,31 @@ interface InternalUploadFile extends UploadFile {
 
 function randomId(): string {
     return Math.random().toString(36).substring(7);
+}
+
+/**
+ * Terminal upload failures never reach the server — the failing legs are
+ * browser→S3 presigned PUTs — so this client-side capture is their only
+ * observer. Called after the abort/pause early-returns: only failures the
+ * user actually sees as an error row get reported.
+ */
+function reportUploadFailure(
+    error: unknown,
+    engine: 'single' | 'multipart',
+    uploadFile: InternalUploadFile,
+    fileId?: string
+): void {
+    Sentry.captureException(error, {
+        tags: { feature: 'upload', engine },
+        contexts: {
+            upload: {
+                fileId: fileId ?? uploadFile.fileId,
+                fileName: uploadFile.name,
+                sizeBytes: uploadFile.size,
+                batchId: uploadFile.batchId,
+            },
+        },
+    });
 }
 
 export function useUpload() {
@@ -181,6 +207,7 @@ export function useUpload() {
                 if (isAbortError(error)) {
                     return;
                 }
+                reportUploadFailure(error, 'single', uploadFile);
                 updateFile(uploadFile.id, {
                     status: 'error',
                     error:
@@ -421,6 +448,7 @@ export function useUpload() {
                     updateFile(uploadFile.id, { status: 'paused' });
                     return;
                 }
+                reportUploadFailure(error, 'multipart', uploadFile, fileId);
                 updateFile(uploadFile.id, {
                     status: 'error',
                     error:

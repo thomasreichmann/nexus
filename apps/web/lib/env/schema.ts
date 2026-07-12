@@ -26,4 +26,8 @@ export const serverSchema = z.object({
 // Client-side env vars (NEXT_PUBLIC_ prefix)
 export const clientSchema = z.object({
     NEXT_PUBLIC_APP_URL: z.string().url(),
+    // Deployed Vercel envs only (production/preview tiers) — presence is the
+    // gate that turns Sentry on, so local dev, CI, and e2e builds leave it
+    // unset. See instrumentation-client.ts.
+    NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional(),
 });

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import Link from 'next/link';
+import * as Sentry from '@sentry/nextjs';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -33,6 +34,9 @@ export default function Error({
             { err: error, digest: error.digest },
             error.message || 'route error boundary'
         );
+        // React catches render errors before window.onerror fires, so the
+        // boundary is the only capture point for them.
+        Sentry.captureException(error);
     }, [error]);
 
     return (

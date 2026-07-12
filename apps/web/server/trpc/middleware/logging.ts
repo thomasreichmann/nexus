@@ -1,4 +1,7 @@
+import * as Sentry from '@sentry/nextjs';
+
 import { errorVerbosity, isDev, logger } from '@/server/lib/logger';
+import { isDomainError } from '@/server/errors';
 import type { TRPCError } from '@trpc/server';
 
 export interface RequestLogger {
@@ -115,6 +118,50 @@ export function formatError(error: TRPCError): FormattedError {
     return formatted;
 }
 
+/**
+ * Expected failures are product behavior, not defects: domain errors (typed
+ * 4xx-class outcomes), Zod input validation, and bare auth-gate rejections
+ * (UNAUTHORIZED/FORBIDDEN thrown by protectedProcedure/adminProcedure with no
+ * cause — e.g. an expired session hitting a protected endpoint). Everything
+ * else is a bug Sentry should own. Mirrored client-side in
+ * lib/trpc/error-reporting.ts against the serialized error shape.
+ */
+export function isUnexpectedTrpcError(error: TRPCError): boolean {
+    if (isDomainError(error.cause)) return false;
+    if (isZodError(error.cause)) return false;
+    if (
+        (error.code === 'UNAUTHORIZED' || error.code === 'FORBIDDEN') &&
+        error.cause === undefined
+    ) {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Send an unexpected failure to Sentry with the wide event's correlation ids.
+ * Captures `cause` when present — that's the original throw with the real
+ * stack; the TRPCError is just the transport wrapper.
+ */
+function reportUnexpectedError(error: TRPCError, event: WideEvent): void {
+    if (!isUnexpectedTrpcError(error)) return;
+
+    Sentry.captureException(error.cause ?? error, {
+        tags: {
+            requestId: event.requestId,
+            path: event.path,
+            ...(event.userId ? { userId: event.userId } : {}),
+        },
+        contexts: {
+            trpc: {
+                type: event.type,
+                durationMs: event.durationMs,
+                code: error.code,
+            },
+        },
+    });
+}
+
 function createRequestLogger(): {
     logger: RequestLogger;
     getTimings: () => Record<string, number>;
@@ -223,6 +270,7 @@ export function logRequest<
 
             if (error) {
                 event.error = formatError(error);
+                reportUnexpectedError(error, event);
             }
 
             if (ok) {
