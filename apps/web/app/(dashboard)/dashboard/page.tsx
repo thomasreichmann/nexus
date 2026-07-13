@@ -114,22 +114,25 @@ export default function DashboardPage() {
                 {/* gap-4: tighten Card's default gap-6 so the table header
                     sits closer to the card description. */}
                 <Card className="min-w-0 flex-1 gap-4">
+                    {/* The action pairs with the title row and the subtitle
+                        owns the full width below — long copy (translations
+                        run 20–30% longer) wraps under the button instead of
+                        colliding with it. The subtitle nearly restates the
+                        title, so below sm it yields its line. */}
                     <CardHeader>
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <CardTitle className="text-base">
-                                    Recent Uploads
-                                </CardTitle>
-                                <CardDescription>
-                                    Your most recently archived files
-                                </CardDescription>
-                            </div>
-                            <Link href="/dashboard/files">
+                        <div className="flex items-center justify-between gap-4">
+                            <CardTitle className="text-base">
+                                Recent Uploads
+                            </CardTitle>
+                            <Link href="/dashboard/files" className="shrink-0">
                                 <Button variant="outline" size="sm">
                                     View all
                                 </Button>
                             </Link>
                         </div>
+                        <CardDescription className="hidden sm:block">
+                            Your most recently archived files
+                        </CardDescription>
                     </CardHeader>
                     <CardContent>
                         {isLoadingFiles ? (
