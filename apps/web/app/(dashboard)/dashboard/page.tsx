@@ -118,8 +118,10 @@ export default function DashboardPage() {
                         owns the full width below — long copy (translations
                         run 20–30% longer) wraps under the button instead of
                         colliding with it. The subtitle nearly restates the
-                        title, so below sm it yields its line. */}
-                    <CardHeader>
+                        title, so below sm it yields its line — and the
+                        header's row gap goes with it, or the empty second
+                        grid row leaves a phantom 8px under the title. */}
+                    <CardHeader className="gap-0 sm:gap-2">
                         <div className="flex items-center justify-between gap-4">
                             <CardTitle className="text-base">
                                 Recent Uploads
@@ -367,8 +369,21 @@ function fitMiddleTruncatedName(wrapper: HTMLElement, name: string): string {
         new Intl.Segmenter().segment(name),
         (segment) => segment.segment
     );
-    const tail = graphemes.slice(-NAME_TAIL_GRAPHEMES).join('');
-    const headGraphemes = graphemes.slice(0, -NAME_TAIL_GRAPHEMES);
+    /* The tail may never eat more than half the width — at very narrow
+       widths a full 12-grapheme tail leaves the head a single identifying
+       character, and the head is what tells burst siblings apart. */
+    const tailGraphemes = graphemes.slice(-NAME_TAIL_GRAPHEMES);
+    while (
+        tailGraphemes.length > 1 &&
+        context.measureText(tailGraphemes.join('')).width > available / 2
+    ) {
+        tailGraphemes.shift();
+    }
+    const tail = tailGraphemes.join('');
+    const headGraphemes = graphemes.slice(
+        0,
+        graphemes.length - tailGraphemes.length
+    );
     let low = 0;
     let high = headGraphemes.length;
     while (low < high) {
