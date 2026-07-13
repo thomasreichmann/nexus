@@ -15,8 +15,14 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { TablePagination } from '@/components/ui/table-pagination';
+import { MiddleTruncateName } from '@/components/dashboard/MiddleTruncateName';
 import { cn } from '@/lib/cn';
-import { formatBytes, formatDate, formatRelativeTime } from '@/lib/format';
+import {
+    formatBytes,
+    formatDate,
+    formatRelativeTime,
+    formatRelativeTimeCompact,
+} from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
 import { SPONSORED_DEFAULT_STORAGE_LIMIT } from '@/server/services/constants';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -129,93 +135,169 @@ export default function AdminInvitesPage() {
                         </p>
                     </CardContent>
                 ) : (
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Recipient</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Storage</TableHead>
-                                <TableHead>Created</TableHead>
-                                <TableHead>Expires</TableHead>
-                                <TableHead className="w-20" />
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
+                    <>
+                        {/* Below sm the 6-column table starves the recipient
+                            column (same class as #311/#339), so it renders as
+                            stacked rows: email full-width, metadata demoted
+                            to a second line. */}
+                        <ul className="divide-y sm:hidden">
                             {data.invites.map((invite) => (
-                                <TableRow key={invite.id}>
-                                    {/* w-full + max-w-0: emails are unbounded
-                                        and unbreakable — truncate instead of
-                                        growing the column (#311). */}
-                                    <TableCell
-                                        className={cn(
-                                            'w-full max-w-0 font-medium',
-                                            !invite.email &&
-                                                'text-muted-foreground italic'
-                                        )}
-                                    >
-                                        <span className="block truncate">
-                                            {invite.email ?? 'Link only'}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell>
-                                        <InviteStatusBadge
-                                            status={invite.status}
-                                        />
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {formatBytes(
-                                            invite.storageLimit ??
-                                                SPONSORED_DEFAULT_STORAGE_LIMIT
-                                        )}
-                                        {invite.storageLimit === null && (
-                                            <span className="text-muted-foreground/60">
-                                                {' '}
-                                                (default)
+                                <li
+                                    key={invite.id}
+                                    className="flex items-center gap-3 px-4 py-3"
+                                >
+                                    <div className="min-w-0 flex-1">
+                                        {invite.email ? (
+                                            <MiddleTruncateName
+                                                name={invite.email}
+                                                className="font-medium"
+                                            />
+                                        ) : (
+                                            <span className="block font-medium text-muted-foreground italic">
+                                                Link only
                                             </span>
                                         )}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {formatRelativeTime(invite.createdAt)}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {invite.expiresAt
-                                            ? formatDate(invite.expiresAt)
-                                            : '—'}
-                                    </TableCell>
-                                    <TableCell>
-                                        {invite.status === 'pending' && (
-                                            <div className="flex justify-end gap-1">
-                                                <CopyLinkButton
-                                                    token={invite.token}
-                                                />
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() =>
-                                                        revokeMutation.mutate({
-                                                            id: invite.id,
-                                                        })
-                                                    }
-                                                    disabled={
-                                                        revokeMutation.isPending
-                                                    }
-                                                    title="Revoke invite"
-                                                >
-                                                    {revokeMutation.isPending &&
-                                                    revokeMutation.variables
-                                                        ?.id === invite.id ? (
-                                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                                    ) : (
-                                                        <Ban className="h-4 w-4" />
+                                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                            {formatBytes(
+                                                invite.storageLimit ??
+                                                    SPONSORED_DEFAULT_STORAGE_LIMIT
+                                            )}
+                                            {invite.storageLimit === null &&
+                                                ' (default)'}
+                                            <span aria-hidden> · </span>
+                                            {formatRelativeTimeCompact(
+                                                invite.createdAt
+                                            )}
+                                            {invite.expiresAt && (
+                                                <>
+                                                    <span aria-hidden> · </span>
+                                                    expires{' '}
+                                                    {formatDate(
+                                                        invite.expiresAt
                                                     )}
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </TableCell>
-                                </TableRow>
+                                                </>
+                                            )}
+                                        </p>
+                                    </div>
+                                    <InviteStatusBadge status={invite.status} />
+                                    {invite.status === 'pending' && (
+                                        <PendingInviteActions
+                                            token={invite.token}
+                                            onRevoke={() =>
+                                                revokeMutation.mutate({
+                                                    id: invite.id,
+                                                })
+                                            }
+                                            isRevoking={
+                                                revokeMutation.isPending &&
+                                                revokeMutation.variables?.id ===
+                                                    invite.id
+                                            }
+                                            disabled={revokeMutation.isPending}
+                                        />
+                                    )}
+                                </li>
                             ))}
-                        </TableBody>
-                    </Table>
+                        </ul>
+                        <div className="hidden sm:block">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Recipient</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead>Storage</TableHead>
+                                        <TableHead>Created</TableHead>
+                                        <TableHead>Expires</TableHead>
+                                        <TableHead className="w-20" />
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {data.invites.map((invite) => (
+                                        <TableRow key={invite.id}>
+                                            {/* w-full + max-w-0: emails are unbounded
+                                        and unbreakable — truncate instead of
+                                        growing the column (#311). Middle
+                                        truncation keeps the domain visible. */}
+                                            <TableCell
+                                                className={cn(
+                                                    'w-full max-w-0 font-medium',
+                                                    !invite.email &&
+                                                        'text-muted-foreground italic'
+                                                )}
+                                            >
+                                                {invite.email ? (
+                                                    <MiddleTruncateName
+                                                        name={invite.email}
+                                                    />
+                                                ) : (
+                                                    <span className="block truncate">
+                                                        Link only
+                                                    </span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell>
+                                                <InviteStatusBadge
+                                                    status={invite.status}
+                                                />
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {formatBytes(
+                                                    invite.storageLimit ??
+                                                        SPONSORED_DEFAULT_STORAGE_LIMIT
+                                                )}
+                                                {invite.storageLimit ===
+                                                    null && (
+                                                    <span className="text-muted-foreground/60">
+                                                        {' '}
+                                                        (default)
+                                                    </span>
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {formatRelativeTime(
+                                                    invite.createdAt
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {invite.expiresAt
+                                                    ? formatDate(
+                                                          invite.expiresAt
+                                                      )
+                                                    : '—'}
+                                            </TableCell>
+                                            <TableCell>
+                                                {invite.status ===
+                                                    'pending' && (
+                                                    <div className="flex justify-end">
+                                                        <PendingInviteActions
+                                                            token={invite.token}
+                                                            onRevoke={() =>
+                                                                revokeMutation.mutate(
+                                                                    {
+                                                                        id: invite.id,
+                                                                    }
+                                                                )
+                                                            }
+                                                            isRevoking={
+                                                                revokeMutation.isPending &&
+                                                                revokeMutation
+                                                                    .variables
+                                                                    ?.id ===
+                                                                    invite.id
+                                                            }
+                                                            disabled={
+                                                                revokeMutation.isPending
+                                                            }
+                                                        />
+                                                    </div>
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    </>
                 )}
             </Card>
 
@@ -402,6 +484,42 @@ function InviteStatusBadge({ status }: { status: InviteStatus }) {
                 </Badge>
             );
     }
+}
+
+interface PendingInviteActionsProps {
+    token: string;
+    onRevoke: () => void;
+    /** This row's revoke is in flight (spinner). */
+    isRevoking: boolean;
+    disabled: boolean;
+}
+
+/* Copy-link + revoke for pending invites — shared by the table cell and the
+   stacked mobile rows. */
+function PendingInviteActions({
+    token,
+    onRevoke,
+    isRevoking,
+    disabled,
+}: PendingInviteActionsProps) {
+    return (
+        <div className="flex shrink-0 gap-1">
+            <CopyLinkButton token={token} />
+            <Button
+                variant="ghost"
+                size="icon"
+                onClick={onRevoke}
+                disabled={disabled}
+                title="Revoke invite"
+            >
+                {isRevoking ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                    <Ban className="h-4 w-4" />
+                )}
+            </Button>
+        </div>
+    );
 }
 
 function CopyLinkButton({ token }: { token: string }) {

@@ -13,6 +13,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
+import { formatRelativeTimeCompact } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
@@ -121,70 +122,120 @@ export default function AdminJobsPage() {
                         <p className="text-muted-foreground">No jobs found</p>
                     </CardContent>
                 ) : (
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Type</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Created</TableHead>
-                                <TableHead>Duration</TableHead>
-                                <TableHead>Attempts</TableHead>
-                                <TableHead className="w-12" />
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
+                    <>
+                        {/* Below sm the 6-column table forces sideways
+                            scrolling (same class as #311/#339), so it renders
+                            as stacked rows: type full-width, metadata demoted
+                            to a second line. */}
+                        <ul className="divide-y sm:hidden">
                             {data.jobs.map((job) => (
-                                <TableRow key={job.id}>
-                                    <TableCell className="font-medium font-mono text-sm">
-                                        {job.type}
-                                    </TableCell>
-                                    <TableCell>
-                                        <JobStatusBadge status={job.status} />
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {formatDistanceToNow(
-                                            new Date(job.createdAt),
-                                            { addSuffix: true }
-                                        )}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {formatDuration(
-                                            job.startedAt,
-                                            job.completedAt
-                                        )}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {job.attempts}
-                                    </TableCell>
-                                    <TableCell>
-                                        {job.status === 'failed' && (
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() =>
-                                                    retryMutation.mutate({
-                                                        id: job.id,
-                                                    })
-                                                }
-                                                disabled={
-                                                    retryMutation.isPending
-                                                }
-                                                title="Retry job"
-                                            >
-                                                {retryMutation.isPending &&
+                                <li
+                                    key={job.id}
+                                    className="flex items-center gap-3 px-4 py-3"
+                                >
+                                    <div className="min-w-0 flex-1">
+                                        <p className="truncate font-mono text-sm font-medium">
+                                            {job.type}
+                                        </p>
+                                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                            {formatRelativeTimeCompact(
+                                                job.createdAt
+                                            )}
+                                            <span aria-hidden> · </span>
+                                            {formatDuration(
+                                                job.startedAt,
+                                                job.completedAt
+                                            )}
+                                            <span aria-hidden> · </span>
+                                            {job.attempts} attempt
+                                            {job.attempts === 1 ? '' : 's'}
+                                        </p>
+                                    </div>
+                                    <JobStatusBadge status={job.status} />
+                                    {job.status === 'failed' && (
+                                        <RetryJobButton
+                                            onRetry={() =>
+                                                retryMutation.mutate({
+                                                    id: job.id,
+                                                })
+                                            }
+                                            isRetrying={
+                                                retryMutation.isPending &&
                                                 retryMutation.variables?.id ===
-                                                    job.id ? (
-                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                ) : (
-                                                    <RotateCw className="h-4 w-4" />
-                                                )}
-                                            </Button>
-                                        )}
-                                    </TableCell>
-                                </TableRow>
+                                                    job.id
+                                            }
+                                            disabled={retryMutation.isPending}
+                                        />
+                                    )}
+                                </li>
                             ))}
-                        </TableBody>
-                    </Table>
+                        </ul>
+                        <div className="hidden sm:block">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Type</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead>Created</TableHead>
+                                        <TableHead>Duration</TableHead>
+                                        <TableHead>Attempts</TableHead>
+                                        <TableHead className="w-12" />
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {data.jobs.map((job) => (
+                                        <TableRow key={job.id}>
+                                            <TableCell className="font-medium font-mono text-sm">
+                                                {job.type}
+                                            </TableCell>
+                                            <TableCell>
+                                                <JobStatusBadge
+                                                    status={job.status}
+                                                />
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {formatDistanceToNow(
+                                                    new Date(job.createdAt),
+                                                    { addSuffix: true }
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {formatDuration(
+                                                    job.startedAt,
+                                                    job.completedAt
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {job.attempts}
+                                            </TableCell>
+                                            <TableCell>
+                                                {job.status === 'failed' && (
+                                                    <RetryJobButton
+                                                        onRetry={() =>
+                                                            retryMutation.mutate(
+                                                                {
+                                                                    id: job.id,
+                                                                }
+                                                            )
+                                                        }
+                                                        isRetrying={
+                                                            retryMutation.isPending &&
+                                                            retryMutation
+                                                                .variables
+                                                                ?.id === job.id
+                                                        }
+                                                        disabled={
+                                                            retryMutation.isPending
+                                                        }
+                                                    />
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
+                    </>
                 )}
             </Card>
 
@@ -233,6 +284,38 @@ function StatusCounts({ counts }: { counts?: Record<JobStatus, number> }) {
                 </Card>
             ))}
         </div>
+    );
+}
+
+interface RetryJobButtonProps {
+    onRetry: () => void;
+    /** This row's retry is in flight (spinner). */
+    isRetrying: boolean;
+    disabled: boolean;
+}
+
+/* Retry for failed jobs — shared by the table cell and the stacked mobile
+   rows. */
+function RetryJobButton({
+    onRetry,
+    isRetrying,
+    disabled,
+}: RetryJobButtonProps) {
+    return (
+        <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRetry}
+            disabled={disabled}
+            title="Retry job"
+            className="shrink-0"
+        >
+            {isRetrying ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+                <RotateCw className="h-4 w-4" />
+            )}
+        </Button>
     );
 }
 
