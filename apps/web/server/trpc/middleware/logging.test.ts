@@ -22,11 +22,10 @@ vi.mock('@/server/lib/logger', () => ({
 }));
 
 import { NotFoundError } from '@/server/errors';
+import { isUnexpectedTrpcError, isZodError } from '../error-classification';
 import {
     formatError,
     formatZodMessage,
-    isUnexpectedTrpcError,
-    isZodError,
     logRequest,
     trimStackTrace,
 } from './logging';
@@ -328,10 +327,26 @@ describe('isUnexpectedTrpcError', () => {
         expect(isUnexpectedTrpcError(trpcError)).toBe(true);
     });
 
-    it('returns true for bare TRPCErrors with non-gate codes', () => {
-        expect(isUnexpectedTrpcError(new TRPCError({ code: 'TIMEOUT' }))).toBe(
-            true
-        );
+    it('returns false for bare deliberate throws (no cause)', () => {
+        expect(
+            isUnexpectedTrpcError(new TRPCError({ code: 'NOT_FOUND' }))
+        ).toBe(false);
+        expect(
+            isUnexpectedTrpcError(
+                new TRPCError({
+                    code: 'BAD_REQUEST',
+                    message: 'Only failed jobs can be retried',
+                })
+            )
+        ).toBe(false);
+    });
+
+    it('returns true for bare INTERNAL_SERVER_ERROR', () => {
+        expect(
+            isUnexpectedTrpcError(
+                new TRPCError({ code: 'INTERNAL_SERVER_ERROR' })
+            )
+        ).toBe(true);
     });
 });
 
@@ -354,7 +369,8 @@ describe('emitEvent Sentry reporting', () => {
         emitFailure(new TRPCError({ code: 'INTERNAL_SERVER_ERROR', cause }));
 
         expect(hoisted.sentry.captureException).toHaveBeenCalledOnce();
-        const [captured, options] = hoisted.sentry.captureException.mock.calls[0]!;
+        const [captured, options] =
+            hoisted.sentry.captureException.mock.calls[0]!;
         expect(captured).toBe(cause);
         expect(options.tags).toMatchObject({
             path: 'files.list',
@@ -368,7 +384,7 @@ describe('emitEvent Sentry reporting', () => {
     });
 
     it('captures the TRPCError itself when there is no cause', () => {
-        const error = new TRPCError({ code: 'TIMEOUT' });
+        const error = new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
         emitFailure(error);
 
         expect(hoisted.sentry.captureException).toHaveBeenCalledOnce();
@@ -383,6 +399,7 @@ describe('emitEvent Sentry reporting', () => {
             })
         );
         emitFailure(new TRPCError({ code: 'UNAUTHORIZED' }));
+        emitFailure(new TRPCError({ code: 'BAD_REQUEST' }));
 
         expect(hoisted.sentry.captureException).not.toHaveBeenCalled();
     });

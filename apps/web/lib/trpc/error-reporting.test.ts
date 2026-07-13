@@ -15,27 +15,34 @@ import {
 import { makeClientError } from './test-fixtures';
 
 describe('isUnexpectedClientError', () => {
-    it('returns false for domain errors', () => {
+    it('returns false for errors the server marked expected', () => {
         const error = makeClientError({
             code: 'PRECONDITION_FAILED',
             domainCode: 'QUOTA_EXCEEDED',
         });
         expect(isUnexpectedClientError(error)).toBe(false);
+
+        const authGate = makeClientError({
+            code: 'UNAUTHORIZED',
+            expected: true,
+        });
+        expect(isUnexpectedClientError(authGate)).toBe(false);
     });
 
-    it('returns false for input validation and auth-gate rejections', () => {
-        for (const code of ['BAD_REQUEST', 'UNAUTHORIZED', 'FORBIDDEN']) {
-            expect(isUnexpectedClientError(makeClientError({ code }))).toBe(
-                false
-            );
-        }
-    });
-
-    it('returns true for server 500s', () => {
+    it('returns true for server defects', () => {
         const error = makeClientError({
             code: 'INTERNAL_SERVER_ERROR',
             httpStatus: 500,
+            expected: false,
         });
+        expect(isUnexpectedClientError(error)).toBe(true);
+    });
+
+    it('returns true when the verdict is missing from the shape', () => {
+        // Defensive default: an error serialized without the `expected` bit
+        // is treated as a defect rather than silently dropped.
+        const error = makeClientError({ code: 'NOT_FOUND' });
+        delete (error.data as { expected?: boolean }).expected;
         expect(isUnexpectedClientError(error)).toBe(true);
     });
 
@@ -59,7 +66,8 @@ describe('reportUnexpectedClientError', () => {
         reportUnexpectedClientError(error, { queryKey: ['files', 'list'] });
 
         expect(hoisted.sentry.captureException).toHaveBeenCalledOnce();
-        const [captured, options] = hoisted.sentry.captureException.mock.calls[0]!;
+        const [captured, options] =
+            hoisted.sentry.captureException.mock.calls[0]!;
         expect(captured).toBe(error);
         expect(options.contexts.trpc).toEqual({
             queryKey: ['files', 'list'],

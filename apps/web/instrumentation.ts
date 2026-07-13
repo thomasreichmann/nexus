@@ -10,6 +10,7 @@ export async function register(): Promise<void> {
 }
 
 // Captures errors from React Server Components and route handlers. tRPC
-// procedure errors never surface here — the fetch adapter catches them —
-// so those are reported from the logging middleware instead.
+// errors never surface here — the fetch adapter catches them — so those are
+// reported from the logging middleware (procedure errors) and the adapter's
+// onError in app/api/trpc/[trpc]/route.ts (context-creation failures).
 export const onRequestError = Sentry.captureRequestError;

@@ -1,12 +1,17 @@
 import * as Sentry from '@sentry/nextjs';
 
-// DSN presence is the deployment gate on the client: the DSN exists only in
-// Vercel's production/preview env tiers (see ASYMMETRY_ALLOWLIST in
-// scripts/check-vercel-env-parity.ts), so local dev, CI, and the e2e
-// production builds — which assert zero console errors — never initialize
-// Sentry. `process.env.VERCEL` can't gate here: it isn't NEXT_PUBLIC_-
-// prefixed, so it is never inlined into the client bundle.
-if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
+// Same double gate as sentry.server.config.ts, client-flavored: the DSN
+// exists only in Vercel's production/preview env tiers (see
+// ASYMMETRY_ALLOWLIST in scripts/check-vercel-env-parity.ts), and
+// NEXT_PUBLIC_VERCEL_ENV — inlined on every deployment because the project
+// auto-exposes system env vars; `process.env.VERCEL` isn't NEXT_PUBLIC_-
+// prefixed so it can't gate here — keeps a stray .env.local DSN from turning
+// Sentry on in local dev, CI, and the e2e production builds, which assert
+// zero console errors. Raw process.env (not `@/lib/env`) is deliberate too:
+// the env proxy reads process.env[key] dynamically, which the bundler can't
+// inline into browser code — only literal process.env.NEXT_PUBLIC_*
+// expressions survive client bundling.
+if (process.env.NEXT_PUBLIC_VERCEL_ENV && process.env.NEXT_PUBLIC_SENTRY_DSN) {
     Sentry.init({
         dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
         // Mirrors resolveRuntimeEnvironment(), which reads server-only vars

@@ -1,7 +1,11 @@
 import * as Sentry from '@sentry/nextjs';
 
 import { errorVerbosity, isDev, logger } from '@/server/lib/logger';
-import { isDomainError } from '@/server/errors';
+import {
+    isUnexpectedTrpcError,
+    isZodError,
+    type ZodLikeIssue,
+} from '../error-classification';
 import type { TRPCError } from '@trpc/server';
 
 export interface RequestLogger {
@@ -36,22 +40,6 @@ interface WideEvent {
 }
 
 const MAX_CAUSE_DEPTH = 5;
-
-interface ZodLikeIssue {
-    path: PropertyKey[];
-    message: string;
-}
-
-/** Duck-type check for ZodError (avoids cross-module instanceof issues). */
-export function isZodError(
-    error: unknown
-): error is Error & { issues: ZodLikeIssue[] } {
-    return (
-        error instanceof Error &&
-        'issues' in error &&
-        Array.isArray((error as { issues: unknown }).issues)
-    );
-}
 
 /** Format ZodError issues into a compact summary message. */
 export function formatZodMessage(issues: ZodLikeIssue[]): string {
@@ -116,26 +104,6 @@ export function formatError(error: TRPCError): FormattedError {
     }
 
     return formatted;
-}
-
-/**
- * Expected failures are product behavior, not defects: domain errors (typed
- * 4xx-class outcomes), Zod input validation, and bare auth-gate rejections
- * (UNAUTHORIZED/FORBIDDEN thrown by protectedProcedure/adminProcedure with no
- * cause — e.g. an expired session hitting a protected endpoint). Everything
- * else is a bug Sentry should own. Mirrored client-side in
- * lib/trpc/error-reporting.ts against the serialized error shape.
- */
-export function isUnexpectedTrpcError(error: TRPCError): boolean {
-    if (isDomainError(error.cause)) return false;
-    if (isZodError(error.cause)) return false;
-    if (
-        (error.code === 'UNAUTHORIZED' || error.code === 'FORBIDDEN') &&
-        error.cause === undefined
-    ) {
-        return false;
-    }
-    return true;
 }
 
 /**

@@ -23,23 +23,43 @@ import { alerts, getWorkflowRunUrl } from '@/lib/alerts';
 const TIERS = ['production', 'preview', 'development'] as const;
 type Tier = (typeof TIERS)[number];
 
-// Keys allowed to exist in only some tiers, with the reason. Vars whose
-// *values* differ per tier (DATABASE_URL, S3_BUCKET, …) don't belong here —
-// their keys exist everywhere. Add entries when a tier legitimately gains a
-// scoped key (e.g. a Production-only live-mode Stripe credential once #213
-// lands).
-const ASYMMETRY_ALLOWLIST: Record<string, string> = {
+// Keys allowed to be absent from the listed tiers, with the reason. The
+// asymmetry is directional: the key going missing from a tier NOT listed in
+// `missingFrom` (e.g. a Sentry key deleted from production) is still drift
+// and still fails. Vars whose *values* differ per tier (DATABASE_URL,
+// S3_BUCKET, …) don't belong here — their keys exist everywhere. Add entries
+// when a tier legitimately gains a scoped key (e.g. a Production-only
+// live-mode Stripe credential once #213 lands).
+const ASYMMETRY_ALLOWLIST: Record<
+    string,
+    { missingFrom: readonly Tier[]; reason: string }
+> = {
     // lib/env/schema.ts: unset disables the Discord alert transport, which
     // is the intended state for preview/dev runtimes; CI injects its own.
-    DISCORD_ALERT_WEBHOOK_URL: 'prod-only by design',
+    DISCORD_ALERT_WEBHOOK_URL: {
+        missingFrom: ['preview', 'development'],
+        reason: 'prod-only by design',
+    },
     // Sentry is production+preview only: a key in the development tier would
     // flow into .env.local via env:pull and turn Sentry on for local/e2e
     // production builds (DSN) or make local builds attempt source-map upload
     // (auth token). See instrumentation-client.ts / next.config.ts.
-    NEXT_PUBLIC_SENTRY_DSN: 'production+preview only by design',
-    SENTRY_ORG: 'production+preview only by design',
-    SENTRY_PROJECT: 'production+preview only by design',
-    SENTRY_AUTH_TOKEN: 'production+preview only by design',
+    NEXT_PUBLIC_SENTRY_DSN: {
+        missingFrom: ['development'],
+        reason: 'production+preview only by design',
+    },
+    SENTRY_ORG: {
+        missingFrom: ['development'],
+        reason: 'production+preview only by design',
+    },
+    SENTRY_PROJECT: {
+        missingFrom: ['development'],
+        reason: 'production+preview only by design',
+    },
+    SENTRY_AUTH_TOKEN: {
+        missingFrom: ['development'],
+        reason: 'production+preview only by design',
+    },
 };
 
 const DEFAULT_PROJECT_ID = 'prj_RuKjFko6iKwbyyIy55HYL5S5AabG';
@@ -113,11 +133,15 @@ async function main(): Promise<void> {
     const failures: string[] = [];
     for (const key of allKeys) {
         const missing = TIERS.filter((tier) => !byTier.get(tier)!.has(key));
+        const allowlisted = ASYMMETRY_ALLOWLIST[key];
         if (missing.length === 0) {
             console.log(`  ✓ ${key}`);
-        } else if (key in ASYMMETRY_ALLOWLIST) {
+        } else if (
+            allowlisted &&
+            missing.every((tier) => allowlisted.missingFrom.includes(tier))
+        ) {
             console.log(
-                `  ~ ${key} missing in ${missing.join(', ')} (allowlisted: ${ASYMMETRY_ALLOWLIST[key]})`
+                `  ~ ${key} missing in ${missing.join(', ')} (allowlisted: ${allowlisted.reason})`
             );
         } else {
             const present = TIERS.filter((tier) => !missing.includes(tier));

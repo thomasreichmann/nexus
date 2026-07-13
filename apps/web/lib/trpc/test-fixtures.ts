@@ -17,6 +17,9 @@ export function makeClientError(opts: {
     domainCode?: DomainErrorCode;
     message?: string;
     httpStatus?: number;
+    // The server's expected-vs-defect verdict (error-formatter.ts). Domain
+    // errors are always expected, so it defaults on when domainCode is set.
+    expected?: boolean;
 }): ClientError {
     const message = opts.message ?? 'test';
     // JSON-RPC outer `code` is arbitrary for client-side tests — consumers
@@ -31,6 +34,7 @@ export function makeClientError(opts: {
                     httpStatus: opts.httpStatus ?? 403,
                     path: 'test',
                     domainCode: opts.domainCode,
+                    expected: opts.expected ?? opts.domainCode !== undefined,
                 } as ErrorShape['data'],
             } as ErrorShape,
         },

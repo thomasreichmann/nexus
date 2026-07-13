@@ -106,14 +106,20 @@ export function useUpload() {
     const createBatchMutation = useMutation(
         trpc.files.createBatch.mutationOptions()
     );
+    // Confirm/complete are retried in-mutation (default backoff matches
+    // retryAsync's 1s/2s/4s) because the file data is already in S3. An
+    // external retryAsync loop would fire the MutationCache Sentry capture
+    // (lib/trpc/query-client.ts) once per attempt instead of once per failure.
     const confirmMutation = useMutation(
-        trpc.files.confirmUpload.mutationOptions()
+        trpc.files.confirmUpload.mutationOptions({ retry: CONFIRM_RETRIES })
     );
     const multipartInitMutation = useMutation(
         trpc.files.multipart.init.mutationOptions()
     );
     const multipartCompleteMutation = useMutation(
-        trpc.files.multipart.complete.mutationOptions()
+        trpc.files.multipart.complete.mutationOptions({
+            retry: CONFIRM_RETRIES,
+        })
     );
     const multipartAbortMutation = useMutation(
         trpc.files.multipart.abort.mutationOptions()
@@ -148,17 +154,22 @@ export function useUpload() {
                 abortController,
             });
 
+            // Carried outside the try so the failure report can include the
+            // id once init has assigned it — the uploadFile closure predates
+            // init (mirrors the multipart engine).
+            let fileId = uploadFile.fileId;
             try {
-                const { fileId, uploadUrl } = await uploadMutation.mutateAsync({
+                const init = await uploadMutation.mutateAsync({
                     name: file.name,
                     sizeBytes: file.size,
                     mimeType: file.type || undefined,
                     batchId: sessionBatchId,
                 });
+                fileId = init.fileId;
 
                 updateFile(uploadFile.id, { fileId });
 
-                await xhrPut(uploadUrl, file, {
+                await xhrPut(init.uploadUrl, file, {
                     onProgress: (loaded, total) => {
                         updateFile(uploadFile.id, {
                             progress: Math.round((loaded / total) * 100),
@@ -167,11 +178,7 @@ export function useUpload() {
                     signal: abortController.signal,
                 });
 
-                // Retry confirmUpload since the file data is already in S3
-                await retryAsync(
-                    () => confirmMutation.mutateAsync({ fileId }),
-                    CONFIRM_RETRIES
-                );
+                await confirmMutation.mutateAsync({ fileId: init.fileId });
 
                 updateFile(uploadFile.id, {
                     status: 'complete',
@@ -182,7 +189,18 @@ export function useUpload() {
                 if (isAbortError(error)) {
                     return;
                 }
-                reportUploadFailure(error, 'single', uploadFile);
+                // A network drop pauses for reconnect rather than failing the
+                // upload — same policy as the multipart engine; the online
+                // handler restarts it.
+                if (isNetworkError(error) && !navigatorIsOnline()) {
+                    updateFile(uploadFile.id, { status: 'paused' });
+                    return;
+                }
+                reportUploadFailure(error, 'single', {
+                    ...uploadFile,
+                    fileId,
+                    batchId: sessionBatchId,
+                });
                 updateFile(uploadFile.id, {
                     status: 'error',
                     error:
@@ -392,16 +410,11 @@ export function useUpload() {
                 );
                 if (firstError) throw firstError;
 
-                // Retry complete since the parts are already in S3.
-                await retryAsync(
-                    () =>
-                        multipartCompleteMutation.mutateAsync({
-                            fileId: fileId!,
-                            uploadId: uploadId!,
-                            parts: mergeParts(completed),
-                        }),
-                    CONFIRM_RETRIES
-                );
+                await multipartCompleteMutation.mutateAsync({
+                    fileId: fileId!,
+                    uploadId: uploadId!,
+                    parts: mergeParts(completed),
+                });
 
                 await deleteUpload(fileId!);
                 updateFile(uploadFile.id, {
@@ -423,11 +436,13 @@ export function useUpload() {
                     updateFile(uploadFile.id, { status: 'paused' });
                     return;
                 }
-                // Spread picks up the local fileId assigned after init —
-                // fresher than the stale uploadFile closure's.
+                // Spread picks up the local fileId assigned after init and
+                // the threaded session batch — both fresher than the stale
+                // uploadFile closure.
                 reportUploadFailure(error, 'multipart', {
                     ...uploadFile,
                     fileId,
+                    batchId: sessionBatchId,
                 });
                 updateFile(uploadFile.id, {
                     status: 'error',
@@ -570,7 +585,10 @@ export function useUpload() {
                 for (const f of paused) {
                     const current = filesRef.current.find((x) => x.id === f.id);
                     if (current?.status === 'paused' && current.file) {
-                        await uploadMultipartFile(current);
+                        // runUpload, not uploadMultipartFile: a single-engine
+                        // upload paused by a network drop restarts through
+                        // its own engine.
+                        await runUpload(current);
                     }
                 }
                 setIsUploading(false);
@@ -582,7 +600,7 @@ export function useUpload() {
             window.removeEventListener('offline', onOffline);
             window.removeEventListener('online', onOnline);
         };
-    }, [uploadMultipartFile]);
+    }, [runUpload]);
 
     const addFiles = useCallback(async (picked: PickedFile[]) => {
         if (picked.length === 0) return;
