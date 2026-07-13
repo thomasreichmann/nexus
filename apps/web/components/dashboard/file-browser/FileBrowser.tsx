@@ -42,6 +42,7 @@ import { deriveStatus } from './status';
 import { BatchHeader, BatchHeaderRow } from './BatchHeader';
 import { FileRow } from './FileRow';
 import { FileCard } from './FileCard';
+import { MobileFileRow } from './MobileFileRow';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -88,6 +89,10 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
     // remounts (search filter, view-mode toggle) don't re-scroll.
     const focusRowRef = useCallback((node: HTMLElement | null) => {
         if (!node || hasScrolledToFocus.current) return;
+        // The list view is dual markup (stacked rows below sm, table above)
+        // and both copies carry this ref — skip the display:none one so the
+        // guard isn't consumed by a copy that can't scroll.
+        if (node.offsetParent === null) return;
         hasScrolledToFocus.current = true;
 
         node.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -345,66 +350,31 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                         </p>
                     </div>
                 ) : viewMode === 'list' ? (
-                    <Card className="py-0">
-                        <Table>
-                            <TableHeader>
-                                <TableRow className="hover:bg-transparent">
-                                    <TableHead className="w-[52px] pl-4">
-                                        <div className="flex size-8 items-center justify-center">
-                                            <Checkbox
-                                                checked={
-                                                    hasSelection &&
-                                                    selectedFiles.length ===
-                                                        visibleFiles.length
-                                                }
-                                                onCheckedChange={
-                                                    toggleSelectAll
-                                                }
-                                                aria-label="Select all"
-                                            />
-                                        </div>
-                                    </TableHead>
-                                    <TableHead>
-                                        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                            Name
-                                        </span>
-                                    </TableHead>
-                                    <TableHead>
-                                        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                            Size
-                                        </span>
-                                    </TableHead>
-                                    <TableHead>
-                                        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                            Uploaded
-                                        </span>
-                                    </TableHead>
-                                    <TableHead>
-                                        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                            Status
-                                        </span>
-                                    </TableHead>
-                                    <TableHead className="w-12" />
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {filteredGroups.map((group) => {
-                                    const key =
-                                        group.batchId ?? '__ungrouped__';
-                                    const expanded = isExpanded(key);
-                                    return (
-                                        <Fragment key={key}>
-                                            <BatchHeaderRow
-                                                group={group}
-                                                expanded={expanded}
-                                                onToggle={() =>
-                                                    toggleExpanded(key)
-                                                }
-                                                colSpan={6}
-                                            />
-                                            {expanded &&
-                                                group.files.map((file) => (
-                                                    <FileRow
+                    <>
+                        {/* Below sm the 6-column table starves the name
+                            column — the same class as #311, invisible on an
+                            empty account — so the list view renders as
+                            stacked rows, reusing the grid view's group
+                            structure. The mobile list precedes the table in
+                            the DOM so filename locators' .first() hits the
+                            visible copy at phone widths. Select-all lives in
+                            the hidden table header; per-file selection via
+                            the icon still feeds the floating bulk bar. */}
+                        <div className="space-y-6 sm:hidden">
+                            {filteredGroups.map((group) => {
+                                const key = group.batchId ?? '__ungrouped__';
+                                const expanded = isExpanded(key);
+                                return (
+                                    <section key={key}>
+                                        <BatchHeader
+                                            group={group}
+                                            expanded={expanded}
+                                            onToggle={() => toggleExpanded(key)}
+                                        />
+                                        {expanded && (
+                                            <ul className="divide-y">
+                                                {group.files.map((file) => (
+                                                    <MobileFileRow
                                                         key={file.id}
                                                         ref={
                                                             file.id ===
@@ -434,12 +404,110 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                                                         }
                                                     />
                                                 ))}
-                                        </Fragment>
-                                    );
-                                })}
-                            </TableBody>
-                        </Table>
-                    </Card>
+                                            </ul>
+                                        )}
+                                    </section>
+                                );
+                            })}
+                        </div>
+                        <Card className="hidden py-0 sm:block">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead className="w-[52px] pl-4">
+                                            <div className="flex size-8 items-center justify-center">
+                                                <Checkbox
+                                                    checked={
+                                                        hasSelection &&
+                                                        selectedFiles.length ===
+                                                            visibleFiles.length
+                                                    }
+                                                    onCheckedChange={
+                                                        toggleSelectAll
+                                                    }
+                                                    aria-label="Select all"
+                                                />
+                                            </div>
+                                        </TableHead>
+                                        <TableHead>
+                                            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                                Name
+                                            </span>
+                                        </TableHead>
+                                        <TableHead>
+                                            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                                Size
+                                            </span>
+                                        </TableHead>
+                                        <TableHead>
+                                            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                                Uploaded
+                                            </span>
+                                        </TableHead>
+                                        <TableHead>
+                                            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                                Status
+                                            </span>
+                                        </TableHead>
+                                        <TableHead className="w-12" />
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {filteredGroups.map((group) => {
+                                        const key =
+                                            group.batchId ?? '__ungrouped__';
+                                        const expanded = isExpanded(key);
+                                        return (
+                                            <Fragment key={key}>
+                                                <BatchHeaderRow
+                                                    group={group}
+                                                    expanded={expanded}
+                                                    onToggle={() =>
+                                                        toggleExpanded(key)
+                                                    }
+                                                    colSpan={6}
+                                                />
+                                                {expanded &&
+                                                    group.files.map((file) => (
+                                                        <FileRow
+                                                            key={file.id}
+                                                            ref={
+                                                                file.id ===
+                                                                focusFileId
+                                                                    ? focusRowRef
+                                                                    : undefined
+                                                            }
+                                                            file={file}
+                                                            isSelected={selectedFiles.includes(
+                                                                file.id
+                                                            )}
+                                                            isHighlighted={
+                                                                file.id ===
+                                                                highlightedFileId
+                                                            }
+                                                            hasSelection={
+                                                                hasSelection
+                                                            }
+                                                            onSelect={(
+                                                                shiftKey
+                                                            ) =>
+                                                                handleSelect(
+                                                                    file.id,
+                                                                    fileIndexMap.get(
+                                                                        file.id
+                                                                    ) ?? 0,
+                                                                    shiftKey
+                                                                )
+                                                            }
+                                                        />
+                                                    ))}
+                                            </Fragment>
+                                        );
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </Card>
+                    </>
                 ) : (
                     <div className="space-y-6">
                         {filteredGroups.map((group) => {

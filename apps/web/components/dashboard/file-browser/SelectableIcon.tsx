@@ -4,9 +4,19 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/cn';
 import { getFileTypeInfo, type DerivedStatus } from './status';
 
-export function StatusDot({ status }: { status: DerivedStatus }) {
+export function StatusDot({
+    status,
+    compact = false,
+}: {
+    status: DerivedStatus;
+    /** Dot only, label demoted to sr-only — for width-starved mobile rows. */
+    compact?: boolean;
+}) {
     return (
-        <span className="inline-flex items-center gap-1.5">
+        <span
+            className="inline-flex items-center gap-1.5"
+            title={compact ? status : undefined}
+        >
             <span
                 className={cn(
                     'relative inline-block size-2 rounded-full',
@@ -21,12 +31,16 @@ export function StatusDot({ status }: { status: DerivedStatus }) {
             </span>
             <span
                 className={cn(
-                    'text-xs capitalize',
-                    status === 'archived' && 'text-muted-foreground',
-                    status === 'retrieving' &&
-                        'text-blue-600 dark:text-blue-400',
-                    status === 'available' &&
-                        'text-emerald-600 dark:text-emerald-400'
+                    compact
+                        ? 'sr-only'
+                        : cn(
+                              'text-xs capitalize',
+                              status === 'archived' && 'text-muted-foreground',
+                              status === 'retrieving' &&
+                                  'text-blue-600 dark:text-blue-400',
+                              status === 'available' &&
+                                  'text-emerald-600 dark:text-emerald-400'
+                          )
                 )}
             >
                 {status}

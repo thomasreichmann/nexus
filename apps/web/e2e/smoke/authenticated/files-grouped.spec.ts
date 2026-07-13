@@ -71,8 +71,12 @@ test.describe('grouped files page', () => {
                 page.getByRole('heading', { name: groupedFiles.batchName })
             ).toBeVisible();
 
-            // Metadata line shows "2 files · 300 Bytes · ..."
-            await expect(page.getByText(/2 files · 300 Bytes/)).toBeVisible();
+            // Metadata line shows "2 files · 300 Bytes · ...". The list view
+            // is dual markup (stacked rows below sm + table), so the batch
+            // header renders twice — filter to the copy the viewport shows.
+            await expect(
+                page.getByText(/2 files · 300 Bytes/).filter({ visible: true })
+            ).toBeVisible();
 
             // Restore batch button is visible (both files are glacier+available).
             await expect(
@@ -80,17 +84,31 @@ test.describe('grouped files page', () => {
             ).toBeVisible();
 
             // Files inside the batch are visible by default (expanded).
-            // .first(): MiddleTruncateName renders the name twice (sr-only
-            // full copy + aria-hidden fitted copy).
-            await expect(page.getByText('batched-a.txt').first()).toBeVisible();
-            await expect(page.getByText('batched-b.txt').first()).toBeVisible();
+            // visible+first: each name renders four times — dual markup
+            // (stacked rows below sm + table) × MiddleTruncateName's two
+            // copies (sr-only full name + aria-hidden fitted).
+            await expect(
+                page
+                    .getByText('batched-a.txt')
+                    .filter({ visible: true })
+                    .first()
+            ).toBeVisible();
+            await expect(
+                page
+                    .getByText('batched-b.txt')
+                    .filter({ visible: true })
+                    .first()
+            ).toBeVisible();
 
             // Ungrouped section renders for the legacy file.
             await expect(
                 page.getByRole('heading', { name: 'Ungrouped' })
             ).toBeVisible();
             await expect(
-                page.getByText('legacy-orphan.txt').first()
+                page
+                    .getByText('legacy-orphan.txt')
+                    .filter({ visible: true })
+                    .first()
             ).toBeVisible();
 
             expect(consoleErrors).toEqual([]);
