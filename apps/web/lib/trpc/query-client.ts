@@ -2,6 +2,8 @@ import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 
 import { log } from '@/lib/logger/client';
 
+import { reportUnexpectedClientError } from './error-reporting';
+
 export function makeQueryClient(): QueryClient {
     return new QueryClient({
         defaultOptions: {
@@ -15,6 +17,9 @@ export function makeQueryClient(): QueryClient {
                     { err: error, queryKey: query.queryKey },
                     error.message || 'query error'
                 );
+                reportUnexpectedClientError(error, {
+                    queryKey: query.queryKey,
+                });
             },
         }),
         mutationCache: new MutationCache({
@@ -23,6 +28,9 @@ export function makeQueryClient(): QueryClient {
                     { err: error, mutationKey: mutation.options.mutationKey },
                     error.message || 'mutation error'
                 );
+                reportUnexpectedClientError(error, {
+                    mutationKey: mutation.options.mutationKey,
+                });
             },
         }),
     });

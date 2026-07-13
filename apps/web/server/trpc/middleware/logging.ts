@@ -1,4 +1,11 @@
+import * as Sentry from '@sentry/nextjs';
+
 import { errorVerbosity, isDev, logger } from '@/server/lib/logger';
+import {
+    isUnexpectedTrpcError,
+    isZodError,
+    type ZodLikeIssue,
+} from '../error-classification';
 import type { TRPCError } from '@trpc/server';
 
 export interface RequestLogger {
@@ -33,22 +40,6 @@ interface WideEvent {
 }
 
 const MAX_CAUSE_DEPTH = 5;
-
-interface ZodLikeIssue {
-    path: PropertyKey[];
-    message: string;
-}
-
-/** Duck-type check for ZodError (avoids cross-module instanceof issues). */
-export function isZodError(
-    error: unknown
-): error is Error & { issues: ZodLikeIssue[] } {
-    return (
-        error instanceof Error &&
-        'issues' in error &&
-        Array.isArray((error as { issues: unknown }).issues)
-    );
-}
 
 /** Format ZodError issues into a compact summary message. */
 export function formatZodMessage(issues: ZodLikeIssue[]): string {
@@ -113,6 +104,30 @@ export function formatError(error: TRPCError): FormattedError {
     }
 
     return formatted;
+}
+
+/**
+ * Send an unexpected failure to Sentry with the wide event's correlation ids.
+ * Captures `cause` when present — that's the original throw with the real
+ * stack; the TRPCError is just the transport wrapper.
+ */
+function reportUnexpectedError(error: TRPCError, event: WideEvent): void {
+    if (!isUnexpectedTrpcError(error)) return;
+
+    Sentry.captureException(error.cause ?? error, {
+        tags: {
+            requestId: event.requestId,
+            path: event.path,
+            ...(event.userId ? { userId: event.userId } : {}),
+        },
+        contexts: {
+            trpc: {
+                type: event.type,
+                durationMs: event.durationMs,
+                code: error.code,
+            },
+        },
+    });
 }
 
 function createRequestLogger(): {
@@ -223,6 +238,7 @@ export function logRequest<
 
             if (error) {
                 event.error = formatError(error);
+                reportUnexpectedError(error, event);
             }
 
             if (ok) {

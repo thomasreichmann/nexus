@@ -5,7 +5,7 @@
         "build": {
             "dependsOn": ["^build"],
             "outputs": [".next/**", "dist/**"],
-            "env": ["NEXT_PUBLIC_*"]
+            "env": ["NEXT_PUBLIC_*", "SENTRY_*"]
         },
         "dev": {
             "dependsOn": ["^build"],

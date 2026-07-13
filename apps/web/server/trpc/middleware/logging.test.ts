@@ -7,8 +7,11 @@ const config = { errorVerbosity: 'full' as 'minimal' | 'standard' | 'full' };
 
 const hoisted = await vi.hoisted(async () => {
     const { createMockLogger } = await import('@/server/lib/logger/testing');
-    return { logger: createMockLogger() };
+    const { createMockSentry } = await import('@/lib/sentry/testing');
+    return { logger: createMockLogger(), sentry: createMockSentry() };
 });
+
+vi.mock('@sentry/nextjs', () => hoisted.sentry);
 
 vi.mock('@/server/lib/logger', () => ({
     get errorVerbosity() {
@@ -18,10 +21,12 @@ vi.mock('@/server/lib/logger', () => ({
     logger: hoisted.logger,
 }));
 
+import { NotFoundError } from '@/server/errors';
+import { isUnexpectedTrpcError, isZodError } from '../error-classification';
 import {
     formatError,
     formatZodMessage,
-    isZodError,
+    logRequest,
     trimStackTrace,
 } from './logging';
 
@@ -276,5 +281,137 @@ describe('formatError', () => {
 
             expect(result).toEqual({ code: 'BAD_REQUEST' });
         });
+    });
+});
+
+describe('isUnexpectedTrpcError', () => {
+    it('returns false for DomainError causes (expected 4xx-class outcomes)', () => {
+        const trpcError = new TRPCError({
+            code: 'NOT_FOUND',
+            cause: new NotFoundError('file', 'f_1'),
+        });
+        expect(isUnexpectedTrpcError(trpcError)).toBe(false);
+    });
+
+    it('returns false for Zod input-validation causes', () => {
+        const zodError = createZodError(z.string(), 42);
+        const trpcError = new TRPCError({
+            code: 'BAD_REQUEST',
+            cause: zodError,
+        });
+        expect(isUnexpectedTrpcError(trpcError)).toBe(false);
+    });
+
+    it('returns false for bare auth-gate rejections', () => {
+        expect(
+            isUnexpectedTrpcError(new TRPCError({ code: 'UNAUTHORIZED' }))
+        ).toBe(false);
+        expect(
+            isUnexpectedTrpcError(new TRPCError({ code: 'FORBIDDEN' }))
+        ).toBe(false);
+    });
+
+    it('returns true for auth codes carrying an unexpected cause', () => {
+        const trpcError = new TRPCError({
+            code: 'UNAUTHORIZED',
+            cause: new Error('session store exploded'),
+        });
+        expect(isUnexpectedTrpcError(trpcError)).toBe(true);
+    });
+
+    it('returns true for internal errors', () => {
+        const trpcError = new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            cause: new Error('boom'),
+        });
+        expect(isUnexpectedTrpcError(trpcError)).toBe(true);
+    });
+
+    it('returns false for bare deliberate throws (no cause)', () => {
+        expect(
+            isUnexpectedTrpcError(new TRPCError({ code: 'NOT_FOUND' }))
+        ).toBe(false);
+        expect(
+            isUnexpectedTrpcError(
+                new TRPCError({
+                    code: 'BAD_REQUEST',
+                    message: 'Only failed jobs can be retried',
+                })
+            )
+        ).toBe(false);
+    });
+
+    it('returns true for bare INTERNAL_SERVER_ERROR', () => {
+        expect(
+            isUnexpectedTrpcError(
+                new TRPCError({ code: 'INTERNAL_SERVER_ERROR' })
+            )
+        ).toBe(true);
+    });
+});
+
+describe('emitEvent Sentry reporting', () => {
+    beforeEach(() => {
+        hoisted.sentry.captureException.mockClear();
+    });
+
+    function emitFailure(error: TRPCError): void {
+        const { emitEvent } = logRequest({
+            ctx: { session: { user: { id: 'user_1' } } },
+            path: 'files.list',
+            type: 'query',
+        });
+        emitEvent(false, error);
+    }
+
+    it('captures the original cause with correlation tags', () => {
+        const cause = new Error('boom');
+        emitFailure(new TRPCError({ code: 'INTERNAL_SERVER_ERROR', cause }));
+
+        expect(hoisted.sentry.captureException).toHaveBeenCalledOnce();
+        const [captured, options] =
+            hoisted.sentry.captureException.mock.calls[0]!;
+        expect(captured).toBe(cause);
+        expect(options.tags).toMatchObject({
+            path: 'files.list',
+            userId: 'user_1',
+        });
+        expect(options.tags.requestId).toBeDefined();
+        expect(options.contexts.trpc).toMatchObject({
+            type: 'query',
+            code: 'INTERNAL_SERVER_ERROR',
+        });
+    });
+
+    it('captures the TRPCError itself when there is no cause', () => {
+        const error = new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        emitFailure(error);
+
+        expect(hoisted.sentry.captureException).toHaveBeenCalledOnce();
+        expect(hoisted.sentry.captureException.mock.calls[0]![0]).toBe(error);
+    });
+
+    it('does not capture expected failures', () => {
+        emitFailure(
+            new TRPCError({
+                code: 'NOT_FOUND',
+                cause: new NotFoundError('file'),
+            })
+        );
+        emitFailure(new TRPCError({ code: 'UNAUTHORIZED' }));
+        emitFailure(new TRPCError({ code: 'BAD_REQUEST' }));
+
+        expect(hoisted.sentry.captureException).not.toHaveBeenCalled();
+    });
+
+    it('does not capture successful events', () => {
+        const { emitEvent } = logRequest({
+            ctx: { session: null },
+            path: 'files.list',
+            type: 'query',
+        });
+        emitEvent(true);
+
+        expect(hoisted.sentry.captureException).not.toHaveBeenCalled();
     });
 });
