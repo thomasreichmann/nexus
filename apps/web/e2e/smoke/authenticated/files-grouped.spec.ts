@@ -80,14 +80,18 @@ test.describe('grouped files page', () => {
             ).toBeVisible();
 
             // Files inside the batch are visible by default (expanded).
-            await expect(page.getByText('batched-a.txt')).toBeVisible();
-            await expect(page.getByText('batched-b.txt')).toBeVisible();
+            // .first(): MiddleTruncateName renders the name twice (sr-only
+            // full copy + aria-hidden fitted copy).
+            await expect(page.getByText('batched-a.txt').first()).toBeVisible();
+            await expect(page.getByText('batched-b.txt').first()).toBeVisible();
 
             // Ungrouped section renders for the legacy file.
             await expect(
                 page.getByRole('heading', { name: 'Ungrouped' })
             ).toBeVisible();
-            await expect(page.getByText('legacy-orphan.txt')).toBeVisible();
+            await expect(
+                page.getByText('legacy-orphan.txt').first()
+            ).toBeVisible();
 
             expect(consoleErrors).toEqual([]);
         }

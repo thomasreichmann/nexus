@@ -10,6 +10,7 @@ import {
 } from './status';
 import { SelectableIcon, StatusDot } from './SelectableIcon';
 import { FileActions, useFileActions } from './FileActions';
+import { MiddleTruncateName } from '../MiddleTruncateName';
 import type { FileItemProps } from './types';
 
 export function FileRow({
@@ -50,9 +51,10 @@ export function FileRow({
                 truncates instead of growing to the full string (#311). */}
             <TableCell className="w-full max-w-0">
                 <div className="min-w-0">
-                    <p className="truncate font-medium leading-tight">
-                        {file.name}
-                    </p>
+                    <MiddleTruncateName
+                        name={file.name}
+                        className="font-medium leading-tight"
+                    />
                     {ext && (
                         <p className="text-xs uppercase text-muted-foreground">
                             {ext}
