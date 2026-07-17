@@ -14,13 +14,17 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ResponsiveRows } from '@/components/ui/responsive-rows';
+import { StackedList, StackedListRow } from '@/components/ui/stacked-list';
 import { useSession } from '@/lib/auth/client';
 import { useTRPC } from '@/lib/trpc/client';
 import {
     formatBytes,
     formatDownloadWindow,
     formatRelativeTime,
+    formatRelativeTimeCompact,
 } from '@/lib/format';
+import { MiddleTruncateName } from '@/components/dashboard/MiddleTruncateName';
 import { StorageUsageBar } from '@/components/dashboard/StorageUsageBar';
 import { StorageByType } from '@/components/dashboard/StorageByType';
 import { UploadHistory } from '@/components/dashboard/UploadHistory';
@@ -109,23 +113,30 @@ export default function DashboardPage() {
             <UploadHistory />
 
             <div className="flex flex-col gap-6 lg:flex-row">
-                <Card className="min-w-0 flex-1">
-                    <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <CardTitle className="text-base">
-                                    Recent Uploads
-                                </CardTitle>
-                                <CardDescription>
-                                    Your most recently archived files
-                                </CardDescription>
-                            </div>
-                            <Link href="/dashboard/files">
+                {/* gap-4: tighten Card's default gap-6 so the table header
+                    sits closer to the card description. */}
+                <Card className="min-w-0 flex-1 gap-4">
+                    {/* The action pairs with the title row and the subtitle
+                        owns the full width below — long copy (translations
+                        run 20–30% longer) wraps under the button instead of
+                        colliding with it. The subtitle nearly restates the
+                        title, so below sm it yields its line — and the
+                        header's row gap goes with it, or the empty second
+                        grid row leaves a phantom 8px under the title. */}
+                    <CardHeader className="gap-0 sm:gap-2">
+                        <div className="flex items-center justify-between gap-4">
+                            <CardTitle className="text-base">
+                                Recent Uploads
+                            </CardTitle>
+                            <Link href="/dashboard/files" className="shrink-0">
                                 <Button variant="outline" size="sm">
                                     View all
                                 </Button>
                             </Link>
                         </div>
+                        <CardDescription className="hidden sm:block">
+                            Your most recently archived files
+                        </CardDescription>
                     </CardHeader>
                     <CardContent>
                         {isLoadingFiles ? (
@@ -144,64 +155,107 @@ export default function DashboardPage() {
                                 ))}
                             </div>
                         ) : filesData?.files && filesData.files.length > 0 ? (
-                            <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead>
-                                        <tr className="border-b text-left text-xs text-muted-foreground">
-                                            <th className="pb-3 font-medium">
-                                                Name
-                                            </th>
-                                            <th className="pb-3 font-medium">
-                                                Size
-                                            </th>
-                                            <th className="pb-3 font-medium">
-                                                Uploaded
-                                            </th>
-                                            <th className="pb-3 text-right font-medium">
-                                                Status
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
+                            <ResponsiveRows
+                                mobile={
+                                    <StackedList>
                                         {filesData.files.map((file) => (
-                                            <tr key={file.id} className="group">
-                                                {/* w-full + max-w-0: the name
+                                            <StackedListRow
+                                                key={file.id}
+                                                leading={
+                                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted">
+                                                        <FileIcon className="h-4 w-4 text-muted-foreground" />
+                                                    </div>
+                                                }
+                                                primary={
+                                                    <MiddleTruncateName
+                                                        name={file.name}
+                                                        className="font-medium"
+                                                    />
+                                                }
+                                                meta={[
+                                                    formatBytes(file.size),
+                                                    formatRelativeTimeCompact(
+                                                        file.createdAt
+                                                    ),
+                                                ]}
+                                                trailing={
+                                                    <MobileFileStatus
+                                                        status={file.status}
+                                                    />
+                                                }
+                                            />
+                                        ))}
+                                    </StackedList>
+                                }
+                                desktop={
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full">
+                                            <thead>
+                                                <tr className="border-b text-left text-xs text-muted-foreground">
+                                                    <th className="pr-4 pb-3 font-medium">
+                                                        Name
+                                                    </th>
+                                                    <th className="pr-4 pb-3 text-right font-medium">
+                                                        Size
+                                                    </th>
+                                                    <th className="pr-4 pb-3 font-medium">
+                                                        Uploaded
+                                                    </th>
+                                                    <th className="pb-3 text-right font-medium">
+                                                        Status
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y">
+                                                {filesData.files.map((file) => (
+                                                    <tr
+                                                        key={file.id}
+                                                        className="group"
+                                                    >
+                                                        {/* w-full + max-w-0: the name
                                                     column absorbs leftover
                                                     width and its content
                                                     truncates instead of
                                                     growing the column to the
                                                     full string (#311). */}
-                                                <td className="w-full max-w-0 py-3">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted">
-                                                            <FileIcon className="h-4 w-4 text-muted-foreground" />
-                                                        </div>
-                                                        <span className="truncate font-medium">
-                                                            {file.name}
-                                                        </span>
-                                                    </div>
-                                                </td>
-                                                <td className="py-3 text-sm text-muted-foreground">
-                                                    {formatBytes(file.size)}
-                                                </td>
-                                                <td className="py-3 text-sm text-muted-foreground">
-                                                    {formatRelativeTime(
-                                                        file.createdAt
-                                                    )}
-                                                </td>
-                                                <td className="py-3 text-right">
-                                                    <Badge
-                                                        variant="secondary"
-                                                        className="capitalize"
-                                                    >
-                                                        {file.status}
-                                                    </Badge>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                                                        <td className="w-full max-w-0 py-3 pr-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted">
+                                                                    <FileIcon className="h-4 w-4 text-muted-foreground" />
+                                                                </div>
+                                                                <MiddleTruncateName
+                                                                    name={
+                                                                        file.name
+                                                                    }
+                                                                    className="flex-1 font-medium"
+                                                                />
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-3 pr-4 text-right text-sm whitespace-nowrap tabular-nums text-muted-foreground">
+                                                            {formatBytes(
+                                                                file.size
+                                                            )}
+                                                        </td>
+                                                        <td className="py-3 pr-4 text-sm whitespace-nowrap text-muted-foreground">
+                                                            {formatRelativeTime(
+                                                                file.createdAt
+                                                            )}
+                                                        </td>
+                                                        <td className="py-3 text-right whitespace-nowrap">
+                                                            <Badge
+                                                                variant="secondary"
+                                                                className="capitalize"
+                                                            >
+                                                                {file.status}
+                                                            </Badge>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            />
                         ) : (
                             <div className="py-8 text-center text-sm text-muted-foreground">
                                 No files uploaded yet
@@ -284,4 +338,30 @@ function getRetrievalBadge(
 ): string {
     if (status === 'ready') return 'Ready';
     return tier.charAt(0).toUpperCase() + tier.slice(1);
+}
+
+interface MobileFileStatusProps {
+    status: string;
+}
+
+/* "Available" is the happy default — on mobile it stays understated as a dot
+   plus muted label (a bare dot leaves the status color-only for touch users,
+   where title/hover never fires). Transitional states get the fuller text
+   badge — those are the ones the user needs to notice — and restoring adds a
+   glyph so it differs from the rest by more than hue. */
+function MobileFileStatus({ status }: MobileFileStatusProps) {
+    if (status === 'available') {
+        return (
+            <span className="flex shrink-0 items-center gap-1.5 self-center text-xs text-muted-foreground">
+                <span className="size-2 rounded-full bg-emerald-500" />
+                Available
+            </span>
+        );
+    }
+    return (
+        <Badge variant="secondary" className="shrink-0 self-center capitalize">
+            {status === 'restoring' && <RotateCw aria-hidden />}
+            {status}
+        </Badge>
+    );
 }
