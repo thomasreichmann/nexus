@@ -31,6 +31,7 @@ import {
     insertStorageUsage,
 } from '@nexus/db/test-db';
 import { REGULAR_USER } from '../helpers/auth';
+import { fileName } from '../helpers/table';
 import { PLAN_LIMITS } from '@nexus/db/plans';
 
 // Single shared user → tests must run serially. Belt-and-braces: the
@@ -161,7 +162,9 @@ test.describe('upload batches + storage quota', () => {
                 page.getByRole('heading', { name: /^Upload \d{4}-\d{2}-\d{2}/ })
             ).toBeVisible();
             // The single uploaded file should be visible (default expanded).
-            await expect(page.getByText('validate-')).toBeVisible();
+            // visible+first: each name renders several times (dual mobile/
+            // desktop markup × MiddleTruncateName's two copies).
+            await expect(fileName(page, 'validate-')).toBeVisible();
 
             await page.screenshot({
                 path: `${SCREENSHOTS}/05-grouped-files-page.png`,

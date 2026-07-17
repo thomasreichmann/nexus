@@ -15,6 +15,8 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { TablePagination } from '@/components/ui/table-pagination';
+import { ResponsiveRows } from '@/components/ui/responsive-rows';
+import { StackedList, StackedListRow } from '@/components/ui/stacked-list';
 import { MiddleTruncateName } from '@/components/dashboard/MiddleTruncateName';
 import { cn } from '@/lib/cn';
 import {
@@ -135,71 +137,69 @@ export default function AdminInvitesPage() {
                         </p>
                     </CardContent>
                 ) : (
-                    <>
-                        {/* Below sm the 6-column table starves the recipient
-                            column (same class as #311/#339), so it renders as
-                            stacked rows: email full-width, metadata demoted
-                            to a second line. */}
-                        <ul className="divide-y sm:hidden">
-                            {data.invites.map((invite) => (
-                                <li
-                                    key={invite.id}
-                                    className="flex items-center gap-3 px-4 py-3"
-                                >
-                                    <div className="min-w-0 flex-1">
-                                        {invite.email ? (
-                                            <MiddleTruncateName
-                                                name={invite.email}
-                                                className="font-medium"
-                                            />
-                                        ) : (
-                                            <span className="block font-medium text-muted-foreground italic">
-                                                Link only
-                                            </span>
-                                        )}
-                                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                                            {formatBytes(
-                                                invite.storageLimit ??
-                                                    SPONSORED_DEFAULT_STORAGE_LIMIT
-                                            )}
-                                            {invite.storageLimit === null &&
-                                                ' (default)'}
-                                            <span aria-hidden> · </span>
-                                            {formatRelativeTimeCompact(
+                    <ResponsiveRows
+                        mobile={
+                            <StackedList>
+                                {data.invites.map((invite) => (
+                                    <StackedListRow
+                                        key={invite.id}
+                                        className="px-4"
+                                        primary={
+                                            invite.email ? (
+                                                <MiddleTruncateName
+                                                    name={invite.email}
+                                                    className="font-medium"
+                                                />
+                                            ) : (
+                                                <span className="block font-medium text-muted-foreground italic">
+                                                    Link only
+                                                </span>
+                                            )
+                                        }
+                                        meta={[
+                                            `${formatBytes(invite.storageLimit ?? SPONSORED_DEFAULT_STORAGE_LIMIT)}${invite.storageLimit === null ? ' (default)' : ''}`,
+                                            formatRelativeTimeCompact(
                                                 invite.createdAt
-                                            )}
-                                            {invite.expiresAt && (
-                                                <>
-                                                    <span aria-hidden> · </span>
-                                                    expires{' '}
-                                                    {formatDate(
-                                                        invite.expiresAt
-                                                    )}
-                                                </>
-                                            )}
-                                        </p>
-                                    </div>
-                                    <InviteStatusBadge status={invite.status} />
-                                    {invite.status === 'pending' && (
-                                        <PendingInviteActions
-                                            token={invite.token}
-                                            onRevoke={() =>
-                                                revokeMutation.mutate({
-                                                    id: invite.id,
-                                                })
-                                            }
-                                            isRevoking={
-                                                revokeMutation.isPending &&
-                                                revokeMutation.variables?.id ===
-                                                    invite.id
-                                            }
-                                            disabled={revokeMutation.isPending}
-                                        />
-                                    )}
-                                </li>
-                            ))}
-                        </ul>
-                        <div className="hidden sm:block">
+                                            ),
+                                            invite.expiresAt
+                                                ? `expires ${formatDate(invite.expiresAt)}`
+                                                : null,
+                                        ]}
+                                        trailing={
+                                            <>
+                                                <InviteStatusBadge
+                                                    status={invite.status}
+                                                />
+                                                {invite.status ===
+                                                    'pending' && (
+                                                    <PendingInviteActions
+                                                        token={invite.token}
+                                                        onRevoke={() =>
+                                                            revokeMutation.mutate(
+                                                                {
+                                                                    id: invite.id,
+                                                                }
+                                                            )
+                                                        }
+                                                        isRevoking={
+                                                            revokeMutation.isPending &&
+                                                            revokeMutation
+                                                                .variables
+                                                                ?.id ===
+                                                                invite.id
+                                                        }
+                                                        disabled={
+                                                            revokeMutation.isPending
+                                                        }
+                                                    />
+                                                )}
+                                            </>
+                                        }
+                                    />
+                                ))}
+                            </StackedList>
+                        }
+                        desktop={
                             <Table>
                                 <TableHeader>
                                     <TableRow>
@@ -296,8 +296,8 @@ export default function AdminInvitesPage() {
                                     ))}
                                 </TableBody>
                             </Table>
-                        </div>
-                    </>
+                        }
+                    />
                 )}
             </Card>
 

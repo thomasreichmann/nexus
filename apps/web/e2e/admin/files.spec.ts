@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 import { findUserByEmail, type File } from '@nexus/db/test-db';
 import { ADMIN_USER } from '../helpers/auth';
 import { seedFiles, cleanupFiles } from '../helpers/scenarios';
-import { waitForTableLoad } from '../helpers/table';
+import { fileName, waitForTableLoad } from '../helpers/table';
 
 const PAGE_URL = '/dashboard/files';
 
@@ -30,19 +30,17 @@ test.describe('sequential file deletion', () => {
             await page.goto(PAGE_URL);
             await waitForTableLoad(page, 'No files yet');
 
-            // Verify all 3 seeded files are visible. visible+first: each name
-            // renders several times — dual markup (stacked rows below sm +
-            // table) × MiddleTruncateName's two copies.
-            const fileName = (name: string) =>
-                page.getByText(name).filter({ visible: true }).first();
+            // Verify all 3 seeded files are visible. fileName scopes to the
+            // visible copy — each name renders several times (dual mobile/
+            // desktop markup × MiddleTruncateName's two copies).
             for (const file of seededFiles) {
-                await expect(fileName(file.name)).toBeVisible();
+                await expect(fileName(page, file.name)).toBeVisible();
             }
 
             // Delete first file. 30s: on a cold dev server this is the first
             // S3-touching mutation (route compile + SDK init can exceed 10s).
             await deleteFileByName(page, seededFiles[0].name);
-            await expect(fileName(seededFiles[0].name)).toBeHidden({
+            await expect(fileName(page, seededFiles[0].name)).toBeHidden({
                 timeout: 30_000,
             });
 
@@ -51,12 +49,12 @@ test.describe('sequential file deletion', () => {
             // initialized by the first delete), so the timeout stays tight
             // to keep guarding the no-refresh sequential-delete regression.
             await deleteFileByName(page, seededFiles[1].name);
-            await expect(fileName(seededFiles[1].name)).toBeHidden({
+            await expect(fileName(page, seededFiles[1].name)).toBeHidden({
                 timeout: 10_000,
             });
 
             // Third file should still be visible
-            await expect(fileName(seededFiles[2].name)).toBeVisible();
+            await expect(fileName(page, seededFiles[2].name)).toBeVisible();
 
             // Remove deleted files from cleanup list (already gone from DB)
             seededFiles = seededFiles.slice(2);

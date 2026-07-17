@@ -20,6 +20,8 @@ import { formatDistanceToNow } from 'date-fns';
 import { Loader2, RotateCw } from 'lucide-react';
 import type { Job } from '@nexus/db/repo/jobs';
 import { TablePagination } from '@/components/ui/table-pagination';
+import { ResponsiveRows } from '@/components/ui/responsive-rows';
+import { StackedList, StackedListRow } from '@/components/ui/stacked-list';
 
 type JobStatus = Job['status'];
 
@@ -122,55 +124,58 @@ export default function AdminJobsPage() {
                         <p className="text-muted-foreground">No jobs found</p>
                     </CardContent>
                 ) : (
-                    <>
-                        {/* Below sm the 6-column table forces sideways
-                            scrolling (same class as #311/#339), so it renders
-                            as stacked rows: type full-width, metadata demoted
-                            to a second line. */}
-                        <ul className="divide-y sm:hidden">
-                            {data.jobs.map((job) => (
-                                <li
-                                    key={job.id}
-                                    className="flex items-center gap-3 px-4 py-3"
-                                >
-                                    <div className="min-w-0 flex-1">
-                                        <p className="truncate font-mono text-sm font-medium">
-                                            {job.type}
-                                        </p>
-                                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                                            {formatRelativeTimeCompact(
+                    <ResponsiveRows
+                        mobile={
+                            <StackedList>
+                                {data.jobs.map((job) => (
+                                    <StackedListRow
+                                        key={job.id}
+                                        className="px-4"
+                                        primary={
+                                            <p className="truncate font-mono text-sm font-medium">
+                                                {job.type}
+                                            </p>
+                                        }
+                                        meta={[
+                                            formatRelativeTimeCompact(
                                                 job.createdAt
-                                            )}
-                                            <span aria-hidden> · </span>
-                                            {formatDuration(
+                                            ),
+                                            formatDuration(
                                                 job.startedAt,
                                                 job.completedAt
-                                            )}
-                                            <span aria-hidden> · </span>
-                                            {job.attempts} attempt
-                                            {job.attempts === 1 ? '' : 's'}
-                                        </p>
-                                    </div>
-                                    <JobStatusBadge status={job.status} />
-                                    {job.status === 'failed' && (
-                                        <RetryJobButton
-                                            onRetry={() =>
-                                                retryMutation.mutate({
-                                                    id: job.id,
-                                                })
-                                            }
-                                            isRetrying={
-                                                retryMutation.isPending &&
-                                                retryMutation.variables?.id ===
-                                                    job.id
-                                            }
-                                            disabled={retryMutation.isPending}
-                                        />
-                                    )}
-                                </li>
-                            ))}
-                        </ul>
-                        <div className="hidden sm:block">
+                                            ),
+                                            `${job.attempts} attempt${job.attempts === 1 ? '' : 's'}`,
+                                        ]}
+                                        trailing={
+                                            <>
+                                                <JobStatusBadge
+                                                    status={job.status}
+                                                />
+                                                {job.status === 'failed' && (
+                                                    <RetryJobButton
+                                                        onRetry={() =>
+                                                            retryMutation.mutate(
+                                                                { id: job.id }
+                                                            )
+                                                        }
+                                                        isRetrying={
+                                                            retryMutation.isPending &&
+                                                            retryMutation
+                                                                .variables
+                                                                ?.id === job.id
+                                                        }
+                                                        disabled={
+                                                            retryMutation.isPending
+                                                        }
+                                                    />
+                                                )}
+                                            </>
+                                        }
+                                    />
+                                ))}
+                            </StackedList>
+                        }
+                        desktop={
                             <Table>
                                 <TableHeader>
                                     <TableRow>
@@ -234,8 +239,8 @@ export default function AdminJobsPage() {
                                     ))}
                                 </TableBody>
                             </Table>
-                        </div>
-                    </>
+                        }
+                    />
                 )}
             </Card>
 

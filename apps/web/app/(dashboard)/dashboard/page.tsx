@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ResponsiveRows } from '@/components/ui/responsive-rows';
+import { StackedList, StackedListRow } from '@/components/ui/stacked-list';
 import { useSession } from '@/lib/auth/client';
 import { useTRPC } from '@/lib/trpc/client';
 import {
@@ -153,110 +155,107 @@ export default function DashboardPage() {
                                 ))}
                             </div>
                         ) : filesData?.files && filesData.files.length > 0 ? (
-                            <>
-                                {/* Below sm a 4-column table can't give the
-                                    name meaningful width, so the same data
-                                    renders as stacked rows: name on its own
-                                    line, metadata demoted to a second line.
-                                    This list must precede the table in the
-                                    DOM — the mobile-overflow spec asserts on
-                                    getByText(...).first(), which has to hit
-                                    the visible copy at 390px. */}
-                                <ul className="divide-y sm:hidden">
-                                    {filesData.files.map((file) => (
-                                        <li
-                                            key={file.id}
-                                            className="flex items-center gap-3 py-3"
-                                        >
-                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted">
-                                                <FileIcon className="h-4 w-4 text-muted-foreground" />
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <MiddleTruncateName
-                                                    name={file.name}
-                                                    className="font-medium"
-                                                />
-                                                <div className="mt-0.5 flex items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground">
-                                                    <span>
-                                                        {formatBytes(file.size)}
-                                                    </span>
-                                                    <span aria-hidden>·</span>
-                                                    <span>
-                                                        {formatRelativeTimeCompact(
-                                                            file.createdAt
-                                                        )}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <MobileFileStatus
-                                                status={file.status}
+                            <ResponsiveRows
+                                mobile={
+                                    <StackedList>
+                                        {filesData.files.map((file) => (
+                                            <StackedListRow
+                                                key={file.id}
+                                                leading={
+                                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted">
+                                                        <FileIcon className="h-4 w-4 text-muted-foreground" />
+                                                    </div>
+                                                }
+                                                primary={
+                                                    <MiddleTruncateName
+                                                        name={file.name}
+                                                        className="font-medium"
+                                                    />
+                                                }
+                                                meta={[
+                                                    formatBytes(file.size),
+                                                    formatRelativeTimeCompact(
+                                                        file.createdAt
+                                                    ),
+                                                ]}
+                                                trailing={
+                                                    <MobileFileStatus
+                                                        status={file.status}
+                                                    />
+                                                }
                                             />
-                                        </li>
-                                    ))}
-                                </ul>
-                                <div className="hidden overflow-x-auto sm:block">
-                                    <table className="w-full">
-                                        <thead>
-                                            <tr className="border-b text-left text-xs text-muted-foreground">
-                                                <th className="pr-4 pb-3 font-medium">
-                                                    Name
-                                                </th>
-                                                <th className="pr-4 pb-3 text-right font-medium">
-                                                    Size
-                                                </th>
-                                                <th className="pr-4 pb-3 font-medium">
-                                                    Uploaded
-                                                </th>
-                                                <th className="pb-3 text-right font-medium">
-                                                    Status
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y">
-                                            {filesData.files.map((file) => (
-                                                <tr
-                                                    key={file.id}
-                                                    className="group"
-                                                >
-                                                    {/* w-full + max-w-0: the name
+                                        ))}
+                                    </StackedList>
+                                }
+                                desktop={
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full">
+                                            <thead>
+                                                <tr className="border-b text-left text-xs text-muted-foreground">
+                                                    <th className="pr-4 pb-3 font-medium">
+                                                        Name
+                                                    </th>
+                                                    <th className="pr-4 pb-3 text-right font-medium">
+                                                        Size
+                                                    </th>
+                                                    <th className="pr-4 pb-3 font-medium">
+                                                        Uploaded
+                                                    </th>
+                                                    <th className="pb-3 text-right font-medium">
+                                                        Status
+                                                    </th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y">
+                                                {filesData.files.map((file) => (
+                                                    <tr
+                                                        key={file.id}
+                                                        className="group"
+                                                    >
+                                                        {/* w-full + max-w-0: the name
                                                     column absorbs leftover
                                                     width and its content
                                                     truncates instead of
                                                     growing the column to the
                                                     full string (#311). */}
-                                                    <td className="w-full max-w-0 py-3 pr-4">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted">
-                                                                <FileIcon className="h-4 w-4 text-muted-foreground" />
+                                                        <td className="w-full max-w-0 py-3 pr-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-muted">
+                                                                    <FileIcon className="h-4 w-4 text-muted-foreground" />
+                                                                </div>
+                                                                <MiddleTruncateName
+                                                                    name={
+                                                                        file.name
+                                                                    }
+                                                                    className="flex-1 font-medium"
+                                                                />
                                                             </div>
-                                                            <MiddleTruncateName
-                                                                name={file.name}
-                                                                className="flex-1 font-medium"
-                                                            />
-                                                        </div>
-                                                    </td>
-                                                    <td className="py-3 pr-4 text-right text-sm whitespace-nowrap tabular-nums text-muted-foreground">
-                                                        {formatBytes(file.size)}
-                                                    </td>
-                                                    <td className="py-3 pr-4 text-sm whitespace-nowrap text-muted-foreground">
-                                                        {formatRelativeTime(
-                                                            file.createdAt
-                                                        )}
-                                                    </td>
-                                                    <td className="py-3 text-right whitespace-nowrap">
-                                                        <Badge
-                                                            variant="secondary"
-                                                            className="capitalize"
-                                                        >
-                                                            {file.status}
-                                                        </Badge>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </>
+                                                        </td>
+                                                        <td className="py-3 pr-4 text-right text-sm whitespace-nowrap tabular-nums text-muted-foreground">
+                                                            {formatBytes(
+                                                                file.size
+                                                            )}
+                                                        </td>
+                                                        <td className="py-3 pr-4 text-sm whitespace-nowrap text-muted-foreground">
+                                                            {formatRelativeTime(
+                                                                file.createdAt
+                                                            )}
+                                                        </td>
+                                                        <td className="py-3 text-right whitespace-nowrap">
+                                                            <Badge
+                                                                variant="secondary"
+                                                                className="capitalize"
+                                                            >
+                                                                {file.status}
+                                                            </Badge>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }
+                            />
                         ) : (
                             <div className="py-8 text-center text-sm text-muted-foreground">
                                 No files uploaded yet
@@ -345,18 +344,17 @@ interface MobileFileStatusProps {
     status: string;
 }
 
-/* "Available" is the happy default — on mobile it earns a dot (with sr-only
-   text; color is never the only channel), not a badge. Transitional states
-   keep the text badge — those are the ones the user needs to notice — and
-   restoring adds a glyph so it differs from the rest by more than hue. */
+/* "Available" is the happy default — on mobile it stays understated as a dot
+   plus muted label (a bare dot leaves the status color-only for touch users,
+   where title/hover never fires). Transitional states get the fuller text
+   badge — those are the ones the user needs to notice — and restoring adds a
+   glyph so it differs from the rest by more than hue. */
 function MobileFileStatus({ status }: MobileFileStatusProps) {
     if (status === 'available') {
         return (
-            <span
-                className="size-2 shrink-0 self-center rounded-full bg-emerald-500"
-                title="Available"
-            >
-                <span className="sr-only">Available</span>
+            <span className="flex shrink-0 items-center gap-1.5 self-center text-xs text-muted-foreground">
+                <span className="size-2 rounded-full bg-emerald-500" />
+                Available
             </span>
         );
     }

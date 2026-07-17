@@ -21,6 +21,8 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Card } from '@/components/ui/card';
+import { ResponsiveRows } from '@/components/ui/responsive-rows';
+import { StackedList } from '@/components/ui/stacked-list';
 import {
     Search,
     LayoutGrid,
@@ -350,164 +352,194 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                         </p>
                     </div>
                 ) : viewMode === 'list' ? (
-                    <>
-                        {/* Below sm the 6-column table starves the name
-                            column — the same class as #311, invisible on an
-                            empty account — so the list view renders as
-                            stacked rows, reusing the grid view's group
-                            structure. The mobile list precedes the table in
-                            the DOM so filename locators' .first() hits the
-                            visible copy at phone widths. Select-all lives in
-                            the hidden table header; per-file selection via
-                            the icon still feeds the floating bulk bar. */}
-                        <div className="space-y-6 sm:hidden">
-                            {filteredGroups.map((group) => {
-                                const key = group.batchId ?? '__ungrouped__';
-                                const expanded = isExpanded(key);
-                                return (
-                                    <section key={key}>
-                                        <BatchHeader
-                                            group={group}
-                                            expanded={expanded}
-                                            onToggle={() => toggleExpanded(key)}
-                                        />
-                                        {expanded && (
-                                            <ul className="divide-y">
-                                                {group.files.map((file) => (
-                                                    <MobileFileRow
-                                                        key={file.id}
-                                                        ref={
-                                                            file.id ===
-                                                            focusFileId
-                                                                ? focusRowRef
-                                                                : undefined
-                                                        }
-                                                        file={file}
-                                                        isSelected={selectedFiles.includes(
-                                                            file.id
-                                                        )}
-                                                        isHighlighted={
-                                                            file.id ===
-                                                            highlightedFileId
-                                                        }
-                                                        hasSelection={
-                                                            hasSelection
-                                                        }
-                                                        onSelect={(shiftKey) =>
-                                                            handleSelect(
-                                                                file.id,
-                                                                fileIndexMap.get(
-                                                                    file.id
-                                                                ) ?? 0,
-                                                                shiftKey
-                                                            )
-                                                        }
-                                                    />
-                                                ))}
-                                            </ul>
-                                        )}
-                                    </section>
-                                );
-                            })}
-                        </div>
-                        <Card className="hidden py-0 sm:block">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow className="hover:bg-transparent">
-                                        <TableHead className="w-[52px] pl-4">
-                                            <div className="flex size-8 items-center justify-center">
-                                                <Checkbox
-                                                    checked={
-                                                        hasSelection &&
-                                                        selectedFiles.length ===
-                                                            visibleFiles.length
-                                                    }
-                                                    onCheckedChange={
-                                                        toggleSelectAll
-                                                    }
-                                                    aria-label="Select all"
-                                                />
-                                            </div>
-                                        </TableHead>
-                                        <TableHead>
-                                            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                                Name
-                                            </span>
-                                        </TableHead>
-                                        <TableHead>
-                                            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                                Size
-                                            </span>
-                                        </TableHead>
-                                        <TableHead>
-                                            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                                Uploaded
-                                            </span>
-                                        </TableHead>
-                                        <TableHead>
-                                            <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                                                Status
-                                            </span>
-                                        </TableHead>
-                                        <TableHead className="w-12" />
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
+                    <ResponsiveRows
+                        mobile={
+                            <>
+                                {/* The desktop table's select-all lives in its
+                                    (hidden) header, so the stacked list carries
+                                    its own select-all row. */}
+                                <div className="flex items-center gap-2.5 px-2 pb-3">
+                                    <Checkbox
+                                        checked={
+                                            hasSelection &&
+                                            selectedFiles.length ===
+                                                visibleFiles.length
+                                        }
+                                        onCheckedChange={toggleSelectAll}
+                                        aria-label="Select all"
+                                    />
+                                    <span className="text-xs font-medium text-muted-foreground">
+                                        Select all
+                                    </span>
+                                </div>
+                                <div className="space-y-6">
                                     {filteredGroups.map((group) => {
                                         const key =
                                             group.batchId ?? '__ungrouped__';
                                         const expanded = isExpanded(key);
                                         return (
-                                            <Fragment key={key}>
-                                                <BatchHeaderRow
+                                            <section key={key}>
+                                                <BatchHeader
                                                     group={group}
                                                     expanded={expanded}
                                                     onToggle={() =>
                                                         toggleExpanded(key)
                                                     }
-                                                    colSpan={6}
                                                 />
-                                                {expanded &&
-                                                    group.files.map((file) => (
-                                                        <FileRow
-                                                            key={file.id}
-                                                            ref={
-                                                                file.id ===
-                                                                focusFileId
-                                                                    ? focusRowRef
-                                                                    : undefined
-                                                            }
-                                                            file={file}
-                                                            isSelected={selectedFiles.includes(
-                                                                file.id
-                                                            )}
-                                                            isHighlighted={
-                                                                file.id ===
-                                                                highlightedFileId
-                                                            }
-                                                            hasSelection={
-                                                                hasSelection
-                                                            }
-                                                            onSelect={(
-                                                                shiftKey
-                                                            ) =>
-                                                                handleSelect(
-                                                                    file.id,
-                                                                    fileIndexMap.get(
+                                                {expanded && (
+                                                    <StackedList>
+                                                        {group.files.map(
+                                                            (file) => (
+                                                                <MobileFileRow
+                                                                    key={
                                                                         file.id
-                                                                    ) ?? 0,
-                                                                    shiftKey
-                                                                )
-                                                            }
-                                                        />
-                                                    ))}
-                                            </Fragment>
+                                                                    }
+                                                                    ref={
+                                                                        file.id ===
+                                                                        focusFileId
+                                                                            ? focusRowRef
+                                                                            : undefined
+                                                                    }
+                                                                    file={file}
+                                                                    isSelected={selectedFiles.includes(
+                                                                        file.id
+                                                                    )}
+                                                                    isHighlighted={
+                                                                        file.id ===
+                                                                        highlightedFileId
+                                                                    }
+                                                                    hasSelection={
+                                                                        hasSelection
+                                                                    }
+                                                                    onSelect={(
+                                                                        shiftKey
+                                                                    ) =>
+                                                                        handleSelect(
+                                                                            file.id,
+                                                                            fileIndexMap.get(
+                                                                                file.id
+                                                                            ) ??
+                                                                                0,
+                                                                            shiftKey
+                                                                        )
+                                                                    }
+                                                                />
+                                                            )
+                                                        )}
+                                                    </StackedList>
+                                                )}
+                                            </section>
                                         );
                                     })}
-                                </TableBody>
-                            </Table>
-                        </Card>
-                    </>
+                                </div>
+                            </>
+                        }
+                        desktop={
+                            <Card className="py-0">
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead className="w-[52px] pl-4">
+                                                <div className="flex size-8 items-center justify-center">
+                                                    <Checkbox
+                                                        checked={
+                                                            hasSelection &&
+                                                            selectedFiles.length ===
+                                                                visibleFiles.length
+                                                        }
+                                                        onCheckedChange={
+                                                            toggleSelectAll
+                                                        }
+                                                        aria-label="Select all"
+                                                    />
+                                                </div>
+                                            </TableHead>
+                                            <TableHead>
+                                                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                                    Name
+                                                </span>
+                                            </TableHead>
+                                            <TableHead>
+                                                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                                    Size
+                                                </span>
+                                            </TableHead>
+                                            <TableHead>
+                                                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                                    Uploaded
+                                                </span>
+                                            </TableHead>
+                                            <TableHead>
+                                                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                                    Status
+                                                </span>
+                                            </TableHead>
+                                            <TableHead className="w-12" />
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {filteredGroups.map((group) => {
+                                            const key =
+                                                group.batchId ??
+                                                '__ungrouped__';
+                                            const expanded = isExpanded(key);
+                                            return (
+                                                <Fragment key={key}>
+                                                    <BatchHeaderRow
+                                                        group={group}
+                                                        expanded={expanded}
+                                                        onToggle={() =>
+                                                            toggleExpanded(key)
+                                                        }
+                                                        colSpan={6}
+                                                    />
+                                                    {expanded &&
+                                                        group.files.map(
+                                                            (file) => (
+                                                                <FileRow
+                                                                    key={
+                                                                        file.id
+                                                                    }
+                                                                    ref={
+                                                                        file.id ===
+                                                                        focusFileId
+                                                                            ? focusRowRef
+                                                                            : undefined
+                                                                    }
+                                                                    file={file}
+                                                                    isSelected={selectedFiles.includes(
+                                                                        file.id
+                                                                    )}
+                                                                    isHighlighted={
+                                                                        file.id ===
+                                                                        highlightedFileId
+                                                                    }
+                                                                    hasSelection={
+                                                                        hasSelection
+                                                                    }
+                                                                    onSelect={(
+                                                                        shiftKey
+                                                                    ) =>
+                                                                        handleSelect(
+                                                                            file.id,
+                                                                            fileIndexMap.get(
+                                                                                file.id
+                                                                            ) ??
+                                                                                0,
+                                                                            shiftKey
+                                                                        )
+                                                                    }
+                                                                />
+                                                            )
+                                                        )}
+                                                </Fragment>
+                                            );
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            </Card>
+                        }
+                    />
                 ) : (
                     <div className="space-y-6">
                         {filteredGroups.map((group) => {

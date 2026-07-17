@@ -34,7 +34,9 @@ export function formatRelativeTimeCompact(date: Date | string): string {
     if (hours < 24) return `${hours}h ago`;
     const days = Math.floor(hours / 24);
     if (days < 30) return `${days}d ago`;
-    if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+    // Cap at 11mo: 30-day months overshoot the 365-day year, so days 360-364
+    // would floor to a nonsensical "12mo ago" before the year branch is hit.
+    if (days < 365) return `${Math.min(11, Math.floor(days / 30))}mo ago`;
     return `${Math.floor(days / 365)}y ago`;
 }
 

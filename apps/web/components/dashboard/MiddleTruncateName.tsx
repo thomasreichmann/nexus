@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
 
 /* Tail length for middle truncation. Burst shots share a prefix and differ
@@ -9,30 +9,34 @@ import { cn } from '@/lib/cn';
    start. 12 graphemes covers "<counter>.<ext>". */
 const NAME_TAIL_GRAPHEMES = 12;
 
-let measureContext: CanvasRenderingContext2D | null = null;
+/* Grapheme splitting depends only on the name, never the wrapper width — the
+   Segmenter is stateless, so one shared instance serves every call and each
+   name is segmented once (memoized in the component). The old code built a
+   fresh Segmenter and re-split the whole string on every ResizeObserver tick. */
+const graphemeSegmenter = new Intl.Segmenter();
 
-function getMeasureContext(): CanvasRenderingContext2D | null {
-    measureContext ??= document.createElement('canvas').getContext('2d');
-    return measureContext;
+function segmentGraphemes(name: string): string[] {
+    return Array.from(graphemeSegmenter.segment(name), (s) => s.segment);
 }
 
 /* Longest "head…tail" that fits the wrapper, measured with canvas
    measureText against the wrapper's computed font. Graphemes, not code
    units — filenames here carry emoji and CJK, and a blind slice() can shear
-   a surrogate pair. */
-function fitMiddleTruncatedName(wrapper: HTMLElement, name: string): string {
-    const context = getMeasureContext();
-    if (!context) return name;
+   a surrogate pair. The context is owned by the calling instance: a shared
+   module-global one can be left on a sibling row's font when a malformed
+   shorthand assignment is silently rejected, mis-measuring this name. */
+function fitMiddleTruncatedName(
+    wrapper: HTMLElement,
+    context: CanvasRenderingContext2D,
+    name: string,
+    graphemes: string[]
+): string {
     const style = getComputedStyle(wrapper);
     context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
     // 1px slack for subpixel rounding; the wrapper's overflow-hidden clips
     // any residue.
     const available = wrapper.clientWidth - 1;
     if (context.measureText(name).width <= available) return name;
-    const graphemes = Array.from(
-        new Intl.Segmenter().segment(name),
-        (segment) => segment.segment
-    );
     /* The tail may never eat more than half the width — at very narrow
        widths a full 12-grapheme tail leaves the head a single identifying
        character, and the head is what tells burst siblings apart. */
@@ -87,15 +91,28 @@ export function MiddleTruncateName({
     className,
 }: MiddleTruncateNameProps) {
     const wrapperRef = useRef<HTMLSpanElement>(null);
+    // One canvas context per instance — see fitMiddleTruncatedName. Lazily
+    // created on first fit, reused across resizes (no per-tick allocation).
+    const measureContextRef = useRef<CanvasRenderingContext2D | null>(null);
+    const graphemes = useMemo(() => segmentGraphemes(name), [name]);
     const [display, setDisplay] = useState(name);
 
     useEffect(() => {
         const wrapper = wrapperRef.current;
         if (!wrapper) return;
+        measureContextRef.current ??= document
+            .createElement('canvas')
+            .getContext('2d');
+        const context = measureContextRef.current;
+        // No canvas support: leave the full name in place and let the CSS
+        // text-ellipsis on the wrapper end-truncate it.
+        if (!context) return;
         let isActive = true;
         const fit = () => {
             if (isActive) {
-                setDisplay(fitMiddleTruncatedName(wrapper, name));
+                setDisplay(
+                    fitMiddleTruncatedName(wrapper, context, name, graphemes)
+                );
             }
         };
         const observer = new ResizeObserver(fit);
@@ -107,13 +124,16 @@ export function MiddleTruncateName({
             isActive = false;
             observer.disconnect();
         };
-    }, [name]);
+    }, [name, graphemes]);
 
     return (
         <span
             ref={wrapperRef}
             className={cn(
-                'block min-w-0 overflow-hidden whitespace-nowrap',
+                // text-ellipsis so a long name still shows "…" via CSS before
+                // the fit effect runs (SSR first paint, slow hydration, no JS);
+                // once fitted, "head…tail" fits and the CSS ellipsis is inert.
+                'block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap',
                 className
             )}
             title={name}
