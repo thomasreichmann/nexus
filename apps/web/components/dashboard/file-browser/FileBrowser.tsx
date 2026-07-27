@@ -39,6 +39,8 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
+import { captureEvent } from '@/lib/posthog/client';
+import { PostHogEvent } from '@/lib/posthog/events';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
 import { deriveStatus } from './status';
 import { BatchHeader, BatchHeaderRow } from './BatchHeader';
@@ -137,9 +139,16 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
 
     const bulkRetrievalMutation = useMutation(
         trpc.files.requestBulkRetrieval.mutationOptions({
-            onSuccess() {
+            // `variables` rather than the selection state: the selection is
+            // cleared just below, and it can hold non-archived files the
+            // request already filtered out.
+            onSuccess(_data, variables) {
                 invalidateFileList();
                 setSelectedFiles([]);
+                captureEvent(PostHogEvent.RetrievalRequested, {
+                    fileCount: variables.fileIds.length,
+                    isBulk: true,
+                });
                 toast.success('Retrieval requests submitted');
             },
         })

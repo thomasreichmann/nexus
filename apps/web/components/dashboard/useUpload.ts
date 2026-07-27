@@ -34,6 +34,8 @@ import {
     isNetworkError,
     reportUploadFailure,
 } from '@/lib/upload/errors';
+import { captureEvent } from '@/lib/posthog/client';
+import { PostHogEvent } from '@/lib/posthog/events';
 
 const MULTIPART_THRESHOLD = 100 * 1024 * 1024; // 100MB
 const MAX_CONCURRENT_CHUNKS = 3;
@@ -91,6 +93,43 @@ interface InternalUploadFile extends UploadFile {
 
 function randomId(): string {
     return Math.random().toString(36).substring(7);
+}
+
+type UploadEngine = 'single' | 'multipart';
+
+/**
+ * `upload_started` counts *attempts*, not uploads: both engines are also the
+ * entry point for retry and auto-resume-on-reconnect, so one file that drops
+ * and comes back emits several. `isResume` is what a started→completed funnel
+ * has to filter on, and keeping the repeats (rather than suppressing them)
+ * leaves "how often does an upload need a second try" answerable. A row that
+ * already carries an id has been through here before.
+ */
+function trackUploadStarted(
+    engine: UploadEngine,
+    uploadFile: InternalUploadFile,
+    batchId: string | undefined
+): void {
+    captureEvent(PostHogEvent.UploadStarted, {
+        engine,
+        sizeBytes: uploadFile.size,
+        batchId,
+        isResume: Boolean(uploadFile.uploadId ?? uploadFile.fileId),
+    });
+}
+
+function trackUploadCompleted(
+    engine: UploadEngine,
+    uploadFile: InternalUploadFile,
+    fileId: string | undefined,
+    batchId: string | undefined
+): void {
+    captureEvent(PostHogEvent.UploadCompleted, {
+        engine,
+        fileId,
+        sizeBytes: uploadFile.size,
+        batchId,
+    });
 }
 
 export function useUpload() {
@@ -153,6 +192,7 @@ export function useUpload() {
                 status: 'uploading',
                 abortController,
             });
+            trackUploadStarted('single', uploadFile, sessionBatchId);
 
             // Carried outside the try so the failure report can include the
             // id once init has assigned it — the uploadFile closure predates
@@ -184,6 +224,12 @@ export function useUpload() {
                     status: 'complete',
                     progress: 100,
                 });
+                trackUploadCompleted(
+                    'single',
+                    uploadFile,
+                    fileId,
+                    sessionBatchId
+                );
                 await invalidateFileList();
             } catch (error) {
                 if (isAbortError(error)) {
@@ -227,6 +273,7 @@ export function useUpload() {
                 status: 'uploading',
                 abortController,
             });
+            trackUploadStarted('multipart', uploadFile, sessionBatchId);
 
             // Carried across the fresh-start / resume branches so the catch and
             // completion paths can act on whatever we managed to establish.
@@ -421,6 +468,12 @@ export function useUpload() {
                     status: 'complete',
                     progress: 100,
                 });
+                trackUploadCompleted(
+                    'multipart',
+                    uploadFile,
+                    fileId,
+                    sessionBatchId
+                );
                 await invalidateFileList();
             } catch (error) {
                 if (isAbortError(error)) {

@@ -60,6 +60,17 @@ const ASYMMETRY_ALLOWLIST: Record<
         missingFrom: ['development'],
         reason: 'production+preview only by design',
     },
+    // Same shape as Sentry: a key in the development tier reaches .env.local
+    // via env:pull and turns replay/autocapture on for local and e2e
+    // production builds, which assert zero console errors.
+    NEXT_PUBLIC_POSTHOG_KEY: {
+        missingFrom: ['development'],
+        reason: 'production+preview only by design',
+    },
+    NEXT_PUBLIC_POSTHOG_HOST: {
+        missingFrom: ['development'],
+        reason: 'production+preview only by design',
+    },
 };
 
 const DEFAULT_PROJECT_ID = 'prj_RuKjFko6iKwbyyIy55HYL5S5AabG';

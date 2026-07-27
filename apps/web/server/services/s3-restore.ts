@@ -5,6 +5,8 @@ import { env } from '@/lib/env';
 import { emailService } from '@/server/services/email';
 import { logger } from '@/server/lib/logger';
 import type { S3EventRecord } from '@/lib/sns/types';
+import { PostHogEvent } from '@/lib/posthog/events';
+import { captureServerEvent } from '@/lib/posthog/server';
 import { resolveStorageTier } from '@/lib/storage/types';
 
 const log = logger.child({ service: 's3-restore' });
@@ -93,6 +95,20 @@ async function handleRestoreCompleted(
         { fileId: file.id, retrievalId: retrieval.id, expiresAt },
         'Retrieval marked as ready'
     );
+
+    // No session here — this is an SNS webhook firing hours after the request.
+    // file.userId is the only identity available, and it's the same value
+    // identify() binds in the browser, so the event lands on the right person.
+    captureServerEvent(file.userId, PostHogEvent.RetrievalReady, {
+        fileId: file.id,
+        retrievalId: retrieval.id,
+        storageTier: file.storageTier,
+        // How long the tester actually waited on Glacier — the number that
+        // decides whether retrieval is a usable feature or a dead end.
+        waitMs: retrieval.initiatedAt
+            ? now.getTime() - retrieval.initiatedAt.getTime()
+            : undefined,
+    });
 
     await sendReadyNotification(db, file, retrieval, expiresAt);
 }
