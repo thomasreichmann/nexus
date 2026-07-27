@@ -13,10 +13,23 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { signOut, useSession } from '@/lib/auth/client';
 import { cn } from '@/lib/cn';
 import { getNavItems } from '@/lib/dashboard/navigation';
-import { Archive, LogOut, Menu, Settings, User } from 'lucide-react';
+import {
+    isAnalyticsEnabled,
+    resetAnalytics,
+    showFeedbackSurvey,
+} from '@/lib/posthog/client';
+import {
+    Archive,
+    LogOut,
+    Menu,
+    MessageSquare,
+    Settings,
+    User,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 export function DashboardHeader() {
     const pathname = usePathname();
@@ -27,7 +40,16 @@ export function DashboardHeader() {
 
     async function handleSignOut() {
         await signOut();
+        // Before the redirect: unbinds the distinct id so anything the next
+        // visitor does on this browser isn't attributed to the user who left.
+        resetAnalytics();
         router.push('/');
+    }
+
+    function handleFeedback() {
+        showFeedbackSurvey(() =>
+            toast.error("Feedback form isn't available right now")
+        );
     }
 
     return (
@@ -111,6 +133,15 @@ export function DashboardHeader() {
                                 <Settings className="mr-2 h-4 w-4" />
                                 Settings
                             </DropdownMenuItem>
+                            {/* Hidden when analytics is off (local dev, CI,
+                                e2e) — the survey is served by PostHog, so
+                                without it this is a dead control. */}
+                            {isAnalyticsEnabled() && (
+                                <DropdownMenuItem onClick={handleFeedback}>
+                                    <MessageSquare className="mr-2 h-4 w-4" />
+                                    Send feedback
+                                </DropdownMenuItem>
+                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={handleSignOut}>
                                 <LogOut className="mr-2 h-4 w-4" />
