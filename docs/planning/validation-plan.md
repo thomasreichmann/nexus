@@ -1,8 +1,23 @@
 # Validation Plan: Photographer Beta Test
 
-**Locked:** 2026-04-19
-**Tester #1 onboarding target:** 2026-04-28
-**Decision date:** 2026-06-09 (6 weeks after onboarding)
+> **Status: not yet run. All dates below are historical.**
+>
+> This plan was locked 2026-04-19. The project then went dormant through
+> June — work and life, not a stalled test — and no tester was ever
+> onboarded. The 2026-06-09 decision date passed during that break, so it
+> is void rather than missed: no cohort existed, so no signal was
+> collected and no kill criterion was triggered.
+>
+> The method below (hypothesis, cohort design, cadence, signals, kill
+> criterion) still stands and carries over to the **Photographer Alpha**,
+> which is the first real validation attempt. Only the dates are dead.
+> New ones get committed when the alpha actually starts — until then,
+> treat the schedule here as a record of what was planned, not as
+> live commitments or overdue work.
+
+**Locked:** 2026-04-19 _(historical)_
+**Tester #1 onboarding target:** 2026-04-28 _(never happened)_
+**Decision date:** 2026-06-09 _(void — no test ran; see status note above)_
 
 ## Purpose
 
@@ -74,9 +89,11 @@ There is no fourth option of "keep building features and check again later." If 
 
 ## Decision date
 
-**2026-06-09** is committed.
+**Void. To be re-committed when the Photographer Alpha starts.**
 
-Tell at least one external person (a tester, a friend, a mentor) that this is the date. Social commitment removes the option to slip privately.
+The original date was 2026-06-09, six weeks after a 2026-04-28 onboarding that never happened. It is kept here for the record, not as an outstanding commitment.
+
+The mechanism still applies to the alpha: pick the date when tester #1 is onboarded, six weeks out, and tell at least one external person (a tester, a friend, a mentor) what it is. Social commitment removes the option to slip privately.
 
 ## What this test is NOT trying to validate
 
