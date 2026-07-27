@@ -13,12 +13,15 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
+import { formatRelativeTimeCompact } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
 import { Loader2, RotateCw } from 'lucide-react';
 import type { Job } from '@nexus/db/repo/jobs';
 import { TablePagination } from '@/components/ui/table-pagination';
+import { ResponsiveRows } from '@/components/ui/responsive-rows';
+import { StackedList, StackedListRow } from '@/components/ui/stacked-list';
 
 type JobStatus = Job['status'];
 
@@ -121,70 +124,123 @@ export default function AdminJobsPage() {
                         <p className="text-muted-foreground">No jobs found</p>
                     </CardContent>
                 ) : (
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Type</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Created</TableHead>
-                                <TableHead>Duration</TableHead>
-                                <TableHead>Attempts</TableHead>
-                                <TableHead className="w-12" />
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {data.jobs.map((job) => (
-                                <TableRow key={job.id}>
-                                    <TableCell className="font-medium font-mono text-sm">
-                                        {job.type}
-                                    </TableCell>
-                                    <TableCell>
-                                        <JobStatusBadge status={job.status} />
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {formatDistanceToNow(
-                                            new Date(job.createdAt),
-                                            { addSuffix: true }
-                                        )}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {formatDuration(
-                                            job.startedAt,
-                                            job.completedAt
-                                        )}
-                                    </TableCell>
-                                    <TableCell className="text-muted-foreground">
-                                        {job.attempts}
-                                    </TableCell>
-                                    <TableCell>
-                                        {job.status === 'failed' && (
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() =>
-                                                    retryMutation.mutate({
-                                                        id: job.id,
-                                                    })
-                                                }
-                                                disabled={
-                                                    retryMutation.isPending
-                                                }
-                                                title="Retry job"
-                                            >
-                                                {retryMutation.isPending &&
-                                                retryMutation.variables?.id ===
-                                                    job.id ? (
-                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                ) : (
-                                                    <RotateCw className="h-4 w-4" />
+                    <ResponsiveRows
+                        mobile={
+                            <StackedList>
+                                {data.jobs.map((job) => (
+                                    <StackedListRow
+                                        key={job.id}
+                                        className="px-4"
+                                        primary={
+                                            <p className="truncate font-mono text-sm font-medium">
+                                                {job.type}
+                                            </p>
+                                        }
+                                        meta={[
+                                            formatRelativeTimeCompact(
+                                                job.createdAt
+                                            ),
+                                            formatDuration(
+                                                job.startedAt,
+                                                job.completedAt
+                                            ),
+                                            `${job.attempts} attempt${job.attempts === 1 ? '' : 's'}`,
+                                        ]}
+                                        trailing={
+                                            <>
+                                                <JobStatusBadge
+                                                    status={job.status}
+                                                />
+                                                {job.status === 'failed' && (
+                                                    <RetryJobButton
+                                                        onRetry={() =>
+                                                            retryMutation.mutate(
+                                                                { id: job.id }
+                                                            )
+                                                        }
+                                                        isRetrying={
+                                                            retryMutation.isPending &&
+                                                            retryMutation
+                                                                .variables
+                                                                ?.id === job.id
+                                                        }
+                                                        disabled={
+                                                            retryMutation.isPending
+                                                        }
+                                                    />
                                                 )}
-                                            </Button>
-                                        )}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+                                            </>
+                                        }
+                                    />
+                                ))}
+                            </StackedList>
+                        }
+                        desktop={
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Type</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead>Created</TableHead>
+                                        <TableHead>Duration</TableHead>
+                                        <TableHead>Attempts</TableHead>
+                                        <TableHead className="w-12" />
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {data.jobs.map((job) => (
+                                        <TableRow key={job.id}>
+                                            <TableCell className="font-medium font-mono text-sm">
+                                                {job.type}
+                                            </TableCell>
+                                            <TableCell>
+                                                <JobStatusBadge
+                                                    status={job.status}
+                                                />
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {formatDistanceToNow(
+                                                    new Date(job.createdAt),
+                                                    { addSuffix: true }
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {formatDuration(
+                                                    job.startedAt,
+                                                    job.completedAt
+                                                )}
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {job.attempts}
+                                            </TableCell>
+                                            <TableCell>
+                                                {job.status === 'failed' && (
+                                                    <RetryJobButton
+                                                        onRetry={() =>
+                                                            retryMutation.mutate(
+                                                                {
+                                                                    id: job.id,
+                                                                }
+                                                            )
+                                                        }
+                                                        isRetrying={
+                                                            retryMutation.isPending &&
+                                                            retryMutation
+                                                                .variables
+                                                                ?.id === job.id
+                                                        }
+                                                        disabled={
+                                                            retryMutation.isPending
+                                                        }
+                                                    />
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        }
+                    />
                 )}
             </Card>
 
@@ -233,6 +289,38 @@ function StatusCounts({ counts }: { counts?: Record<JobStatus, number> }) {
                 </Card>
             ))}
         </div>
+    );
+}
+
+interface RetryJobButtonProps {
+    onRetry: () => void;
+    /** This row's retry is in flight (spinner). */
+    isRetrying: boolean;
+    disabled: boolean;
+}
+
+/* Retry for failed jobs — shared by the table cell and the stacked mobile
+   rows. */
+function RetryJobButton({
+    onRetry,
+    isRetrying,
+    disabled,
+}: RetryJobButtonProps) {
+    return (
+        <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRetry}
+            disabled={disabled}
+            title="Retry job"
+            className="shrink-0"
+        >
+            {isRetrying ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+                <RotateCw className="h-4 w-4" />
+            )}
+        </Button>
     );
 }
 

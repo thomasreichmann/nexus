@@ -1,7 +1,7 @@
 ---
 title: Code Conventions
 created: 2025-12-29
-updated: 2026-07-09
+updated: 2026-07-13
 status: active
 tags:
     - ai
@@ -88,6 +88,12 @@ looked perfect, so it shipped.
   the child refuses to shrink below its content and drags the whole layout
   past the viewport. This silently defeats any `overflow-x-auto` wrapper
   below it — the wrapper can never engage.
+- **User-supplied filenames render through `MiddleTruncateName`**
+  (`components/dashboard/MiddleTruncateName.tsx`), never `truncate` —
+  end-truncation makes burst siblings (`_MG_4501.CR2` vs `_MG_4524.CR2`)
+  indistinguishable and hides the extension. The component middle-truncates
+  (grapheme-safe, JS-measured) and keeps the full name in the DOM for screen
+  readers, tooltips, and e2e locators.
 - **`truncate` only works inside a width-constrained ancestor.** In an
   auto-layout table the column just grows to the full string; constrain the
   cell (`w-full max-w-0` for a greedy truncating column, or `table-fixed`).

@@ -10,6 +10,7 @@ import {
 } from './status';
 import { SelectableIcon, StatusDot } from './SelectableIcon';
 import { FileActions, useFileActions } from './FileActions';
+import { MiddleTruncateName } from '../MiddleTruncateName';
 import type { FileItemProps } from './types';
 
 export function FileCard({
@@ -64,9 +65,10 @@ export function FileCard({
                         />
                     </div>
                 </div>
-                <p className="truncate text-sm/tight font-medium">
-                    {file.name}
-                </p>
+                <MiddleTruncateName
+                    name={file.name}
+                    className="text-sm/tight font-medium"
+                />
                 <div className="mt-1.5 flex items-center justify-between">
                     <span className="text-xs tabular-nums text-muted-foreground">
                         {formatBytes(file.size)}

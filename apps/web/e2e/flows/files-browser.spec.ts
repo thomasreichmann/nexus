@@ -26,6 +26,7 @@ import {
     deleteUserData,
 } from '@nexus/db/test-db';
 import { interceptTrpcCalls } from '../helpers/trpc';
+import { fileName } from '../helpers/table';
 
 const FILES_USER: TestUser = {
     email: 'files-browser-e2e@test.local',
@@ -145,7 +146,7 @@ test.describe('with a seeded library', () => {
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeVisible();
 
             await expect(page.getByText('4 files')).toBeVisible();
@@ -180,20 +181,20 @@ test.describe('with a seeded library', () => {
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeVisible();
 
             const search = page.getByPlaceholder('Search files...');
             await search.fill('aaa');
 
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeVisible();
             await expect(
-                page.getByText(seededLibrary.archivedB.name)
+                fileName(page, seededLibrary.archivedB.name)
             ).toBeHidden();
             await expect(
-                page.getByText(seededLibrary.readyDoc.name)
+                fileName(page, seededLibrary.readyDoc.name)
             ).toBeHidden();
 
             await search.fill('zzz-no-such-file');
@@ -201,7 +202,7 @@ test.describe('with a seeded library', () => {
 
             await search.clear();
             await expect(
-                page.getByText(seededLibrary.archivedB.name)
+                fileName(page, seededLibrary.archivedB.name)
             ).toBeVisible();
         }
     );
@@ -216,7 +217,7 @@ test.describe('with a seeded library', () => {
             await page.getByRole('button', { name: 'Grid view' }).click();
             await expect(page.locator('table')).toHaveCount(0);
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeVisible();
 
             await page.getByRole('button', { name: 'List view' }).click();
@@ -230,7 +231,7 @@ test.describe('with a seeded library', () => {
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeVisible();
 
             const batchToggle = page.getByRole('button', {
@@ -240,15 +241,15 @@ test.describe('with a seeded library', () => {
 
             await batchToggle.click();
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeHidden();
             await expect(
-                page.getByText(seededLibrary.readyDoc.name)
+                fileName(page, seededLibrary.readyDoc.name)
             ).toBeVisible(); // other group untouched
 
             await batchToggle.click();
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeVisible();
         }
     );
@@ -259,7 +260,7 @@ test.describe('with a seeded library', () => {
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeVisible();
 
             await page.getByRole('checkbox', { name: 'Select all' }).click();
@@ -276,7 +277,7 @@ test.describe('with a seeded library', () => {
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeVisible();
 
             // Click the first file's icon-checkbox, then shift-click the last
@@ -313,7 +314,7 @@ test.describe('with a seeded library', () => {
 
             await page.goto(PAGE_URL);
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeVisible();
 
             // Archived files selected → Retrieve opens the estimate dialog.
@@ -353,7 +354,7 @@ test.describe('with a seeded library', () => {
 
             await page.goto(PAGE_URL);
             await expect(
-                page.getByText(seededLibrary.archivedB.name)
+                fileName(page, seededLibrary.archivedB.name)
             ).toBeVisible();
 
             await page
@@ -388,7 +389,7 @@ test.describe('with a seeded library', () => {
 
             await page.goto(PAGE_URL);
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeVisible();
             await expect(
                 page.getByRole('button', { name: /Restore batch/i })
@@ -411,7 +412,7 @@ test.describe('with a seeded library', () => {
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
             await expect(
-                page.getByText(seededLibrary.readyDoc.name)
+                fileName(page, seededLibrary.readyDoc.name)
             ).toBeVisible();
 
             // The synthetic 7-day window (#257) renders exactly like a real
@@ -456,7 +457,7 @@ test.describe('with a seeded library', () => {
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
             await expect(
-                page.getByText(seededLibrary.standardDoc.name)
+                fileName(page, seededLibrary.standardDoc.name)
             ).toBeVisible();
 
             // No retrieval yet → archived with Retrieve only, no Download,
@@ -493,7 +494,7 @@ test.describe('with a seeded library', () => {
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeVisible();
 
             await page
@@ -515,18 +516,18 @@ test.describe('with a seeded library', () => {
                 .click();
 
             await expect(
-                page.getByText(seededLibrary.archivedA.name)
+                fileName(page, seededLibrary.archivedA.name)
             ).toBeHidden({
                 timeout: 10_000,
             });
             await expect(
-                page.getByText(seededLibrary.archivedB.name)
+                fileName(page, seededLibrary.archivedB.name)
             ).toBeHidden();
             await expect(
-                page.getByText(seededLibrary.readyDoc.name)
+                fileName(page, seededLibrary.readyDoc.name)
             ).toBeVisible();
             await expect(
-                page.getByText(seededLibrary.standardDoc.name)
+                fileName(page, seededLibrary.standardDoc.name)
             ).toBeVisible();
         }
     );

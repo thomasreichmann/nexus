@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { formatBytes, formatDate } from './format';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { formatBytes, formatDate, formatRelativeTimeCompact } from './format';
 
 describe('formatBytes', () => {
     it('returns "0 Bytes" for zero', () => {
@@ -36,5 +36,58 @@ describe('formatDate', () => {
 
     it('formats an ISO string', () => {
         expect(formatDate('2025-12-30T12:00:00.000Z')).toBe('Dec 30, 2025');
+    });
+});
+
+describe('formatRelativeTimeCompact', () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-07-13T12:00:00Z'));
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('returns "just now" under a minute', () => {
+        expect(formatRelativeTimeCompact('2026-07-13T11:59:30Z')).toBe(
+            'just now'
+        );
+    });
+
+    it('formats minutes', () => {
+        expect(formatRelativeTimeCompact('2026-07-13T11:35:00Z')).toBe(
+            '25m ago'
+        );
+    });
+
+    it('formats hours', () => {
+        expect(formatRelativeTimeCompact('2026-07-13T09:00:00Z')).toBe(
+            '3h ago'
+        );
+    });
+
+    it('formats days', () => {
+        expect(formatRelativeTimeCompact('2026-07-12T11:00:00Z')).toBe(
+            '1d ago'
+        );
+    });
+
+    it('formats months', () => {
+        expect(formatRelativeTimeCompact('2026-05-01T12:00:00Z')).toBe(
+            '2mo ago'
+        );
+    });
+
+    it('formats years', () => {
+        expect(formatRelativeTimeCompact('2024-07-01T12:00:00Z')).toBe(
+            '2y ago'
+        );
+    });
+
+    it('accepts a Date object', () => {
+        expect(
+            formatRelativeTimeCompact(new Date('2026-07-13T10:00:00Z'))
+        ).toBe('2h ago');
     });
 });
