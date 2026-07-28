@@ -28,6 +28,8 @@ export function isAbortError(error: unknown): boolean {
 
 /** The slice of an upload row a failure report needs. */
 export interface UploadFailureInfo {
+    /** Client row id — joins this failure to its `upload_started` attempt. */
+    id: string;
     name: string;
     size: number;
     fileId?: string;
@@ -59,6 +61,7 @@ export function reportUploadFailure(
         fileId: upload.fileId,
         sizeBytes: upload.size,
         batchId: upload.batchId,
+        clientUploadId: upload.id,
         // Distinguishes a server-side rejection (quota, auth) from a
         // browser→S3 transport failure without shipping the message.
         isServerRejection: error instanceof TRPCClientError,

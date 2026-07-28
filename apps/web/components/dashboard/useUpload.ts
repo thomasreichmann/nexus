@@ -100,10 +100,17 @@ type UploadEngine = 'single' | 'multipart';
 /**
  * `upload_started` counts *attempts*, not uploads: both engines are also the
  * entry point for retry and auto-resume-on-reconnect, so one file that drops
- * and comes back emits several. `isResume` is what a started→completed funnel
- * has to filter on, and keeping the repeats (rather than suppressing them)
- * leaves "how often does an upload need a second try" answerable. A row that
- * already carries an id has been through here before.
+ * and comes back emits several. Keeping the repeats (rather than suppressing
+ * them) is deliberate — suppression needs a "already emitted" flag persisted
+ * next to `completedParts`, and every way that flag can desync produces a
+ * *missing* start, which silently undercounts the top of the funnel. Extra
+ * events filter out at query time; absent ones don't come back.
+ *
+ * `clientUploadId` is what makes the attempts joinable, and it carries into
+ * `upload_completed`/`upload_failed` for the same reason. `fileId` can't do
+ * that job: the single engine mints a fresh one per attempt, so a retry looks
+ * like a different upload. Session-scoped, not global — a re-added row after
+ * reload gets a new one, which is the same boundary the join is useful across.
  */
 function trackUploadStarted(
     engine: UploadEngine,
@@ -114,7 +121,16 @@ function trackUploadStarted(
         engine,
         sizeBytes: uploadFile.size,
         batchId,
-        isResume: Boolean(uploadFile.uploadId ?? uploadFile.fileId),
+        clientUploadId: uploadFile.id,
+        fileId: uploadFile.fileId,
+        // A row carrying either id has been through here before. Not the same
+        // as "first attempt": an upload that dies before init assigns an id
+        // re-enters as false, so dedupe on clientUploadId, not on this.
+        isRetry: Boolean(uploadFile.uploadId ?? uploadFile.fileId),
+        // ...and only a multipart upload with a live S3 uploadId resumes from
+        // where it stopped. A single-engine retry restarts from byte zero, so
+        // counting it as a resume would flatter any bytes-saved read.
+        hasResumableState: Boolean(uploadFile.uploadId),
     });
 }
 
@@ -129,6 +145,7 @@ function trackUploadCompleted(
         fileId,
         sizeBytes: uploadFile.size,
         batchId,
+        clientUploadId: uploadFile.id,
     });
 }
 

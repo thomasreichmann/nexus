@@ -8,8 +8,11 @@ export const PostHogEvent = {
     /** Account created (client-confirmed, before the post-signup redirect). */
     SignedUp: 'signed_up',
     /**
-     * Bytes started moving browser→S3. Per attempt, not per upload — filter
-     * on `isResume` for a started→completed funnel.
+     * Bytes started moving browser→S3. Per attempt, not per upload — filter on
+     * `isRetry` for a started→completed funnel, and join attempts to their
+     * outcome on `clientUploadId`. Mirror this caveat into the event's
+     * description in PostHog data management: that's where analyses get built,
+     * and a note only in the source won't reach them.
      */
     UploadStarted: 'upload_started',
     /** Browser saw the upload through to confirm. */
