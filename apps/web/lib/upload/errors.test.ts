@@ -63,6 +63,7 @@ describe('reportUploadFailure', () => {
     });
 
     const upload = {
+        id: 'row_1',
         name: 'photo.raw',
         size: 1024,
         fileId: 'f_1',
@@ -112,6 +113,7 @@ describe('reportUploadFailure', () => {
                 fileId: 'f_1',
                 sizeBytes: 1024,
                 batchId: 'b_1',
+                clientUploadId: 'row_1',
                 isServerRejection: false,
             }
         );
