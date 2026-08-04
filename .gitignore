@@ -44,3 +44,6 @@ docs/.obsidian/cache
 
 # Claude Code worktrees (default location for `claude --worktree`)
 .claude/worktrees/
+
+# Local-only docs (personal notes, never committed)
+*.local.md
