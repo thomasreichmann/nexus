@@ -8,6 +8,8 @@ import {
 } from '@nexus/db/repo/uploadBatches';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
+import { PostHogEvent } from '@/lib/posthog/events';
+import { captureServerEvent } from '@/lib/posthog/server';
 import { quotaService } from './quota';
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 900; // 15 minutes
@@ -147,7 +149,7 @@ async function confirmUpload(
     userId: string,
     fileId: string
 ): Promise<ConfirmUploadResult> {
-    return db.transaction(async (tx) => {
+    const { file, isConfirmed } = await db.transaction(async (tx) => {
         const fileRepo = createFileRepo(tx);
         const usageRepo = createStorageUsageRepo(tx);
 
@@ -158,7 +160,7 @@ async function confirmUpload(
         // Idempotency: a duplicate confirm shouldn't double-count usage.
         // Only flip state and increment when the file is still uploading.
         if (file.status !== 'uploading') {
-            return { file };
+            return { file, isConfirmed: false };
         }
 
         const updated = await fileRepo.update(fileId, {
@@ -170,8 +172,21 @@ async function confirmUpload(
 
         await usageRepo.incrementUsage(userId, file.size);
 
-        return { file: updated };
+        return { file: updated, isConfirmed: true };
     });
+
+    // After the commit, and only on the branch that actually flipped state —
+    // a duplicate confirm must not double-count in the funnel either.
+    if (isConfirmed) {
+        captureServerEvent(userId, PostHogEvent.UploadConfirmed, {
+            fileId: file.id,
+            sizeBytes: file.size,
+            storageTier: file.storageTier,
+            batchId: file.batchId,
+        });
+    }
+
+    return { file };
 }
 
 async function initiateMultipartUpload(

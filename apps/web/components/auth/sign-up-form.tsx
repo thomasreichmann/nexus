@@ -14,6 +14,8 @@ import { GoogleIcon } from '@/components/icons/google-icon';
 import { OAuthDivider } from '@/components/auth/oauth-divider';
 import { signUp } from '@/lib/auth/client';
 import { DEFAULT_REDIRECT } from '@/lib/auth/sanitizeRedirect';
+import { captureEvent } from '@/lib/posthog/client';
+import { PostHogEvent } from '@/lib/posthog/events';
 
 interface SignUpFormProps {
     /** Sanitized path to land on after a successful sign-up. */
@@ -64,6 +66,14 @@ export function SignUpForm({
             setError(result.error.message ?? 'Failed to create account');
             return;
         }
+
+        // Fires before identify(): the session hasn't propagated yet, so this
+        // lands on the anonymous distinct id and PostHog stitches it to the
+        // person once PostHogAnalytics identifies on the next page.
+        captureEvent(PostHogEvent.SignedUp, {
+            method: 'email',
+            isInvited: inviteToken !== undefined,
+        });
 
         router.push(redirectTo);
     }

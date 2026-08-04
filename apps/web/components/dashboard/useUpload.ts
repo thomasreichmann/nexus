@@ -34,6 +34,8 @@ import {
     isNetworkError,
     reportUploadFailure,
 } from '@/lib/upload/errors';
+import { captureEvent } from '@/lib/posthog/client';
+import { PostHogEvent } from '@/lib/posthog/events';
 
 const MULTIPART_THRESHOLD = 100 * 1024 * 1024; // 100MB
 const MAX_CONCURRENT_CHUNKS = 3;
@@ -91,6 +93,60 @@ interface InternalUploadFile extends UploadFile {
 
 function randomId(): string {
     return Math.random().toString(36).substring(7);
+}
+
+type UploadEngine = 'single' | 'multipart';
+
+/**
+ * `upload_started` counts *attempts*, not uploads: both engines are also the
+ * entry point for retry and auto-resume-on-reconnect, so one file that drops
+ * and comes back emits several. Keeping the repeats (rather than suppressing
+ * them) is deliberate — suppression needs a "already emitted" flag persisted
+ * next to `completedParts`, and every way that flag can desync produces a
+ * *missing* start, which silently undercounts the top of the funnel. Extra
+ * events filter out at query time; absent ones don't come back.
+ *
+ * `clientUploadId` is what makes the attempts joinable, and it carries into
+ * `upload_completed`/`upload_failed` for the same reason. `fileId` can't do
+ * that job: the single engine mints a fresh one per attempt, so a retry looks
+ * like a different upload. Session-scoped, not global — a re-added row after
+ * reload gets a new one, which is the same boundary the join is useful across.
+ */
+function trackUploadStarted(
+    engine: UploadEngine,
+    uploadFile: InternalUploadFile,
+    batchId: string | undefined
+): void {
+    captureEvent(PostHogEvent.UploadStarted, {
+        engine,
+        sizeBytes: uploadFile.size,
+        batchId,
+        clientUploadId: uploadFile.id,
+        fileId: uploadFile.fileId,
+        // A row carrying either id has been through here before. Not the same
+        // as "first attempt": an upload that dies before init assigns an id
+        // re-enters as false, so dedupe on clientUploadId, not on this.
+        isRetry: Boolean(uploadFile.uploadId ?? uploadFile.fileId),
+        // ...and only a multipart upload with a live S3 uploadId resumes from
+        // where it stopped. A single-engine retry restarts from byte zero, so
+        // counting it as a resume would flatter any bytes-saved read.
+        hasResumableState: Boolean(uploadFile.uploadId),
+    });
+}
+
+function trackUploadCompleted(
+    engine: UploadEngine,
+    uploadFile: InternalUploadFile,
+    fileId: string | undefined,
+    batchId: string | undefined
+): void {
+    captureEvent(PostHogEvent.UploadCompleted, {
+        engine,
+        fileId,
+        sizeBytes: uploadFile.size,
+        batchId,
+        clientUploadId: uploadFile.id,
+    });
 }
 
 export function useUpload() {
@@ -153,6 +209,7 @@ export function useUpload() {
                 status: 'uploading',
                 abortController,
             });
+            trackUploadStarted('single', uploadFile, sessionBatchId);
 
             // Carried outside the try so the failure report can include the
             // id once init has assigned it — the uploadFile closure predates
@@ -184,6 +241,12 @@ export function useUpload() {
                     status: 'complete',
                     progress: 100,
                 });
+                trackUploadCompleted(
+                    'single',
+                    uploadFile,
+                    fileId,
+                    sessionBatchId
+                );
                 await invalidateFileList();
             } catch (error) {
                 if (isAbortError(error)) {
@@ -227,6 +290,7 @@ export function useUpload() {
                 status: 'uploading',
                 abortController,
             });
+            trackUploadStarted('multipart', uploadFile, sessionBatchId);
 
             // Carried across the fresh-start / resume branches so the catch and
             // completion paths can act on whatever we managed to establish.
@@ -421,6 +485,12 @@ export function useUpload() {
                     status: 'complete',
                     progress: 100,
                 });
+                trackUploadCompleted(
+                    'multipart',
+                    uploadFile,
+                    fileId,
+                    sessionBatchId
+                );
                 await invalidateFileList();
             } catch (error) {
                 if (isAbortError(error)) {
