@@ -10,8 +10,14 @@
                 "!NEXT_PUBLIC_VERCEL_URL",
                 "!NEXT_PUBLIC_VERCEL_BRANCH_URL",
                 "!NEXT_PUBLIC_VERCEL_GIT_*",
+                "!NEXT_PUBLIC_VERCEL_DEPLOYMENT_ID",
                 "SENTRY_*"
             ]
+        },
+        "trpc-devtools#build": {
+            "dependsOn": ["^build"],
+            "outputs": ["dist/**"],
+            "env": ["!NEXT_PUBLIC_*", "!VERCEL_DEPLOYMENT_ID"]
         },
         "dev": {
             "dependsOn": ["^build"],
