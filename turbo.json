@@ -5,7 +5,13 @@
         "build": {
             "dependsOn": ["^build"],
             "outputs": [".next/**", "dist/**"],
-            "env": ["NEXT_PUBLIC_*", "SENTRY_*"]
+            "env": [
+                "NEXT_PUBLIC_*",
+                "!NEXT_PUBLIC_VERCEL_URL",
+                "!NEXT_PUBLIC_VERCEL_BRANCH_URL",
+                "!NEXT_PUBLIC_VERCEL_GIT_*",
+                "SENTRY_*"
+            ]
         },
         "dev": {
             "dependsOn": ["^build"],
