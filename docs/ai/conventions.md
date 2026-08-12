@@ -64,8 +64,8 @@ Terse reference for AI agents. Detailed examples with code: [[../conventions/nam
 | Form validation | TanStack Form + Zod (inline)     |
 | Form submission | Custom `onError` → toast         |
 
-- Domain errors set user-facing messages; `INTERNAL_SERVER_ERROR` always uses generic fallback
-- Override per-component with `trpc: { context: { skipToast: true } }`
+- Domain errors set user-facing messages; codes mapped in the error link's `domainErrorMessages` (currently `NOT_FOUND`) get fixed copy instead; `INTERNAL_SERVER_ERROR` always uses a generic fallback
+- Configure per-mutation with `toastContext(...)` from `@/lib/trpc/error-link` — `{ errorMessage }` replaces only the generic fallback, `{ skipToast: true }` suppresses the toast (never build the context literal by hand)
 - Full details: [[../conventions/error-handling|Error Handling]]
 
 ## Testing

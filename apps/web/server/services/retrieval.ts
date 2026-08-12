@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs';
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
 import {
@@ -7,11 +8,14 @@ import {
 } from '@nexus/db/repo/retrievals';
 import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
+import { logger } from '@/server/lib/logger';
 import { s3 } from '@/lib/storage';
 // Value import from ./types (not the package root) so unit tests that mock
 // '@/lib/storage' don't erase the constant.
 import { DEFAULT_RESTORE_DAYS_TO_KEEP } from '@/lib/storage/types';
 import type { RestoreTier } from '@/lib/storage';
+
+const log = logger.child({ service: 'retrieval' });
 
 const DOWNLOAD_URL_EXPIRY_SECONDS = 3600; // 1 hour
 
@@ -113,12 +117,36 @@ async function restoreFiles(
     // surviving rows so every requested file still maps to a retrieval.
     // Only the rows this call inserted get a RestoreObject below — the
     // winner of the race is already restoring the files it took.
-    let survivors: Retrieval[] = [];
+    const survivors: Retrieval[] = [];
+    const failedSurvivors: Retrieval[] = [];
     if (newRetrievals.length < filesToRestore.length) {
         const insertedFileIds = new Set(newRetrievals.map((r) => r.fileId));
-        survivors = await retrievalRepo.findByFileIds(
-            fileIdsToRestore.filter((id) => !insertedFileIds.has(id))
+        const conflictedFileIds = fileIdsToRestore.filter(
+            (id) => !insertedFileIds.has(id)
         );
+        survivors.push(
+            ...(await retrievalRepo.findByFileIds(conflictedFileIds))
+        );
+
+        // The active-filtered lookup misses a winner whose restore already
+        // failed (`failed` is outside the active predicate). Those files
+        // must land in `failed`, not silently in neither bucket — the
+        // caller would otherwise toast success for a file with no restore
+        // in flight.
+        const survivorFileIds = new Set(survivors.map((r) => r.fileId));
+        for (const fileId of conflictedFileIds) {
+            if (survivorFileIds.has(fileId)) continue;
+            const latest = await retrievalRepo.findLatestByFileId(fileId);
+            if (!latest) {
+                log.warn(
+                    { fileId },
+                    'Insert conflicted but no retrieval row found for file'
+                );
+                continue;
+            }
+            if (latest.status === 'failed') failedSurvivors.push(latest);
+            else survivors.push(latest);
+        }
     }
 
     const { started, failed } = await restoreInserted(
@@ -130,7 +158,13 @@ async function restoreFiles(
 
     return {
         started: [...existingRetrievals, ...started, ...survivors],
-        failed,
+        // `errorMessage` holds raw AWS SDK text (ARNs, account ids, bucket
+        // names) for operators; it stays in the DB but must not reach the
+        // client — the mutation payload has no output schema to strip it.
+        failed: [...failed, ...failedSurvivors].map((row) => ({
+            ...row,
+            errorMessage: null,
+        })),
     };
 }
 
@@ -162,15 +196,44 @@ async function restoreInserted(
                 );
                 return { ok: true, row: retrieval };
             } catch (err) {
-                const failed = await retrievalRepo.updateStatus(
-                    retrieval.id,
-                    'failed',
+                // The pre-#329 batch-wide throw surfaced restore failures
+                // through the logging middleware and Sentry; caught-per-file
+                // failures must stay as loud, or a total restore outage is
+                // visible only as rows in a DB column.
+                log.error(
                     {
-                        failedAt: new Date(),
-                        errorMessage:
-                            err instanceof Error ? err.message : String(err),
-                    }
+                        err,
+                        fileId: retrieval.fileId,
+                        retrievalId: retrieval.id,
+                    },
+                    'S3 restore request failed'
                 );
+                Sentry.captureException(err);
+
+                let failed: Retrieval | undefined;
+                try {
+                    failed = await retrievalRepo.updateStatus(
+                        retrieval.id,
+                        'failed',
+                        {
+                            failedAt: new Date(),
+                            errorMessage:
+                                err instanceof Error
+                                    ? err.message
+                                    : String(err),
+                        }
+                    );
+                } catch (updateErr) {
+                    // A failed failure-write must not reject the whole batch
+                    // and discard sibling restores that already fired. The
+                    // row stays `pending` (the stuck-retrieval health check
+                    // flags it), but the caller still hears `failed`.
+                    log.error(
+                        { err: updateErr, retrievalId: retrieval.id },
+                        'Failed to mark retrieval failed after restore error'
+                    );
+                    Sentry.captureException(updateErr);
+                }
                 return { ok: false, row: failed ?? retrieval };
             }
         })

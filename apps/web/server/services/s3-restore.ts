@@ -59,7 +59,13 @@ async function resolveRetrieval(
     if (!retrieval) {
         // Rows are written before the restore is requested (#329), so a file
         // with an S3 restore event and no retrieval row at all means a paid
-        // restore nothing is tracking — alert rather than drop it in a log.
+        // restore nothing is tracking — alert, but log too: alerts.send is
+        // best-effort (a no-op without a configured transport), and the
+        // fileId/s3Key must survive somewhere queryable either way.
+        log.error(
+            { fileId: file.id, s3Key, eventType: record.eventName },
+            `${context} event with no retrieval row; restore is untracked and the event was dropped`
+        );
         await alerts.send({
             severity: 'error',
             title: 'S3 restore event with no retrieval row',

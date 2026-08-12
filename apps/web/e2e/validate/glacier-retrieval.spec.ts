@@ -43,6 +43,10 @@ const SCREENSHOTS = 'test-results/validate/glacier-retrieval';
 
 const s3: TestS3 = createTestS3();
 let seededFile: File | undefined;
+// Tracked separately from seededFile and assigned before the PUT: if the
+// DB insert fails after the object is written, cleanup must still delete
+// it — a leaked DEEP_ARCHIVE object carries a 180-day minimum charge.
+let seededS3Key: string | undefined;
 
 // The object has to be genuinely archived: RestoreObject on a STANDARD object
 // fails with InvalidObjectState, so a green run against one would prove
@@ -52,11 +56,13 @@ async function seedArchivedFile(db: Connection, userId: string): Promise<File> {
     const name = `validate-retrieval-${Date.now()}.txt`;
     const fileId = crypto.randomUUID();
     const body = 'nexus glacier retrieval validation\n';
+    const s3Key = `${userId}/validate-329/${fileId}/${name}`;
 
+    seededS3Key = s3Key;
     await s3.client.send(
         new PutObjectCommand({
             Bucket: s3.bucket,
-            Key: `${userId}/validate-329/${fileId}/${name}`,
+            Key: s3Key,
             Body: body,
             StorageClass: 'DEEP_ARCHIVE',
         })
@@ -68,7 +74,7 @@ async function seedArchivedFile(db: Connection, userId: string): Promise<File> {
         name,
         size: body.length,
         mimeType: 'text/plain',
-        s3Key: `${userId}/validate-329/${fileId}/${name}`,
+        s3Key,
         storageTier: 'deep_archive',
         status: 'available',
     });
@@ -83,22 +89,28 @@ async function getRestoreHeader(key: string): Promise<string> {
 
 test.describe('glacier retrieval against real S3', () => {
     test.afterAll(async ({ db }) => {
-        if (!seededFile) return;
-        const retrievals = await createRetrievalRepo(db).findByUser(
-            seededFile.userId
-        );
-        for (const retrieval of retrievals) {
-            if (retrieval.fileId === seededFile.id) {
-                await deleteRetrieval(db, retrieval.id);
+        if (seededFile) {
+            const retrievals = await createRetrievalRepo(db).findByUser(
+                seededFile.userId
+            );
+            for (const retrieval of retrievals) {
+                if (retrieval.fileId === seededFile.id) {
+                    await deleteRetrieval(db, retrieval.id);
+                }
             }
+            await deleteFile(db, seededFile.id);
         }
-        await deleteFile(db, seededFile.id);
-        await s3.client.send(
-            new DeleteObjectCommand({
-                Bucket: s3.bucket,
-                Key: seededFile.s3Key,
-            })
-        );
+        // Keyed on seededS3Key, not seededFile: the object exists as soon as
+        // the PUT lands, before the DB insert. S3 delete is idempotent, so a
+        // key whose PUT itself failed deletes harmlessly.
+        if (seededS3Key) {
+            await s3.client.send(
+                new DeleteObjectCommand({
+                    Bucket: s3.bucket,
+                    Key: seededS3Key,
+                })
+            );
+        }
     });
 
     test(

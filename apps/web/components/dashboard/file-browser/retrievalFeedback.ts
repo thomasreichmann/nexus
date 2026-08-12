@@ -24,16 +24,23 @@ export function toastRetrievalResult(
         return;
     }
 
+    // Stable ids so repeated attempts against a broken S3 collapse into one
+    // toast, matching the errorLink's dedup behavior.
     if (failedCount === total) {
         toast.error(
             failedCount === 1
                 ? 'Retrieval could not be started'
-                : `None of the ${failedCount} retrievals could be started`
+                : `None of the ${failedCount} retrievals could be started`,
+            { id: 'retrieval-request-failed' }
         );
         return;
     }
 
+    // Counted as failures against the total requested: `started` includes
+    // rows that already existed before this call, so a started-count would
+    // claim restores this call never launched.
     toast.warning(
-        `Started ${total - failedCount} of ${total} retrievals; ${failedCount} could not be started`
+        `${failedCount} of ${total} retrievals could not be started`,
+        { id: 'retrieval-request-partial' }
     );
 }

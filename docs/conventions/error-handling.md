@@ -1,7 +1,7 @@
 ---
 title: Error Handling
 created: 2026-03-07
-updated: 2026-03-07
+updated: 2026-08-12
 status: active
 tags:
     - conventions
@@ -25,34 +25,48 @@ Nexus uses a layered error handling strategy.
 
 ## tRPC Error Handling
 
-A global error link intercepts all tRPC errors and shows toasts automatically. Components can override this behavior.
+A global error link intercepts all tRPC errors and shows toasts automatically. The link is the single owner of error-toast copy — mutations configure it through `toastContext(...)` rather than reimplementing toasts in per-mutation `onError` handlers.
 
 **Error message strategy:**
 
-The error link uses the server's `err.message` by default — domain errors (`NotFoundError`, `ForbiddenError`, etc.) already set user-facing messages. Only `INTERNAL_SERVER_ERROR` is replaced with a generic fallback to avoid leaking implementation details.
+`getErrorMessage` in `apps/web/lib/trpc/error-link.ts` resolves the toast copy in this order:
 
-| tRPC Code               | Message Source                                            |
-| ----------------------- | --------------------------------------------------------- |
-| `UNAUTHORIZED`          | Fallback: "Please sign in to continue"                    |
-| `FORBIDDEN`             | Server message (from `ForbiddenError`)                    |
-| `NOT_FOUND`             | Server message (from `NotFoundError`)                     |
-| `TOO_MANY_REQUESTS`     | Fallback: "Too many requests. Please slow down"           |
-| `INTERNAL_SERVER_ERROR` | Always fallback: "Something went wrong. Please try again" |
+1. **Mapped domain copy** — `domainErrorMessages` maps a `domainCode` to fixed user-facing copy for codes whose server message is written for logs (currently `NOT_FOUND` → "That item is no longer available"; `NotFoundError` says "File not found: \<uuid\>"). A mapped code beats everything, including a per-mutation `errorMessage` — don't add a code whose server messages should reach users.
+2. **`INTERNAL_SERVER_ERROR` and transport failures** — the server message may leak implementation details, so it is never shown: the per-mutation `errorMessage` if one was passed, else the generic "Something went wrong. Please try again".
+3. **Server message** — everything else shows `err.message`; the remaining `DomainError` subclasses (`InvalidStateError`, `ForbiddenError`, `TrialExpiredError`, …) already write user-facing messages.
+4. **Code fallbacks** — when the server message is empty, per-code copy, then `errorMessage`, then the generic.
 
-**Per-component override:**
+| tRPC Code               | Message Source                                                        |
+| ----------------------- | --------------------------------------------------------------------- |
+| `UNAUTHORIZED`          | Fallback: "Please sign in to continue" (when server message is empty) |
+| `FORBIDDEN`             | Server message (from `ForbiddenError`)                                |
+| `NOT_FOUND`             | Mapped copy: "That item is no longer available"                       |
+| `TOO_MANY_REQUESTS`     | Fallback: "Too many requests. Please slow down"                       |
+| `INTERNAL_SERVER_ERROR` | Per-mutation `errorMessage`, else the generic fallback                |
+
+**Per-mutation configuration:**
+
+Always build the operation context with `toastContext(...)` — the raw context type is `Record<string, unknown>`, so a typo'd key in a hand-written literal compiles fine and silently re-enables the toast it meant to configure.
 
 ```typescript
-// Skip global toast and handle errors yourself
+import { toastContext } from '@/lib/trpc/error-link';
+
+// Give 500s/transport failures a task-specific message.
+// Domain and code-specific copy still win over it.
+const mutation = useMutation(
+    trpc.files.requestRetrieval.mutationOptions({
+        trpc: toastContext({ errorMessage: 'Failed to request retrieval' }),
+    })
+);
+
+// Escape hatch: suppress the toast entirely, for components that render
+// the error some other way (e.g. a banner) — not for substituting their
+// own toast.
 const mutation = useMutation(
     trpc.files.delete.mutationOptions({
-        trpc: { context: { skipToast: true } },
+        trpc: toastContext({ skipToast: true }),
         onError(error) {
-            const domain = getDomainError(error);
-            if (domain?.code === 'NOT_FOUND') {
-                toast.info('File was already deleted');
-            } else {
-                toast.error('Failed to delete file');
-            }
+            /* render the error in-component */
         },
     })
 );
@@ -69,7 +83,7 @@ import { getDomainError } from '@/lib/trpc/get-domain-error';
 
 const mutation = useMutation(
     trpc.files.delete.mutationOptions({
-        trpc: { context: { skipToast: true } },
+        trpc: toastContext({ skipToast: true }),
         onError(error) {
             const domain = getDomainError(error);
             switch (domain?.code) {
@@ -101,7 +115,7 @@ if (error.data?.code === 'UNAUTHORIZED') {
 
 **Composes with `skipToast`**
 
-`getDomainError` makes no assumptions about toast behavior — pair it with `context: { skipToast: true }` when you want custom per-component handling, or leave the global toast in place and let it drive an auxiliary UI (e.g. a banner) alongside it.
+`getDomainError` makes no assumptions about toast behavior — pair it with `toastContext({ skipToast: true })` when you want custom per-component handling, or leave the global toast in place and let it drive an auxiliary UI (e.g. a banner) alongside it.
 
 ## Error Boundaries
 

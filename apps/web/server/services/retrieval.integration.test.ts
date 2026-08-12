@@ -1,4 +1,12 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import {
+    describe,
+    it,
+    expect,
+    beforeAll,
+    afterAll,
+    afterEach,
+    vi,
+} from 'vitest';
 import {
     createDb,
     insertUser,
@@ -46,6 +54,12 @@ beforeAll(async () => {
 
 afterAll(async () => {
     await deleteUserData(db, userId);
+});
+
+// A test that dies between installing a throwing restore mock and its inline
+// reset would leak the throw (and its call count) into every later test.
+afterEach(() => {
+    s3Mocks.restore.mockReset();
 });
 
 describe('active-retrieval expiry predicate', () => {
@@ -214,8 +228,10 @@ describe('partial S3 restore failure (#329)', () => {
         expect(result.failed.map((r) => r.fileId)).toEqual([rejected.id]);
         const [failedRow] = result.failed;
         expect(failedRow.status).toBe('failed');
-        expect(failedRow.errorMessage).toBe('AWS throttled');
         expect(failedRow.failedAt).toBeInstanceOf(Date);
+        // Raw AWS error text (ARNs, account ids) is for operators: it lands
+        // in the DB but is stripped from the mutation payload.
+        expect(failedRow.errorMessage).toBeNull();
 
         // One RestoreObject per file, and no restore fired for a file that
         // ended up without a row.
@@ -225,7 +241,9 @@ describe('partial S3 restore failure (#329)', () => {
         const persisted = await repo.findByUser(userId);
         const persistedById = new Map(persisted.map((r) => [r.id, r]));
         expect(persistedById.get(result.started[0].id)?.status).toBe('pending');
-        expect(persistedById.get(failedRow.id)?.status).toBe('failed');
+        const persistedFailed = persistedById.get(failedRow.id);
+        expect(persistedFailed?.status).toBe('failed');
+        expect(persistedFailed?.errorMessage).toBe('AWS throttled');
 
         // `failed` sits outside the active partial unique index, so the row
         // no longer holds the file's slot and a retry inserts cleanly.

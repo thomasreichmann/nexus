@@ -143,7 +143,14 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
             }),
             onSuccess(result) {
                 invalidateFileList();
-                setSelectedFiles([]);
+                // Keep files whose restore failed selected so retrying them
+                // is one click instead of re-selecting by hand.
+                const failedFileIds = new Set(
+                    result.failed.map((r) => r.fileId)
+                );
+                setSelectedFiles((prev) =>
+                    prev.filter((id) => failedFileIds.has(id))
+                );
                 toastRetrievalResult(result, 'Retrieval requests submitted');
             },
         })
