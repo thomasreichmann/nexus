@@ -7,6 +7,7 @@ import {
     POSTHOG_INGEST_PATH,
     resolveUiHost,
 } from './hosts';
+import { ANALYTICS_ENVIRONMENT_PROPERTY } from './events';
 import type { PostHogEventName } from './events';
 
 /**
@@ -68,6 +69,16 @@ export function initAnalytics(): void {
         // No person profile for anonymous traffic — replays and events still
         // record, they just don't mint a profile until identify().
         person_profiles: 'identified_only',
+    });
+
+    // Super property, so it rides every event from here on (including the
+    // autocaptured ones) and every replay is filterable by the tier it came
+    // from. Registered after init rather than via bootstrap so it also
+    // overwrites a stale value persisted by an earlier visit to a different
+    // tier in the same browser profile.
+    posthog.register({
+        [ANALYTICS_ENVIRONMENT_PROPERTY]:
+            process.env.NEXT_PUBLIC_VERCEL_ENV ?? 'unknown',
     });
 }
 

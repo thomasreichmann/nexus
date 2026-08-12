@@ -2,6 +2,7 @@ import { after } from 'next/server';
 import { PostHog } from 'posthog-node';
 
 import { DEFAULT_POSTHOG_HOST } from './hosts';
+import { ANALYTICS_ENVIRONMENT_PROPERTY } from './events';
 import type { PostHogEventName } from './events';
 
 /**
@@ -69,7 +70,18 @@ export function captureServerEvent(
     if (!posthog) return;
 
     try {
-        posthog.capture({ distinctId: userId, event, properties });
+        posthog.capture({
+            distinctId: userId,
+            event,
+            // Unprefixed VERCEL_ENV: same reasoning as the gate above, this
+            // module never reaches the browser bundle. Spread first so a
+            // caller can't accidentally shadow the tier.
+            properties: {
+                ...properties,
+                [ANALYTICS_ENVIRONMENT_PROPERTY]:
+                    process.env.VERCEL_ENV ?? 'unknown',
+            },
+        });
     } catch (error) {
         console.warn(`PostHog capture failed for "${event}":`, error);
     }

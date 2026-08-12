@@ -30,3 +30,19 @@ export const PostHogEvent = {
 } as const;
 
 export type PostHogEventName = (typeof PostHogEvent)[keyof typeof PostHogEvent];
+
+/**
+ * Property carrying the Vercel tier that emitted an event, shared for the same
+ * reason as the names above. Preview deploys report to the same project as
+ * production, so without this every funnel silently counts the deploys we poke
+ * at while reviewing a PR, and nothing distinguishes those from a real user.
+ *
+ * The value comes from a different env var on each side — the browser needs
+ * the literal `process.env.NEXT_PUBLIC_*` expression to survive bundling,
+ * while the server reads the unprefixed one — so only the key is shared.
+ *
+ * PostHog's "filter out internal and test users" toggle is configured against
+ * this property (project settings), which is what keeps insights on production
+ * by default rather than making every analysis remember to filter.
+ */
+export const ANALYTICS_ENVIRONMENT_PROPERTY = 'environment';
