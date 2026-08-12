@@ -56,7 +56,7 @@ Everything lives in `.github/workflows/uptime.yml`:
 
 - **Cadence**: the `cron` expression (nominal `*/15`).
 - **URLs / environments**: the job matrix.
-- **Timeout / retries**: the `curl` flags (`--max-time 30 --retry 2`) — transient blips retry before a run fails.
+- **Timeout / retries**: the retry loop in the `GET` step (3 attempts, `--max-time 30` each, 10s apart) — transient blips retry before a run fails. Each attempt logs one line (HTTP status + latency); a failed run also gets an `::error` annotation and a step summary on the run page.
 - **Discord**: the `DISCORD_ALERT_WEBHOOK_URL` repo secret (shared with `s3-event-health.yml`); unset degrades to a no-op.
 - **Email**: GitHub notifies the workflow author when a scheduled run fails, per their GitHub notification settings — no config in-repo.
 - **Manual run**: `workflow_dispatch` (Actions tab → Uptime → Run workflow), or `gh workflow run uptime.yml`.
