@@ -2,6 +2,13 @@
 
 resource "aws_s3_bucket" "files" {
   bucket = "nexus-storage-files-${var.environment}"
+
+  # Customer archives live here and cannot be rebuilt from this config. The
+  # guard also fails a whole-stack destroy at plan time, before anything else
+  # in the stack is torn down.
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "aws_s3_bucket_public_access_block" "files" {
