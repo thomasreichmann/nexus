@@ -26,6 +26,8 @@ import { captureEvent } from '@/lib/posthog/client';
 import { PostHogEvent } from '@/lib/posthog/events';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
 import type { FileWithRetrieval } from '@nexus/db/repo/files';
+import { toastContext } from '@/lib/trpc/error-link';
+import { toastRetrievalResult } from './retrievalFeedback';
 import type { DerivedStatus } from './status';
 
 export function useFileActions(file: FileWithRetrieval) {
@@ -41,13 +43,16 @@ export function useFileActions(file: FileWithRetrieval) {
 
     const retrievalMutation = useMutation(
         trpc.files.requestRetrieval.mutationOptions({
-            onSuccess() {
+            trpc: toastContext({
+                errorMessage: 'Failed to request retrieval',
+            }),
+            onSuccess(result) {
                 invalidateFileList();
                 captureEvent(PostHogEvent.RetrievalRequested, {
                     fileCount: 1,
                     storageTier: file.storageTier,
                 });
-                toast.success('Retrieval request submitted');
+                toastRetrievalResult(result, 'Retrieval request submitted');
             },
         })
     );

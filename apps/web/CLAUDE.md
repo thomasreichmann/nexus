@@ -30,6 +30,12 @@ Do NOT run `test:e2e:validate` unless explicitly asked — it's destructive
 `E2E_REPRO`): specs there are born red on live bugs and never run in
 `test:e2e` or CI. See "Bug Repro" in the root CLAUDE.md.
 
+**Specs must import cleanly with no env.** `e2e:coverage --check` lists every
+spec — including the env-gated `validate/`/`repro/` tiers — with no
+`.env.local` and no credentials, so a module-scope env read or client
+construction (`createTestS3()`, a db connection) fails the gate even though
+those tiers never run in CI. Build them in a fixture or a `beforeAll`.
+
 **Test data is back-door, typed.** Import `{ test, expect }` from `e2e/fixtures`
 and seed preconditions through `@nexus/db/test-db` (factories, insert/query/
 scenario helpers, `seedAdversarialLibrary`) or the precondition fixtures —

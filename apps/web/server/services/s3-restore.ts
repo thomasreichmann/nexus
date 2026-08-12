@@ -1,6 +1,7 @@
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
 import { createRetrievalRepo, type Retrieval } from '@nexus/db/repo/retrievals';
+import { alerts } from '@/lib/alerts';
 import { env } from '@/lib/env';
 import { emailService } from '@/server/services/email';
 import { enqueueThumbnailGeneration } from '@/server/services/thumbnails';
@@ -58,15 +59,32 @@ async function findFileForRecord(
 // the active-filtered queries no longer see the row.
 async function findLatestRetrieval(
     db: DB,
+    record: S3EventRecord,
     file: File,
     context: string
 ): Promise<Retrieval | null> {
     const retrieval = await createRetrievalRepo(db).findLatestByFileId(file.id);
     if (!retrieval) {
-        log.warn(
-            { fileId: file.id, s3Key: file.s3Key },
-            `No active retrieval for ${context}`
+        // Rows are written before the restore is requested (#329), so a file
+        // with an S3 restore event and no retrieval row at all means a paid
+        // restore nothing is tracking — alert, but log too: alerts.send is
+        // best-effort (a no-op without a configured transport), and the
+        // fileId/s3Key must survive somewhere queryable either way.
+        log.error(
+            { fileId: file.id, s3Key: file.s3Key, eventType: record.eventName },
+            `${context} event with no retrieval row; restore is untracked and the event was dropped`
         );
+        await alerts.send({
+            severity: 'error',
+            title: 'S3 restore event with no retrieval row',
+            message: `A ${context} event arrived for a file that has no retrieval record; the restore is untracked and the event was dropped.`,
+            context: {
+                source: 's3-restore',
+                eventType: record.eventName,
+                fileId: file.id,
+                s3Key: file.s3Key,
+            },
+        });
         return null;
     }
     return retrieval;
@@ -98,7 +116,12 @@ async function handleRestoreCompleted(
     // was restored, even outside the app's retrieval flow.
     await regenerateColdThumbnail(db, file);
 
-    const retrieval = await findLatestRetrieval(db, file, 'restore completed');
+    const retrieval = await findLatestRetrieval(
+        db,
+        record,
+        file,
+        'restore completed'
+    );
     if (!retrieval) return;
     const now = new Date();
     const expiresAt = record.glacierEventData?.restoreEventData
@@ -180,7 +203,12 @@ async function handleRestoreExpired(
     const file = await findFileForRecord(db, record, 'restore expiry');
     if (!file) return;
 
-    const retrieval = await findLatestRetrieval(db, file, 'restore expiry');
+    const retrieval = await findLatestRetrieval(
+        db,
+        record,
+        file,
+        'restore expiry'
+    );
     if (!retrieval) return;
 
     await createRetrievalRepo(db).updateStatus(retrieval.id, 'expired');

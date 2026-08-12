@@ -12,11 +12,20 @@ import {
 } from '@nexus/db/testing';
 import { mockS3 } from '@/lib/storage/testing';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
-import { retrievalService } from './retrieval';
 
+const hoisted = await vi.hoisted(async () => {
+    const { createMockLogger } = await import('@/server/lib/logger/testing');
+    const { createMockSentry } = await import('@/lib/sentry/testing');
+    return { logger: createMockLogger(), sentry: createMockSentry() };
+});
+
+vi.mock('@/server/lib/logger', () => ({ logger: hoisted.logger }));
+vi.mock('@sentry/nextjs', () => hoisted.sentry);
 vi.mock('@/lib/storage', () => ({
     s3: mockS3,
 }));
+
+import { retrievalService } from './retrieval';
 
 describe('retrieval service', () => {
     let db: MockDb;
@@ -35,7 +44,7 @@ describe('retrieval service', () => {
             const retrieval = createRetrievalFixture();
 
             // requestRetrieval delegates to requestBulkRetrieval:
-            // findUserFiles -> findByFileIds -> s3.glacier.restoreMany -> insertMany
+            // findUserFiles -> findByFileIds -> insertMany -> s3.glacier.restore
             mocks.files.findMany.mockResolvedValue([file]);
             mocks.retrievals.findMany.mockResolvedValue([]);
             mocks.returning.mockResolvedValue([retrieval]);
@@ -47,7 +56,7 @@ describe('retrieval service', () => {
                 'standard'
             );
 
-            expect(result).toEqual(retrieval);
+            expect(result).toEqual({ started: [retrieval], failed: [] });
             expect(mocks.insert).toHaveBeenCalledOnce();
         });
 
@@ -66,7 +75,7 @@ describe('retrieval service', () => {
                 'bulk'
             );
 
-            expect(result).toEqual(retrieval);
+            expect(result).toEqual({ started: [retrieval], failed: [] });
         });
 
         it('returns existing active retrieval (idempotent)', async () => {
@@ -82,7 +91,7 @@ describe('retrieval service', () => {
                 TEST_FILE_ID
             );
 
-            expect(result).toEqual(existing);
+            expect(result).toEqual({ started: [existing], failed: [] });
             expect(mocks.insert).not.toHaveBeenCalled();
         });
 
@@ -99,7 +108,7 @@ describe('retrieval service', () => {
         });
 
         it('marks standard-tier file ready immediately without calling RestoreObject', async () => {
-            const restoreManySpy = vi.spyOn(mockS3.glacier, 'restoreMany');
+            const restoreSpy = vi.spyOn(mockS3.glacier, 'restore');
             const file = createFileFixture({ storageTier: 'standard' });
             const retrieval = createRetrievalFixture({ status: 'ready' });
 
@@ -113,8 +122,8 @@ describe('retrieval service', () => {
                 TEST_FILE_ID
             );
 
-            expect(result).toEqual(retrieval);
-            expect(restoreManySpy).not.toHaveBeenCalled();
+            expect(result).toEqual({ started: [retrieval], failed: [] });
+            expect(restoreSpy).not.toHaveBeenCalled();
             expect(mocks.values).toHaveBeenCalledWith([
                 expect.objectContaining({
                     status: 'ready',
@@ -177,7 +186,7 @@ describe('retrieval service', () => {
                 TEST_FILE_ID
             );
 
-            expect(result).toEqual(survivor);
+            expect(result).toEqual({ started: [survivor], failed: [] });
             expect(mocks.retrievals.findMany).toHaveBeenCalledTimes(2);
         });
     });
@@ -212,7 +221,8 @@ describe('retrieval service', () => {
                 'standard'
             );
 
-            expect(result).toHaveLength(2);
+            expect(result.started).toHaveLength(2);
+            expect(result.failed).toEqual([]);
             expect(mocks.insert).toHaveBeenCalledOnce();
         });
 
@@ -249,7 +259,7 @@ describe('retrieval service', () => {
                 ['file1', 'file2']
             );
 
-            expect(result).toHaveLength(2);
+            expect(result.started).toHaveLength(2);
         });
 
         it('throws NotFoundError when any file is missing', async () => {
@@ -265,7 +275,7 @@ describe('retrieval service', () => {
         });
 
         it('restores only archived files in a mixed-tier request; standard files are ready immediately', async () => {
-            const restoreManySpy = vi.spyOn(mockS3.glacier, 'restoreMany');
+            const restoreSpy = vi.spyOn(mockS3.glacier, 'restore');
             const files = [
                 createFileFixture({
                     id: 'file1',
@@ -298,9 +308,10 @@ describe('retrieval service', () => {
                 'standard'
             );
 
-            expect(result).toHaveLength(2);
-            expect(restoreManySpy).toHaveBeenCalledExactlyOnceWith(
-                ['user/file1'],
+            expect(result.started).toHaveLength(2);
+            expect(result.failed).toEqual([]);
+            expect(restoreSpy).toHaveBeenCalledExactlyOnceWith(
+                'user/file1',
                 'standard',
                 expect.any(Number)
             );
@@ -360,8 +371,116 @@ describe('retrieval service', () => {
                 ['file1']
             );
 
-            expect(result).toEqual([existingRetrieval]);
+            expect(result).toEqual({
+                started: [existingRetrieval],
+                failed: [],
+            });
             expect(mocks.insert).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('S3 restore failure', () => {
+        it('marks the row failed, reports it, and strips the raw error from the payload', async () => {
+            const file = createFileFixture({ storageTier: 'deep_archive' });
+            const inserted = createRetrievalFixture();
+            const failedRow = createRetrievalFixture({
+                status: 'failed',
+                failedAt: new Date(),
+                errorMessage:
+                    'User: arn:aws:iam::123456789012:user/nexus is not authorized',
+            });
+
+            vi.spyOn(mockS3.glacier, 'restore').mockRejectedValueOnce(
+                new Error(failedRow.errorMessage!)
+            );
+            mocks.files.findMany.mockResolvedValue([file]);
+            mocks.retrievals.findMany.mockResolvedValue([]);
+            // First returning: insertMany; second: updateStatus('failed').
+            mocks.returning
+                .mockResolvedValueOnce([inserted])
+                .mockResolvedValueOnce([failedRow]);
+
+            const result = await retrievalService.requestRetrieval(
+                db,
+                TEST_USER_ID,
+                TEST_FILE_ID,
+                'bulk'
+            );
+
+            // The DB row keeps the raw AWS text; the mutation payload (no
+            // output schema) must not carry ARNs/account ids to the client.
+            expect(result).toEqual({
+                started: [],
+                failed: [{ ...failedRow, errorMessage: null }],
+            });
+            // The old batch-wide throw reached logging middleware + Sentry;
+            // the per-file catch must stay as loud.
+            expect(hoisted.logger.error).toHaveBeenCalledOnce();
+            expect(hoisted.sentry.captureException).toHaveBeenCalledOnce();
+        });
+
+        it('still resolves the batch when writing the failed status itself fails', async () => {
+            const file = createFileFixture({ storageTier: 'deep_archive' });
+            const inserted = createRetrievalFixture();
+
+            vi.spyOn(mockS3.glacier, 'restore').mockRejectedValueOnce(
+                new Error('AWS throttled')
+            );
+            mocks.files.findMany.mockResolvedValue([file]);
+            mocks.retrievals.findMany.mockResolvedValue([]);
+            mocks.returning
+                .mockResolvedValueOnce([inserted])
+                .mockRejectedValueOnce(new Error('db connection lost'));
+
+            const result = await retrievalService.requestRetrieval(
+                db,
+                TEST_USER_ID,
+                TEST_FILE_ID,
+                'bulk'
+            );
+
+            // A rejected updateStatus must not reject the Promise.all and
+            // discard sibling restores; the caller still hears `failed`.
+            expect(result).toEqual({
+                started: [],
+                failed: [{ ...inserted, errorMessage: null }],
+            });
+            expect(hoisted.sentry.captureException).toHaveBeenCalledTimes(2);
+        });
+
+        it('reports a conflict-skipped file as failed when the winning request already failed its restore', async () => {
+            const restoreSpy = vi.spyOn(mockS3.glacier, 'restore');
+            const file = createFileFixture({ storageTier: 'deep_archive' });
+            const winnersFailedRow = createRetrievalFixture({
+                status: 'failed',
+                failedAt: new Date(),
+                errorMessage: 'AWS throttled',
+            });
+
+            mocks.files.findMany.mockResolvedValue([file]);
+            // Pre-insert check sees nothing; the concurrent winner inserts,
+            // fails its restore, and flips its row to `failed` before the
+            // active-filtered survivors lookup runs — which then misses it.
+            mocks.retrievals.findMany
+                .mockResolvedValueOnce([])
+                .mockResolvedValueOnce([]);
+            mocks.returning.mockResolvedValue([]);
+            mocks.retrievals.findFirst.mockResolvedValue(winnersFailedRow);
+
+            const result = await retrievalService.requestRetrieval(
+                db,
+                TEST_USER_ID,
+                TEST_FILE_ID,
+                'bulk'
+            );
+
+            // Not `{started: [], failed: []}` — that would toast success for
+            // a file with no restore in flight.
+            expect(result).toEqual({
+                started: [],
+                failed: [{ ...winnersFailedRow, errorMessage: null }],
+            });
+            expect(restoreSpy).not.toHaveBeenCalled();
         });
     });
 
@@ -409,7 +528,7 @@ describe('retrieval service', () => {
                 'standard'
             );
 
-            expect(result).toHaveLength(2);
+            expect(result.started).toHaveLength(2);
             expect(mocks.values).toHaveBeenCalledWith(
                 expect.arrayContaining([
                     expect.objectContaining({ batchId: batch.id }),
@@ -444,7 +563,7 @@ describe('retrieval service', () => {
         });
 
         it('marks an all-standard batch ready immediately without calling RestoreObject', async () => {
-            const restoreManySpy = vi.spyOn(mockS3.glacier, 'restoreMany');
+            const restoreSpy = vi.spyOn(mockS3.glacier, 'restore');
             const batch = createUploadBatchFixture();
             const files = [
                 createFileFixture({
@@ -484,8 +603,8 @@ describe('retrieval service', () => {
                 batch.id
             );
 
-            expect(result).toHaveLength(2);
-            expect(restoreManySpy).not.toHaveBeenCalled();
+            expect(result.started).toHaveLength(2);
+            expect(restoreSpy).not.toHaveBeenCalled();
             expect(mocks.values).toHaveBeenCalledWith([
                 expect.objectContaining({ fileId: 'f1', status: 'ready' }),
                 expect.objectContaining({ fileId: 'f2', status: 'ready' }),

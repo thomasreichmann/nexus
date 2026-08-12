@@ -1,15 +1,35 @@
+import * as Sentry from '@sentry/nextjs';
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
-import { createRetrievalRepo, type Retrieval } from '@nexus/db/repo/retrievals';
+import {
+    createRetrievalRepo,
+    type Retrieval,
+    type RetrievalRepo,
+} from '@nexus/db/repo/retrievals';
 import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
+import { logger } from '@/server/lib/logger';
 import { s3 } from '@/lib/storage';
 // Value import from ./types (not the package root) so unit tests that mock
 // '@/lib/storage' don't erase the constant.
 import { DEFAULT_RESTORE_DAYS_TO_KEEP } from '@/lib/storage/types';
 import type { RestoreTier } from '@/lib/storage';
 
+const log = logger.child({ service: 'retrieval' });
+
 const DOWNLOAD_URL_EXPIRY_SECONDS = 3600; // 1 hour
+
+/**
+ * A retrieval request that reaches S3 can come back partly failed (#329),
+ * and the split is the result — callers can't read a success past it the
+ * way they could a flat row array with `failed` statuses buried inside.
+ * `started` holds every row now tracking an active restore, including rows
+ * that already existed or that a concurrent request inserted first.
+ */
+export interface RetrievalRequestResult {
+    started: Retrieval[];
+    failed: Retrieval[];
+}
 
 // `batchId` is stamped on every new row so batch-level progress can be
 // queried later; bulk callers pass null.
@@ -19,7 +39,7 @@ async function restoreFiles(
     files: File[],
     tier: RestoreTier,
     batchId: string | null
-): Promise<Retrieval[]> {
+): Promise<RetrievalRequestResult> {
     const retrievalRepo = createRetrievalRepo(db);
     const fileIds = files.map((f) => f.id);
 
@@ -37,7 +57,7 @@ async function restoreFiles(
     }
 
     if (filesToRestore.length === 0) {
-        return existingRetrievals;
+        return { started: existingRetrievals, failed: [] };
     }
 
     // A lapsed `ready` row is invisible to findByFileIds but still holds the
@@ -57,14 +77,11 @@ async function restoreFiles(
         (f) => f.storageTier === 'standard'
     );
 
-    if (archivedFiles.length > 0) {
-        await s3.glacier.restoreMany(
-            archivedFiles.map((f) => f.s3Key),
-            tier,
-            DEFAULT_RESTORE_DAYS_TO_KEEP
-        );
-    }
-
+    // Rows are written before any RestoreObject call (#329): a restore that
+    // succeeds without a row is a paid, invisible restore — its completion
+    // event finds nothing to update and gets dropped. `initiatedAt` therefore
+    // marks when the request was accepted, a moment before AWS hears about it.
+    //
     // Standard items get a synthetic window the same length as the real S3
     // restore window, so both tiers present the same ready/expiry state. It
     // is a UI concept for them — no S3 expiry event will ever fire.
@@ -98,25 +115,143 @@ async function restoreFiles(
     // A concurrent request may have won the insert for some files (the
     // unique index skips them via ON CONFLICT DO NOTHING); fetch the
     // surviving rows so every requested file still maps to a retrieval.
+    // Only the rows this call inserted get a RestoreObject below — the
+    // winner of the race is already restoring the files it took.
+    const survivors: Retrieval[] = [];
+    const failedSurvivors: Retrieval[] = [];
     if (newRetrievals.length < filesToRestore.length) {
         const insertedFileIds = new Set(newRetrievals.map((r) => r.fileId));
-        const survivors = await retrievalRepo.findByFileIds(
-            fileIdsToRestore.filter((id) => !insertedFileIds.has(id))
+        const conflictedFileIds = fileIdsToRestore.filter(
+            (id) => !insertedFileIds.has(id)
         );
-        return [...existingRetrievals, ...newRetrievals, ...survivors];
+        survivors.push(
+            ...(await retrievalRepo.findByFileIds(conflictedFileIds))
+        );
+
+        // The active-filtered lookup misses a winner whose restore already
+        // failed (`failed` is outside the active predicate). Those files
+        // must land in `failed`, not silently in neither bucket — the
+        // caller would otherwise toast success for a file with no restore
+        // in flight.
+        const survivorFileIds = new Set(survivors.map((r) => r.fileId));
+        for (const fileId of conflictedFileIds) {
+            if (survivorFileIds.has(fileId)) continue;
+            const latest = await retrievalRepo.findLatestByFileId(fileId);
+            if (!latest) {
+                log.warn(
+                    { fileId },
+                    'Insert conflicted but no retrieval row found for file'
+                );
+                continue;
+            }
+            if (latest.status === 'failed') failedSurvivors.push(latest);
+            else survivors.push(latest);
+        }
     }
 
-    return [...existingRetrievals, ...newRetrievals];
+    const { started, failed } = await restoreInserted(
+        retrievalRepo,
+        newRetrievals,
+        archivedFiles,
+        tier
+    );
+
+    return {
+        started: [...existingRetrievals, ...started, ...survivors],
+        // `errorMessage` holds raw AWS SDK text (ARNs, account ids, bucket
+        // names) for operators; it stays in the DB but must not reach the
+        // client — the mutation payload has no output schema to strip it.
+        failed: [...failed, ...failedSurvivors].map((row) => ({
+            ...row,
+            errorMessage: null,
+        })),
+    };
 }
 
-async function requestRetrieval(
+// One RestoreObject per file rather than a `Promise.all` over the whole
+// batch: a batch-wide reject is unattributable, so a single bad key would
+// leave every sibling row `pending` for a restore that did fire. Each
+// failure is caught and written to its own row, which frees that file's
+// active-unique-index slot (`failed` is outside the predicate) so a retry
+// can insert cleanly.
+async function restoreInserted(
+    retrievalRepo: RetrievalRepo,
+    newRetrievals: Retrieval[],
+    archivedFiles: File[],
+    tier: RestoreTier
+): Promise<RetrievalRequestResult> {
+    const s3KeysByFileId = new Map(archivedFiles.map((f) => [f.id, f.s3Key]));
+
+    const outcomes = await Promise.all(
+        newRetrievals.map(async (retrieval) => {
+            const s3Key = s3KeysByFileId.get(retrieval.fileId);
+            // Standard-tier rows are already `ready` and never hit S3.
+            if (!s3Key) return { ok: true, row: retrieval };
+
+            try {
+                await s3.glacier.restore(
+                    s3Key,
+                    tier,
+                    DEFAULT_RESTORE_DAYS_TO_KEEP
+                );
+                return { ok: true, row: retrieval };
+            } catch (err) {
+                // The pre-#329 batch-wide throw surfaced restore failures
+                // through the logging middleware and Sentry; caught-per-file
+                // failures must stay as loud, or a total restore outage is
+                // visible only as rows in a DB column.
+                log.error(
+                    {
+                        err,
+                        fileId: retrieval.fileId,
+                        retrievalId: retrieval.id,
+                    },
+                    'S3 restore request failed'
+                );
+                Sentry.captureException(err);
+
+                let failed: Retrieval | undefined;
+                try {
+                    failed = await retrievalRepo.updateStatus(
+                        retrieval.id,
+                        'failed',
+                        {
+                            failedAt: new Date(),
+                            errorMessage:
+                                err instanceof Error
+                                    ? err.message
+                                    : String(err),
+                        }
+                    );
+                } catch (updateErr) {
+                    // A failed failure-write must not reject the whole batch
+                    // and discard sibling restores that already fired. The
+                    // row stays `pending` (the stuck-retrieval health check
+                    // flags it), but the caller still hears `failed`.
+                    log.error(
+                        { err: updateErr, retrievalId: retrieval.id },
+                        'Failed to mark retrieval failed after restore error'
+                    );
+                    Sentry.captureException(updateErr);
+                }
+                return { ok: false, row: failed ?? retrieval };
+            }
+        })
+    );
+
+    return {
+        started: outcomes.filter((o) => o.ok).map((o) => o.row),
+        failed: outcomes.filter((o) => !o.ok).map((o) => o.row),
+    };
+}
+
+function requestRetrieval(
     db: DB,
     userId: string,
     fileId: string,
     tier: RestoreTier = 'standard'
-): Promise<Retrieval> {
-    const retrievals = await requestBulkRetrieval(db, userId, [fileId], tier);
-    return retrievals[0];
+): Promise<RetrievalRequestResult> {
+    return requestBulkRetrieval(db, userId, [fileId], tier);
 }
 
 async function requestBulkRetrieval(
@@ -124,7 +259,7 @@ async function requestBulkRetrieval(
     userId: string,
     fileIds: string[],
     tier: RestoreTier = 'standard'
-): Promise<Retrieval[]> {
+): Promise<RetrievalRequestResult> {
     const fileRepo = createFileRepo(db);
 
     const files = await fileRepo.findManyByUserAndIds(userId, fileIds);
@@ -157,7 +292,7 @@ async function requestBatchRetrieval(
     userId: string,
     batchId: string,
     tier: RestoreTier = 'standard'
-): Promise<Retrieval[]> {
+): Promise<RetrievalRequestResult> {
     const files = await findOwnedBatchFiles(db, userId, batchId);
     if (files.length === 0) {
         throw new InvalidStateError('Batch contains no files');

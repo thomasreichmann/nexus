@@ -197,6 +197,16 @@ while verifying nothing. Use-cases verified only by the manual `validate`
 tier (not run in CI) must carry a `manual` reason so that's a visible,
 deliberate decision.
 
+**Every spec must be importable with no env.** The gate lists tests with
+`E2E_VALIDATE=1 E2E_REPRO=1` so the manual tiers count toward coverage, and
+listing imports every spec file — in CI, with no `.env.local` and no
+credentials. Reading env or building a client (`createTestS3()`, a db
+connection) belongs in a fixture or a `beforeAll`, never at module scope: a
+top-level throw takes down the whole listing, so the gate fails with no
+coverage numbers at all rather than with one broken spec. Living in
+`validate/` or `repro/` is not an exemption — those tiers never _run_ in CI,
+but they are always _listed_.
+
 **Key gotchas:**
 
 - Back-door seeding goes through `@nexus/db/test-db` (typed, connection-injectable) — `createDb(url)` resolves and queries the dev DB cleanly under Playwright. Do not drop to a raw `postgres` driver or hand-written SQL; the typed insert helpers fill ids/`s3Key` so there's no manual `gen_random_uuid()`. (`@nexus/db/testing` is the unit-test surface and pulls `vitest`, so it must not be imported from e2e — that's why `test-db` is a separate, vitest-free entrypoint.)
