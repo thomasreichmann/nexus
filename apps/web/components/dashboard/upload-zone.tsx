@@ -1,7 +1,7 @@
 'use client';
 
 import type React from 'react';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -24,7 +24,13 @@ import {
     pickFilesWithHandles,
     pickedFilesFromDataTransfer,
 } from '@/lib/upload/fileSystemAccess';
-import { useUpload } from './useUpload';
+import { useUpload, type UploadStatus } from './useUpload';
+
+// Formats the browser can decode natively — RAW files (NEF/CR3/ARW/…) carry
+// an empty or opaque mime type and fall through to the plain icon tile; their
+// real thumbnails arrive server-side after upload. TIFF is image/* but most
+// browsers can't render it.
+const DECODABLE_IMAGE_TYPE = /^image\/(?!tiff)/;
 
 export function UploadZone() {
     const {
@@ -186,21 +192,10 @@ export function UploadZone() {
                                     key={file.id}
                                     className="flex items-center gap-3 rounded-lg border border-border p-3"
                                 >
-                                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                                        {file.status === 'complete' ? (
-                                            <CheckCircle className="h-5 w-5 text-green-500" />
-                                        ) : file.status === 'error' ? (
-                                            <AlertCircle className="h-5 w-5 text-destructive" />
-                                        ) : file.status === 'paused' ? (
-                                            <PauseCircle className="h-5 w-5 text-amber-500" />
-                                        ) : file.status === 'resumable' ? (
-                                            <History className="h-5 w-5 text-amber-500" />
-                                        ) : file.status === 'uploading' ? (
-                                            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                                        ) : (
-                                            <FileIcon className="h-5 w-5 text-muted-foreground" />
-                                        )}
-                                    </div>
+                                    <UploadPreviewTile
+                                        blob={file.previewFile}
+                                        status={file.status}
+                                    />
                                     <div className="flex-1 min-w-0">
                                         <p className="truncate font-medium">
                                             {file.name}
@@ -348,6 +343,88 @@ export function UploadZone() {
                         </div>
                     </CardContent>
                 </Card>
+            )}
+        </div>
+    );
+}
+
+/**
+ * The row's 10x10 leading tile. Browser-decodable files get a local blob
+ * preview in the same fixed box (no reflow, no server round-trip); the
+ * status icon keeps rendering on top of a scrim so state stays legible.
+ * Rows restored after a reload have no bytes (blob null) and keep the
+ * plain icon tile.
+ */
+function UploadPreviewTile({
+    blob,
+    status,
+}: {
+    blob?: File | null;
+    status: UploadStatus;
+}) {
+    const kind = !blob
+        ? null
+        : DECODABLE_IMAGE_TYPE.test(blob.type)
+          ? ('image' as const)
+          : blob.type.startsWith('video/')
+            ? ('video' as const)
+            : null;
+
+    const previewUrl = useMemo(
+        () => (blob && kind ? URL.createObjectURL(blob) : null),
+        [blob, kind]
+    );
+    useEffect(() => {
+        if (!previewUrl) return;
+        return () => URL.revokeObjectURL(previewUrl);
+    }, [previewUrl]);
+
+    const showStatusIcon = status !== 'pending' || !previewUrl;
+
+    return (
+        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+            {previewUrl && kind === 'image' && (
+                // Local blob URL — next/image has nothing to optimize here.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                    src={previewUrl}
+                    alt=""
+                    draggable={false}
+                    className="absolute inset-0 size-full object-cover"
+                />
+            )}
+            {previewUrl && kind === 'video' && (
+                // First frame as a still: metadata preload paints it, nothing
+                // ever plays.
+                <video
+                    src={previewUrl}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    className="absolute inset-0 size-full object-cover"
+                />
+            )}
+            {showStatusIcon && (
+                <>
+                    {previewUrl && (
+                        <div className="absolute inset-0 bg-black/45" />
+                    )}
+                    <span className="relative">
+                        {status === 'complete' ? (
+                            <CheckCircle className="h-5 w-5 text-green-500" />
+                        ) : status === 'error' ? (
+                            <AlertCircle className="h-5 w-5 text-destructive" />
+                        ) : status === 'paused' ? (
+                            <PauseCircle className="h-5 w-5 text-amber-500" />
+                        ) : status === 'resumable' ? (
+                            <History className="h-5 w-5 text-amber-500" />
+                        ) : status === 'uploading' ? (
+                            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        ) : (
+                            <FileIcon className="h-5 w-5 text-muted-foreground" />
+                        )}
+                    </span>
+                </>
             )}
         </div>
     );

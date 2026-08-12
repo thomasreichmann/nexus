@@ -1,13 +1,19 @@
 # Env var mapping — prod values go to the Vercel Production tier (#291), dev
 # values to Preview + Development and the GitHub Actions secrets (#127):
-#   S3_BUCKET     <- s3_bucket
-#   AWS_REGION    <- aws_region
-#   SQS_QUEUE_URL <- sqs_queue_url
+#   S3_BUCKET         <- s3_bucket
+#   S3_DERIVED_BUCKET <- s3_derived_bucket
+#   AWS_REGION        <- aws_region
+#   SQS_QUEUE_URL     <- sqs_queue_url
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY <- manual access key on app_iam_user
 
 output "s3_bucket" {
   description = "Files bucket name -> Vercel S3_BUCKET"
   value       = aws_s3_bucket.files.bucket
+}
+
+output "s3_derived_bucket" {
+  description = "Derived (thumbnails) bucket name -> Vercel S3_DERIVED_BUCKET"
+  value       = aws_s3_bucket.derived.bucket
 }
 
 output "aws_region" {

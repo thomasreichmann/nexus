@@ -27,6 +27,11 @@ vi.mock('@/server/services/email', () => ({
     emailService: { sendRetrievalReadyEmail: hoisted.sendRetrievalReadyEmail },
 }));
 
+vi.mock('@/lib/jobs', () => ({
+    jobs: { publish: vi.fn() },
+}));
+
+import { jobs } from '@/lib/jobs';
 import { s3RestoreService } from './s3-restore';
 
 const RESTORE_EXPIRY = '2026-07-10T12:00:00.000Z';
@@ -119,6 +124,41 @@ describe('s3RestoreService.dispatch', () => {
             );
 
             expect(handled).toBe(true);
+            expect(hoisted.sendRetrievalReadyEmail).not.toHaveBeenCalled();
+        });
+
+        it('enqueues thumbnail regeneration for a cold-missed thumbnail', async () => {
+            mockDb.mocks.files.findFirst.mockResolvedValue(
+                createFileFixture({ thumbnailStatus: 'failed_cold' })
+            );
+
+            await s3RestoreService.dispatch(mockDb.db, makeRecord());
+
+            expect(jobs.publish).toHaveBeenCalledWith(mockDb.db, {
+                type: 'generate-thumbnail',
+                payload: { fileId: TEST_FILE_ID },
+            });
+        });
+
+        it('does not enqueue regeneration when the thumbnail was not cold-missed', async () => {
+            await s3RestoreService.dispatch(mockDb.db, makeRecord());
+
+            expect(jobs.publish).not.toHaveBeenCalled();
+        });
+
+        it('self-heals even when the restore has no retrieval row', async () => {
+            mockDb.mocks.files.findFirst.mockResolvedValue(
+                createFileFixture({ thumbnailStatus: 'failed_cold' })
+            );
+            mockDb.mocks.retrievals.findFirst.mockResolvedValue(undefined);
+
+            const handled = await s3RestoreService.dispatch(
+                mockDb.db,
+                makeRecord()
+            );
+
+            expect(handled).toBe(true);
+            expect(jobs.publish).toHaveBeenCalledOnce();
             expect(hoisted.sendRetrievalReadyEmail).not.toHaveBeenCalled();
         });
     });

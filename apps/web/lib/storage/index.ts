@@ -1,4 +1,5 @@
 import * as presigned from './presigned';
+import * as derived from './derived';
 import * as glacier from './glacier';
 import * as objects from './objects';
 import * as multipart from './multipart';
@@ -24,6 +25,7 @@ import * as multipart from './multipart';
  */
 export const s3 = {
     presigned,
+    derived,
     glacier,
     objects,
     multipart,

@@ -25,13 +25,14 @@ Operational guide for the SQS + Lambda background job infrastructure. For develo
 
 One set per environment, in `us-east-1`, account `391615358272`, suffixed `-dev` / `-prod` (exact definitions: `infra/terraform/sqs.tf`, `lambda.tf`):
 
-| Resource              | Name pattern                                                      |
-| --------------------- | ----------------------------------------------------------------- |
-| SQS Queue             | `nexus-jobs-<env>` (visibility timeout 60s, 3 retries → DLQ)      |
-| SQS Dead Letter Queue | `nexus-jobs-dlq-<env>`                                            |
-| Lambda Function       | `nexus-worker-<env>` (Node 22, 30s timeout, 256 MB, batch size 1) |
-| IAM Role (Lambda)     | `nexus-worker-role-<env>` (SQS consume, S3 CRUD, CloudWatch Logs) |
-| IAM Policy (SQS user) | `nexus-sqs-access-<env>` (inline on the `nexus-app-<env>` user)   |
+| Resource              | Name pattern                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------------- |
+| SQS Queue             | `nexus-jobs-<env>` (visibility timeout 720s, 3 retries → DLQ)                               |
+| SQS Dead Letter Queue | `nexus-jobs-dlq-<env>` (depth > 0 alarms → Discord, `alarms.tf`)                            |
+| Lambda Function       | `nexus-worker-<env>` (Node 22, 120s timeout, 1 GB, batch size 1, ffmpeg + exiftool layers)  |
+| Lambda Layers         | `nexus-ffmpeg-<env>`, `nexus-exiftool-<env>` (`layers.tf`; built by `lambda-layers.yml` CI) |
+| IAM Role (Lambda)     | `nexus-worker-role-<env>` (SQS consume, S3 CRUD, derived-bucket Put/Get, CloudWatch Logs)   |
+| IAM Policy (SQS user) | `nexus-sqs-access-<env>` (inline on the `nexus-app-<env>` user)                             |
 
 The examples below use dev (`nexus-worker-dev`, `nexus-jobs-dev`, …); substitute `-prod` to operate on prod.
 
@@ -60,7 +61,30 @@ aws lambda get-function --function-name nexus-worker-dev --region us-east-1 \
 
 ## Lambda Environment Variables
 
-The Lambda environment (`DATABASE_URL`) is Terraform-managed — change it with a `terraform apply` (`TF_VAR_database_url`), never `aws lambda update-function-configuration`, which Terraform would revert on the next apply.
+The Lambda environment (`DATABASE_URL`, `S3_BUCKET`, `S3_DERIVED_BUCKET`) is Terraform-managed — change it with a `terraform apply` (`TF_VAR_database_url`), never `aws lambda update-function-configuration`, which Terraform would revert on the next apply.
+
+## Lambda Layers (ffmpeg, perl/exiftool)
+
+The `generate-thumbnail` handler shells out to binaries mounted from two
+Terraform-owned layers (`infra/terraform/layers.tf`). The zips are built
+reproducibly from pinned upstream sources by the `lambda-layers.yml` workflow
+(scripts in `tooling/lambda-layers/`) and flow to the Lambda via the
+`nexus-lambda-artifacts-<env>` bucket:
+
+```bash
+# 1. Download the zips from the latest lambda-layers workflow run
+gh run download -n ffmpeg-layer -n exiftool-layer -D /tmp/layers
+
+# 2. Sync them into the environment's artifacts bucket
+infra/terraform/scripts/upload-layers.sh dev /tmp/layers
+
+# 3. Publish the layer versions + attach to the worker
+terraform apply -var-file=environments/dev.tfvars
+```
+
+Version bumps change the pins in `tooling/lambda-layers/*.sh` AND the
+matching locals in `infra/terraform/layers.tf` (the s3 key embeds the
+versions, so a mismatched apply fails fast on a missing object).
 
 ## Inspect Dead Letter Queue
 

@@ -1,9 +1,10 @@
 /** Supported background job types */
-export type JobType = 'delete-account';
+export type JobType = 'delete-account' | 'generate-thumbnail';
 
 /** Payload shapes per job type */
 export interface JobPayloadMap {
     'delete-account': { userId: string };
+    'generate-thumbnail': { fileId: string };
 }
 
 /** Type-safe job input — ensures payload matches the job type */

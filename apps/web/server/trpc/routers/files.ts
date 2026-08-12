@@ -194,6 +194,18 @@ export const filesRouter = router({
             );
         }),
 
+    getThumbnailUrls: protectedProcedure
+        .input(
+            z.object({ fileIds: z.array(z.string().uuid()).min(1).max(100) })
+        )
+        .query(({ ctx, input }) => {
+            return fileService.getThumbnailUrls(
+                ctx.db,
+                ctx.session.user.id,
+                input.fileIds
+            );
+        }),
+
     multipart: router({
         init: protectedProcedure
             .input(uploadInputSchema)

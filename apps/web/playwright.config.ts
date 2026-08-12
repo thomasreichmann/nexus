@@ -154,7 +154,10 @@ export default defineConfig({
         url: BASE_URL,
         reuseExistingServer: false,
         timeout: 240_000,
-        env: { E2E: '1' },
+        // S3_DERIVED_BUCKET is synthetic: presigning is local HMAC (no AWS
+        // round-trip), and the thumbnails spec fulfills this bucket's image
+        // requests via page.route — no real derived bucket needed in e2e.
+        env: { E2E: '1', S3_DERIVED_BUCKET: 'e2e-derived-bucket' },
         stdout: 'pipe',
         stderr: 'pipe',
     },

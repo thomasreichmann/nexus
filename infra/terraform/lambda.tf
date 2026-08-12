@@ -33,18 +33,27 @@ resource "aws_iam_role_policy" "worker_s3" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "s3:PutObject",
-        "s3:GetObject",
-        "s3:DeleteObject",
-        "s3:ListBucket",
-        "s3:RestoreObject",
-        "s3:GetObjectAttributes",
-      ]
-      Resource = [aws_s3_bucket.files.arn, "${aws_s3_bucket.files.arn}/*"]
-    }]
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:RestoreObject",
+          "s3:GetObjectAttributes",
+        ]
+        Resource = [aws_s3_bucket.files.arn, "${aws_s3_bucket.files.arn}/*"]
+      },
+      {
+        # Thumbnail writes (generate-thumbnail job) + reads for idempotent
+        # regeneration checks.
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:GetObject"]
+        Resource = "${aws_s3_bucket.derived.arn}/*"
+      },
+    ]
   })
 }
 
@@ -84,20 +93,34 @@ data "archive_file" "worker_stub" {
   }
 }
 
+# Sizing (1GB/120s) is driven by the generate-thumbnail job — ffmpeg decode
+# of a poster frame plus exiftool extraction — and applies function-wide to
+# all job types; at our volume the difference is fractions of a cent. A
+# future split is mechanical (second function + second queue), NOT SQS
+# event-source-mapping filters, which silently delete non-matching messages.
 resource "aws_lambda_function" "worker" {
   function_name = "nexus-worker-${var.environment}"
   role          = aws_iam_role.worker.arn
   runtime       = "nodejs22.x"
   handler       = "handler.handler"
-  timeout       = 30
-  memory_size   = 256
+  timeout       = 120
+  memory_size   = 1024
 
   filename         = data.archive_file.worker_stub.output_path
   source_code_hash = data.archive_file.worker_stub.output_base64sha256
 
+  # ffmpeg + perl/exiftool binaries mount under /opt (see layers.tf).
+  layers = [
+    aws_lambda_layer_version.ffmpeg.arn,
+    aws_lambda_layer_version.exiftool.arn,
+  ]
+
   environment {
     variables = {
       DATABASE_URL = var.database_url
+      # AWS_REGION is reserved and set by the Lambda runtime itself.
+      S3_BUCKET         = aws_s3_bucket.files.bucket
+      S3_DERIVED_BUCKET = aws_s3_bucket.derived.bucket
     }
   }
 

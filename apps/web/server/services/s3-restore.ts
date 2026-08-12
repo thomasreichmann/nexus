@@ -3,6 +3,7 @@ import { createFileRepo, type File } from '@nexus/db/repo/files';
 import { createRetrievalRepo, type Retrieval } from '@nexus/db/repo/retrievals';
 import { env } from '@/lib/env';
 import { emailService } from '@/server/services/email';
+import { enqueueThumbnailGeneration } from '@/server/services/thumbnails';
 import { logger } from '@/server/lib/logger';
 import type { S3EventRecord } from '@/lib/sns/types';
 import { PostHogEvent } from '@/lib/posthog/events';
@@ -39,44 +40,66 @@ function decodeS3Key(record: S3EventRecord): string {
     return decodeURIComponent(record.s3.object.key.replace(/\+/g, ' '));
 }
 
-async function resolveRetrieval(
+async function findFileForRecord(
     db: DB,
     record: S3EventRecord,
     context: string
-): Promise<{ file: File; retrieval: Retrieval } | null> {
-    const fileRepo = createFileRepo(db);
-    const retrievalRepo = createRetrievalRepo(db);
-
+): Promise<File | null> {
     const s3Key = decodeS3Key(record);
-    const file = await fileRepo.findByS3Key(s3Key);
+    const file = await createFileRepo(db).findByS3Key(s3Key);
     if (!file) {
         log.warn({ s3Key }, `${context} for unknown file`);
         return null;
     }
+    return file;
+}
 
-    // Unfiltered lookup: the expiry event arrives at/after `expiresAt`, when
-    // the active-filtered queries no longer see the row.
-    const retrieval = await retrievalRepo.findLatestByFileId(file.id);
+// Unfiltered lookup: the expiry event arrives at/after `expiresAt`, when
+// the active-filtered queries no longer see the row.
+async function findLatestRetrieval(
+    db: DB,
+    file: File,
+    context: string
+): Promise<Retrieval | null> {
+    const retrieval = await createRetrievalRepo(db).findLatestByFileId(file.id);
     if (!retrieval) {
         log.warn(
-            { fileId: file.id, s3Key },
+            { fileId: file.id, s3Key: file.s3Key },
             `No active retrieval for ${context}`
         );
         return null;
     }
+    return retrieval;
+}
 
-    return { file, retrieval };
+// A cold-missed thumbnail (failed_cold) self-heals on ANY completed restore:
+// the temporary Standard-class copy is readable, so regeneration succeeds
+// without a restore round-trip of its own. Enqueue failures are swallowed
+// (in the shared helper) — restore handling must proceed regardless.
+async function regenerateColdThumbnail(db: DB, file: File): Promise<void> {
+    if (file.thumbnailStatus !== 'failed_cold') return;
+
+    if (await enqueueThumbnailGeneration(db, file.id)) {
+        log.info(
+            { fileId: file.id },
+            'Enqueued thumbnail regeneration after restore'
+        );
+    }
 }
 
 async function handleRestoreCompleted(
     db: DB,
     record: S3EventRecord
 ): Promise<void> {
-    const result = await resolveRetrieval(db, record, 'restore completed');
-    if (!result) return;
+    const file = await findFileForRecord(db, record, 'restore completed');
+    if (!file) return;
 
-    const { file, retrieval } = result;
-    const retrievalRepo = createRetrievalRepo(db);
+    // Before the retrieval gate: the self-heal applies whenever the object
+    // was restored, even outside the app's retrieval flow.
+    await regenerateColdThumbnail(db, file);
+
+    const retrieval = await findLatestRetrieval(db, file, 'restore completed');
+    if (!retrieval) return;
     const now = new Date();
     const expiresAt = record.glacierEventData?.restoreEventData
         ?.lifecycleRestorationExpiryTime
@@ -86,7 +109,7 @@ async function handleRestoreCompleted(
           )
         : undefined;
 
-    await retrievalRepo.updateStatus(retrieval.id, 'ready', {
+    await createRetrievalRepo(db).updateStatus(retrieval.id, 'ready', {
         readyAt: now,
         expiresAt,
     });
@@ -154,12 +177,13 @@ async function handleRestoreExpired(
     db: DB,
     record: S3EventRecord
 ): Promise<void> {
-    const result = await resolveRetrieval(db, record, 'restore expiry');
-    if (!result) return;
+    const file = await findFileForRecord(db, record, 'restore expiry');
+    if (!file) return;
 
-    const { file, retrieval } = result;
-    const retrievalRepo = createRetrievalRepo(db);
-    await retrievalRepo.updateStatus(retrieval.id, 'expired');
+    const retrieval = await findLatestRetrieval(db, file, 'restore expiry');
+    if (!retrieval) return;
+
+    await createRetrievalRepo(db).updateStatus(retrieval.id, 'expired');
 
     log.info(
         { fileId: file.id, retrievalId: retrieval.id },

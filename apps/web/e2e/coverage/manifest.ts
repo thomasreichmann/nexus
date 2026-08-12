@@ -302,6 +302,12 @@ export const USE_CASES: UseCaseEntry[] = [
         area: 'files',
         routes: ['/dashboard/files'],
     },
+    {
+        id: 'files-thumbnails',
+        title: 'Ready thumbnails render in list + grid (icon fallback otherwise), video duration badge',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
 
     /* ---------------------------------------------------------------- */
     /* Upload                                                            */

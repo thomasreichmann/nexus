@@ -83,6 +83,30 @@ const url = await s3.presigned.get('files/report.pdf', {
 });
 ```
 
+### Derived Bucket (thumbnails)
+
+Presigned reads against the Standard-class derived bucket
+(`S3_DERIVED_BUCKET`), where the worker writes thumbnails (#350). Keys come
+from `thumbnailKey()` in `@nexus/db/repo/files` — a pure function of the file
+row, never stored.
+
+#### `s3.derived.isConfigured()`
+
+`true` when `S3_DERIVED_BUCKET` is set. The env var is optional (rollout
+ordering); callers must gate on this and degrade to icon fallbacks.
+
+#### `s3.derived.get(key, options?)`
+
+| Option      | Type     | Default | Description                        |
+| ----------- | -------- | ------- | ---------------------------------- |
+| `expiresIn` | `number` | 3600    | URL expiration in seconds (1 hour) |
+
+```typescript
+if (s3.derived.isConfigured()) {
+    const url = await s3.derived.get(thumbnailKey(file));
+}
+```
+
 ### Glacier Operations
 
 #### `s3.glacier.restore(key, tier, daysToKeep?)`

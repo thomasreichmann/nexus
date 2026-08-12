@@ -41,6 +41,20 @@ export function formatRelativeTimeCompact(date: Date | string): string {
 }
 
 /**
+ * Video duration badge copy: "m:ss", growing to "h:mm:ss" past an hour.
+ */
+export function formatDuration(totalSeconds: number): string {
+    const total = Math.max(0, Math.round(totalSeconds));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return hours > 0
+        ? `${hours}:${pad(minutes)}:${pad(seconds)}`
+        : `${minutes}:${pad(seconds)}`;
+}
+
+/**
  * Download-window copy for a ready retrieval, identical for both storage
  * tiers: standard fast-path rows carry a synthetic expiresAt, Deep Archive
  * rows the real S3 restore expiry (#257). Null when there is no window to

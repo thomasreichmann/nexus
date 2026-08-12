@@ -70,20 +70,32 @@ production code.
    real worker per `docs/guides/background-jobs.md`, with
    `--function-name nexus-worker-<env> --region us-east-1`. Later applies
    won't touch the deployed code (`ignore_changes` on the package), but the
-   Lambda's environment (`DATABASE_URL`) **is** Terraform-managed — update it
-   here, not with `aws lambda update-function-configuration`.
+   Lambda's environment (`DATABASE_URL`, `S3_BUCKET`, `S3_DERIVED_BUCKET`)
+   **is** Terraform-managed — update it here, not with
+   `aws lambda update-function-configuration`.
 
-3. **Env vars** from `terraform output` — prod values go to the Vercel
+3. **Lambda layers** — `layers.tf` publishes the worker's ffmpeg and
+   perl/exiftool layers from zips in the `nexus-lambda-artifacts-<env>`
+   bucket. Before the first apply (and after any version bump), build them
+   in CI (`lambda-layers.yml`) and sync:
+
+    ```bash
+    gh run download -n ffmpeg-layer -n exiftool-layer -D /tmp/layers
+    ./scripts/upload-layers.sh <env> /tmp/layers
+    ```
+
+4. **Env vars** from `terraform output` — prod values go to the Vercel
    Production tier (#291), dev values to Preview + Development (and GitHub
    Actions secrets `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`S3_BUCKET`/
    `SQS_QUEUE_URL`, which are dev-scoped):
 
-    | Var                                           | Source                 |
-    | --------------------------------------------- | ---------------------- |
-    | `S3_BUCKET`                                   | `s3_bucket` output     |
-    | `AWS_REGION`                                  | `aws_region` output    |
-    | `SQS_QUEUE_URL`                               | `sqs_queue_url` output |
-    | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1 |
+    | Var                                           | Source                     |
+    | --------------------------------------------- | -------------------------- |
+    | `S3_BUCKET`                                   | `s3_bucket` output         |
+    | `S3_DERIVED_BUCKET`                           | `s3_derived_bucket` output |
+    | `AWS_REGION`                                  | `aws_region` output        |
+    | `SQS_QUEUE_URL`                               | `sqs_queue_url` output     |
+    | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1     |
 
 ## Destroy
 
