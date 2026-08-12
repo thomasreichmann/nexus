@@ -1,4 +1,8 @@
 # Background-jobs queues — spec: docs/guides/background-jobs.md
+#
+# Deliberately no prevent_destroy (unlike the files bucket): these buffer
+# in-flight messages rather than store data, and the bucket's guard already
+# fails a blanket destroy at plan time before any queue is reached.
 
 resource "aws_sqs_queue" "jobs_dlq" {
   name = "nexus-jobs-dlq-${var.environment}"
