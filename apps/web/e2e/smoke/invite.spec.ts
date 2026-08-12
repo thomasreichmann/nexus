@@ -11,15 +11,13 @@ import {
     deleteUserByEmail,
     type Invite,
 } from '@nexus/db/test-db';
-import { ADMIN_USER } from '../helpers/auth';
+import { ADMIN_USER, uniqueTestEmail } from '../helpers/auth';
 import { createTestDb } from '../helpers/connection';
 import { setupConsoleErrorTracking } from '../utils';
 
 // Unique per run so a crashed previous run can't collide; cleaned in afterAll.
-// The pid guards against cross-worker Date.now() collisions — see the note in
-// auth-flows.spec.ts (another worker's afterAll would delete this user).
-const SIGNUP_EMAIL = `sponsored-e2e-${Date.now()}-${process.pid}@test.local`;
-const BOUND_EMAIL = `invite-bound-e2e-${Date.now()}-${process.pid}@test.local`;
+const SIGNUP_EMAIL = uniqueTestEmail('sponsored-e2e');
+const BOUND_EMAIL = uniqueTestEmail('invite-bound-e2e');
 const SIGNUP_PASSWORD = 'sponsored-e2e-password-123';
 
 test.describe('invite redemption', () => {

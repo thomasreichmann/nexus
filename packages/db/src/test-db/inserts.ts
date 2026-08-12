@@ -155,6 +155,35 @@ export async function insertInvite(
     return invite!;
 }
 
+export interface PasswordResetTokenOptions {
+    userId: string;
+    token: string;
+    /**
+     * Explicit on purpose: this package can't import the app's TTL constant,
+     * and a default here would be a second copy of it that silently goes stale.
+     */
+    expiresAt: Date;
+}
+
+/**
+ * Plants a password-reset token exactly as BetterAuth's
+ * `/request-password-reset` would (`verification.identifier` is prefixed,
+ * `value` holds the user id). E2E can't read the token out of the real email —
+ * the reset mail never sends against a placeholder Resend key — so specs seed
+ * it here and drive `/reset-password?token=` directly.
+ */
+export async function insertPasswordResetToken(
+    db: DB,
+    opts: PasswordResetTokenOptions
+): Promise<void> {
+    await db.insert(schema.verification).values({
+        id: crypto.randomUUID(),
+        identifier: `reset-password:${opts.token}`,
+        value: opts.userId,
+        expiresAt: opts.expiresAt,
+    });
+}
+
 export async function insertJob(
     db: DB,
     overrides: Partial<Job> = {}

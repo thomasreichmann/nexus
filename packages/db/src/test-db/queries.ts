@@ -103,6 +103,22 @@ export async function deleteInviteByToken(
 }
 
 /**
+ * Clears a seeded password-reset token. `verification` has no FK to `user`, so
+ * deleting the user leaves the row behind — specs that seed a token clean it up
+ * here. Keyed on the token, not the user, so it can't take out the other row
+ * kinds that share the table (email verification, 2FA). A completed reset
+ * consumes its own row, making this a no-op.
+ */
+export async function deletePasswordResetToken(
+    db: DB,
+    token: string
+): Promise<void> {
+    await db
+        .delete(schema.verification)
+        .where(eq(schema.verification.identifier, `reset-password:${token}`));
+}
+
+/**
  * Upserts the user's subscription to a fresh trial. Used by global setup (the
  * shared e2e users are reused across runs and may pre-date the signup trial
  * hook) and as the `afterEach` reset for specs that flip to paid via

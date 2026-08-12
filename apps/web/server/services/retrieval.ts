@@ -7,6 +7,7 @@ import {
     type RetrievalRepo,
 } from '@nexus/db/repo/retrievals';
 import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
+import { toErrorMessage } from '@/lib/errors';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { logger } from '@/server/lib/logger';
 import { s3 } from '@/lib/storage';
@@ -217,10 +218,7 @@ async function restoreInserted(
                         'failed',
                         {
                             failedAt: new Date(),
-                            errorMessage:
-                                err instanceof Error
-                                    ? err.message
-                                    : String(err),
+                            errorMessage: toErrorMessage(err),
                         }
                     );
                 } catch (updateErr) {

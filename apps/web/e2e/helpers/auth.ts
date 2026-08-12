@@ -1,4 +1,9 @@
-import { request as pwRequest, type APIRequestContext } from '@playwright/test';
+import {
+    expect,
+    request as pwRequest,
+    type APIRequestContext,
+    type Page,
+} from '@playwright/test';
 import type { Connection } from '@nexus/db/test-db';
 import {
     findUserByEmail,
@@ -34,6 +39,35 @@ export const REGULAR_USER: TestUser = {
 
 export const ADMIN_STATE_PATH = 'e2e/.auth/admin.json';
 export const USER_STATE_PATH = 'e2e/.auth/user.json';
+
+/**
+ * Builds a throwaway address for a spec that signs up its own user.
+ *
+ * The pid matters: `fullyParallel` spreads a file's tests across workers and
+ * runs `afterAll` in each of them. Workers spawn together, so `Date.now()`
+ * alone can collide across them — and then one worker's cleanup
+ * cascade-deletes another worker's user (and its session) mid-test.
+ */
+export function uniqueTestEmail(prefix: string): string {
+    return `${prefix}-${Date.now()}-${process.pid}@test.local`;
+}
+
+/**
+ * Signs up through the UI and waits for the dashboard. Use when the test needs
+ * a real browser session; `createUser` is the API back door for when it only
+ * needs the account to exist.
+ */
+export async function signUpViaUi(
+    page: Page,
+    testUser: TestUser
+): Promise<void> {
+    await page.goto('/sign-up');
+    await page.getByLabel('Name').fill(testUser.name);
+    await page.getByLabel('Email').fill(testUser.email);
+    await page.getByLabel('Password').fill(testUser.password);
+    await page.getByRole('button', { name: 'Create account' }).click();
+    await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+}
 
 /**
  * Create a user via the BetterAuth sign-up API (which also writes the `account`

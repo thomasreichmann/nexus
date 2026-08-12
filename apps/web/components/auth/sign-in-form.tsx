@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { GoogleIcon } from '@/components/icons/google-icon';
+import { FormError } from '@/components/auth/form-feedback';
 import { OAuthDivider } from '@/components/auth/oauth-divider';
 import { signIn } from '@/lib/auth/client';
 import { DEFAULT_REDIRECT } from '@/lib/auth/sanitizeRedirect';
@@ -74,14 +75,7 @@ export function SignInForm({ redirectTo = DEFAULT_REDIRECT }: SignInFormProps) {
             <OAuthDivider />
 
             <form onSubmit={onSubmit} className="space-y-4">
-                {error && (
-                    <div
-                        role="alert"
-                        className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
-                    >
-                        {error}
-                    </div>
-                )}
+                {error && <FormError>{error}</FormError>}
                 <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
                     <Input
@@ -98,7 +92,7 @@ export function SignInForm({ redirectTo = DEFAULT_REDIRECT }: SignInFormProps) {
                     <div className="flex items-center justify-between">
                         <Label htmlFor="password">Password</Label>
                         <Link
-                            href="#"
+                            href="/forgot-password"
                             className="text-xs text-muted-foreground hover:text-primary"
                         >
                             Forgot password?
