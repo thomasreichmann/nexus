@@ -1,6 +1,7 @@
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
 import { createRetrievalRepo, type Retrieval } from '@nexus/db/repo/retrievals';
+import { alerts } from '@/lib/alerts';
 import { env } from '@/lib/env';
 import { emailService } from '@/server/services/email';
 import { logger } from '@/server/lib/logger';
@@ -56,10 +57,20 @@ async function resolveRetrieval(
     // the active-filtered queries no longer see the row.
     const retrieval = await retrievalRepo.findLatestByFileId(file.id);
     if (!retrieval) {
-        log.warn(
-            { fileId: file.id, s3Key },
-            `No active retrieval for ${context}`
-        );
+        // Rows are written before the restore is requested (#329), so a file
+        // with an S3 restore event and no retrieval row at all means a paid
+        // restore nothing is tracking — alert rather than drop it in a log.
+        await alerts.send({
+            severity: 'error',
+            title: 'S3 restore event with no retrieval row',
+            message: `A ${context} event arrived for a file that has no retrieval record; the restore is untracked and the event was dropped.`,
+            context: {
+                source: 's3-restore',
+                eventType: record.eventName,
+                fileId: file.id,
+                s3Key,
+            },
+        });
         return null;
     }
 

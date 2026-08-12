@@ -1,6 +1,10 @@
 import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
-import { createRetrievalRepo, type Retrieval } from '@nexus/db/repo/retrievals';
+import {
+    createRetrievalRepo,
+    type Retrieval,
+    type RetrievalRepo,
+} from '@nexus/db/repo/retrievals';
 import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
@@ -57,14 +61,11 @@ async function restoreFiles(
         (f) => f.storageTier === 'standard'
     );
 
-    if (archivedFiles.length > 0) {
-        await s3.glacier.restoreMany(
-            archivedFiles.map((f) => f.s3Key),
-            tier,
-            DEFAULT_RESTORE_DAYS_TO_KEEP
-        );
-    }
-
+    // Rows are written before any RestoreObject call (#329): a restore that
+    // succeeds without a row is a paid, invisible restore — its completion
+    // event finds nothing to update and gets dropped. `initiatedAt` therefore
+    // marks when the request was accepted, a moment before AWS hears about it.
+    //
     // Standard items get a synthetic window the same length as the real S3
     // restore window, so both tiers present the same ready/expiry state. It
     // is a UI concept for them — no S3 expiry event will ever fire.
@@ -98,15 +99,67 @@ async function restoreFiles(
     // A concurrent request may have won the insert for some files (the
     // unique index skips them via ON CONFLICT DO NOTHING); fetch the
     // surviving rows so every requested file still maps to a retrieval.
+    // Only the rows this call inserted get a RestoreObject below — the
+    // winner of the race is already restoring the files it took.
+    let survivors: Retrieval[] = [];
     if (newRetrievals.length < filesToRestore.length) {
         const insertedFileIds = new Set(newRetrievals.map((r) => r.fileId));
-        const survivors = await retrievalRepo.findByFileIds(
+        survivors = await retrievalRepo.findByFileIds(
             fileIdsToRestore.filter((id) => !insertedFileIds.has(id))
         );
-        return [...existingRetrievals, ...newRetrievals, ...survivors];
     }
 
-    return [...existingRetrievals, ...newRetrievals];
+    const restored = await restoreInserted(
+        retrievalRepo,
+        newRetrievals,
+        archivedFiles,
+        tier
+    );
+
+    return [...existingRetrievals, ...restored, ...survivors];
+}
+
+// One RestoreObject per file rather than a `Promise.all` over the whole
+// batch: a batch-wide reject is unattributable, so a single bad key would
+// leave every sibling row `pending` for a restore that did fire. Each
+// failure is caught and written to its own row, which frees that file's
+// active-unique-index slot (`failed` is outside the predicate) so a retry
+// can insert cleanly.
+async function restoreInserted(
+    retrievalRepo: RetrievalRepo,
+    newRetrievals: Retrieval[],
+    archivedFiles: File[],
+    tier: RestoreTier
+): Promise<Retrieval[]> {
+    const s3KeysByFileId = new Map(archivedFiles.map((f) => [f.id, f.s3Key]));
+
+    return Promise.all(
+        newRetrievals.map(async (retrieval) => {
+            const s3Key = s3KeysByFileId.get(retrieval.fileId);
+            // Standard-tier rows are already `ready` and never hit S3.
+            if (!s3Key) return retrieval;
+
+            try {
+                await s3.glacier.restore(
+                    s3Key,
+                    tier,
+                    DEFAULT_RESTORE_DAYS_TO_KEEP
+                );
+                return retrieval;
+            } catch (err) {
+                const failed = await retrievalRepo.updateStatus(
+                    retrieval.id,
+                    'failed',
+                    {
+                        failedAt: new Date(),
+                        errorMessage:
+                            err instanceof Error ? err.message : String(err),
+                    }
+                );
+                return failed ?? retrieval;
+            }
+        })
+    );
 }
 
 async function requestRetrieval(

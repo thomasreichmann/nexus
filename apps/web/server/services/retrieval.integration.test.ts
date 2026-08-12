@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import {
     createDb,
     insertUser,
@@ -9,6 +9,21 @@ import {
 } from '@nexus/db/test-db';
 import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
 import { InvalidStateError } from '@/server/errors';
+
+// The database is real; only AWS is faked, so the restore-failure test below
+// exercises the actual unique index and status columns.
+const s3Mocks = vi.hoisted(() => ({
+    restore: vi.fn(),
+    presignedGet: vi.fn(),
+}));
+
+vi.mock('@/lib/storage', () => ({
+    s3: {
+        glacier: { restore: s3Mocks.restore },
+        presigned: { get: s3Mocks.presignedGet },
+    },
+}));
+
 import { retrievalService } from './retrieval';
 
 // Exercises the active-retrieval predicate against a real database: `ready`
@@ -173,5 +188,64 @@ describe('one active retrieval per file (#266)', () => {
         expect(skipped).toEqual([]);
         const active = await repo.findByFileIds([file.id]);
         expect(active.map((r) => r.id)).toEqual([winner.id]);
+    });
+});
+
+describe('partial S3 restore failure (#329)', () => {
+    it('records every file first, then fails only the file AWS rejected', async () => {
+        const [restored, rejected] = await Promise.all([
+            insertFile(db, { userId, storageTier: 'deep_archive' }),
+            insertFile(db, { userId, storageTier: 'deep_archive' }),
+        ]);
+        s3Mocks.restore.mockImplementation(async (key: string) => {
+            if (key === rejected.s3Key) throw new Error('AWS throttled');
+        });
+
+        const retrievals = await retrievalService.requestBulkRetrieval(
+            db,
+            userId,
+            [restored.id, rejected.id],
+            'bulk'
+        );
+
+        // The batch resolves rather than throwing: the succeeded restore is
+        // real and paid for, so its row has to survive the sibling's failure.
+        const byFileId = new Map(retrievals.map((r) => [r.fileId, r]));
+        expect(byFileId.get(restored.id)?.status).toBe('pending');
+        expect(byFileId.get(rejected.id)?.status).toBe('failed');
+        expect(byFileId.get(rejected.id)?.errorMessage).toBe('AWS throttled');
+        expect(byFileId.get(rejected.id)?.failedAt).toBeInstanceOf(Date);
+
+        // One RestoreObject per file, and no restore fired for a file that
+        // ended up without a row.
+        expect(s3Mocks.restore).toHaveBeenCalledTimes(2);
+
+        const repo = createRetrievalRepo(db);
+        const persisted = await repo.findByUser(userId);
+        const persistedById = new Map(persisted.map((r) => [r.id, r]));
+        expect(persistedById.get(byFileId.get(restored.id)!.id)?.status).toBe(
+            'pending'
+        );
+        expect(persistedById.get(byFileId.get(rejected.id)!.id)?.status).toBe(
+            'failed'
+        );
+
+        // `failed` sits outside the active partial unique index, so the row
+        // no longer holds the file's slot and a retry inserts cleanly.
+        const stillActive = await repo.findByFileIds([
+            restored.id,
+            rejected.id,
+        ]);
+        expect(stillActive.map((r) => r.fileId)).toEqual([restored.id]);
+
+        s3Mocks.restore.mockImplementation(async () => {});
+        const retry = await retrievalService.requestRetrieval(
+            db,
+            userId,
+            rejected.id,
+            'bulk'
+        );
+        expect(retry.id).not.toBe(byFileId.get(rejected.id)!.id);
+        expect(retry.status).toBe('pending');
     });
 });

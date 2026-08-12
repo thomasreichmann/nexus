@@ -32,21 +32,6 @@ export async function restore(
 }
 
 /**
- * Start restore operations for multiple objects in Glacier Deep Archive.
- * S3 doesn't have a native batch restore API, so each key gets an individual call.
- * @param keys - S3 object keys
- * @param tier - Restore speed for all objects
- * @param daysToKeep - Days to keep restored copies accessible (default: 7)
- */
-export async function restoreMany(
-    keys: string[],
-    tier: RestoreTier,
-    daysToKeep = DEFAULT_RESTORE_DAYS_TO_KEEP
-): Promise<void> {
-    await Promise.all(keys.map((key) => restore(key, tier, daysToKeep)));
-}
-
-/**
  * Check the restore status of a Glacier object
  * @param key - S3 object key
  * @returns Status object with restore state and expiration (if completed)

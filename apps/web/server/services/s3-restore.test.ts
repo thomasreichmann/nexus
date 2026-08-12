@@ -14,8 +14,11 @@ const hoisted = await vi.hoisted(async () => {
     return {
         logger: createMockLogger(),
         sendRetrievalReadyEmail: vi.fn(),
+        alertsSend: vi.fn(),
     };
 });
+
+vi.mock('@/lib/alerts', () => ({ alerts: { send: hoisted.alertsSend } }));
 
 vi.mock('@/lib/env', () => ({
     env: { NEXT_PUBLIC_APP_URL: 'https://test.example' },
@@ -120,6 +123,32 @@ describe('s3RestoreService.dispatch', () => {
 
             expect(handled).toBe(true);
             expect(hoisted.sendRetrievalReadyEmail).not.toHaveBeenCalled();
+        });
+
+        // Rows are written before the restore is requested (#329), so this
+        // path means a restore was paid for with nothing tracking it.
+        it('alerts when the file has no retrieval row at all', async () => {
+            mockDb.mocks.retrievals.findFirst.mockResolvedValue(undefined);
+
+            const handled = await s3RestoreService.dispatch(
+                mockDb.db,
+                makeRecord()
+            );
+
+            expect(handled).toBe(true);
+            expect(hoisted.sendRetrievalReadyEmail).not.toHaveBeenCalled();
+            expect(hoisted.alertsSend).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'error',
+                    title: 'S3 restore event with no retrieval row',
+                    context: expect.objectContaining({
+                        source: 's3-restore',
+                        eventType: 'ObjectRestore:Completed',
+                        fileId: TEST_FILE_ID,
+                        s3Key: 'uploads/test-file.jpg',
+                    }),
+                })
+            );
         });
     });
 

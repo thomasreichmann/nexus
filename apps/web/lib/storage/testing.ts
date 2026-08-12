@@ -38,7 +38,6 @@ const presignedMocks = {
 
 const glacierMocks = {
     restore: async (): Promise<void> => {},
-    restoreMany: async (): Promise<void> => {},
     checkStatus: async (): Promise<{
         status: 'available' | 'restoring' | 'archived';
     }> => ({ status: 'available' }),

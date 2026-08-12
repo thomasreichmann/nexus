@@ -35,7 +35,7 @@ describe('retrieval service', () => {
             const retrieval = createRetrievalFixture();
 
             // requestRetrieval delegates to requestBulkRetrieval:
-            // findUserFiles -> findByFileIds -> s3.glacier.restoreMany -> insertMany
+            // findUserFiles -> findByFileIds -> insertMany -> s3.glacier.restore
             mocks.files.findMany.mockResolvedValue([file]);
             mocks.retrievals.findMany.mockResolvedValue([]);
             mocks.returning.mockResolvedValue([retrieval]);
@@ -99,7 +99,7 @@ describe('retrieval service', () => {
         });
 
         it('marks standard-tier file ready immediately without calling RestoreObject', async () => {
-            const restoreManySpy = vi.spyOn(mockS3.glacier, 'restoreMany');
+            const restoreSpy = vi.spyOn(mockS3.glacier, 'restore');
             const file = createFileFixture({ storageTier: 'standard' });
             const retrieval = createRetrievalFixture({ status: 'ready' });
 
@@ -114,7 +114,7 @@ describe('retrieval service', () => {
             );
 
             expect(result).toEqual(retrieval);
-            expect(restoreManySpy).not.toHaveBeenCalled();
+            expect(restoreSpy).not.toHaveBeenCalled();
             expect(mocks.values).toHaveBeenCalledWith([
                 expect.objectContaining({
                     status: 'ready',
@@ -265,7 +265,7 @@ describe('retrieval service', () => {
         });
 
         it('restores only archived files in a mixed-tier request; standard files are ready immediately', async () => {
-            const restoreManySpy = vi.spyOn(mockS3.glacier, 'restoreMany');
+            const restoreSpy = vi.spyOn(mockS3.glacier, 'restore');
             const files = [
                 createFileFixture({
                     id: 'file1',
@@ -299,8 +299,8 @@ describe('retrieval service', () => {
             );
 
             expect(result).toHaveLength(2);
-            expect(restoreManySpy).toHaveBeenCalledExactlyOnceWith(
-                ['user/file1'],
+            expect(restoreSpy).toHaveBeenCalledExactlyOnceWith(
+                'user/file1',
                 'standard',
                 expect.any(Number)
             );
@@ -444,7 +444,7 @@ describe('retrieval service', () => {
         });
 
         it('marks an all-standard batch ready immediately without calling RestoreObject', async () => {
-            const restoreManySpy = vi.spyOn(mockS3.glacier, 'restoreMany');
+            const restoreSpy = vi.spyOn(mockS3.glacier, 'restore');
             const batch = createUploadBatchFixture();
             const files = [
                 createFileFixture({
@@ -485,7 +485,7 @@ describe('retrieval service', () => {
             );
 
             expect(result).toHaveLength(2);
-            expect(restoreManySpy).not.toHaveBeenCalled();
+            expect(restoreSpy).not.toHaveBeenCalled();
             expect(mocks.values).toHaveBeenCalledWith([
                 expect.objectContaining({ fileId: 'f1', status: 'ready' }),
                 expect.objectContaining({ fileId: 'f2', status: 'ready' }),

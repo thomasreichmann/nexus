@@ -36,10 +36,10 @@ import {
 import { cn } from '@/lib/cn';
 import { useTRPC } from '@/lib/trpc/client';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
+import { toastRetrievalError, toastRetrievalResult } from './retrievalFeedback';
 import { deriveStatus } from './status';
 import { BatchHeader, BatchHeaderRow } from './BatchHeader';
 import { FileRow } from './FileRow';
@@ -137,10 +137,17 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
 
     const bulkRetrievalMutation = useMutation(
         trpc.files.requestBulkRetrieval.mutationOptions({
-            onSuccess() {
+            trpc: { context: { skipToast: true } },
+            onSuccess(retrievals) {
                 invalidateFileList();
                 setSelectedFiles([]);
-                toast.success('Retrieval requests submitted');
+                toastRetrievalResult(
+                    retrievals,
+                    'Retrieval requests submitted'
+                );
+            },
+            onError(error) {
+                toastRetrievalError(error, 'Failed to request retrievals');
             },
         })
     );
