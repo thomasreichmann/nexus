@@ -10,6 +10,9 @@ export default defineConfig({
         setupFiles: ['./vitest.setup.ts'],
         include: ['**/*.test.{ts,tsx}'],
         exclude: [...defaultExclude, '**/*.integration.test.*'],
+        pool: 'vmForks',
+        testTimeout: 60000,
+        hookTimeout: 60000,
         coverage: {
             provider: 'v8',
             reporter: ['text', 'html', 'json-summary'],
