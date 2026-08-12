@@ -60,6 +60,10 @@ const ASYMMETRY_ALLOWLIST: Record<
         missingFrom: ['development'],
         reason: 'production+preview only by design',
     },
+    CANARY_PROD: {
+        missingFrom: ['preview', 'development'],
+        reason: 'n/a',
+    },
 };
 
 const DEFAULT_PROJECT_ID = 'prj_RuKjFko6iKwbyyIy55HYL5S5AabG';
