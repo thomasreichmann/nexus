@@ -19,10 +19,12 @@ export const meta = {
 };
 
 // args: { diffPath: string, changedFiles: string[], criteria?: string }
+// The tool boundary sometimes delivers args as a JSON string — coerce before validating.
+const input = typeof args === 'string' ? JSON.parse(args) : args;
 if (
-    !args ||
-    typeof args.diffPath !== 'string' ||
-    !Array.isArray(args.changedFiles)
+    !input ||
+    typeof input.diffPath !== 'string' ||
+    !Array.isArray(input.changedFiles)
 ) {
     throw new Error(
         'args must be { diffPath: string, changedFiles: string[], criteria?: string }'
@@ -104,8 +106,8 @@ const AGGREGATED_SCHEMA = {
 };
 
 const task = [
-    `Review the diff at ${args.diffPath}. Read it with the Read tool — read all of it, it may be long.`,
-    `Changed files:\n${args.changedFiles.map((f) => `- ${f}`).join('\n')}`,
+    `Review the diff at ${input.diffPath}. Read it with the Read tool — read all of it, it may be long.`,
+    `Changed files:\n${input.changedFiles.map((f) => `- ${f}`).join('\n')}`,
     'Report via structured output instead of the text format in your instructions: one findings entry per issue (file, line, category, description, fix). Put good patterns, searched locations, and clean files in notes.',
 ].join('\n\n');
 
@@ -113,8 +115,8 @@ const reviewers = [
     { type: 'conventions-review', extra: null },
     {
         type: 'code-quality-review',
-        extra: args.criteria
-            ? `Acceptance criteria — flag scope creep beyond these:\n${args.criteria}`
+        extra: input.criteria
+            ? `Acceptance criteria — flag scope creep beyond these:\n${input.criteria}`
             : 'No acceptance criteria were provided — review for general quality only and skip scope-creep checks.',
     },
     { type: 'reuse-review', extra: null },
