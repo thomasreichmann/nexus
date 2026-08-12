@@ -11,6 +11,21 @@ export function fileName(page: Page, name: string): Locator {
     return page.getByText(name).filter({ visible: true }).first();
 }
 
+/* The admin data tables (invites, jobs) all put Status second. Kept in one
+   place so a column reorder breaks one selector, not assertions in three
+   specs. */
+const STATUS_COLUMN = 'td:nth-child(2)';
+
+/** The status cell of a single row (a `tr` locator). */
+export function statusCell(row: Locator): Locator {
+    return row.locator(STATUS_COLUMN);
+}
+
+/** Every status cell in the table — for asserting a filtered view. */
+export function statusCells(page: Page): Locator {
+    return page.locator(`tbody ${STATUS_COLUMN}`);
+}
+
 /**
  * Waits for a data-table page to finish loading: either the table itself or
  * the page's empty-state text, whichever renders first.

@@ -25,6 +25,7 @@ import {
     formatRelativeTime,
     formatRelativeTimeCompact,
 } from '@/lib/format';
+import { isInviteExpired } from '@/lib/invites';
 import { useTRPC } from '@/lib/trpc/client';
 import { SPONSORED_DEFAULT_STORAGE_LIMIT } from '@/server/services/constants';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -168,7 +169,7 @@ export default function AdminInvitesPage() {
                                         trailing={
                                             <>
                                                 <InviteStatusBadge
-                                                    status={invite.status}
+                                                    invite={invite}
                                                 />
                                                 {invite.status ===
                                                     'pending' && (
@@ -237,7 +238,7 @@ export default function AdminInvitesPage() {
                                             </TableCell>
                                             <TableCell>
                                                 <InviteStatusBadge
-                                                    status={invite.status}
+                                                    invite={invite}
                                                 />
                                             </TableCell>
                                             <TableCell className="text-muted-foreground">
@@ -454,36 +455,31 @@ function CreateInviteForm({ onCreated }: CreateInviteFormProps) {
     );
 }
 
-function InviteStatusBadge({ status }: { status: InviteStatus }) {
-    switch (status) {
-        case 'pending':
-            return (
-                <Badge
-                    variant="secondary"
-                    className="bg-blue-500/10 text-blue-600"
-                >
-                    Pending
-                </Badge>
-            );
-        case 'redeemed':
-            return (
-                <Badge
-                    variant="secondary"
-                    className="bg-green-500/10 text-green-600"
-                >
-                    Redeemed
-                </Badge>
-            );
-        case 'revoked':
-            return (
-                <Badge
-                    variant="secondary"
-                    className="bg-red-500/10 text-red-600"
-                >
-                    Revoked
-                </Badge>
-            );
-    }
+/* `expired` is derived, not a DB status — see `isInviteExpired`. Keying the
+   `Record` off the enum forces a new invite status to get a badge here rather
+   than falling through to an empty cell. */
+const INVITE_BADGES: Record<
+    InviteStatus | 'expired',
+    { label: string; className: string }
+> = {
+    pending: { label: 'Pending', className: 'bg-blue-500/10 text-blue-600' },
+    expired: { label: 'Expired', className: 'bg-amber-500/10 text-amber-600' },
+    redeemed: {
+        label: 'Redeemed',
+        className: 'bg-green-500/10 text-green-600',
+    },
+    revoked: { label: 'Revoked', className: 'bg-red-500/10 text-red-600' },
+};
+
+function InviteStatusBadge({ invite }: { invite: Invite }) {
+    const { label, className } =
+        INVITE_BADGES[isInviteExpired(invite) ? 'expired' : invite.status];
+
+    return (
+        <Badge variant="secondary" className={className}>
+            {label}
+        </Badge>
+    );
 }
 
 interface PendingInviteActionsProps {
@@ -495,7 +491,8 @@ interface PendingInviteActionsProps {
 }
 
 /* Copy-link + revoke for pending invites — shared by the table cell and the
-   stacked mobile rows. */
+   stacked mobile rows. Expired invites keep these actions: their DB status is
+   still `pending`, so revoke works and it's the only way to clear the row. */
 function PendingInviteActions({
     token,
     onRevoke,
