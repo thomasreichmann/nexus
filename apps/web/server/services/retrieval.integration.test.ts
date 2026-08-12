@@ -59,11 +59,9 @@ describe('active-retrieval expiry predicate', () => {
             expiresAt: past(),
         });
 
-        const retrieval = await retrievalService.requestRetrieval(
-            db,
-            userId,
-            file.id
-        );
+        const {
+            started: [retrieval],
+        } = await retrievalService.requestRetrieval(db, userId, file.id);
 
         // Fresh row, ready immediately via the standard-tier fast path
         expect(retrieval.id).not.toBe(lapsed.id);
@@ -160,7 +158,7 @@ describe('one active retrieval per file (#266)', () => {
         ]);
 
         // Whichever call lost the insert race got the winner's row back.
-        expect(first.id).toBe(second.id);
+        expect(first.started[0].id).toBe(second.started[0].id);
 
         const active = await createRetrievalRepo(db).findByFileIds([file.id]);
         expect(active).toHaveLength(1);
@@ -201,20 +199,23 @@ describe('partial S3 restore failure (#329)', () => {
             if (key === rejected.s3Key) throw new Error('AWS throttled');
         });
 
-        const retrievals = await retrievalService.requestBulkRetrieval(
+        const result = await retrievalService.requestBulkRetrieval(
             db,
             userId,
             [restored.id, rejected.id],
             'bulk'
         );
 
-        // The batch resolves rather than throwing: the succeeded restore is
-        // real and paid for, so its row has to survive the sibling's failure.
-        const byFileId = new Map(retrievals.map((r) => [r.fileId, r]));
-        expect(byFileId.get(restored.id)?.status).toBe('pending');
-        expect(byFileId.get(rejected.id)?.status).toBe('failed');
-        expect(byFileId.get(rejected.id)?.errorMessage).toBe('AWS throttled');
-        expect(byFileId.get(rejected.id)?.failedAt).toBeInstanceOf(Date);
+        // The batch resolves rather than throwing, and the split names the
+        // outcome: the succeeded restore is real and paid for, so its row
+        // has to survive the sibling's failure.
+        expect(result.started.map((r) => r.fileId)).toEqual([restored.id]);
+        expect(result.started[0].status).toBe('pending');
+        expect(result.failed.map((r) => r.fileId)).toEqual([rejected.id]);
+        const [failedRow] = result.failed;
+        expect(failedRow.status).toBe('failed');
+        expect(failedRow.errorMessage).toBe('AWS throttled');
+        expect(failedRow.failedAt).toBeInstanceOf(Date);
 
         // One RestoreObject per file, and no restore fired for a file that
         // ended up without a row.
@@ -223,12 +224,8 @@ describe('partial S3 restore failure (#329)', () => {
         const repo = createRetrievalRepo(db);
         const persisted = await repo.findByUser(userId);
         const persistedById = new Map(persisted.map((r) => [r.id, r]));
-        expect(persistedById.get(byFileId.get(restored.id)!.id)?.status).toBe(
-            'pending'
-        );
-        expect(persistedById.get(byFileId.get(rejected.id)!.id)?.status).toBe(
-            'failed'
-        );
+        expect(persistedById.get(result.started[0].id)?.status).toBe('pending');
+        expect(persistedById.get(failedRow.id)?.status).toBe('failed');
 
         // `failed` sits outside the active partial unique index, so the row
         // no longer holds the file's slot and a retry inserts cleanly.
@@ -245,7 +242,8 @@ describe('partial S3 restore failure (#329)', () => {
             rejected.id,
             'bulk'
         );
-        expect(retry.id).not.toBe(byFileId.get(rejected.id)!.id);
-        expect(retry.status).toBe('pending');
+        expect(retry.failed).toEqual([]);
+        expect(retry.started[0].id).not.toBe(failedRow.id);
+        expect(retry.started[0].status).toBe('pending');
     });
 });

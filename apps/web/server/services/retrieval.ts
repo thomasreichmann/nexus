@@ -15,6 +15,18 @@ import type { RestoreTier } from '@/lib/storage';
 
 const DOWNLOAD_URL_EXPIRY_SECONDS = 3600; // 1 hour
 
+/**
+ * A retrieval request that reaches S3 can come back partly failed (#329),
+ * and the split is the result — callers can't read a success past it the
+ * way they could a flat row array with `failed` statuses buried inside.
+ * `started` holds every row now tracking an active restore, including rows
+ * that already existed or that a concurrent request inserted first.
+ */
+export interface RetrievalRequestResult {
+    started: Retrieval[];
+    failed: Retrieval[];
+}
+
 // `batchId` is stamped on every new row so batch-level progress can be
 // queried later; bulk callers pass null.
 async function restoreFiles(
@@ -23,7 +35,7 @@ async function restoreFiles(
     files: File[],
     tier: RestoreTier,
     batchId: string | null
-): Promise<Retrieval[]> {
+): Promise<RetrievalRequestResult> {
     const retrievalRepo = createRetrievalRepo(db);
     const fileIds = files.map((f) => f.id);
 
@@ -41,7 +53,7 @@ async function restoreFiles(
     }
 
     if (filesToRestore.length === 0) {
-        return existingRetrievals;
+        return { started: existingRetrievals, failed: [] };
     }
 
     // A lapsed `ready` row is invisible to findByFileIds but still holds the
@@ -109,14 +121,17 @@ async function restoreFiles(
         );
     }
 
-    const restored = await restoreInserted(
+    const { started, failed } = await restoreInserted(
         retrievalRepo,
         newRetrievals,
         archivedFiles,
         tier
     );
 
-    return [...existingRetrievals, ...restored, ...survivors];
+    return {
+        started: [...existingRetrievals, ...started, ...survivors],
+        failed,
+    };
 }
 
 // One RestoreObject per file rather than a `Promise.all` over the whole
@@ -130,14 +145,14 @@ async function restoreInserted(
     newRetrievals: Retrieval[],
     archivedFiles: File[],
     tier: RestoreTier
-): Promise<Retrieval[]> {
+): Promise<RetrievalRequestResult> {
     const s3KeysByFileId = new Map(archivedFiles.map((f) => [f.id, f.s3Key]));
 
-    return Promise.all(
+    const outcomes = await Promise.all(
         newRetrievals.map(async (retrieval) => {
             const s3Key = s3KeysByFileId.get(retrieval.fileId);
             // Standard-tier rows are already `ready` and never hit S3.
-            if (!s3Key) return retrieval;
+            if (!s3Key) return { ok: true, row: retrieval };
 
             try {
                 await s3.glacier.restore(
@@ -145,7 +160,7 @@ async function restoreInserted(
                     tier,
                     DEFAULT_RESTORE_DAYS_TO_KEEP
                 );
-                return retrieval;
+                return { ok: true, row: retrieval };
             } catch (err) {
                 const failed = await retrievalRepo.updateStatus(
                     retrieval.id,
@@ -156,20 +171,24 @@ async function restoreInserted(
                             err instanceof Error ? err.message : String(err),
                     }
                 );
-                return failed ?? retrieval;
+                return { ok: false, row: failed ?? retrieval };
             }
         })
     );
+
+    return {
+        started: outcomes.filter((o) => o.ok).map((o) => o.row),
+        failed: outcomes.filter((o) => !o.ok).map((o) => o.row),
+    };
 }
 
-async function requestRetrieval(
+function requestRetrieval(
     db: DB,
     userId: string,
     fileId: string,
     tier: RestoreTier = 'standard'
-): Promise<Retrieval> {
-    const retrievals = await requestBulkRetrieval(db, userId, [fileId], tier);
-    return retrievals[0];
+): Promise<RetrievalRequestResult> {
+    return requestBulkRetrieval(db, userId, [fileId], tier);
 }
 
 async function requestBulkRetrieval(
@@ -177,7 +196,7 @@ async function requestBulkRetrieval(
     userId: string,
     fileIds: string[],
     tier: RestoreTier = 'standard'
-): Promise<Retrieval[]> {
+): Promise<RetrievalRequestResult> {
     const fileRepo = createFileRepo(db);
 
     const files = await fileRepo.findManyByUserAndIds(userId, fileIds);
@@ -210,7 +229,7 @@ async function requestBatchRetrieval(
     userId: string,
     batchId: string,
     tier: RestoreTier = 'standard'
-): Promise<Retrieval[]> {
+): Promise<RetrievalRequestResult> {
     const files = await findOwnedBatchFiles(db, userId, batchId);
     if (files.length === 0) {
         throw new InvalidStateError('Batch contains no files');

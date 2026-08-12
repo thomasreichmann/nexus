@@ -24,7 +24,8 @@ import { toast } from 'sonner';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
 import type { FileWithRetrieval } from '@nexus/db/repo/files';
-import { toastRetrievalError, toastRetrievalResult } from './retrievalFeedback';
+import { toastContext } from '@/lib/trpc/error-link';
+import { toastRetrievalResult } from './retrievalFeedback';
 import type { DerivedStatus } from './status';
 
 export function useFileActions(file: FileWithRetrieval) {
@@ -40,16 +41,12 @@ export function useFileActions(file: FileWithRetrieval) {
 
     const retrievalMutation = useMutation(
         trpc.files.requestRetrieval.mutationOptions({
-            trpc: { context: { skipToast: true } },
-            onSuccess(retrieval) {
+            trpc: toastContext({
+                errorMessage: 'Failed to request retrieval',
+            }),
+            onSuccess(result) {
                 invalidateFileList();
-                toastRetrievalResult(
-                    [retrieval],
-                    'Retrieval request submitted'
-                );
-            },
-            onError(error) {
-                toastRetrievalError(error, 'Failed to request retrieval');
+                toastRetrievalResult(result, 'Retrieval request submitted');
             },
         })
     );

@@ -47,7 +47,7 @@ describe('retrieval service', () => {
                 'standard'
             );
 
-            expect(result).toEqual(retrieval);
+            expect(result).toEqual({ started: [retrieval], failed: [] });
             expect(mocks.insert).toHaveBeenCalledOnce();
         });
 
@@ -66,7 +66,7 @@ describe('retrieval service', () => {
                 'bulk'
             );
 
-            expect(result).toEqual(retrieval);
+            expect(result).toEqual({ started: [retrieval], failed: [] });
         });
 
         it('returns existing active retrieval (idempotent)', async () => {
@@ -82,7 +82,7 @@ describe('retrieval service', () => {
                 TEST_FILE_ID
             );
 
-            expect(result).toEqual(existing);
+            expect(result).toEqual({ started: [existing], failed: [] });
             expect(mocks.insert).not.toHaveBeenCalled();
         });
 
@@ -113,7 +113,7 @@ describe('retrieval service', () => {
                 TEST_FILE_ID
             );
 
-            expect(result).toEqual(retrieval);
+            expect(result).toEqual({ started: [retrieval], failed: [] });
             expect(restoreSpy).not.toHaveBeenCalled();
             expect(mocks.values).toHaveBeenCalledWith([
                 expect.objectContaining({
@@ -177,7 +177,7 @@ describe('retrieval service', () => {
                 TEST_FILE_ID
             );
 
-            expect(result).toEqual(survivor);
+            expect(result).toEqual({ started: [survivor], failed: [] });
             expect(mocks.retrievals.findMany).toHaveBeenCalledTimes(2);
         });
     });
@@ -212,7 +212,8 @@ describe('retrieval service', () => {
                 'standard'
             );
 
-            expect(result).toHaveLength(2);
+            expect(result.started).toHaveLength(2);
+            expect(result.failed).toEqual([]);
             expect(mocks.insert).toHaveBeenCalledOnce();
         });
 
@@ -249,7 +250,7 @@ describe('retrieval service', () => {
                 ['file1', 'file2']
             );
 
-            expect(result).toHaveLength(2);
+            expect(result.started).toHaveLength(2);
         });
 
         it('throws NotFoundError when any file is missing', async () => {
@@ -298,7 +299,8 @@ describe('retrieval service', () => {
                 'standard'
             );
 
-            expect(result).toHaveLength(2);
+            expect(result.started).toHaveLength(2);
+            expect(result.failed).toEqual([]);
             expect(restoreSpy).toHaveBeenCalledExactlyOnceWith(
                 'user/file1',
                 'standard',
@@ -360,7 +362,10 @@ describe('retrieval service', () => {
                 ['file1']
             );
 
-            expect(result).toEqual([existingRetrieval]);
+            expect(result).toEqual({
+                started: [existingRetrieval],
+                failed: [],
+            });
             expect(mocks.insert).not.toHaveBeenCalled();
         });
     });
@@ -409,7 +414,7 @@ describe('retrieval service', () => {
                 'standard'
             );
 
-            expect(result).toHaveLength(2);
+            expect(result.started).toHaveLength(2);
             expect(mocks.values).toHaveBeenCalledWith(
                 expect.arrayContaining([
                     expect.objectContaining({ batchId: batch.id }),
@@ -484,7 +489,7 @@ describe('retrieval service', () => {
                 batch.id
             );
 
-            expect(result).toHaveLength(2);
+            expect(result.started).toHaveLength(2);
             expect(restoreSpy).not.toHaveBeenCalled();
             expect(mocks.values).toHaveBeenCalledWith([
                 expect.objectContaining({ fileId: 'f1', status: 'ready' }),

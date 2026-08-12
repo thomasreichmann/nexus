@@ -11,7 +11,8 @@ import { useMutation } from '@tanstack/react-query';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
 import type { FileBatchGroup, FileWithRetrieval } from '@nexus/db/repo/files';
-import { toastRetrievalError, toastRetrievalResult } from './retrievalFeedback';
+import { toastContext } from '@/lib/trpc/error-link';
+import { toastRetrievalResult } from './retrievalFeedback';
 import { deriveStatus } from './status';
 
 function formatBatchDate(date: Date | null): string | null {
@@ -110,15 +111,12 @@ function BatchRestoreSlot({ batchId, files }: BatchRestoreSlotProps) {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const mutation = useMutation(
         trpc.files.requestBatchRetrieval.mutationOptions({
-            // Without skipToast the global error link toasts too, on top of
-            // this handler's own toast.
-            trpc: { context: { skipToast: true } },
-            onSuccess(retrievals) {
+            trpc: toastContext({
+                errorMessage: 'Failed to request batch retrieval',
+            }),
+            onSuccess(result) {
                 invalidateFileList();
-                toastRetrievalResult(retrievals, 'Batch retrieval submitted');
-            },
-            onError(error) {
-                toastRetrievalError(error, 'Failed to request batch retrieval');
+                toastRetrievalResult(result, 'Batch retrieval submitted');
             },
         })
     );

@@ -6,12 +6,13 @@ import { AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { TrialExpiredBanner } from '@/components/trial-expired-banner';
 import { useTRPC } from '@/lib/trpc/client';
+import { toastContext } from '@/lib/trpc/error-link';
 
 export function ErrorControls() {
     const trpc = useTRPC();
     const trialExpired = useMutation(
         trpc.admin.devTools.throwTrialExpired.mutationOptions({
-            trpc: { context: { skipToast: true } },
+            trpc: toastContext({ skipToast: true }),
         })
     );
 
