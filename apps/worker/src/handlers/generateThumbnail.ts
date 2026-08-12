@@ -155,9 +155,16 @@ async function extractRawPreview(
                 await writeFile(destPath, stdout);
                 return destPath;
             }
-        } catch {
+            console.warn(`exiftool ${tag}: empty extraction`);
+        } catch (error) {
             // exiftool exits non-zero on unreadable input; treat like an
-            // empty extraction and let the caller escalate.
+            // empty extraction and let the caller escalate — but never
+            // silently: the reason is unrecoverable after the job completes.
+            const e = error as NodeJS.ErrnoException & { stderr?: Buffer };
+            console.warn(
+                `exiftool ${tag} failed: ${e.code ?? ''} ${e.message}`,
+                e.stderr ? e.stderr.toString('utf8').slice(0, 500) : ''
+            );
         }
     }
     return null;
@@ -176,7 +183,12 @@ async function runFfmpeg(args: string[]): Promise<FfmpegResult> {
         await execFileAsync(FFMPEG, ['-y', '-hide_banner', ...args]);
         return { ok: true };
     } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw error;
+        const e = error as NodeJS.ErrnoException & { stderr?: string };
+        if (e.code === 'ENOENT') throw error;
+        console.warn(
+            `ffmpeg exited non-zero: ${e.message}`,
+            e.stderr ? e.stderr.slice(-500) : ''
+        );
         return { ok: false };
     }
 }
@@ -379,6 +391,9 @@ export async function generateThumbnail(
                 : await generateStill(file, kind, workDir);
 
         if (outcome.status !== 'ready') {
+            console.warn(
+                `thumbnail ${outcome.status}: file=${file.id} kind=${kind}`
+            );
             await fileRepo.update(file.id, { thumbnailStatus: outcome.status });
             return;
         }

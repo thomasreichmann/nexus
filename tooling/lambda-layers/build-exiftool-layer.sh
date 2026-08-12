@@ -20,6 +20,10 @@ set -euo pipefail
 # 404s any pinned URL. CPAN archives every production release permanently.
 PERL_VERSION=5.40.0
 EXIFTOOL_VERSION=13.55
+# Bump when the layer CONTENT changes without a tool-version bump (the s3
+# key embeds it, and a new key is what makes Terraform publish a new layer
+# version). r2: bundled libcrypt.so.2.
+LAYER_REVISION=2
 
 PERL_SHA256=c740348f357396327a9795d3e8323bafd0fe8a5c7835fc1cbaba0cc8dfe7161f
 EXIFTOOL_SHA256=5f4c81d34ad406538c2871ad72dbfceb5d9b412b2f16cbbeb4d712d270846667
@@ -34,7 +38,7 @@ JOBS="$(nproc)"
 mkdir -p "$BUILD" "$ROOT/opt"
 
 dnf install -y --setopt=install_weak_deps=False \
-    gcc make tar gzip zip patch >/dev/null
+    gcc make tar gzip zip patch binutils >/dev/null
 
 fetch() { # <url> <sha256> <output>
     curl -fsSL --retry 3 -o "$3" "$1"
@@ -75,14 +79,46 @@ tar xf perl.tar.gz
 # Docs don't belong in a Lambda layer.
 find "$ROOT/opt/perl" -name '*.pod' -delete
 
+# The nodejs22.x Lambda runtime is a TRIMMED AL2023: perl's libcrypt.so.2
+# dependency exists in this full build container but not in the runtime,
+# where its absence makes perl exit 127 at the dynamic-linker stage. Bundle
+# it — /opt/lib is on the runtime's LD_LIBRARY_PATH.
+mkdir -p "$ROOT/opt/lib"
+cp -a /usr/lib64/libcrypt.so.2* "$ROOT/opt/lib/"
+
+# Guard the whole class of bug: every dynamic dependency of every ELF in
+# the layer must be present in the trimmed runtime (allowlist verified
+# against public.ecr.aws/lambda/nodejs:22) or bundled in lib/. The plain
+# smoke test below can't catch a miss — the build container resolves
+# system-wide what the runtime doesn't ship.
+RUNTIME_LIBS='libc.so.6 libm.so.6 libz.so.1'
+check_runtime_deps() { # <elf-file...>
+    local bin lib ok
+    for bin in "$@"; do
+        for lib in $(objdump -p "$bin" 2>/dev/null | awk '/NEEDED/{print $2}'); do
+            ok=false
+            case " $RUNTIME_LIBS " in *" $lib "*) ok=true ;; esac
+            [ -e "$ROOT/opt/lib/$lib" ] && ok=true
+            if [ "$ok" = false ]; then
+                echo "$bin needs $lib: absent from the Lambda runtime and not bundled in lib/" >&2
+                exit 1
+            fi
+        done
+    done
+}
+check_runtime_deps "$ROOT/opt/perl/bin/perl"
+while IFS= read -r so; do
+    check_runtime_deps "$so"
+done < <(find "$ROOT/opt/perl" -name '*.so')
+
 tar xf exiftool.tar.gz
 mkdir -p "$ROOT/opt/exiftool"
 cp "Image-ExifTool-$EXIFTOOL_VERSION/exiftool" "$ROOT/opt/exiftool/"
 cp -r "Image-ExifTool-$EXIFTOOL_VERSION/lib" "$ROOT/opt/exiftool/"
 
-# Smoke test with the staged interpreter — the build container is the same
-# AL2023 the Lambda runtime uses.
-version_output="$("$ROOT/opt/perl/bin/perl" "$ROOT/opt/exiftool/exiftool" -ver)"
+# Smoke test with the staged interpreter, resolving shared libs the way the
+# runtime will (bundled lib/ first).
+version_output="$(LD_LIBRARY_PATH="$ROOT/opt/lib" "$ROOT/opt/perl/bin/perl" "$ROOT/opt/exiftool/exiftool" -ver)"
 if [ "$version_output" != "$EXIFTOOL_VERSION" ]; then
     echo "exiftool smoke test failed: got '$version_output', want '$EXIFTOOL_VERSION'" >&2
     exit 1
@@ -94,9 +130,9 @@ if [ "$total_mb" -gt "$MAX_UNZIPPED_MB" ]; then
     exit 1
 fi
 
-ZIP="$OUT_DIR/exiftool-$EXIFTOOL_VERSION-perl-$PERL_VERSION.zip"
+ZIP="$OUT_DIR/exiftool-$EXIFTOOL_VERSION-perl-$PERL_VERSION-r$LAYER_REVISION.zip"
 rm -f "$ZIP"
-(cd "$ROOT/opt" && zip -qr9 --symlinks "$ZIP" perl exiftool)
+(cd "$ROOT/opt" && zip -qr9 --symlinks "$ZIP" perl exiftool lib)
 
 echo "built $ZIP (${total_mb}MB unzipped)"
 sha256sum "$ZIP"
