@@ -41,7 +41,14 @@ test.use({ userRole: 'user' });
 
 const SCREENSHOTS = 'test-results/validate/glacier-retrieval';
 
-const s3: TestS3 = createTestS3();
+// Built in a hook, never at module scope: the coverage gate imports every
+// spec — including this env-gated tier — with no credentials, so a top-level
+// createTestS3() throws at import and takes the whole gate down with it.
+let s3: TestS3;
+test.beforeAll(() => {
+    s3 = createTestS3();
+});
+
 let seededFile: File | undefined;
 // Tracked separately from seededFile and assigned before the PUT: if the
 // DB insert fails after the object is written, cleanup must still delete

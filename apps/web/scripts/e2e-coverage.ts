@@ -49,23 +49,39 @@ interface SuiteNode {
 function listTests(): ListedTest[] {
     const outFile = join(tmpdir(), `pw-list-${process.pid}.json`);
     try {
-        execFileSync(
-            'npx',
-            ['playwright', 'test', '--list', '--reporter=json'],
-            {
-                cwd: join(__dirname, '..'),
-                env: {
-                    ...process.env,
-                    PLAYWRIGHT_JSON_OUTPUT_NAME: outFile,
-                    // The validate/repro projects are env-gated out of
-                    // normal runs; include them here so manual-tier
-                    // coverage is reported and repro tags get typo-checked.
-                    E2E_VALIDATE: '1',
-                    E2E_REPRO: '1',
-                },
-                stdio: 'ignore',
-            }
-        );
+        try {
+            execFileSync(
+                'npx',
+                ['playwright', 'test', '--list', '--reporter=json'],
+                {
+                    cwd: join(__dirname, '..'),
+                    env: {
+                        ...process.env,
+                        PLAYWRIGHT_JSON_OUTPUT_NAME: outFile,
+                        // The validate/repro projects are env-gated out of
+                        // normal runs; include them here so manual-tier
+                        // coverage is reported and repro tags get typo-checked.
+                        E2E_VALIDATE: '1',
+                        E2E_REPRO: '1',
+                    },
+                    // stdout is just the reporter's test list; stderr is where
+                    // Playwright reports a spec it couldn't import, with the
+                    // file, line, and code frame. Ignoring it turns that into
+                    // a bare "Command failed" with nothing to act on.
+                    stdio: ['ignore', 'ignore', 'inherit'],
+                }
+            );
+        } catch {
+            rmSync(outFile, { force: true });
+            console.error(
+                '\nCould not list Playwright tests (Playwright’s error is above).\n' +
+                    'Listing imports every spec, including the env-gated validate/ and\n' +
+                    'repro/ tiers, with no app env or credentials — so a spec that reads\n' +
+                    'env or builds a client at module scope fails this gate. Move that\n' +
+                    'work into a fixture or a beforeAll hook.'
+            );
+            process.exit(1);
+        }
         const report = JSON.parse(readFileSync(outFile, 'utf8')) as {
             suites: SuiteNode[];
         };

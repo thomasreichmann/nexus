@@ -19,6 +19,10 @@ export interface TestS3 {
  * fakes live in `lib/storage/testing.ts`; this is the opposite: nothing is
  * mocked. Config mirrors `lib/storage/client.ts` without the `@/lib/env`
  * dependency, so it also works from standalone tsx scripts.
+ *
+ * Call it from a fixture or a `beforeAll`, never at module scope: it throws
+ * without credentials, and the coverage gate imports every spec — validate/
+ * and repro/ included — with none configured.
  */
 export function createTestS3(): TestS3 {
     const { AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET } =
