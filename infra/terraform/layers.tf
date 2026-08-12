@@ -15,7 +15,7 @@ locals {
   # Keep in lockstep with the pins in tooling/lambda-layers/*.sh.
   ffmpeg_version   = "7.1"
   perl_version     = "5.40.0"
-  exiftool_version = "13.59"
+  exiftool_version = "13.55"
 }
 
 resource "aws_s3_bucket" "lambda_artifacts" {

@@ -42,6 +42,20 @@ fetch() { # <url> <sha256> <output>
     echo "$2  $3" | sha256sum -c -
 }
 
+BUILD_LOG="$BUILD/build.log"
+
+# Build steps log to a file so green runs stay quiet; on failure the tail is
+# printed — a silently suppressed configure/make error is undebuggable in CI.
+run_logged() { # <label> <cmd...>
+    local label="$1"
+    shift
+    if ! "$@" >>"$BUILD_LOG" 2>&1; then
+        echo "--- $label failed; last 100 log lines ---" >&2
+        tail -100 "$BUILD_LOG" >&2
+        exit 1
+    fi
+}
+
 cd "$BUILD"
 fetch "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" "$FFMPEG_SHA256" ffmpeg.tar.xz
 fetch "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-$LIBWEBP_VERSION.tar.gz" "$LIBWEBP_SHA256" libwebp.tar.gz
@@ -51,11 +65,11 @@ fetch "https://github.com/openssl/openssl/releases/download/openssl-$OPENSSL_VER
 tar xf libwebp.tar.gz
 (
     cd "libwebp-$LIBWEBP_VERSION"
-    ./configure --prefix="$DEPS" --enable-static --disable-shared \
-        --disable-gl --disable-sdl --disable-png --disable-jpeg \
-        --disable-tiff --disable-gif >/dev/null
-    make -j"$JOBS" >/dev/null
-    make install >/dev/null
+    run_logged "libwebp configure" ./configure --prefix="$DEPS" \
+        --enable-static --disable-shared --disable-gl --disable-sdl \
+        --disable-png --disable-jpeg --disable-tiff --disable-gif
+    run_logged "libwebp make" make -j"$JOBS"
+    run_logged "libwebp install" make install
 )
 
 # openssl: static, for ffmpeg's https protocol (poster frames read the
@@ -63,10 +77,10 @@ tar xf libwebp.tar.gz
 tar xf openssl.tar.gz
 (
     cd "openssl-$OPENSSL_VERSION"
-    ./Configure linux-x86_64 no-shared no-tests no-docs no-apps \
-        --prefix="$DEPS" --libdir=lib >/dev/null
-    make -j"$JOBS" >/dev/null 2>&1
-    make install_sw >/dev/null
+    run_logged "openssl Configure" ./Configure linux-x86_64 no-shared \
+        no-tests no-docs no-apps --prefix="$DEPS" --libdir=lib
+    run_logged "openssl make" make -j"$JOBS"
+    run_logged "openssl install" make install_sw
 )
 
 # ffmpeg: keep the full decoder/demuxer set (user files are arbitrary), but
@@ -75,7 +89,8 @@ tar xf openssl.tar.gz
 tar xf ffmpeg.tar.xz
 (
     cd "ffmpeg-$FFMPEG_VERSION"
-    PKG_CONFIG_PATH="$DEPS/lib/pkgconfig" ./configure \
+    PKG_CONFIG_PATH="$DEPS/lib/pkgconfig" run_logged "ffmpeg configure" \
+        ./configure \
         --prefix="$BUILD/out" \
         --pkg-config-flags="--static" \
         --extra-cflags="-I$DEPS/include" \
@@ -87,9 +102,9 @@ tar xf ffmpeg.tar.xz
         --disable-debug --disable-doc --disable-ffplay \
         --disable-encoders --enable-encoder=libwebp,mjpeg,png \
         --disable-muxers --enable-muxer=webp,image2,mjpeg,null \
-        --disable-devices >/dev/null
-    make -j"$JOBS" >/dev/null
-    make install >/dev/null
+        --disable-devices
+    run_logged "ffmpeg make" make -j"$JOBS"
+    run_logged "ffmpeg install" make install
 )
 
 mkdir -p "$BUILD/layer/bin"

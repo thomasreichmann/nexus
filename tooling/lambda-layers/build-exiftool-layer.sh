@@ -15,11 +15,14 @@
 # infra/terraform/layers.tf (the s3 key embeds the versions).
 set -euo pipefail
 
+# exiftool comes from CPAN, not exiftool.org: the site only hosts the
+# current (often development) tarball and rotates it out within days, which
+# 404s any pinned URL. CPAN archives every production release permanently.
 PERL_VERSION=5.40.0
-EXIFTOOL_VERSION=13.59
+EXIFTOOL_VERSION=13.55
 
 PERL_SHA256=c740348f357396327a9795d3e8323bafd0fe8a5c7835fc1cbaba0cc8dfe7161f
-EXIFTOOL_SHA256=11645f015d85a56d3090ff04fbf0b07b6a8f7ee941dd93186e32985f3fd6d041
+EXIFTOOL_SHA256=5f4c81d34ad406538c2871ad72dbfceb5d9b412b2f16cbbeb4d712d270846667
 
 MAX_UNZIPPED_MB=80
 
@@ -38,9 +41,23 @@ fetch() { # <url> <sha256> <output>
     echo "$2  $3" | sha256sum -c -
 }
 
+BUILD_LOG="$BUILD/build.log"
+
+# Build steps log to a file so green runs stay quiet; on failure the tail is
+# printed — a silently suppressed configure/make error is undebuggable in CI.
+run_logged() { # <label> <cmd...>
+    local label="$1"
+    shift
+    if ! "$@" >>"$BUILD_LOG" 2>&1; then
+        echo "--- $label failed; last 100 log lines ---" >&2
+        tail -100 "$BUILD_LOG" >&2
+        exit 1
+    fi
+}
+
 cd "$BUILD"
 fetch "https://www.cpan.org/src/5.0/perl-$PERL_VERSION.tar.gz" "$PERL_SHA256" perl.tar.gz
-fetch "https://exiftool.org/Image-ExifTool-$EXIFTOOL_VERSION.tar.gz" "$EXIFTOOL_SHA256" exiftool.tar.gz
+fetch "https://cpan.metacpan.org/authors/id/E/EX/EXIFTOOL/Image-ExifTool-$EXIFTOOL_VERSION.tar.gz" "$EXIFTOOL_SHA256" exiftool.tar.gz
 
 # Prefix matches the layer mount point (/opt/perl), and relocatable @INC is
 # kept as insurance so the interpreter also works from the DESTDIR staging
@@ -49,10 +66,10 @@ fetch "https://exiftool.org/Image-ExifTool-$EXIFTOOL_VERSION.tar.gz" "$EXIFTOOL_
 tar xf perl.tar.gz
 (
     cd "perl-$PERL_VERSION"
-    ./Configure -des -Dprefix=/opt/perl -Duserelocatableinc \
-        -Dman1dir=none -Dman3dir=none >/dev/null
-    make -j"$JOBS" >/dev/null
-    make install DESTDIR="$ROOT" >/dev/null
+    run_logged "perl Configure" ./Configure -des -Dprefix=/opt/perl \
+        -Duserelocatableinc -Dman1dir=none -Dman3dir=none
+    run_logged "perl make" make -j"$JOBS"
+    run_logged "perl install" make install DESTDIR="$ROOT"
 )
 
 # Docs don't belong in a Lambda layer.
