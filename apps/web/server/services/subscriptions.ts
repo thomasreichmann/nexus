@@ -8,6 +8,7 @@ import {
 } from '@nexus/db/repo/subscriptions';
 import { planTierEnum, subscriptionStatusEnum } from '@nexus/db/schema';
 import { env } from '@/lib/env';
+import { isInviteExpired } from '@/lib/invites';
 import { stripe, stripeClient } from '@/lib/stripe';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { logger } from '@/server/lib/logger';
@@ -286,7 +287,7 @@ async function tryProvisionSponsoredSubscription(
         );
         return false;
     }
-    if (invite.expiresAt && invite.expiresAt <= new Date()) {
+    if (isInviteExpired(invite)) {
         log.warn(
             {
                 userId: user.id,

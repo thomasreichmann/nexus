@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures';
 import type { Page } from '@playwright/test';
 import { USER_STATE_PATH } from '../helpers/auth';
-import { waitForTableLoad } from '../helpers/table';
+import { statusCells, waitForTableLoad } from '../helpers/table';
 import { waitForTrpcRequest } from '../helpers/trpc';
 import { countJobsByStatus, type Job } from '@nexus/db/test-db';
 import { seedJobs, cleanupJobs } from '../helpers/scenarios';
@@ -118,7 +118,7 @@ test.describe('dashboard with seeded data', () => {
                 .click();
             await waitForTableLoad(page, 'No jobs found');
 
-            const badges = page.locator('tbody td:nth-child(2)');
+            const badges = statusCells(page);
             const count = await badges.count();
             expect(count).toBeGreaterThan(0);
             for (let i = 0; i < count; i++) {

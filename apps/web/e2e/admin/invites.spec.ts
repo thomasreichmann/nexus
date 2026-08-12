@@ -7,15 +7,22 @@ import {
     findUserByEmail,
     type Invite,
 } from '@nexus/db/test-db';
+import type { Page, Locator } from '@playwright/test';
 import { ADMIN_USER } from '../helpers/auth';
-import { waitForTableLoad } from '../helpers/table';
+import { statusCell, statusCells, waitForTableLoad } from '../helpers/table';
 
 const PAGE_URL = '/dashboard/admin/invites';
+
+/** The table row for a seeded invite, located by its unique recipient. */
+function inviteRow(page: Page, email: string): Locator {
+    return page.locator('tbody tr').filter({ hasText: email });
+}
 
 // Unique per run so a crashed previous run can't collide; cleaned in afterAll.
 const RUN_ID = `${Date.now()}-${process.pid}`;
 const SEEDED_EMAIL = `invite-seeded-${RUN_ID}@test.local`;
 const REVOKE_EMAIL = `invite-revoke-${RUN_ID}@test.local`;
+const EXPIRED_EMAIL = `invite-expired-${RUN_ID}@test.local`;
 const CREATED_EMAIL = `invite-created-${RUN_ID}@test.local`;
 
 // Admin project applies the admin storageState at the project level; align the
@@ -44,6 +51,12 @@ test.describe('admin invites', () => {
             }),
             insertInvite(db, { createdBy: admin.id, status: 'revoked' }),
             insertInvite(db, { createdBy: admin.id, email: REVOKE_EMAIL }),
+            // Still `pending` in the DB — expiry is derived in the UI (#336).
+            insertInvite(db, {
+                createdBy: admin.id,
+                email: EXPIRED_EMAIL,
+                expiresAt: new Date(Date.now() - 86_400_000),
+            }),
         ]);
     });
 
@@ -67,18 +80,34 @@ test.describe('admin invites', () => {
             await expect(headers.nth(3)).toHaveText('Created');
             await expect(headers.nth(4)).toHaveText('Expires');
 
-            const row = page
-                .locator('tbody tr')
-                .filter({ hasText: SEEDED_EMAIL });
+            const row = inviteRow(page, SEEDED_EMAIL);
             await expect(row.getByText('Pending')).toBeVisible();
             await expect(row.getByText('2 TB')).toBeVisible();
 
             // Invites without a per-tester override show the effective
             // sponsored default, marked as such.
-            const defaultRow = page
-                .locator('tbody tr')
-                .filter({ hasText: REVOKE_EMAIL });
+            const defaultRow = inviteRow(page, REVOKE_EMAIL);
             await expect(defaultRow.getByText('(default)')).toBeVisible();
+        }
+    );
+
+    test(
+        'a pending invite past its expiry reads Expired and stays revocable',
+        { tag: ['@page:/dashboard/admin/invites', '@uc:admin-invites-table'] },
+        async ({ page }) => {
+            await page.goto(PAGE_URL);
+            await waitForTableLoad(page, 'No invites found');
+
+            const row = inviteRow(page, EXPIRED_EMAIL);
+            // Scope to the status cell — the seeded email contains "expired",
+            // which a row-wide getByText would match too.
+            await expect(statusCell(row)).toHaveText('Expired');
+
+            // Expiry is derived, so the DB row is still pending — revoke is
+            // the only way to clear it and must stay available.
+            await expect(
+                row.getByRole('button', { name: 'Revoke invite' })
+            ).toBeVisible();
         }
     );
 
@@ -94,7 +123,7 @@ test.describe('admin invites', () => {
                 .click();
             await waitForTableLoad(page, 'No invites found');
 
-            const badges = page.locator('tbody td:nth-child(2)');
+            const badges = statusCells(page);
             const count = await badges.count();
             expect(count).toBeGreaterThan(0);
             for (let i = 0; i < count; i++) {
@@ -151,9 +180,7 @@ test.describe('admin invites', () => {
             ).toBeVisible();
 
             // The list invalidates on creation — the new invite appears.
-            await expect(
-                page.locator('tbody tr').filter({ hasText: CREATED_EMAIL })
-            ).toBeVisible();
+            await expect(inviteRow(page, CREATED_EMAIL)).toBeVisible();
         }
     );
 
@@ -164,9 +191,7 @@ test.describe('admin invites', () => {
             await page.goto(PAGE_URL);
             await waitForTableLoad(page, 'No invites found');
 
-            const row = page
-                .locator('tbody tr')
-                .filter({ hasText: REVOKE_EMAIL });
+            const row = inviteRow(page, REVOKE_EMAIL);
             await expect(row.getByText('Pending')).toBeVisible();
 
             await row.getByRole('button', { name: 'Revoke invite' }).click();

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { DB } from '@nexus/db';
 import { createInviteRepo, type Invite } from '@nexus/db/repo/invites';
 import { env } from '@/lib/env';
+import { isInviteExpired } from '@/lib/invites';
 import { InvalidStateError, NotFoundError } from '@/server/errors';
 import { logger } from '@/server/lib/logger';
 import { emailService } from '@/server/services/email';
@@ -88,9 +89,7 @@ async function getInviteRedemption(
     const invite = await createInviteRepo(db).findByToken(token);
     if (!invite) return { status: 'invalid' };
     if (invite.status !== 'pending') return { status: invite.status };
-    if (invite.expiresAt && invite.expiresAt <= new Date()) {
-        return { status: 'expired' };
-    }
+    if (isInviteExpired(invite)) return { status: 'expired' };
     return { status: 'valid', email: invite.email };
 }
 
