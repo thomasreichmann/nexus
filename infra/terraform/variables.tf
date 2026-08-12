@@ -23,6 +23,17 @@ variable "cors_allowed_origins" {
   type        = list(string)
 }
 
+variable "alert_email" {
+  description = "Ops contact for AWS-originated alerts (alarms.tf, budgets.tf); prod-only — see README 'After apply'."
+  type        = string
+}
+
+variable "monthly_budget_usd" {
+  description = "Monthly cap for the account-wide AWS budget (budgets.tf). Defaulted rather than set per environment because the budget is account-global. $20 is a tripwire above expected alpha spend, not a forecast — bump it if ordinary growth starts tripping it."
+  type        = number
+  default     = 20
+}
+
 variable "database_url" {
   description = "Supabase transaction-pooler URL (port 6543) injected into the worker Lambda. Pass via TF_VAR_database_url; never commit. Note: persisted in Terraform state."
   type        = string
