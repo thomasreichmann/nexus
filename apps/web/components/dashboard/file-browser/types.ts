@@ -7,6 +7,8 @@ export interface FileItemProps {
     isHighlighted: boolean;
     hasSelection: boolean;
     onSelect: (shiftKey: boolean) => void;
+    /** Presigned thumbnail GET (useThumbnailUrls); absent -> icon fallback. */
+    thumbnailUrl?: string;
     /** Attached to the root element — deep-link scroll target. */
     ref?: RefCallback<HTMLElement>;
 }

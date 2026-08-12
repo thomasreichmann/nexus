@@ -1,4 +1,16 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
+
+// The thumbnail-enqueue helper logs enqueue failures via the structured
+// logger; mocked so the fail-soft test can assert the swallow-and-log path.
+const hoisted = await vi.hoisted(async () => {
+    const { createMockPostHogServer } = await import('@/lib/posthog/testing');
+    const { createMockLogger } = await import('@/server/lib/logger/testing');
+    return { posthog: createMockPostHogServer(), logger: createMockLogger() };
+});
+
+vi.mock('@/lib/posthog/server', () => hoisted.posthog);
+vi.mock('@/server/lib/logger', () => ({ logger: hoisted.logger }));
+
 import {
     createMockDb,
     type MockDb,
@@ -9,17 +21,23 @@ import {
     TEST_BATCH_ID,
     TEST_USER_ID,
 } from '@nexus/db/testing';
+import { jobs } from '@/lib/jobs';
 import { mockS3 } from '@/lib/storage/testing';
 import {
     NotFoundError,
     QuotaExceededError,
     InvalidStateError,
 } from '@/server/errors';
+import { PostHogEvent } from '@/lib/posthog/events';
 import { fileService, formatFallbackBatchName } from './files';
 import { PLAN_LIMITS } from './constants';
 
 vi.mock('@/lib/storage', () => ({
     s3: mockS3,
+}));
+
+vi.mock('@/lib/jobs', () => ({
+    jobs: { publish: vi.fn() },
 }));
 
 describe('files service', () => {
@@ -301,6 +319,37 @@ describe('files service', () => {
                     fileCount: 1,
                 })
             );
+            expect(jobs.publish).toHaveBeenCalledWith(db, {
+                type: 'generate-thumbnail',
+                payload: { fileId: uploadingFile.id },
+            });
+        });
+
+        it('still confirms the upload when the thumbnail enqueue fails', async () => {
+            const uploadingFile = createFileFixture({ status: 'uploading' });
+            const availableFile = createFileFixture({
+                ...uploadingFile,
+                status: 'available',
+            });
+            mocks.files.findFirst.mockResolvedValue(uploadingFile);
+            mocks.returning
+                .mockResolvedValueOnce([availableFile])
+                .mockResolvedValueOnce([createStorageUsageFixture()]);
+            vi.mocked(jobs.publish).mockRejectedValueOnce(
+                new Error('SQS unavailable')
+            );
+
+            const result = await fileService.confirmUpload(
+                db,
+                TEST_USER_ID,
+                uploadingFile.id
+            );
+
+            expect(result.file).toEqual(availableFile);
+            expect(hoisted.logger.error).toHaveBeenCalledWith(
+                expect.objectContaining({ fileId: uploadingFile.id }),
+                'Failed to enqueue generate-thumbnail'
+            );
         });
 
         it('is a no-op when the file is already available (no double-count)', async () => {
@@ -316,6 +365,48 @@ describe('files service', () => {
             expect(result.file).toEqual(availableFile);
             expect(mocks.update).not.toHaveBeenCalled();
             expect(mocks.onConflictDoUpdate).not.toHaveBeenCalled();
+            // The idempotent branch must not re-enqueue a thumbnail job.
+            expect(jobs.publish).not.toHaveBeenCalled();
+        });
+
+        // The analytics event carries the same idempotency guarantee as the
+        // usage counter: a retried confirm must not inflate the funnel.
+        it('emits upload_confirmed once on the branch that flips status', async () => {
+            const uploadingFile = createFileFixture({
+                status: 'uploading',
+                size: 4096,
+            });
+            const availableFile = createFileFixture({
+                ...uploadingFile,
+                status: 'available',
+            });
+            mocks.files.findFirst.mockResolvedValue(uploadingFile);
+            mocks.returning
+                .mockResolvedValueOnce([availableFile])
+                .mockResolvedValueOnce([
+                    createStorageUsageFixture({ usedBytes: 4096 }),
+                ]);
+
+            await fileService.confirmUpload(db, TEST_USER_ID, uploadingFile.id);
+
+            expect(hoisted.posthog.captureServerEvent).toHaveBeenCalledOnce();
+            expect(hoisted.posthog.captureServerEvent).toHaveBeenCalledWith(
+                TEST_USER_ID,
+                PostHogEvent.UploadConfirmed,
+                expect.objectContaining({
+                    fileId: availableFile.id,
+                    sizeBytes: availableFile.size,
+                })
+            );
+        });
+
+        it('emits nothing on a duplicate confirm', async () => {
+            const availableFile = createFileFixture({ status: 'available' });
+            mocks.files.findFirst.mockResolvedValue(availableFile);
+
+            await fileService.confirmUpload(db, TEST_USER_ID, availableFile.id);
+
+            expect(hoisted.posthog.captureServerEvent).not.toHaveBeenCalled();
         });
 
         it('throws NotFoundError when file does not exist', async () => {
@@ -625,6 +716,10 @@ describe('files service', () => {
             expect(result.file.status).toBe('available');
             expect(mocks.set).toHaveBeenCalledWith({ status: 'available' });
             expect(mocks.onConflictDoUpdate).toHaveBeenCalledOnce();
+            expect(jobs.publish).toHaveBeenCalledWith(db, {
+                type: 'generate-thumbnail',
+                payload: { fileId: uploadingFile.id },
+            });
         });
 
         it('throws NotFoundError when file does not exist', async () => {

@@ -9,7 +9,8 @@ which closed the main drift vector between environments).
 
 State lives in S3 (`nexus-terraform-state-391615358272`, us-east-1) with one
 workspace per environment. A guard resource fails the plan if the selected
-workspace doesn't match `var.environment`.
+workspace doesn't match `var.environment`, and `prevent_destroy` on the files
+bucket fails a whole-stack destroy (see [Destroy](#destroy)).
 
 ## Prerequisites
 
@@ -69,17 +70,52 @@ production code.
    real worker per `docs/guides/background-jobs.md`, with
    `--function-name nexus-worker-<env> --region us-east-1`. Later applies
    won't touch the deployed code (`ignore_changes` on the package), but the
-   Lambda's environment (`DATABASE_URL`) **is** Terraform-managed — update it
-   here, not with `aws lambda update-function-configuration`.
+   Lambda's environment (`DATABASE_URL`, `S3_BUCKET`, `S3_DERIVED_BUCKET`)
+   **is** Terraform-managed — update it here, not with
+   `aws lambda update-function-configuration`.
 
-3. **Env vars** from `terraform output` — prod values go to the Vercel
+3. **Lambda layers** — `layers.tf` publishes the worker's ffmpeg and
+   perl/exiftool layers from zips in the `nexus-lambda-artifacts-<env>`
+   bucket. Before the first apply (and after any version bump), build them
+   in CI (`lambda-layers.yml`) and sync:
+
+    ```bash
+    gh run download -n ffmpeg-layer -n exiftool-layer -D /tmp/layers
+    ./scripts/upload-layers.sh <env> /tmp/layers
+    ```
+
+4. **Env vars** from `terraform output` — prod values go to the Vercel
    Production tier (#291), dev values to Preview + Development (and GitHub
    Actions secrets `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`S3_BUCKET`/
    `SQS_QUEUE_URL`, which are dev-scoped):
 
-    | Var                                           | Source                 |
-    | --------------------------------------------- | ---------------------- |
-    | `S3_BUCKET`                                   | `s3_bucket` output     |
-    | `AWS_REGION`                                  | `aws_region` output    |
-    | `SQS_QUEUE_URL`                               | `sqs_queue_url` output |
-    | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1 |
+    | Var                                           | Source                     |
+    | --------------------------------------------- | -------------------------- |
+    | `S3_BUCKET`                                   | `s3_bucket` output         |
+    | `S3_DERIVED_BUCKET`                           | `s3_derived_bucket` output |
+    | `AWS_REGION`                                  | `aws_region` output        |
+    | `SQS_QUEUE_URL`                               | `sqs_queue_url` output     |
+    | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1     |
+
+## Destroy
+
+`aws_s3_bucket.files` carries `lifecycle { prevent_destroy = true }`, so
+`terraform destroy` on this stack fails at plan time, before any resource is
+removed. That one guard covers everything: the rest of the stack (SQS, SNS,
+Lambda, IAM) is reconstructible from these files, so losing it is an outage,
+not data loss.
+
+Decommissioning an environment for real means deleting the bucket contents and
+removing the guard in a commit first. Then:
+
+```bash
+terraform -chdir=infra/terraform workspace select dev    # or prod
+terraform -chdir=infra/terraform destroy -var-file=environments/dev.tfvars
+```
+
+- **`-chdir` over `cd`** — the target stack is named in the command itself, so
+  a destroy can't hit a different stack because the shell was left in another
+  directory.
+- **Never `-auto-approve`.** Read the `N to destroy` count in the plan header,
+  check that N and the listed resources match the stack you meant, then type
+  `yes`.

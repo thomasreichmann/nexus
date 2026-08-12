@@ -54,6 +54,14 @@ export const retrievalStatusEnum = pgEnum('retrieval_status', [
 
 export const retrievalTierEnum = pgEnum('retrieval_tier', RESTORE_TIERS);
 
+export const thumbnailStatusEnum = pgEnum('thumbnail_status', [
+    'pending', // Set at insert; generate-thumbnail job not yet completed
+    'ready', // WebP exists in the derived bucket (worker writes S3 first)
+    'failed', // Bad/unreadable file — icon fallback forever
+    'failed_cold', // Original hit Deep Archive before generation; self-heals on restore
+    'skipped', // No thumbnail applicable: deleted before the job ran, or non-media type
+]);
+
 // Groups files uploaded together in a single session. The natural unit of
 // work for photographers is "a shoot" — one wedding/event = one batch. Batch
 // FK is nullable on files/retrievals so legacy rows (pre-batch) keep working.
@@ -93,6 +101,19 @@ export const files = pgTable(
             .notNull()
             .default('standard'),
         status: fileStatusEnum('status').notNull().default('uploading'),
+        // Thumbnail lifecycle for the derived-bucket WebP. No key column:
+        // the derived key is a pure function of immutable row fields
+        // (`${userId}/${fileId}/thumb.webp`), so the DB stays source of truth.
+        thumbnailStatus: thumbnailStatusEnum('thumbnail_status')
+            .notNull()
+            .default('pending'),
+        // Worker-populated once the thumbnail is ready. Not consumed by the
+        // grid yet (its media boxes are a fixed ratio by design); kept for
+        // exact-aspect sizing in a future lightbox/preview surface.
+        thumbnailWidth: integer('thumbnail_width'),
+        thumbnailHeight: integer('thumbnail_height'),
+        // Video-only, from ffprobe; drives the duration badge.
+        durationSeconds: integer('duration_seconds'),
         ...timestamps(),
         lastAccessedAt: timestamp('last_accessed_at'),
         deletedAt: timestamp('deleted_at'),

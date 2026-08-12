@@ -22,6 +22,8 @@ import { useTRPC } from '@/lib/trpc/client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
+import { captureEvent } from '@/lib/posthog/client';
+import { PostHogEvent } from '@/lib/posthog/events';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
 import type { FileWithRetrieval } from '@nexus/db/repo/files';
 import { toastContext } from '@/lib/trpc/error-link';
@@ -46,6 +48,10 @@ export function useFileActions(file: FileWithRetrieval) {
             }),
             onSuccess(result) {
                 invalidateFileList();
+                captureEvent(PostHogEvent.RetrievalRequested, {
+                    fileCount: 1,
+                    storageTier: file.storageTier,
+                });
                 toastRetrievalResult(result, 'Retrieval request submitted');
             },
         })
@@ -56,6 +62,11 @@ export function useFileActions(file: FileWithRetrieval) {
             const { url } = await queryClient.fetchQuery(
                 trpc.files.getDownloadUrl.queryOptions({ fileId: file.id })
             );
+            captureEvent(PostHogEvent.FileDownloaded, {
+                fileId: file.id,
+                sizeBytes: file.size,
+                storageTier: file.storageTier,
+            });
             window.open(url, '_blank');
         } catch {
             toast.error('Failed to get download URL');

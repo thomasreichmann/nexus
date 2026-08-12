@@ -38,6 +38,8 @@ import { useTRPC } from '@/lib/trpc/client';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
+import { captureEvent } from '@/lib/posthog/client';
+import { PostHogEvent } from '@/lib/posthog/events';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
 import { toastContext } from '@/lib/trpc/error-link';
 import { toastRetrievalResult } from './retrievalFeedback';
@@ -46,6 +48,7 @@ import { BatchHeader, BatchHeaderRow } from './BatchHeader';
 import { FileRow } from './FileRow';
 import { FileCard } from './FileCard';
 import { MobileFileRow } from './MobileFileRow';
+import { useThumbnailUrls } from './useThumbnailUrls';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -79,6 +82,11 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
 
     const groups = useMemo(() => groupsData ?? [], [groupsData]);
     const counts = countsData ?? { archived: 0, retrieving: 0, available: 0 };
+
+    // Keyed off the unfiltered library so searching never re-chunks the
+    // presign queries (see useThumbnailUrls' stable-chunk note).
+    const allFiles = useMemo(() => groups.flatMap((g) => g.files), [groups]);
+    const thumbnailUrls = useThumbnailUrls(allFiles);
 
     // Seeded from the deep-link so the target row is highlighted from first
     // paint; cleared on a timer once we've scrolled to it.
@@ -141,7 +149,10 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
             trpc: toastContext({
                 errorMessage: 'Failed to request retrievals',
             }),
-            onSuccess(result) {
+            // `variables` rather than the selection state: the selection is
+            // rewritten just below, and it can hold non-archived files the
+            // request already filtered out.
+            onSuccess(result, variables) {
                 invalidateFileList();
                 // Keep files whose restore failed selected so retrying them
                 // is one click instead of re-selecting by hand.
@@ -151,6 +162,10 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                 setSelectedFiles((prev) =>
                     prev.filter((id) => failedFileIds.has(id))
                 );
+                captureEvent(PostHogEvent.RetrievalRequested, {
+                    fileCount: variables.fileIds.length,
+                    isBulk: true,
+                });
                 toastRetrievalResult(result, 'Retrieval requests submitted');
             },
         })
@@ -412,6 +427,12 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                                                                             : undefined
                                                                     }
                                                                     file={file}
+                                                                    thumbnailUrl={
+                                                                        thumbnailUrls[
+                                                                            file
+                                                                                .id
+                                                                        ]
+                                                                    }
                                                                     isSelected={selectedFiles.includes(
                                                                         file.id
                                                                     )}
@@ -518,6 +539,12 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                                                                             : undefined
                                                                     }
                                                                     file={file}
+                                                                    thumbnailUrl={
+                                                                        thumbnailUrls[
+                                                                            file
+                                                                                .id
+                                                                        ]
+                                                                    }
                                                                     isSelected={selectedFiles.includes(
                                                                         file.id
                                                                     )}
@@ -583,6 +610,11 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                                                                 : undefined
                                                         }
                                                         file={file}
+                                                        thumbnailUrl={
+                                                            thumbnailUrls[
+                                                                file.id
+                                                            ]
+                                                        }
                                                         isSelected={selectedFiles.includes(
                                                             file.id
                                                         )}

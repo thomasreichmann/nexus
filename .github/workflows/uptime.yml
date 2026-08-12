@@ -1,0 +1,103 @@
+name: Uptime
+
+# HTTP pinger for the deployed app (#333, part of #326). The other scheduled
+# checks hit the DB or AWS directly from Actions, so a full app outage leaves
+# them all green — this one GETs /api/health on both environments over the
+# public internet. A failed run is the alert: GitHub emails the workflow
+# author on scheduled-run failure, and the notify step posts to Discord.
+#
+# Deliberately in-repo instead of a third-party pinger (no new external
+# services). If monitoring must ever survive an Actions outage, the
+# escalation path is an in-house AWS service via infra/ Terraform.
+
+on:
+    schedule:
+        # Nominal 15-minute cadence; Actions may delay scheduled runs under
+        # load, so treat detection latency as 15–30 min in practice.
+        - cron: '*/15 * * * *'
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    ping:
+        name: Ping /api/health (${{ matrix.env }})
+        runs-on: ubuntu-latest
+        strategy:
+            # An outage in one environment shouldn't hide the other's status.
+            fail-fast: false
+            matrix:
+                include:
+                    - env: prod
+                      url: https://nexus.thomasar.dev/api/health
+                    - env: dev
+                      url: https://dev.nexus.thomasar.dev/api/health
+        steps:
+            # Hand-rolled retry loop instead of curl --retry: --retry logs
+            # only bare "curl: (22)" lines and dumps the full error page,
+            # which made the first real failure unreadable. The loop gives
+            # one line per attempt (status + latency), a truncated body only
+            # on final failure, and an ::error annotation + step summary so
+            # the run page says what broke without opening logs.
+            - name: GET ${{ matrix.url }}
+              env:
+                  URL: ${{ matrix.url }}
+                  ENV_NAME: ${{ matrix.env }}
+              run: |
+                  attempts=3
+                  status=000
+                  touch body.txt
+                  for i in $(seq 1 "$attempts"); do
+                      started=$(date +%s%3N)
+                      status=$(curl --silent --show-error --output body.txt \
+                          --write-out '%{http_code}' --max-time 30 "$URL" || true)
+                      status=${status:-000}
+                      took=$(( $(date +%s%3N) - started ))
+                      if [ "$status" = "200" ]; then
+                          echo "attempt $i/$attempts: HTTP 200 in ${took}ms — $(cat body.txt)"
+                          exit 0
+                      fi
+                      if [ "$status" = "000" ]; then
+                          echo "attempt $i/$attempts: no HTTP response (timeout/DNS/connection) after ${took}ms"
+                      else
+                          echo "attempt $i/$attempts: HTTP $status in ${took}ms"
+                      fi
+                      if [ "$i" -lt "$attempts" ]; then sleep 10; fi
+                  done
+                  echo "last response body (truncated to 300 bytes):"
+                  head -c 300 body.txt; echo
+                  echo "::error title=Uptime check failed ($ENV_NAME)::GET $URL → HTTP $status on all $attempts attempts"
+                  {
+                      echo "### ❌ $ENV_NAME: \`GET $URL\` → HTTP $status ($attempts attempts)"
+                      echo
+                      echo '```'
+                      head -c 300 body.txt
+                      echo
+                      echo '```'
+                  } >> "$GITHUB_STEP_SUMMARY"
+                  exit 1
+
+            # Raw curl instead of lib/alerts on purpose: routing through the
+            # shared module needs checkout + Node + pnpm install, and an
+            # outage alert must not depend on the repo toolchain being
+            # healthy. Costs the styled embed the other alerts get. The
+            # unset-secret-degrades-to-a-no-op contract still matches
+            # s3-event-health.yml.
+            - name: Notify Discord
+              if: failure()
+              env:
+                  DISCORD_ALERT_WEBHOOK_URL: ${{ secrets.DISCORD_ALERT_WEBHOOK_URL }}
+                  MESSAGE: >-
+                      🔴 **Uptime check failed** (${{ matrix.env }}):
+                      ${{ matrix.url }} —
+                      <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>
+              run: |
+                  if [ -z "$DISCORD_ALERT_WEBHOOK_URL" ]; then
+                      echo "DISCORD_ALERT_WEBHOOK_URL not configured — skipping Discord notification."
+                      exit 0
+                  fi
+                  jq -n --arg content "$MESSAGE" '{content: $content}' |
+                      curl --silent --show-error --max-time 15 \
+                          -H 'Content-Type: application/json' \
+                          -d @- "$DISCORD_ALERT_WEBHOOK_URL"

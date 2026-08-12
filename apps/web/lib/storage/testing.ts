@@ -36,6 +36,12 @@ const presignedMocks = {
     get: async (key: string): Promise<string> => createMockUrl(key),
 };
 
+const derivedMocks = {
+    isConfigured: (): boolean => true,
+    get: async (key: string): Promise<string> =>
+        `${MOCK_HOST}/derived-${MOCK_BUCKET}/${key}`,
+};
+
 const glacierMocks = {
     restore: async (): Promise<void> => {},
     checkStatus: async (): Promise<{
@@ -75,6 +81,7 @@ const multipartMocks = {
 
 interface MockS3 {
     presigned: typeof presignedMocks;
+    derived: typeof derivedMocks;
     glacier: typeof glacierMocks;
     objects: typeof objectsMocks;
     multipart: typeof multipartMocks;
@@ -103,6 +110,7 @@ interface MockS3 {
 export function createPresignedMocks(): MockS3 {
     return {
         presigned: presignedMocks,
+        derived: derivedMocks,
         glacier: glacierMocks,
         objects: objectsMocks,
         multipart: multipartMocks,

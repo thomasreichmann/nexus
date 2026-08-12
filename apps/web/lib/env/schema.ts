@@ -9,6 +9,10 @@ export const serverSchema = z.object({
     AWS_SECRET_ACCESS_KEY: z.string().min(1),
     AWS_REGION: z.string().min(1),
     S3_BUCKET: z.string().min(1),
+    // Derived (thumbnails) bucket. Optional so deploys don't break between
+    // this code landing and `terraform apply` creating the bucket — unset
+    // degrades thumbnails to icon fallbacks (bulk presign returns no URLs).
+    S3_DERIVED_BUCKET: z.string().min(1).optional(),
     SQS_QUEUE_URL: z.string().url(),
     STRIPE_SECRET_KEY: z.string().min(1),
     STRIPE_WEBHOOK_SECRET: z.string().min(1),
@@ -31,4 +35,12 @@ export const clientSchema = z.object({
     // (VERCEL server-side, NEXT_PUBLIC_VERCEL_ENV client-side) — so local
     // dev, CI, and e2e builds leave it unset. See instrumentation-client.ts.
     NEXT_PUBLIC_SENTRY_DSN: z.string().url().optional(),
+    // Same deployment gate as the Sentry DSN above, for the same reason. Not
+    // .url() — a PostHog project key is an opaque `phc_...` string.
+    NEXT_PUBLIC_POSTHOG_KEY: z.string().min(1).optional(),
+    // Ingestion host. Unset falls back to DEFAULT_POSTHOG_HOST (US cloud);
+    // set it to point at the EU region. lib/posthog/hosts.ts derives the
+    // asset and dashboard hosts from this by substring, which only holds for
+    // PostHog cloud — a self-hosted origin passes through unrewritten.
+    NEXT_PUBLIC_POSTHOG_HOST: z.string().url().optional(),
 });

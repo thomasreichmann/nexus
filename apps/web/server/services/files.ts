@@ -1,5 +1,5 @@
 import type { DB } from '@nexus/db';
-import { createFileRepo, type File } from '@nexus/db/repo/files';
+import { createFileRepo, thumbnailKey, type File } from '@nexus/db/repo/files';
 import { createStorageUsageRepo } from '@nexus/db/repo/storage-usage';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
 import {
@@ -8,7 +8,10 @@ import {
 } from '@nexus/db/repo/uploadBatches';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
+import { PostHogEvent } from '@/lib/posthog/events';
+import { captureServerEvent } from '@/lib/posthog/server';
 import { quotaService } from './quota';
+import { enqueueThumbnailGeneration } from './thumbnails';
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 900; // 15 minutes
 const MULTIPART_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
@@ -147,18 +150,18 @@ async function confirmUpload(
     userId: string,
     fileId: string
 ): Promise<ConfirmUploadResult> {
-    return db.transaction(async (tx) => {
+    const { file, isConfirmed } = await db.transaction(async (tx) => {
         const fileRepo = createFileRepo(tx);
         const usageRepo = createStorageUsageRepo(tx);
 
-        const file = await fileRepo.findByUserAndId(userId, fileId);
-        if (!file) {
+        const existing = await fileRepo.findByUserAndId(userId, fileId);
+        if (!existing) {
             throw new NotFoundError('File', fileId);
         }
         // Idempotency: a duplicate confirm shouldn't double-count usage.
         // Only flip state and increment when the file is still uploading.
-        if (file.status !== 'uploading') {
-            return { file };
+        if (existing.status !== 'uploading') {
+            return { file: existing, isConfirmed: false };
         }
 
         const updated = await fileRepo.update(fileId, {
@@ -168,10 +171,25 @@ async function confirmUpload(
             throw new NotFoundError('File', fileId);
         }
 
-        await usageRepo.incrementUsage(userId, file.size);
+        await usageRepo.incrementUsage(userId, existing.size);
 
-        return { file: updated };
+        return { file: updated, isConfirmed: true };
     });
+
+    // After the commit, and only on the branch that actually flipped state —
+    // a duplicate confirm must not double-count in the funnel or re-enqueue
+    // the thumbnail job.
+    if (isConfirmed) {
+        captureServerEvent(userId, PostHogEvent.UploadConfirmed, {
+            fileId: file.id,
+            sizeBytes: file.size,
+            storageTier: file.storageTier,
+            batchId: file.batchId,
+        });
+        await enqueueThumbnailGeneration(db, file.id);
+    }
+
+    return { file };
 }
 
 async function initiateMultipartUpload(
@@ -242,7 +260,7 @@ async function completeMultipartUpload(
     // covers status flip and usage bump atomically.
     await s3.multipart.complete(file.s3Key, input.uploadId, input.parts);
 
-    return db.transaction(async (tx) => {
+    const { file: completed, isConfirmed } = await db.transaction(async (tx) => {
         const txFileRepo = createFileRepo(tx);
         const txUsageRepo = createStorageUsageRepo(tx);
 
@@ -254,7 +272,7 @@ async function completeMultipartUpload(
             throw new NotFoundError('File', input.fileId);
         }
         if (current.status !== 'uploading') {
-            return { file: current };
+            return { file: current, isConfirmed: false };
         }
 
         const updated = await txFileRepo.update(input.fileId, {
@@ -266,8 +284,15 @@ async function completeMultipartUpload(
 
         await txUsageRepo.incrementUsage(userId, file.size);
 
-        return { file: updated };
+        return { file: updated, isConfirmed: true };
     });
+
+    // Same post-commit, flip-branch-only enqueue as confirmUpload.
+    if (isConfirmed) {
+        await enqueueThumbnailGeneration(db, completed.id);
+    }
+
+    return { file: completed };
 }
 
 interface ListMultipartPartsResult {
@@ -367,6 +392,45 @@ async function abortMultipartUpload(
     });
 }
 
+const THUMBNAIL_URL_EXPIRY_SECONDS = 3600; // 1 hour
+
+interface ThumbnailUrlsResult {
+    /** fileId -> presigned GET URL; only entries with a ready thumbnail. */
+    urls: Record<string, string>;
+    expiresAt: Date;
+}
+
+// Bulk-presign thumbnail GETs for the file browser. Presigning is local
+// HMAC (~tens of µs/URL) — the input cap is about response payload size,
+// not signing cost; the client chunks its visible files into page-sized
+// batches. Files without a ready thumbnail (or an unconfigured derived
+// bucket) are simply absent from the map: the UI keeps its icon fallback.
+async function getThumbnailUrls(
+    db: DB,
+    userId: string,
+    fileIds: string[]
+): Promise<ThumbnailUrlsResult> {
+    const urls: Record<string, string> = {};
+
+    if (s3.derived.isConfigured()) {
+        const fileRepo = createFileRepo(db);
+        const files = await fileRepo.findManyByUserAndIds(userId, fileIds);
+        const ready = files.filter((f) => f.thumbnailStatus === 'ready');
+        await Promise.all(
+            ready.map(async (f) => {
+                urls[f.id] = await s3.derived.get(thumbnailKey(f), {
+                    expiresIn: THUMBNAIL_URL_EXPIRY_SECONDS,
+                });
+            })
+        );
+    }
+
+    return {
+        urls,
+        expiresAt: new Date(Date.now() + THUMBNAIL_URL_EXPIRY_SECONDS * 1000),
+    };
+}
+
 function deleteUserFile(db: DB, userId: string, fileId: string): Promise<File>;
 function deleteUserFile(
     db: DB,
@@ -423,4 +487,5 @@ export const fileService = {
     signMultipartParts,
     abortMultipartUpload,
     deleteUserFile,
+    getThumbnailUrls,
 } as const;

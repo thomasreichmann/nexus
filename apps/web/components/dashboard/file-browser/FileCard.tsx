@@ -1,12 +1,14 @@
 'use client';
 
+import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
-import { formatBytes } from '@/lib/format';
+import { formatBytes, formatDuration } from '@/lib/format';
 import {
     deriveStatus,
     getDownloadWindowLabel,
     getFileExtension,
+    getFileTypeInfo,
 } from './status';
 import { SelectableIcon, StatusDot } from './SelectableIcon';
 import { FileActions, useFileActions } from './FileActions';
@@ -19,6 +21,7 @@ export function FileCard({
     isHighlighted,
     hasSelection,
     onSelect,
+    thumbnailUrl,
     ref,
 }: FileItemProps) {
     const status = deriveStatus(file);
@@ -65,6 +68,11 @@ export function FileCard({
                         />
                     </div>
                 </div>
+                <CardMedia
+                    name={file.name}
+                    thumbnailUrl={thumbnailUrl}
+                    durationSeconds={file.durationSeconds}
+                />
                 <MiddleTruncateName
                     name={file.name}
                     className="text-sm/tight font-medium"
@@ -90,5 +98,58 @@ export function FileCard({
                 </div>
             </CardContent>
         </Card>
+    );
+}
+
+/**
+ * Fixed 4:3 media box: the space is reserved whether or not a thumbnail
+ * exists (or has loaded yet), so the icon->image swap never reflows the
+ * grid. Fallback is the file-type icon on its tint — the permanent state
+ * for pending/failed/skipped thumbnails.
+ */
+function CardMedia({
+    name,
+    thumbnailUrl,
+    durationSeconds,
+}: {
+    name: string;
+    thumbnailUrl?: string;
+    durationSeconds: number | null;
+}) {
+    const { icon: TypeIcon, colorClass } = getFileTypeInfo(name);
+    const [isLoaded, setIsLoaded] = useState(false);
+
+    return (
+        <div className="relative mb-3 aspect-4/3 min-w-0 overflow-hidden rounded-lg">
+            <div
+                className={cn(
+                    'flex size-full items-center justify-center',
+                    colorClass
+                )}
+            >
+                <TypeIcon className="size-8 opacity-60" strokeWidth={1.5} />
+            </div>
+            {thumbnailUrl && (
+                // Presigned S3 URL — see SelectableIcon for why not next/image.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                    src={thumbnailUrl}
+                    alt=""
+                    draggable={false}
+                    loading="lazy"
+                    decoding="async"
+                    onLoad={() => setIsLoaded(true)}
+                    className={cn(
+                        'absolute inset-0 size-full object-cover transition-opacity duration-300',
+                        isLoaded ? 'opacity-100' : 'opacity-0'
+                    )}
+                />
+            )}
+            {durationSeconds !== null && (
+                <span className="absolute bottom-1.5 right-1.5 rounded-md bg-black/65 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white">
+                    {formatDuration(durationSeconds)}
+                </span>
+            )}
+        </div>
     );
 }

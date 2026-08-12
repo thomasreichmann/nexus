@@ -1,0 +1,57 @@
+name: Lambda Layers
+
+# Builds the worker's ffmpeg and perl/exiftool layer zips from pinned
+# upstream sources (tooling/lambda-layers/*.sh) inside amazonlinux:2023 —
+# the nodejs22.x Lambda base — so binaries link against the runtime's glibc.
+# These are zip layers, not image-based Lambdas.
+#
+# Zips land as workflow artifacts. To roll them out: download the artifacts,
+# sync with infra/terraform/scripts/upload-layers.sh <env> <dir>, then
+# `terraform apply` publishes them as aws_lambda_layer_version resources
+# (infra/terraform/layers.tf).
+
+on:
+    pull_request:
+        paths:
+            - 'tooling/lambda-layers/**'
+            - '.github/workflows/lambda-layers.yml'
+    push:
+        branches: [main]
+        paths:
+            - 'tooling/lambda-layers/**'
+            - '.github/workflows/lambda-layers.yml'
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    build:
+        name: ${{ matrix.layer }} layer
+        runs-on: ubuntu-latest
+        container: amazonlinux:2023
+        strategy:
+            fail-fast: false
+            matrix:
+                layer: [ffmpeg, exiftool]
+        steps:
+            # actions/checkout needs tar+gzip, which the minimal AL2023
+            # image doesn't ship.
+            - name: Install checkout prerequisites
+              run: dnf install -y tar gzip
+
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Build layer
+              run: bash tooling/lambda-layers/build-${{ matrix.layer }}-layer.sh dist
+
+            - name: Report checksums
+              run: sha256sum dist/*.zip | tee -a "$GITHUB_STEP_SUMMARY"
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ matrix.layer }}-layer
+                  path: dist/*.zip
+                  if-no-files-found: error

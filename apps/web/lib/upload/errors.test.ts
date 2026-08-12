@@ -2,12 +2,15 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const hoisted = await vi.hoisted(async () => {
     const { createMockSentry } = await import('@/lib/sentry/testing');
-    return { sentry: createMockSentry() };
+    const { createMockPostHogClient } = await import('@/lib/posthog/testing');
+    return { sentry: createMockSentry(), posthog: createMockPostHogClient() };
 });
 
 vi.mock('@sentry/nextjs', () => hoisted.sentry);
+vi.mock('@/lib/posthog/client', () => hoisted.posthog);
 
 import { UploadHttpError, UploadNetworkError } from '@/lib/http/xhr';
+import { PostHogEvent } from '@/lib/posthog/events';
 import { makeClientError } from '@/lib/trpc/test-fixtures';
 import {
     isExpiredUrlError,
@@ -56,9 +59,11 @@ describe('isAbortError', () => {
 describe('reportUploadFailure', () => {
     beforeEach(() => {
         hoisted.sentry.captureException.mockClear();
+        hoisted.posthog.captureEvent.mockClear();
     });
 
     const upload = {
+        id: 'row_1',
         name: 'photo.raw',
         size: 1024,
         fileId: 'f_1',
@@ -93,5 +98,41 @@ describe('reportUploadFailure', () => {
         reportUploadFailure(error, 'single', upload);
 
         expect(hoisted.sentry.captureException).not.toHaveBeenCalled();
+    });
+
+    // The two sinks disagree on scope deliberately — see the docblock on
+    // reportUploadFailure. These pin that difference down.
+    it('reports transport failures to PostHog as a lost upload', () => {
+        reportUploadFailure(new UploadHttpError(500), 'multipart', upload);
+
+        expect(hoisted.posthog.captureEvent).toHaveBeenCalledOnce();
+        expect(hoisted.posthog.captureEvent).toHaveBeenCalledWith(
+            PostHogEvent.UploadFailed,
+            {
+                engine: 'multipart',
+                fileId: 'f_1',
+                sizeBytes: 1024,
+                batchId: 'b_1',
+                clientUploadId: 'row_1',
+                isServerRejection: false,
+            }
+        );
+    });
+
+    it('reports tRPC failures to PostHog too, flagged as server rejections', () => {
+        const error = makeClientError({
+            code: 'PRECONDITION_FAILED',
+            domainCode: 'QUOTA_EXCEEDED',
+        });
+        reportUploadFailure(error, 'single', upload);
+
+        expect(hoisted.posthog.captureEvent).toHaveBeenCalledOnce();
+        expect(hoisted.posthog.captureEvent).toHaveBeenCalledWith(
+            PostHogEvent.UploadFailed,
+            expect.objectContaining({
+                engine: 'single',
+                isServerRejection: true,
+            })
+        );
     });
 });

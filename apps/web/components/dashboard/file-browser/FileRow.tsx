@@ -19,6 +19,7 @@ export function FileRow({
     isHighlighted,
     hasSelection,
     onSelect,
+    thumbnailUrl,
     ref,
 }: FileItemProps) {
     const status = deriveStatus(file);
@@ -45,6 +46,7 @@ export function FileRow({
                     onCheckedChange={() => onSelect(false)}
                     showCheckbox={hasSelection}
                     size="sm"
+                    thumbnailUrl={thumbnailUrl}
                 />
             </TableCell>
             {/* w-full + max-w-0: the name column absorbs leftover width and
