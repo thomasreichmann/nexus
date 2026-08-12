@@ -67,6 +67,11 @@ export default withSentryConfig(nextConfig, {
     // lands in the build log.
     silent: !process.env.VERCEL,
     telemetry: false,
+    // First-party tunnel for browser events: ad blockers (majority of web
+    // users) kill requests to *.ingest.sentry.io outright — same problem the
+    // PostHog proxy above solves. `true` generates a random route per build,
+    // which holds up against blocklists better than a fixed path.
+    tunnelRoute: true,
     // webpack-only options (widenClientFileUpload, disableLogger) are
     // deliberately absent: Next 16 builds with Turbopack, where they are
     // no-ops — Turbopack uploads the full client bundle unconditionally.
