@@ -14,11 +14,14 @@ Implement a GitHub issue: research, implement, review, commit, PR.
 
 **Issue number:** $ARGUMENTS
 
+**Issue (pre-fetched):**
+!`gh issue view $(printf '%s' "$ARGUMENTS" | sed 's/^#//') --json number,title,labels,body --template '#{{.number}} — {{.title}}{{"\n"}}labels: {{range .labels}}{{.name}}, {{end}}{{"\n\n"}}{{.body}}'`
+
 ## Workflow
 
-1. **Understand & spawn.** In one block: `gh issue view <n> --json title,body,labels` (labels inform the branch type) and the gated `explore-issue` spawn — a minimal prompt that identifies its role and instructs it to reply "ready" and stop, using no tools. (Spawn-form and resume-form system prompts differ, so an agent's first continue always breaks the prompt cache; gating pays that break at ~0 context and makes every later follow-up a cache hit. Cache TTL is 1h, so pauses for judgment or user questions under an hour don't lose the prefix.) Briefly summarize description, acceptance criteria, and out-of-scope.
+1. **Spawn & summarize.** The issue is pre-fetched above — don't re-fetch it. (If the pre-fetch shows an error instead of an issue, run `gh issue view <n> --json number,title,body,labels` yourself before anything else.) In one block: the gated `explore-issue` spawn — a minimal prompt that identifies its role and instructs it to reply "ready" and stop, using no tools — plus `ToolSearch select:SendMessage` and `git fetch origin main`. (Spawn-form and resume-form system prompts differ, so an agent's first continue always breaks the prompt cache; gating pays that break at ~0 context and makes every later follow-up a cache hit. Cache TTL is 1h, so pauses for judgment or user questions under an hour don't lose the prefix.) Briefly summarize description, acceptance criteria, and out-of-scope.
 
-2. **Task the explorer, then branch while it works.** When "ready" arrives, SendMessage the real task immediately: the issue body plus the report format from step 3. While it researches: `git fetch origin main`, then `git checkout -b <type>/<n>-<slug> origin/main` (types: feat/fix/refactor/docs/chore) — if the branch already exists, ask: resume it, rebase onto `origin/main`, or use a different name — and read `docs/ai/conventions.md`.
+2. **Task the explorer, then branch while it works.** When "ready" arrives, SendMessage the real task immediately: the issue body plus the report format from step 3. While it researches: `git checkout -b <type>/<n>-<slug> origin/main` (type from the labels: feat/fix/refactor/docs/chore) — if the branch already exists, ask: resume it, rebase onto `origin/main`, or use a different name — and read `docs/ai/conventions.md`.
 
 3. **Judge the research.** The explorer's report must be an **evidence pack**, not a list of pointers:
     - **Evidence per acceptance criterion** — for each criterion: the files involved, plus VERBATIM quoted snippets (with file paths) from files that will **not** be edited — patterns to mimic, type signatures verified, test helpers and their defaults. Implement from these quotes without re-reading their source files. For change-map files, path + line range + one line on what's there is enough; those get read in full before editing anyway.
