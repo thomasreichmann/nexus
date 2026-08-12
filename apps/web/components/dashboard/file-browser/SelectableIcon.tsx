@@ -37,7 +37,10 @@ export function StatusDot({ status }: { status: DerivedStatus }) {
 
 /**
  * File icon that morphs into a checkbox on hover or when in selection mode.
- * Renders at a fixed size to prevent layout shift.
+ * Renders at a fixed size to prevent layout shift. When a thumbnail URL is
+ * given, the image fills the same fixed box and follows the exact icon
+ * behavior (fades out for the checkbox); while it loads, the type icon
+ * underneath keeps the box from reading as empty.
  */
 export function SelectableIcon({
     name,
@@ -45,12 +48,14 @@ export function SelectableIcon({
     onCheckedChange,
     showCheckbox,
     size = 'sm',
+    thumbnailUrl,
 }: {
     name: string;
     checked: boolean;
     onCheckedChange: () => void;
     showCheckbox: boolean;
     size?: 'sm' | 'md';
+    thumbnailUrl?: string;
 }) {
     const { icon: TypeIcon, colorClass } = getFileTypeInfo(name);
     const isSmall = size === 'sm';
@@ -81,6 +86,24 @@ export function SelectableIcon({
                         : 'opacity-100 group-hover/icon:opacity-0'
                 )}
             />
+            {thumbnailUrl && (
+                // Presigned S3 URL — next/image would need remotePatterns per
+                // bucket domain and re-proxies bytes; a plain img is the point.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                    src={thumbnailUrl}
+                    alt=""
+                    draggable={false}
+                    loading="lazy"
+                    decoding="async"
+                    className={cn(
+                        'absolute inset-0 size-full rounded-lg object-cover transition-opacity',
+                        reveal
+                            ? 'opacity-0'
+                            : 'opacity-100 group-hover/icon:opacity-0'
+                    )}
+                />
+            )}
             <div
                 className={cn(
                     'absolute inset-0 flex items-center justify-center transition-opacity',

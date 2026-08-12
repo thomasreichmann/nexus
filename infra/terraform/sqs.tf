@@ -5,8 +5,11 @@ resource "aws_sqs_queue" "jobs_dlq" {
 }
 
 resource "aws_sqs_queue" "jobs" {
-  name                       = "nexus-jobs-${var.environment}"
-  visibility_timeout_seconds = 60
+  name = "nexus-jobs-${var.environment}"
+  # Must be >= the worker Lambda's timeout (120s) for the event source
+  # mapping; AWS recommends 6x. Governs retry latency: a failed attempt
+  # becomes visible again after this long.
+  visibility_timeout_seconds = 720
 
   # Jobs retry 3 times before moving to the DLQ.
   redrive_policy = jsonencode({

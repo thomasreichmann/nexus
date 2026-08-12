@@ -32,6 +32,17 @@ export type FileWithRetrieval = File & {
     activeRetrieval: ActiveRetrievalSummary | null;
 };
 
+/**
+ * Derived-bucket key for a file's thumbnail. A pure function of immutable
+ * row fields — no key column, no S3 listing; the DB row stays source of
+ * truth and regeneration is an idempotent overwrite. Deliberately excludes
+ * batchId (unlike the original's s3Key): it's nullable and batch deletion
+ * sets it null, which would silently re-point the computed key.
+ */
+export function thumbnailKey(file: Pick<File, 'userId' | 'id'>): string {
+    return `${file.userId}/${file.id}/thumb.webp`;
+}
+
 export type FileSortKey = 'name' | 'size' | 'uploadedAt';
 export type FileSortOrder = 'asc' | 'desc';
 

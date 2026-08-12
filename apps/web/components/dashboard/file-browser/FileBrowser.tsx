@@ -47,6 +47,7 @@ import { BatchHeader, BatchHeaderRow } from './BatchHeader';
 import { FileRow } from './FileRow';
 import { FileCard } from './FileCard';
 import { MobileFileRow } from './MobileFileRow';
+import { useThumbnailUrls } from './useThumbnailUrls';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -80,6 +81,11 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
 
     const groups = useMemo(() => groupsData ?? [], [groupsData]);
     const counts = countsData ?? { archived: 0, retrieving: 0, available: 0 };
+
+    // Keyed off the unfiltered library so searching never re-chunks the
+    // presign queries (see useThumbnailUrls' stable-chunk note).
+    const allFiles = useMemo(() => groups.flatMap((g) => g.files), [groups]);
+    const thumbnailUrls = useThumbnailUrls(allFiles);
 
     // Seeded from the deep-link so the target row is highlighted from first
     // paint; cleared on a timer once we've scrolled to it.
@@ -410,6 +416,12 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                                                                             : undefined
                                                                     }
                                                                     file={file}
+                                                                    thumbnailUrl={
+                                                                        thumbnailUrls[
+                                                                            file
+                                                                                .id
+                                                                        ]
+                                                                    }
                                                                     isSelected={selectedFiles.includes(
                                                                         file.id
                                                                     )}
@@ -516,6 +528,12 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                                                                             : undefined
                                                                     }
                                                                     file={file}
+                                                                    thumbnailUrl={
+                                                                        thumbnailUrls[
+                                                                            file
+                                                                                .id
+                                                                        ]
+                                                                    }
                                                                     isSelected={selectedFiles.includes(
                                                                         file.id
                                                                     )}
@@ -581,6 +599,11 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                                                                 : undefined
                                                         }
                                                         file={file}
+                                                        thumbnailUrl={
+                                                            thumbnailUrls[
+                                                                file.id
+                                                            ]
+                                                        }
                                                         isSelected={selectedFiles.includes(
                                                             file.id
                                                         )}

@@ -20,6 +20,7 @@ export function MobileFileRow({
     isHighlighted,
     hasSelection,
     onSelect,
+    thumbnailUrl,
     ref,
 }: FileItemProps) {
     const status = deriveStatus(file);
@@ -43,6 +44,7 @@ export function MobileFileRow({
                     onCheckedChange={() => onSelect(false)}
                     showCheckbox={hasSelection}
                     size="sm"
+                    thumbnailUrl={thumbnailUrl}
                 />
             }
             primary={

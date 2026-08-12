@@ -68,6 +68,9 @@ export interface UploadFile {
     // A `resumable` row whose persisted handle can be reopened in one click,
     // rather than requiring the user to re-add the file (Chromium only).
     isQuickResumable?: boolean;
+    // Raw bytes when attached this session — drives the upload zone's local
+    // blob previews. Null for rows restored after a reload until re-attached.
+    previewFile?: File | null;
 }
 
 interface InternalUploadFile extends UploadFile {
@@ -871,7 +874,7 @@ export function useUpload() {
 
     // Expose only the public UploadFile shape (strip internal fields)
     const publicFiles: UploadFile[] = files.map(
-        ({ id, name, size, progress, status, error, isQuickResumable }) => ({
+        ({
             id,
             name,
             size,
@@ -879,6 +882,16 @@ export function useUpload() {
             status,
             error,
             isQuickResumable,
+            file,
+        }) => ({
+            id,
+            name,
+            size,
+            progress,
+            status,
+            error,
+            isQuickResumable,
+            previewFile: file,
         })
     );
 
