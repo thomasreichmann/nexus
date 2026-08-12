@@ -1,7 +1,43 @@
-import * as presigned from './presigned';
-import * as glacier from './glacier';
-import * as objects from './objects';
-import * as multipart from './multipart';
+import { put as presignedPut, get as presignedGet } from './presigned';
+import {
+    restore as glacierRestore,
+    restoreMany as glacierRestoreMany,
+    checkStatus as glacierCheckStatus,
+} from './glacier';
+import { remove as objectsRemove, listAll as objectsListAll } from './objects';
+import {
+    create as multipartCreate,
+    signParts as multipartSignParts,
+    signPartsByNumber as multipartSignPartsByNumber,
+    listParts as multipartListParts,
+    complete as multipartComplete,
+    abort as multipartAbort,
+} from './multipart';
+
+const presigned = {
+    put: presignedPut,
+    get: presignedGet,
+} as const;
+
+const glacier = {
+    restore: glacierRestore,
+    restoreMany: glacierRestoreMany,
+    checkStatus: glacierCheckStatus,
+} as const;
+
+const objects = {
+    remove: objectsRemove,
+    listAll: objectsListAll,
+} as const;
+
+const multipart = {
+    create: multipartCreate,
+    signParts: multipartSignParts,
+    signPartsByNumber: multipartSignPartsByNumber,
+    listParts: multipartListParts,
+    complete: multipartComplete,
+    abort: multipartAbort,
+} as const;
 
 /**
  * S3 storage operations for file archival
