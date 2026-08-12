@@ -33,8 +33,11 @@ JOBS="$(nproc)"
 
 mkdir -p "$BUILD" "$DEPS"
 
+# nasm: ffmpeg's configure hard-requires it for x86 SIMD asm — without it
+# the build is "crippled" (no SIMD decode), which the Lambda's 120s poster
+# budget can't afford.
 dnf install -y --setopt=install_weak_deps=False \
-    gcc gcc-c++ make perl pkgconf zlib-devel \
+    gcc gcc-c++ make nasm perl pkgconf zlib-devel \
     tar gzip xz bzip2 zip diffutils file >/dev/null
 
 fetch() { # <url> <sha256> <output>
