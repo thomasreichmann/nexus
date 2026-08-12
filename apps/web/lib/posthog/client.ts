@@ -100,16 +100,25 @@ export function captureEvent(
  * rather than hardcoding a survey id, so the survey can be rewritten (or
  * swapped for a different one) in the PostHog UI without a deploy.
  *
- * `ignoreConditions`/`ignoreDelay` bypass the survey's own targeting: the user
- * asked for it explicitly, so display rules meant for unprompted popups
- * shouldn't suppress it.
+ * `getSurveys`, not `getActiveMatchingSurveys`: "active matching" means the
+ * surveys the SDK would pop up on its own, and this one is the opposite of
+ * that. It drops `api`-type surveys (the only type that never auto-displays),
+ * and it honours the survey's internal "already seen" targeting flag — so a
+ * button backed by it would resolve once per person and toast "unavailable"
+ * forever after. `getSurveys` hits the same endpoint, which already returns
+ * only live surveys; it just skips the per-person matching that a
+ * user-initiated action shouldn't be subject to.
+ *
+ * `ignoreConditions`/`ignoreDelay` bypass the survey's own targeting for the
+ * same reason: the user asked for it explicitly, so display rules meant for
+ * unprompted popups shouldn't suppress it.
  */
 export function showFeedbackSurvey(onUnavailable: () => void): void {
     if (!isEnabled || !isInitialized) {
         onUnavailable();
         return;
     }
-    posthog.getActiveMatchingSurveys((surveys) => {
+    posthog.getSurveys((surveys) => {
         const survey = surveys[0];
         if (!survey) {
             onUnavailable();
