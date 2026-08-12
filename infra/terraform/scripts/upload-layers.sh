@@ -17,13 +17,14 @@ ENV="$1"
 DIR="$2"
 case "$ENV" in dev | prod) ;; *) usage ;; esac
 
-shopt -s nullglob globstar
-zips=("$DIR"/**/*.zip)
-if [ ${#zips[@]} -eq 0 ]; then
+# find, not globstar: macOS ships bash 3.2, which has no globstar.
+found=0
+while IFS= read -r zip; do
+    found=1
+    aws s3 cp "$zip" "s3://nexus-lambda-artifacts-$ENV/layers/$(basename "$zip")"
+done < <(find "$DIR" -name '*.zip')
+
+if [ "$found" -eq 0 ]; then
     echo "no layer zips found under $DIR" >&2
     exit 1
 fi
-
-for zip in "${zips[@]}"; do
-    aws s3 cp "$zip" "s3://nexus-lambda-artifacts-$ENV/layers/$(basename "$zip")"
-done

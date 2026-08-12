@@ -17,6 +17,10 @@ set -euo pipefail
 FFMPEG_VERSION=7.1
 LIBWEBP_VERSION=1.4.0
 OPENSSL_VERSION=3.5.7
+# Bump when the layer CONTENT changes without a tool-version bump (the s3
+# key embeds it, and a new key is what makes Terraform publish a new layer
+# version).
+LAYER_REVISION=1
 
 FFMPEG_SHA256=40973d44970dbc83ef302b0609f2e74982be2d85916dd2ee7472d30678a7abe6
 LIBWEBP_SHA256=61f873ec69e3be1b99535634340d5bde750b2e4447caa1db9f61be3fd49ab1e5
@@ -38,7 +42,7 @@ mkdir -p "$BUILD" "$DEPS"
 # budget can't afford.
 dnf install -y --setopt=install_weak_deps=False \
     gcc gcc-c++ make nasm perl pkgconf zlib-devel \
-    tar gzip xz bzip2 zip diffutils file >/dev/null
+    tar gzip xz bzip2 zip diffutils file binutils >/dev/null
 
 fetch() { # <url> <sha256> <output>
     curl -fsSL --retry 3 -o "$3" "$1"
@@ -119,13 +123,35 @@ strip "$BUILD/layer/bin/ffmpeg" "$BUILD/layer/bin/ffprobe"
 "$BUILD/layer/bin/ffmpeg" -hide_banner -protocols | grep -q https
 "$BUILD/layer/bin/ffprobe" -version >/dev/null
 
+# Every dynamic dependency must exist in the TRIMMED Lambda runtime
+# (allowlist verified against public.ecr.aws/lambda/nodejs:22) or be
+# bundled in the layer — the full build container resolves system-wide
+# what the runtime doesn't ship, so a plain smoke test can't catch a miss
+# (that's how the exiftool layer shipped without libcrypt.so.2).
+RUNTIME_LIBS='libc.so.6 libm.so.6 libz.so.1'
+check_runtime_deps() { # <elf-file...>
+    local bin lib ok
+    for bin in "$@"; do
+        for lib in $(objdump -p "$bin" 2>/dev/null | awk '/NEEDED/{print $2}'); do
+            ok=false
+            case " $RUNTIME_LIBS " in *" $lib "*) ok=true ;; esac
+            [ -e "$BUILD/layer/lib/$lib" ] && ok=true
+            if [ "$ok" = false ]; then
+                echo "$bin needs $lib: absent from the Lambda runtime and not bundled" >&2
+                exit 1
+            fi
+        done
+    done
+}
+check_runtime_deps "$BUILD/layer/bin/ffmpeg" "$BUILD/layer/bin/ffprobe"
+
 total_mb="$(du -sm "$BUILD/layer" | cut -f1)"
 if [ "$total_mb" -gt "$MAX_UNZIPPED_MB" ]; then
     echo "ffmpeg layer is ${total_mb}MB unzipped (cap ${MAX_UNZIPPED_MB}MB)" >&2
     exit 1
 fi
 
-ZIP="$OUT_DIR/ffmpeg-$FFMPEG_VERSION-webp.zip"
+ZIP="$OUT_DIR/ffmpeg-$FFMPEG_VERSION-webp-r$LAYER_REVISION.zip"
 rm -f "$ZIP"
 (cd "$BUILD/layer" && zip -qr9 "$ZIP" bin)
 
