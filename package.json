@@ -29,6 +29,8 @@
             "unrs-resolver"
         ],
         "ignoredBuiltDependencies": [
+            "@parcel/watcher",
+            "core-js",
             "esbuild"
         ]
     }
