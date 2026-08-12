@@ -1,11 +1,17 @@
 # Nexus Terraform
 
 Provisions one full Nexus AWS environment (S3 files bucket, SNS restore-events
-topic + webhook subscription, SQS jobs queues, worker Lambda, app IAM user),
-parameterized by `environment` and `region`. **Both environments are managed
-here and this is the source of truth**: prod since #53, dev since #127 (the
-hand-built dev resources were decommissioned and recreated from these files,
-which closed the main drift vector between environments).
+topic + webhook subscription, SQS jobs queues, worker Lambda, app IAM user,
+ops-alerts topic + DLQ-depth alarms), parameterized by `environment` and
+`region`. **Both environments are managed here and this is the source of
+truth**: prod since #53, dev since #127 (the hand-built dev resources were
+decommissioned and recreated from these files, which closed the main drift
+vector between environments).
+
+Two resources carry a `count` guard so they exist in the prod workspace only:
+the monthly cost budget (`budgets.tf`), which is account-global and would
+otherwise be fought over by both workspaces, and the alerts email subscription
+(`alarms.tf`), which dev deliberately skips.
 
 State lives in S3 (`nexus-terraform-state-391615358272`, us-east-1) with one
 workspace per environment. A guard resource fails the plan if the selected
@@ -96,6 +102,25 @@ production code.
     | `AWS_REGION`                                  | `aws_region` output        |
     | `SQS_QUEUE_URL`                               | `sqs_queue_url` output     |
     | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1     |
+
+5. **Confirm the alerts email** (prod only) — the apply creates an email
+   subscription on `nexus-ops-alerts-prod` and reports success, but AWS leaves
+   it in `PendingConfirmation` until someone clicks the link in the "AWS
+   Notification - Subscription Confirmation" mail sent to `alert_email`. Until
+   then, alarms reach Discord only. Terraform does not diff on confirmation
+   status, so nothing later will remind you. Verify:
+
+    ```bash
+    aws sns list-subscriptions-by-topic --region us-east-1 \
+        --topic-arn arn:aws:sns:us-east-1:391615358272:nexus-ops-alerts-prod \
+        --query 'Subscriptions[?Protocol==`email`].SubscriptionArn'
+    ```
+
+    A confirmed subscription returns a real ARN; an unconfirmed one returns the
+    literal `"PendingConfirmation"`.
+
+    Budget notifications (`budgets.tf`) go to the same address directly, not
+    through SNS, so they need no confirmation step.
 
 ## Destroy
 

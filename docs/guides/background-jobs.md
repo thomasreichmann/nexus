@@ -28,7 +28,7 @@ One set per environment, in `us-east-1`, account `391615358272`, suffixed `-dev`
 | Resource              | Name pattern                                                                                |
 | --------------------- | ------------------------------------------------------------------------------------------- |
 | SQS Queue             | `nexus-jobs-<env>` (visibility timeout 720s, 3 retries → DLQ)                               |
-| SQS Dead Letter Queue | `nexus-jobs-dlq-<env>` (depth > 0 alarms → Discord, `alarms.tf`)                            |
+| SQS Dead Letter Queue | `nexus-jobs-dlq-<env>` (depth > 0 alarms → Discord, plus email in prod, `alarms.tf`)        |
 | Lambda Function       | `nexus-worker-<env>` (Node 22, 120s timeout, 1 GB, batch size 1, ffmpeg + exiftool layers)  |
 | Lambda Layers         | `nexus-ffmpeg-<env>`, `nexus-exiftool-<env>` (`layers.tf`; built by `lambda-layers.yml` CI) |
 | IAM Role (Lambda)     | `nexus-worker-role-<env>` (SQS consume, S3 CRUD, derived-bucket Put/Get, CloudWatch Logs)   |

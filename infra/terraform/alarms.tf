@@ -40,14 +40,62 @@ resource "aws_sns_topic_subscription" "ops_alerts_webhook" {
   })
 }
 
-# Primary defense for the thumbnail pipeline (#350): a job that exhausts its
-# 3 SQS attempts parks in the jobs DLQ, and a redrive within ~24h still beats
-# the originals' Deep Archive transition. Depth > 0 means systemic breakage
-# (worker down, bad deploy) — page Discord immediately. ok_actions fires the
-# recovery notice once the DLQ is drained.
-resource "aws_cloudwatch_metric_alarm" "jobs_dlq_depth" {
-  alarm_name          = "nexus-jobs-dlq-depth-${var.environment}"
-  alarm_description   = "Background-jobs DLQ has parked messages; redrive within 24h to beat the Deep Archive transition (#350)"
+# Out-of-band path: the HTTPS subscription above cannot notify when the app
+# itself is what broke, which is exactly what the restore-DLQ alarm below
+# exists to catch. Dev stays Discord-only — its DLQs are the noisy ones (#263).
+# Terraform reports success while the subscription sits in "pending
+# confirmation"; the click is manual (README "After apply").
+resource "aws_sns_topic_subscription" "ops_alerts_email" {
+  count = var.environment == "prod" ? 1 : 0
+
+  topic_arn = aws_sns_topic.ops_alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+# Every DLQ in the stack, alarmed on depth > 0. A parked message always means a
+# silent failure — nothing retries out of a DLQ on its own — so the threshold is
+# the floor rather than a tuned number, and ok_actions fires the recovery notice
+# once the queue drains.
+locals {
+  dlq_alarms = {
+    # Primary defense for the thumbnail pipeline (#350): a job that exhausts its
+    # 3 SQS attempts parks here, and a redrive within ~24h still beats the
+    # originals' Deep Archive transition. Depth > 0 means systemic breakage
+    # (worker down, bad deploy).
+    jobs = {
+      queue_name  = aws_sqs_queue.jobs_dlq.name
+      description = "Background-jobs DLQ has parked messages; redrive within 24h to beat the Deep Archive transition (#350)"
+    }
+
+    # The only detector for a dead restore-webhook rail. The route returns 200
+    # on its own bugs, so this DLQ fills only on true delivery failure (app
+    # down, TLS/DNS) — and in that case no webhook_events row is written
+    # either, so the nightly DB check stays green while restores silently stop
+    # completing.
+    s3-restore-events = {
+      queue_name  = aws_sqs_queue.s3_restore_events_dlq.name
+      description = "S3 restore-events webhook deliveries are failing outright; check that the app is serving /api/webhooks/s3-restore"
+    }
+
+    # Watches the alerting rail itself: if the Discord webhook endpoint is
+    # unreachable, the alarms above park here and nothing else notices. In prod
+    # the email subscription still delivers when the HTTPS endpoint is the
+    # broken part. In dev it is genuinely circular — the notification goes to a
+    # topic whose only subscriber is the dead endpoint — so the dev alarm is
+    # console-only, kept for parity rather than paging value.
+    ops-alerts = {
+      queue_name  = aws_sqs_queue.ops_alerts_dlq.name
+      description = "Alarm notifications are failing to reach Discord; check that the app is serving /api/webhooks/cloudwatch-alarm"
+    }
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "dlq_depth" {
+  for_each = local.dlq_alarms
+
+  alarm_name          = "nexus-${each.key}-dlq-depth-${var.environment}"
+  alarm_description   = each.value.description
   namespace           = "AWS/SQS"
   metric_name         = "ApproximateNumberOfMessagesVisible"
   statistic           = "Maximum"
@@ -58,9 +106,17 @@ resource "aws_cloudwatch_metric_alarm" "jobs_dlq_depth" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    QueueName = aws_sqs_queue.jobs_dlq.name
+    QueueName = each.value.queue_name
   }
 
   alarm_actions = [aws_sns_topic.ops_alerts.arn]
   ok_actions    = [aws_sns_topic.ops_alerts.arn]
+}
+
+# The jobs alarm shipped standalone in #350 and is already applied in both
+# workspaces. Re-keying it into the for_each above is a rename, not a
+# replacement — the alarm_name is unchanged.
+moved {
+  from = aws_cloudwatch_metric_alarm.jobs_dlq_depth
+  to   = aws_cloudwatch_metric_alarm.dlq_depth["jobs"]
 }

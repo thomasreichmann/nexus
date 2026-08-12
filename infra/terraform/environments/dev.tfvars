@@ -12,6 +12,9 @@ environment = "dev"
 region      = "us-east-1"
 app_domain  = "dev.nexus.thomasar.dev"
 
+# Inert here — dev alarms notify Discord only (see alarms.tf) — but required.
+alert_email = "thomasalmeidar@gmail.com"
+
 # The dev-branch deployment also carries a branch-scoped NEXT_PUBLIC_APP_URL
 # (Vercel Preview tier, git branch "dev") pointing at this same domain, so links
 # in dev-triggered emails (e.g. restore-completed) don't say localhost like

@@ -28,8 +28,8 @@ interface CloudWatchAlarmMessage {
 }
 
 const SEVERITY_BY_STATE: Record<string, AlertSeverity> = {
-    // The only alarm today is jobs-DLQ depth: parked jobs mean the thumbnail
-    // pipeline is losing its Standard-tier window — page loudly.
+    // Alarms reach this topic only for unattended failures nothing else
+    // catches (alarms.tf), so any ALARM state pages loudly.
     ALARM: 'critical',
     OK: 'info',
     INSUFFICIENT_DATA: 'warning',
