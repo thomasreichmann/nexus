@@ -1,4 +1,5 @@
 import { ClientErrorReporter } from '@/components/ClientErrorReporter';
+import { PostHogAnalytics } from '@/components/PostHogAnalytics';
 import { ThemeProvider } from '@/components/theme-provider';
 import { TRPCReactProvider } from '@/lib/trpc/client';
 import { Analytics } from '@vercel/analytics/next';
@@ -42,6 +43,7 @@ export default function RootLayout({
                 >
                     <TRPCReactProvider>
                         <ClientErrorReporter />
+                        <PostHogAnalytics />
                         {children}
                     </TRPCReactProvider>
                 </ThemeProvider>

@@ -1,4 +1,12 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
+
+const hoisted = await vi.hoisted(async () => {
+    const { createMockPostHogServer } = await import('@/lib/posthog/testing');
+    return { posthog: createMockPostHogServer() };
+});
+
+vi.mock('@/lib/posthog/server', () => hoisted.posthog);
+
 import {
     createMockDb,
     type MockDb,
@@ -15,6 +23,7 @@ import {
     QuotaExceededError,
     InvalidStateError,
 } from '@/server/errors';
+import { PostHogEvent } from '@/lib/posthog/events';
 import { fileService, formatFallbackBatchName } from './files';
 import { PLAN_LIMITS } from './constants';
 
@@ -316,6 +325,46 @@ describe('files service', () => {
             expect(result.file).toEqual(availableFile);
             expect(mocks.update).not.toHaveBeenCalled();
             expect(mocks.onConflictDoUpdate).not.toHaveBeenCalled();
+        });
+
+        // The analytics event carries the same idempotency guarantee as the
+        // usage counter: a retried confirm must not inflate the funnel.
+        it('emits upload_confirmed once on the branch that flips status', async () => {
+            const uploadingFile = createFileFixture({
+                status: 'uploading',
+                size: 4096,
+            });
+            const availableFile = createFileFixture({
+                ...uploadingFile,
+                status: 'available',
+            });
+            mocks.files.findFirst.mockResolvedValue(uploadingFile);
+            mocks.returning
+                .mockResolvedValueOnce([availableFile])
+                .mockResolvedValueOnce([
+                    createStorageUsageFixture({ usedBytes: 4096 }),
+                ]);
+
+            await fileService.confirmUpload(db, TEST_USER_ID, uploadingFile.id);
+
+            expect(hoisted.posthog.captureServerEvent).toHaveBeenCalledOnce();
+            expect(hoisted.posthog.captureServerEvent).toHaveBeenCalledWith(
+                TEST_USER_ID,
+                PostHogEvent.UploadConfirmed,
+                expect.objectContaining({
+                    fileId: availableFile.id,
+                    sizeBytes: availableFile.size,
+                })
+            );
+        });
+
+        it('emits nothing on a duplicate confirm', async () => {
+            const availableFile = createFileFixture({ status: 'available' });
+            mocks.files.findFirst.mockResolvedValue(availableFile);
+
+            await fileService.confirmUpload(db, TEST_USER_ID, availableFile.id);
+
+            expect(hoisted.posthog.captureServerEvent).not.toHaveBeenCalled();
         });
 
         it('throws NotFoundError when file does not exist', async () => {
