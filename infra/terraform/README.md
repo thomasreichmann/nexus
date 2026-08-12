@@ -9,7 +9,8 @@ which closed the main drift vector between environments).
 
 State lives in S3 (`nexus-terraform-state-391615358272`, us-east-1) with one
 workspace per environment. A guard resource fails the plan if the selected
-workspace doesn't match `var.environment`.
+workspace doesn't match `var.environment`, and `prevent_destroy` on the files
+bucket fails a whole-stack destroy (see [Destroy](#destroy)).
 
 ## Prerequisites
 
@@ -83,3 +84,26 @@ production code.
     | `AWS_REGION`                                  | `aws_region` output    |
     | `SQS_QUEUE_URL`                               | `sqs_queue_url` output |
     | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1 |
+
+## Destroy
+
+`aws_s3_bucket.files` carries `lifecycle { prevent_destroy = true }`, so
+`terraform destroy` on this stack fails at plan time, before any resource is
+removed. That one guard covers everything: the rest of the stack (SQS, SNS,
+Lambda, IAM) is reconstructible from these files, so losing it is an outage,
+not data loss.
+
+Decommissioning an environment for real means deleting the bucket contents and
+removing the guard in a commit first. Then:
+
+```bash
+terraform -chdir=infra/terraform workspace select dev    # or prod
+terraform -chdir=infra/terraform destroy -var-file=environments/dev.tfvars
+```
+
+- **`-chdir` over `cd`** — the target stack is named in the command itself, so
+  a destroy can't hit a different stack because the shell was left in another
+  directory.
+- **Never `-auto-approve`.** Read the `N to destroy` count in the plan header,
+  check that N and the listed resources match the stack you meant, then type
+  `yes`.
