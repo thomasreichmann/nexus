@@ -1,6 +1,8 @@
 import { after } from 'next/server';
 import { PostHog } from 'posthog-node';
 
+import { resolveRuntimeEnvironment } from '@/lib/env/runtime';
+
 import { DEFAULT_POSTHOG_HOST } from './hosts';
 import { ANALYTICS_ENVIRONMENT_PROPERTY } from './events';
 import type { PostHogEventName } from './events';
@@ -17,11 +19,14 @@ import type { PostHogEventName } from './events';
  * here where instrumentation-client.ts needs NEXT_PUBLIC_VERCEL_ENV — this
  * module never reaches the browser bundle.
  *
- * Raw process.env rather than `@/lib/env` for a different reason than the
- * browser has: that module validates the whole client schema at import time,
- * so pulling it into a service's dependency graph makes every unit test of
- * that service require a full .env.local. The clientSchema entries still
- * validate these two vars wherever the app does load `@/lib/env`.
+ * Raw process.env for the two keys rather than `@/lib/env` for a different
+ * reason than the browser has: that module validates the whole client schema
+ * at import time, so pulling it into a service's dependency graph makes every
+ * unit test of that service require a full .env.local. The clientSchema
+ * entries still validate these two vars wherever the app does load
+ * `@/lib/env`. `@/lib/env/runtime` is exempt and safe to import — it has no
+ * imports of its own and reads process.env directly, so it drags no schema
+ * validation behind it.
  */
 function createClient(): PostHog | null {
     const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
@@ -73,13 +78,10 @@ export function captureServerEvent(
         posthog.capture({
             distinctId: userId,
             event,
-            // Unprefixed VERCEL_ENV: same reasoning as the gate above, this
-            // module never reaches the browser bundle. Spread first so a
-            // caller can't accidentally shadow the tier.
+            // Spread first so a caller can't accidentally shadow the tier.
             properties: {
                 ...properties,
-                [ANALYTICS_ENVIRONMENT_PROPERTY]:
-                    process.env.VERCEL_ENV ?? 'unknown',
+                [ANALYTICS_ENVIRONMENT_PROPERTY]: resolveRuntimeEnvironment(),
             },
         });
     } catch (error) {

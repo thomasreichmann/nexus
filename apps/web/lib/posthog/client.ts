@@ -7,7 +7,7 @@ import {
     POSTHOG_INGEST_PATH,
     resolveUiHost,
 } from './hosts';
-import { ANALYTICS_ENVIRONMENT_PROPERTY } from './events';
+import { ANALYTICS_ENVIRONMENT_PROPERTY, FEEDBACK_SURVEY_NAME } from './events';
 import type { PostHogEventName } from './events';
 
 /**
@@ -107,9 +107,11 @@ export function captureEvent(
 }
 
 /**
- * Opens the feedback survey configured in PostHog. Resolved at click time
- * rather than hardcoding a survey id, so the survey can be rewritten (or
- * swapped for a different one) in the PostHog UI without a deploy.
+ * Opens the feedback survey configured in PostHog. Resolved by name at click
+ * time rather than hardcoding a survey id, so the survey can be rewritten in
+ * the PostHog UI without a deploy. By name and not by position: the lookup
+ * below returns every live survey in the project, so `surveys[0]` would hand
+ * this button to an unrelated campaign the day a second survey goes live.
  *
  * `getSurveys`, not `getActiveMatchingSurveys`: "active matching" means the
  * surveys the SDK would pop up on its own, and this one is the opposite of
@@ -130,7 +132,9 @@ export function showFeedbackSurvey(onUnavailable: () => void): void {
         return;
     }
     posthog.getSurveys((surveys) => {
-        const survey = surveys[0];
+        const survey = surveys.find(
+            (candidate) => candidate.name === FEEDBACK_SURVEY_NAME
+        );
         if (!survey) {
             onUnavailable();
             return;

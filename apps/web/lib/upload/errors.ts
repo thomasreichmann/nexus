@@ -26,7 +26,10 @@ export function isAbortError(error: unknown): boolean {
     return error instanceof DOMException && error.name === 'AbortError';
 }
 
-/** The slice of an upload row a failure report needs. */
+/** Which upload path moved the bytes. */
+export type UploadEngine = 'single' | 'multipart';
+
+/** The slice of an upload row a failure report or upload event needs. */
 export interface UploadFailureInfo {
     /** Client row id — joins this failure to its `upload_started` attempt. */
     id: string;
@@ -34,6 +37,28 @@ export interface UploadFailureInfo {
     size: number;
     fileId?: string;
     batchId?: string;
+}
+
+/**
+ * The properties every upload event carries, so the three capture sites
+ * (started, completed, failed) can't drift apart. They have to agree: a
+ * started→completed funnel joins on `clientUploadId`, and one site renaming a
+ * field splits that funnel silently rather than failing.
+ *
+ * `engine` is separate from the row because a resumed multipart upload and the
+ * single-part attempt before it are the same row.
+ */
+export function uploadEventProps(
+    engine: UploadEngine,
+    upload: UploadFailureInfo
+): Record<string, unknown> {
+    return {
+        engine,
+        fileId: upload.fileId,
+        sizeBytes: upload.size,
+        batchId: upload.batchId,
+        clientUploadId: upload.id,
+    };
 }
 
 /**
@@ -53,15 +78,11 @@ export interface UploadFailureInfo {
  */
 export function reportUploadFailure(
     error: unknown,
-    engine: 'single' | 'multipart',
+    engine: UploadEngine,
     upload: UploadFailureInfo
 ): void {
     captureEvent(PostHogEvent.UploadFailed, {
-        engine,
-        fileId: upload.fileId,
-        sizeBytes: upload.size,
-        batchId: upload.batchId,
-        clientUploadId: upload.id,
+        ...uploadEventProps(engine, upload),
         // Distinguishes a server-side rejection (quota, auth) from a
         // browser→S3 transport failure without shipping the message.
         isServerRejection: error instanceof TRPCClientError,

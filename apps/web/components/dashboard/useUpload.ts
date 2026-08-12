@@ -33,6 +33,8 @@ import {
     isExpiredUrlError,
     isNetworkError,
     reportUploadFailure,
+    uploadEventProps,
+    type UploadEngine,
 } from '@/lib/upload/errors';
 import { captureEvent } from '@/lib/posthog/client';
 import { PostHogEvent } from '@/lib/posthog/events';
@@ -95,8 +97,6 @@ function randomId(): string {
     return Math.random().toString(36).substring(7);
 }
 
-type UploadEngine = 'single' | 'multipart';
-
 /**
  * `upload_started` counts *attempts*, not uploads: both engines are also the
  * entry point for retry and auto-resume-on-reconnect, so one file that drops
@@ -118,11 +118,7 @@ function trackUploadStarted(
     batchId: string | undefined
 ): void {
     captureEvent(PostHogEvent.UploadStarted, {
-        engine,
-        sizeBytes: uploadFile.size,
-        batchId,
-        clientUploadId: uploadFile.id,
-        fileId: uploadFile.fileId,
+        ...uploadEventProps(engine, { ...uploadFile, batchId }),
         // A row carrying either id has been through here before. Not the same
         // as "first attempt": an upload that dies before init assigns an id
         // re-enters as false, so dedupe on clientUploadId, not on this.
@@ -140,13 +136,10 @@ function trackUploadCompleted(
     fileId: string | undefined,
     batchId: string | undefined
 ): void {
-    captureEvent(PostHogEvent.UploadCompleted, {
-        engine,
-        fileId,
-        sizeBytes: uploadFile.size,
-        batchId,
-        clientUploadId: uploadFile.id,
-    });
+    captureEvent(
+        PostHogEvent.UploadCompleted,
+        uploadEventProps(engine, { ...uploadFile, fileId, batchId })
+    );
 }
 
 export function useUpload() {

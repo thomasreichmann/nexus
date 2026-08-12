@@ -46,3 +46,15 @@ export type PostHogEventName = (typeof PostHogEvent)[keyof typeof PostHogEvent];
  * by default rather than making every analysis remember to filter.
  */
 export const ANALYTICS_ENVIRONMENT_PROPERTY = 'environment';
+
+/**
+ * Name of the survey behind the "Send feedback" menu item, matched at click
+ * time. The lookup returns every live survey in the project, so picking the
+ * first would quietly hand the button to an unrelated campaign the moment a
+ * second survey is switched on in the PostHog UI.
+ *
+ * This makes the name load-bearing: rewrite the survey's questions freely, but
+ * renaming it in PostHog disables the button (it falls back to the
+ * "unavailable" toast) until this constant follows.
+ */
+export const FEEDBACK_SURVEY_NAME = 'Alpha feedback';
