@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyMedia } from './generateThumbnail';
+import { classifyMedia } from './media';
 
 describe('classifyMedia', () => {
     it.each([
@@ -42,5 +42,11 @@ describe('classifyMedia', () => {
         expect(
             classifyMedia({ name: 'no-extension', mimeType: null })
         ).toBeNull();
+    });
+
+    // A leading dot is a dotfile, not an extension — `path.extname('.nef')`
+    // is `''`, and the hand-rolled parser that replaced it has to agree.
+    it('treats a leading dot as a dotfile, not an extension', () => {
+        expect(classifyMedia({ name: '.nef', mimeType: null })).toBeNull();
     });
 });

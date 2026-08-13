@@ -80,6 +80,7 @@ export async function seedFiles(
             userId,
             name: `e2e-test-file-${i + 1}.txt`,
             size: 1024 * (i + 1),
+            // Prefixed, not `originalKey()` — see that function's docblock.
             s3Key: `e2e/${userId}/test-file-${Date.now()}-${i}`,
         });
         files.push(file);

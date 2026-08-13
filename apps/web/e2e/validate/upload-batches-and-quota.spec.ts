@@ -117,6 +117,9 @@ test.describe('upload batches + storage quota', () => {
             const file = files[0];
             expect(file.status).toBe('available');
             expect(file.batchId).toBe(batch.id);
+            // Spelled out rather than built with `originalKey()` — this is the
+            // assertion that pins the key shape, and deriving it from the
+            // function under test would pass no matter what that function does.
             expect(file.s3Key).toBe(
                 `${userId}/${batch.id}/${file.id}/${fileName}`
             );

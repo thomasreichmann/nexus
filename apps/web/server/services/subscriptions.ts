@@ -1,14 +1,13 @@
 import type Stripe from 'stripe';
 import { addDays } from 'date-fns';
 import type { DB } from '@nexus/db';
-import { createInviteRepo } from '@nexus/db/repo/invites';
+import { createInviteRepo, isInviteExpired } from '@nexus/db/repo/invites';
 import {
     createSubscriptionRepo,
     type Subscription,
 } from '@nexus/db/repo/subscriptions';
 import { planTierEnum, subscriptionStatusEnum } from '@nexus/db/schema';
 import { env } from '@/lib/env';
-import { isInviteExpired } from '@/lib/invites';
 import { stripe, stripeClient } from '@/lib/stripe';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { logger } from '@/server/lib/logger';

@@ -1,5 +1,7 @@
 import { and, eq, notInArray, sum, count } from 'drizzle-orm';
 import * as schema from '../schema';
+import { DEFAULT_RESTORE_DAYS_TO_KEEP } from '../schema';
+import { HIDDEN_STATUSES } from '../repositories/files';
 import type { DB } from '../connection';
 import type {
     User,
@@ -119,6 +121,7 @@ export async function buildFiles(
             name,
             size,
             mimeType: mime,
+            // Prefixed, not `originalKey()` — see that function's docblock.
             s3Key: `seed/${userId}/${id}`,
             storageTier: tier,
             status: 'available' as const,
@@ -197,8 +200,8 @@ export async function buildStorageUsage(
 ): Promise<StorageUsage> {
     // Match the runtime "what counts toward usage" filter so seed-derived
     // snapshots agree with what `confirmUpload`/`deleteUserFile` and the
-    // 0010_storage_usage_backfill migration produce. Excludes `uploading`
-    // (not yet confirmed) and `deleted` (already subtracted).
+    // 0010_storage_usage_backfill migration produce. The migration keeps its
+    // own copy of the list — migrations are immutable history.
     const [stats] = await db
         .select({
             totalBytes: sum(schema.files.size).mapWith(Number),
@@ -208,7 +211,7 @@ export async function buildStorageUsage(
         .where(
             and(
                 eq(schema.files.userId, userId),
-                notInArray(schema.files.status, ['uploading', 'deleted'])
+                notInArray(schema.files.status, HIDDEN_STATUSES)
             )
         );
 
@@ -279,7 +282,10 @@ export async function buildRetrievals(
                     : null,
             expiresAt:
                 status === 'ready'
-                    ? new Date(now.getTime() + 7 * 86_400_000)
+                    ? new Date(
+                          now.getTime() +
+                              DEFAULT_RESTORE_DAYS_TO_KEEP * 86_400_000
+                      )
                     : null,
             failedAt:
                 status === 'failed'

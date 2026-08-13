@@ -1,3 +1,4 @@
+import type { Subscription } from './repositories/subscriptions';
 import type { planTierEnum } from './schema/subscriptions';
 
 export type PlanTier = (typeof planTierEnum.enumValues)[number];
@@ -24,4 +25,24 @@ export const TRIAL_DURATION_DAYS = 30;
  */
 export function getTrialEnd(from: Date = new Date()): Date {
     return new Date(from.getTime() + TRIAL_DURATION_DAYS * 86_400_000);
+}
+
+/**
+ * Whether a subscription's trial has run out. Only `trialing` rows can expire:
+ * every other status — including `sponsored` (comped alpha testers, no Stripe
+ * subscription, so no `trialEnd`) — is enforced on `storageLimit` alone.
+ *
+ * The bound is strict, so a trial is live right up to `trialEnd` and over the
+ * instant after. Lives beside `getTrialEnd` so the two ends of the trial
+ * window can't drift apart (#364).
+ */
+export function isTrialExpired(
+    subscription: Pick<Subscription, 'status' | 'trialEnd'>,
+    now: Date = new Date()
+): boolean {
+    return (
+        subscription.status === 'trialing' &&
+        subscription.trialEnd !== null &&
+        subscription.trialEnd < now
+    );
 }

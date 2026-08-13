@@ -43,6 +43,35 @@ export function thumbnailKey(file: Pick<File, 'userId' | 'id'>): string {
     return `${file.userId}/${file.id}/thumb.webp`;
 }
 
+/**
+ * Key of the uploaded object itself, in the originals bucket. The upload
+ * services built this string inline in two places (#364); it lives here so
+ * the shape has one definition.
+ *
+ * Not a `Pick<File, …>` on purpose, unlike `thumbnailKey`: `File['batchId']`
+ * is nullable and batch deletion sets it null, so a row that has already lost
+ * its batch would compute a key its object was never stored under. Callers
+ * pass the batch id they just resolved, which is always present.
+ *
+ * Only real uploads use this shape. Seeds, fixtures and e2e scenarios build
+ * their own prefixed keys (`seed/…`, `e2e/…`) because those rows have no
+ * batch and no S3 object behind them — a four-segment key there would be a
+ * lie, and the prefix keeps them identifiable in a real bucket listing.
+ */
+export function originalKey(file: {
+    userId: string;
+    batchId: string;
+    id: string;
+    name: string;
+}): string {
+    return `${file.userId}/${file.batchId}/${file.id}/${file.name}`;
+}
+
+// Re-exported so a caller that already has this module doesn't need a second
+// import. Defined in `../media` so client components can classify a file
+// without pulling drizzle into the bundle (#364).
+export { classifyMedia, type MediaKind } from '../media';
+
 export type FileSortKey = 'name' | 'size' | 'uploadedAt';
 export type FileSortOrder = 'asc' | 'desc';
 
@@ -124,10 +153,14 @@ function findByUserAndBatch(
     });
 }
 
-const hiddenStatuses: (typeof schema.files.status.enumValues)[number][] = [
-    'uploading',
-    'deleted',
-];
+/**
+ * Statuses excluded from every user-facing list and every usage total:
+ * `uploading` isn't confirmed yet, `deleted` has already been subtracted.
+ * Exported so the seed's storage-usage snapshot filters on the same set
+ * instead of retyping it (#364).
+ */
+export const HIDDEN_STATUSES: (typeof schema.files.status.enumValues)[number][] =
+    ['uploading', 'deleted'];
 
 // Escape LIKE/ILIKE wildcards so a search for "100%" or "foo_bar" is treated
 // as a literal substring, not a pattern. Postgres' default escape char is `\`.
@@ -143,7 +176,7 @@ function buildUserFilesWhereClause(
     const trimmed = search?.trim();
     const conditions = [eq(schema.files.userId, userId)];
     if (!includeHidden) {
-        conditions.push(notInArray(schema.files.status, hiddenStatuses));
+        conditions.push(notInArray(schema.files.status, HIDDEN_STATUSES));
     }
     if (trimmed) {
         conditions.push(
@@ -194,7 +227,7 @@ async function countByUser(
 
 /**
  * Library-wide status bucket counts for a user. Mirrors deriveStatus in
- * apps/web/components/dashboard/file-browser.tsx — keep the two in lockstep
+ * apps/web/components/dashboard/file-browser/status.ts — keep the two in lockstep
  * or UI counts will disagree with per-row status dots. Hidden statuses
  * (`uploading`, `deleted`) are always excluded since they don't fit any
  * bucket and would produce a NULL category from the CASE below. Buckets are
@@ -368,7 +401,7 @@ async function sumStorageByMimeCategory(
         .where(
             and(
                 eq(schema.files.userId, userId),
-                notInArray(schema.files.status, hiddenStatuses)
+                notInArray(schema.files.status, HIDDEN_STATUSES)
             )
         )
         .groupBy(sql`category`)
@@ -485,7 +518,7 @@ async function uploadHistoryByDay(
         .where(
             and(
                 eq(schema.files.userId, userId),
-                notInArray(schema.files.status, hiddenStatuses),
+                notInArray(schema.files.status, HIDDEN_STATUSES),
                 gte(schema.files.createdAt, since)
             )
         )

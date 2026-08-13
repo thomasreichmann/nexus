@@ -12,6 +12,7 @@ import {
     S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { classifyMedia } from '@nexus/db/media';
 import { createFileRepo, thumbnailKey, type File } from '@nexus/db/repo/files';
 import type { HandlerContext } from '../registry';
 
@@ -39,63 +40,6 @@ const VIDEO_POSTER_SEEK_SECONDS = 3;
 
 // Scale to fit within 512x512 without upscaling smaller sources.
 const SCALE_FILTER = `scale=w='min(${THUMBNAIL_MAX_EDGE},iw)':h='min(${THUMBNAIL_MAX_EDGE},ih)':force_original_aspect_ratio=decrease`;
-
-const RAW_EXTENSIONS = new Set([
-    'arw',
-    'cr2',
-    'cr3',
-    'dng',
-    'nef',
-    'nrw',
-    'orf',
-    'pef',
-    'raf',
-    'rw2',
-    'sr2',
-    'srw',
-]);
-const IMAGE_EXTENSIONS = new Set([
-    'avif',
-    'bmp',
-    'gif',
-    'heic',
-    'heif',
-    'jpeg',
-    'jpg',
-    'png',
-    'tif',
-    'tiff',
-    'webp',
-]);
-const VIDEO_EXTENSIONS = new Set([
-    '3gp',
-    'avi',
-    'm2ts',
-    'm4v',
-    'mkv',
-    'mov',
-    'mp4',
-    'mpeg',
-    'mpg',
-    'mts',
-    'webm',
-    'wmv',
-]);
-
-export type MediaKind = 'raw' | 'image' | 'video';
-
-/** Exported for tests. Extension wins over the client-supplied mime type. */
-export function classifyMedia(
-    file: Pick<File, 'name' | 'mimeType'>
-): MediaKind | null {
-    const ext = path.extname(file.name).slice(1).toLowerCase();
-    if (RAW_EXTENSIONS.has(ext)) return 'raw';
-    if (IMAGE_EXTENSIONS.has(ext)) return 'image';
-    if (VIDEO_EXTENSIONS.has(ext)) return 'video';
-    if (file.mimeType?.startsWith('image/')) return 'image';
-    if (file.mimeType?.startsWith('video/')) return 'video';
-    return null;
-}
 
 // Lazily constructed so importing the handler never requires env/AWS setup
 // (mirrors getDb in ../handler.ts). Region comes from the Lambda runtime.

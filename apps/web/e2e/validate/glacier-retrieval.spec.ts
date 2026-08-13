@@ -32,6 +32,7 @@ import {
 } from '@aws-sdk/client-s3';
 import type { Connection, File } from '@nexus/db/test-db';
 import { insertFile, deleteFile, deleteRetrieval } from '@nexus/db/test-db';
+import { originalKey } from '@nexus/db/repo/files';
 import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
 import { createTestS3, getStorageClass, type TestS3 } from '../helpers/s3';
 import { fileName } from '../helpers/table';
@@ -63,7 +64,15 @@ async function seedArchivedFile(db: Connection, userId: string): Promise<File> {
     const name = `validate-retrieval-${Date.now()}.txt`;
     const fileId = crypto.randomUUID();
     const body = 'nexus glacier retrieval validation\n';
-    const s3Key = `${userId}/validate-329/${fileId}/${name}`;
+    // Real S3 object, so it must sit at the real key shape. The batch slot is
+    // a stand-in: this spec seeds the file row directly and never uploads
+    // through a batch.
+    const s3Key = originalKey({
+        userId,
+        batchId: 'validate-329',
+        id: fileId,
+        name,
+    });
 
     seededS3Key = s3Key;
     await s3.client.send(

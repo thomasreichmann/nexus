@@ -6,6 +6,11 @@ import { createRepository } from './create';
 export type Invite = typeof schema.invites.$inferSelect;
 export type NewInvite = typeof schema.invites.$inferInsert;
 
+// Re-exported so the derived-expiry rule and `claim`'s SQL gate — the same
+// rule negated — are reachable from one specifier. It's defined in `../invites`
+// so client components can import it without drizzle (#364).
+export { isInviteExpired } from '../invites';
+
 interface FindManyOptions {
     limit: number;
     offset: number;
@@ -63,6 +68,10 @@ async function insert(db: DB, data: NewInvite): Promise<Invite> {
  * UPDATE is the single-use gate: a concurrent or repeat redemption finds no
  * matching row and gets `undefined` back — losers must fall back to trial
  * provisioning, never throw.
+ *
+ * The expiry clause is `isInviteExpired` negated: that predicate is inclusive
+ * (`<=`), so this one is a strict `gt` — an invite is unclaimable the instant
+ * it reaches `expiresAt`. `invites.test.ts` pins the two together.
  */
 async function claim(
     db: DB,

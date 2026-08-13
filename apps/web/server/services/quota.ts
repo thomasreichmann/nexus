@@ -1,4 +1,5 @@
 import type { DB } from '@nexus/db';
+import { isTrialExpired } from '@nexus/db/plans';
 import { createStorageUsageRepo } from '@nexus/db/repo/storage-usage';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
 import { QuotaExceededError, TrialExpiredError } from '@/server/errors';
@@ -45,15 +46,10 @@ function assertUploadAllowed(
 ): QuotaCheckResult {
     const { subscription, currentUsage } = ctx;
 
-    // Only `trialing` rows can expire. Every other status — including
-    // `sponsored` (comped alpha testers, no Stripe subscription, no trialEnd)
-    // — is enforced on storageLimit alone. If #199 tightens enforcement to a
-    // good-standing allowlist, `sponsored` belongs in that allowlist.
-    if (
-        subscription?.status === 'trialing' &&
-        subscription.trialEnd &&
-        subscription.trialEnd < now
-    ) {
+    // Which statuses can expire lives with the predicate in `@nexus/db/plans`.
+    // If #199 tightens enforcement to a good-standing allowlist, `sponsored`
+    // belongs in that allowlist.
+    if (subscription && isTrialExpired(subscription, now)) {
         throw new TrialExpiredError();
     }
 

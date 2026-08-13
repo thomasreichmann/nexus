@@ -17,6 +17,7 @@
  */
 import type { DB } from '../connection';
 import * as schema from '../schema';
+import { DEFAULT_RESTORE_DAYS_TO_KEEP } from '../schema';
 import {
     createFileFixture,
     createUploadBatchFixture,
@@ -73,7 +74,7 @@ export async function insertFile(
     if (overrides.id === undefined) row.id = crypto.randomUUID();
     // s3_key is UNIQUE; derive a collision-free default from the (now unique)
     // id so back-to-back inserts don't clash. Specs that assert on s3Key shape
-    // pass it explicitly.
+    // pass it explicitly, and not via `originalKey()` — see its docblock.
     if (overrides.s3Key === undefined) row.s3Key = `${row.userId}/${row.id}`;
     const [file] = await db.insert(schema.files).values(row).returning();
     return file!;
@@ -95,7 +96,7 @@ export async function insertRetrieval(
         tier: 'standard',
         initiatedAt: new Date(now - 3_600_000),
         readyAt: new Date(now),
-        expiresAt: new Date(now + 7 * 86_400_000),
+        expiresAt: new Date(now + DEFAULT_RESTORE_DAYS_TO_KEEP * 86_400_000),
         ...overrides,
     });
     if (overrides.id === undefined) row.id = crypto.randomUUID();
