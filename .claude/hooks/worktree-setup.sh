@@ -42,10 +42,48 @@ if [ ! -d node_modules ]; then
     || echo "worktree-setup: install failed - run 'pnpm install' manually" >&2
 fi
 
+# .worktreeinclude normally copies the env files in, but a worktree created
+# before that existed (or by plain `git worktree add`) has none, and `pnpm check`
+# then fails in lib/env with "No client environment variables found".
+main_env="$(dirname "$(git rev-parse --git-common-dir)")/apps/web/.env.local"
+if [ ! -f apps/web/.env.local ] && [ -f "$main_env" ]; then
+  cp "$main_env" apps/web/.env.local
+  echo "worktree-setup: copied .env.local from the main checkout" >&2
+fi
+
 # Stable per-worktree dev port in 3001-4000, derived from the worktree name so
 # it stays the same across sessions. 3000 stays reserved for the main checkout.
 name=$(basename "$root")
 port=$(( 3001 + $(printf '%s' "$name" | cksum | cut -d' ' -f1) % 1000 ))
+
+# Per-worktree e2e database. Every worktree used to share one Supabase DB while
+# the e2e fixtures use fixed identities (admin-e2e@test.local, e2e-test-file-1
+# .txt), so two worktrees testing at once collided: sign-up 422s, duplicate-key
+# inserts, and strict-mode violations from the other run's rows. The app server
+# was already isolated per worktree by $port; this isolates the data too.
+#
+# Scoped to e2e on purpose. `pnpm dev` keeps pointing at the shared dev DB via
+# .env.local, which is where the real data lives - only playwright.config.ts
+# reads E2E_DATABASE_URL, and it falls back to DATABASE_URL when unset (CI).
+pg_bin=$(command -v createdb >/dev/null && dirname "$(command -v createdb)" || echo /opt/homebrew/opt/postgresql@17/bin)
+if [ -x "$pg_bin/createdb" ]; then
+  db="nexus_wt_$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '_' | cut -c1-50)"
+  e2e_url="postgres://$USER@localhost:5432/$db"
+  if ! "$pg_bin/psql" -lqt 2>/dev/null | cut -d'|' -f1 | grep -qw "$db"; then
+    if "$pg_bin/createdb" "$db" 2>/dev/null; then
+      echo "worktree-setup: created e2e database $db, migrating..." >&2
+      DATABASE_URL="$e2e_url" pnpm -F db db:migrate >&2 \
+        || echo "worktree-setup: migrate failed - run 'pnpm -F db db:migrate' manually" >&2
+    else
+      echo "worktree-setup: createdb $db failed - e2e will use the shared DB" >&2
+      e2e_url=''
+    fi
+  fi
+  [ -n "$e2e_url" ] && [ -n "${CLAUDE_ENV_FILE:-}" ] \
+    && printf 'E2E_DATABASE_URL=%s\nDB_ENV=local\n' "$e2e_url" >> "$CLAUDE_ENV_FILE"
+else
+  echo "worktree-setup: no local postgres (brew install postgresql@17) - e2e shares the dev DB" >&2
+fi
 
 # CLAUDE_ENV_FILE persists vars into this session's Bash tool calls. turbo
 # forwards everything (globalPassThroughEnv: ["*"]), so `pnpm dev` binds next dev
@@ -54,4 +92,4 @@ port=$(( 3001 + $(printf '%s' "$name" | cksum | cut -d' ' -f1) % 1000 ))
 [ -n "${CLAUDE_ENV_FILE:-}" ] && printf 'PORT=%s\n' "$port" >> "$CLAUDE_ENV_FILE"
 
 # A SessionStart hook's stdout is injected into Claude's context.
-echo "Worktree '$name' is dev-ready. PORT=$port is set for both 'pnpm dev' and e2e."
+echo "Worktree '$name' is dev-ready. PORT=$port is set for both 'pnpm dev' and e2e.${e2e_url:+ e2e uses its own database $db.}"
