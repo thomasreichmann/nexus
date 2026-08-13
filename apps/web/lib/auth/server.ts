@@ -1,7 +1,10 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import * as schema from '@nexus/db/schema';
+import { RESET_PASSWORD_TOKEN_TTL_SECONDS } from '@/lib/auth/constants';
+import { env } from '@/lib/env';
 import { db } from '@/server/db';
+import { emailService } from '@/server/services/email';
 import { subscriptionService } from '@/server/services/subscriptions';
 import { logger } from '@/server/lib/logger';
 
@@ -29,6 +32,22 @@ export const auth = betterAuth({
     rateLimit,
     emailAndPassword: {
         enabled: true,
+        resetPasswordTokenExpiresIn: RESET_PASSWORD_TOKEN_TTL_SECONDS,
+        // A reset is the recovery path for an account that may be compromised,
+        // so every session created with the old password dies with it.
+        revokeSessionsOnPasswordReset: true,
+        // better-auth's own `url` points at its API, which only redirects to a
+        // real page when the request carried a `redirectTo`. Link straight at
+        // our page instead — same shape as the invite email.
+        sendResetPassword: async ({ user, token }) => {
+            await emailService.sendPasswordResetEmail({
+                to: user.email,
+                resetUrl: `${env.NEXT_PUBLIC_APP_URL}/reset-password?token=${token}`,
+                expiresAt: new Date(
+                    Date.now() + RESET_PASSWORD_TOKEN_TTL_SECONDS * 1000
+                ),
+            });
+        },
     },
     session: {
         expiresIn: 60 * 60 * 24 * 7, // 7 days

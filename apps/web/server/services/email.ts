@@ -1,11 +1,14 @@
 import { createElement } from 'react';
 import type { DB } from '@nexus/db';
 import { createUserRepo } from '@nexus/db/repo/users';
+import { alerts } from '@/lib/alerts';
 import {
     email,
     type InviteEmailProps,
+    type PasswordResetEmailProps,
     type RetrievalReadyEmailProps,
 } from '@/lib/email';
+import { toErrorMessage } from '@/lib/errors';
 import { logger } from '@/server/lib/logger';
 
 const log = logger.child({ service: 'email' });
@@ -67,7 +70,42 @@ async function sendInviteEmail(opts: SendInviteEmailOptions): Promise<void> {
     }
 }
 
+export interface SendPasswordResetEmailOptions extends PasswordResetEmailProps {
+    /** Recipient — the account's own address, from better-auth's reset request. */
+    to: string;
+}
+
+// Deliberately NOT warn-and-swallow like the two above. A reset email is the
+// only way back into an account whose password is lost, so a swallowed failure
+// shows the user "check your email" for a message that will never arrive.
+// Alert the operator, then rethrow: better-auth awaits this callback, so the
+// throw surfaces as a failed /request-password-reset the user can see and retry.
+async function sendPasswordResetEmail(
+    opts: SendPasswordResetEmailOptions
+): Promise<void> {
+    const { to, ...props } = opts;
+
+    try {
+        await email.send({
+            to,
+            subject: email.templates.passwordResetSubject(),
+            react: createElement(email.templates.PasswordResetEmail, props),
+        });
+    } catch (err) {
+        log.error({ to, err }, 'Failed to send password reset email');
+        await alerts.send({
+            severity: 'critical',
+            title: 'Password reset email failed to send',
+            message:
+                'The reset link never reached the user — they stay locked out until this is fixed.',
+            context: { source: 'auth', to, error: toErrorMessage(err) },
+        });
+        throw err;
+    }
+}
+
 export const emailService = {
     sendInviteEmail,
+    sendPasswordResetEmail,
     sendRetrievalReadyEmail,
 } as const;

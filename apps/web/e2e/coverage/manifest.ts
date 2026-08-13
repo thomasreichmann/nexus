@@ -62,6 +62,8 @@ export const PAGES: PageEntry[] = [
     { route: '/', title: 'Landing', auth: 'public' },
     { route: '/sign-in', title: 'Sign in', auth: 'public' },
     { route: '/sign-up', title: 'Sign up', auth: 'public' },
+    { route: '/forgot-password', title: 'Forgot password', auth: 'public' },
+    { route: '/reset-password', title: 'Reset password', auth: 'public' },
     { route: '/invite/[token]', title: 'Invite redemption', auth: 'public' },
     { route: '/dashboard', title: 'Dashboard overview', auth: 'user' },
     { route: '/dashboard/files', title: 'Files', auth: 'user' },
@@ -117,6 +119,32 @@ export const USE_CASES: UseCaseEntry[] = [
         title: 'Sign out from the user menu',
         area: 'auth',
         routes: ['/dashboard'],
+    },
+    {
+        id: 'password-reset-request',
+        title: 'Requesting a reset returns the same confirmation whether or not the account exists',
+        area: 'auth',
+        routes: ['/forgot-password'],
+    },
+    {
+        id: 'password-reset-complete',
+        title: 'A valid reset token sets a new password and the old sessions die',
+        area: 'auth',
+        routes: ['/reset-password'],
+    },
+    {
+        id: 'password-reset-invalid-token',
+        title: 'An invalid or missing reset token shows a clear error, not a crash',
+        area: 'auth',
+        routes: ['/reset-password'],
+    },
+    {
+        id: 'password-reset-email-delivery',
+        title: 'The reset email arrives via Resend with a working link',
+        area: 'auth',
+        routes: ['/forgot-password'],
+        excluded:
+            'Delivery is Resend-side; e2e runs against a placeholder API key, and no mail-capture harness exists. The token half is covered by password-reset-complete.',
     },
     {
         id: 'auth-guard-admin',

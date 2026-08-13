@@ -2,7 +2,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getSessionCookie } from 'better-auth/cookies';
 import { sanitizeRedirect } from '@/lib/auth/sanitizeRedirect';
 
-const AUTH_ROUTES = ['/sign-in', '/sign-up'];
+// `/reset-password` is deliberately absent: a signed-in user who clicks the
+// reset link in their inbox must be able to complete it, not get bounced to a
+// dashboard whose session the reset is about to revoke.
+const AUTH_ROUTES = ['/sign-in', '/sign-up', '/forgot-password'];
 
 /**
  * Optimistic auth guard (UX layer only). It reads the session cookie's
@@ -35,5 +38,5 @@ export function proxy(req: NextRequest): NextResponse {
 }
 
 export const config = {
-    matcher: ['/dashboard/:path*', '/sign-in', '/sign-up'],
+    matcher: ['/dashboard/:path*', '/sign-in', '/sign-up', '/forgot-password'],
 };

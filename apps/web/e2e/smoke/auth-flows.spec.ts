@@ -4,42 +4,27 @@
  * invalidate the shared `e2e/.auth/*.json` states used by other specs.
  */
 import { test, expect } from '@playwright/test';
-import { REGULAR_USER } from '../helpers/auth';
+import { REGULAR_USER, signUpViaUi, uniqueTestEmail } from '../helpers/auth';
 import { deleteUserByEmail } from '@nexus/db/test-db';
-import { createTestDb } from '../helpers/connection';
+import { withTestDb } from '../helpers/connection';
 
 // Unique per run so a crashed previous run can't collide; cleaned in afterAll.
-// The pid matters: fullyParallel spreads this file's tests across workers, and
-// afterAll runs in each of them. Workers spawn together, so Date.now() alone
-// can collide across workers — then another worker's afterAll cascade-deletes
-// this worker's signup user (and its session) mid-test.
-const SIGNUP_EMAIL = `signup-e2e-${Date.now()}-${process.pid}@test.local`;
-const SIGNUP_PASSWORD = 'signup-e2e-password-123';
+const SIGNUP_USER = {
+    email: uniqueTestEmail('signup-e2e'),
+    password: 'signup-e2e-password-123',
+    name: 'Signup E2E',
+};
 
 test.describe('auth flows', () => {
     test.afterAll(async () => {
-        // These tests run unauthenticated (outside the fixture chain), so use a
-        // direct connection rather than the worker `db` fixture.
-        const db = createTestDb();
-        try {
-            await deleteUserByEmail(db, SIGNUP_EMAIL);
-        } finally {
-            await db.$client.end({ timeout: 5 });
-        }
+        await withTestDb((db) => deleteUserByEmail(db, SIGNUP_USER.email));
     });
 
     test(
         'sign up with email lands on dashboard and provisions a trial',
         { tag: ['@page:/sign-up', '@uc:sign-up-email', '@uc:trial-on-signup'] },
         async ({ page }) => {
-            await page.goto('/sign-up');
-
-            await page.getByLabel('Name').fill('Signup E2E');
-            await page.getByLabel('Email').fill(SIGNUP_EMAIL);
-            await page.getByLabel('Password').fill(SIGNUP_PASSWORD);
-            await page.getByRole('button', { name: 'Create account' }).click();
-
-            await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+            await signUpViaUi(page, SIGNUP_USER);
 
             // Trial starts at signup (not at plan selection): settings shows
             // a Trial badge and the Starter card is current.

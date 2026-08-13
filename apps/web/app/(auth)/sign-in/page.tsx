@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AuthPageShell } from '@/components/auth/auth-page-shell';
 import { SignInForm } from '@/components/auth/sign-in-form';
 import {
     DEFAULT_REDIRECT,
@@ -19,23 +20,22 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
             : `/sign-up?redirect=${encodeURIComponent(redirectTo)}`;
 
     return (
-        <div className="mx-auto w-full max-w-md">
-            <div className="mb-8 text-center">
-                <h1 className="mb-2 text-2xl font-bold">Welcome back</h1>
-                <p className="text-muted-foreground">
-                    Sign in to access your files
-                </p>
-            </div>
+        <AuthPageShell
+            title="Welcome back"
+            subtitle="Sign in to access your files"
+            footer={
+                <>
+                    Don&apos;t have an account?{' '}
+                    <Link
+                        href={signUpHref}
+                        className="font-medium text-primary hover:underline"
+                    >
+                        Sign up
+                    </Link>
+                </>
+            }
+        >
             <SignInForm redirectTo={redirectTo} />
-            <p className="mt-6 text-center text-sm text-muted-foreground">
-                Don&apos;t have an account?{' '}
-                <Link
-                    href={signUpHref}
-                    className="font-medium text-primary hover:underline"
-                >
-                    Sign up
-                </Link>
-            </p>
-        </div>
+        </AuthPageShell>
     );
 }

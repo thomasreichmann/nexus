@@ -10,12 +10,14 @@ import { mockEmail } from '@/lib/email/testing';
 
 const hoisted = await vi.hoisted(async () => {
     const { createMockLogger } = await import('@/server/lib/logger/testing');
-    return { logger: createMockLogger() };
+    return { logger: createMockLogger(), alertsSend: vi.fn() };
 });
 
 vi.mock('@/lib/email', () => ({
     email: mockEmail,
 }));
+
+vi.mock('@/lib/alerts', () => ({ alerts: { send: hoisted.alertsSend } }));
 
 vi.mock('@/server/lib/logger', () => ({ logger: hoisted.logger }));
 
@@ -113,6 +115,49 @@ describe('email service', () => {
             expect(hoisted.logger.warn).toHaveBeenCalledWith(
                 { to: 'tester@example.com', err: expect.any(Error) },
                 'Failed to send invite email'
+            );
+        });
+    });
+
+    describe('sendPasswordResetEmail', () => {
+        const resetOpts = {
+            to: 'tester@example.com',
+            resetUrl: 'https://test.example/reset-password?token=abc123token',
+            expiresAt: new Date('2026-08-01T12:00:00Z'),
+        };
+
+        it('sends to the account address with the reset subject', async () => {
+            await emailService.sendPasswordResetEmail(resetOpts);
+
+            expect(mockEmail.send).toHaveBeenCalledOnce();
+            const sent = mockEmail.send.mock.calls[0][0];
+            expect(sent.to).toBe('tester@example.com');
+            expect(sent.subject).toContain('Reset your Nexus password');
+            expect(sent.react).toBeDefined();
+        });
+
+        // The whole point of this function existing separately from the other
+        // two: a lost reset email locks the user out, so it must not swallow.
+        it('alerts and rethrows when the send fails', async () => {
+            mockEmail.send.mockRejectedValueOnce(new Error('Resend outage'));
+
+            await expect(
+                emailService.sendPasswordResetEmail(resetOpts)
+            ).rejects.toThrow('Resend outage');
+
+            expect(hoisted.logger.error).toHaveBeenCalledWith(
+                { to: 'tester@example.com', err: expect.any(Error) },
+                'Failed to send password reset email'
+            );
+            expect(hoisted.alertsSend).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'critical',
+                    context: expect.objectContaining({
+                        source: 'auth',
+                        to: 'tester@example.com',
+                        error: 'Resend outage',
+                    }),
+                })
             );
         });
     });

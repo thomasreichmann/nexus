@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Shield, DollarSign, Archive } from 'lucide-react';
+import { AuthPageShell } from '@/components/auth/auth-page-shell';
 import { SignUpForm } from '@/components/auth/sign-up-form';
 import {
     DEFAULT_REDIRECT,
@@ -20,37 +21,38 @@ export default async function SignUpPage({ searchParams }: SignUpPageProps) {
             : `/sign-in?redirect=${encodeURIComponent(redirectTo)}`;
 
     return (
-        <div className="mx-auto w-full max-w-md">
-            <div className="mb-8 text-center">
-                <h1 className="mb-2 text-2xl font-bold">Create your account</h1>
-                <p className="text-muted-foreground">
-                    Start storing your files securely for less
-                </p>
-            </div>
+        <AuthPageShell
+            title="Create your account"
+            subtitle="Start storing your files securely for less"
+            footer={
+                <>
+                    <p>
+                        Already have an account?{' '}
+                        <Link
+                            href={signInHref}
+                            className="font-medium text-primary hover:underline"
+                        >
+                            Sign in
+                        </Link>
+                    </p>
+                    <div className="mt-8 flex flex-wrap items-center justify-center gap-6 text-xs">
+                        <div className="flex items-center gap-1.5">
+                            <DollarSign className="size-3.5 text-primary" />
+                            <span>5 GB free</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <Shield className="size-3.5 text-primary" />
+                            <span>Encrypted</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <Archive className="size-3.5 text-primary" />
+                            <span>No credit card</span>
+                        </div>
+                    </div>
+                </>
+            }
+        >
             <SignUpForm redirectTo={redirectTo} />
-            <p className="mt-6 text-center text-sm text-muted-foreground">
-                Already have an account?{' '}
-                <Link
-                    href={signInHref}
-                    className="font-medium text-primary hover:underline"
-                >
-                    Sign in
-                </Link>
-            </p>
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-6 text-xs text-muted-foreground">
-                <div className="flex items-center gap-1.5">
-                    <DollarSign className="size-3.5 text-primary" />
-                    <span>5 GB free</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <Shield className="size-3.5 text-primary" />
-                    <span>Encrypted</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <Archive className="size-3.5 text-primary" />
-                    <span>No credit card</span>
-                </div>
-            </div>
-        </div>
+        </AuthPageShell>
     );
 }

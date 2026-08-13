@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { Sparkles, MailQuestion } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { AuthNotice } from '@/components/auth/auth-notice';
+import { AuthPageShell } from '@/components/auth/auth-page-shell';
 import { SignUpForm } from '@/components/auth/sign-up-form';
 import { db } from '@/server/db';
 import {
@@ -25,25 +27,22 @@ export default async function InvitePage({ params }: InvitePageProps) {
     }
 
     return (
-        <div className="mx-auto w-full max-w-md">
-            <div className="mb-8 text-center">
+        <AuthPageShell
+            badge={
                 <span className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium tracking-wide text-primary uppercase">
                     <Sparkles className="size-3.5" />
                     Sponsored access
                 </span>
-                <h1 className="mb-2 text-2xl font-bold">
-                    You&apos;re invited to Nexus
-                </h1>
-                <p className="text-muted-foreground">
-                    Create your account and start archiving — storage is on us.
-                </p>
-            </div>
+            }
+            title="You're invited to Nexus"
+            subtitle="Create your account and start archiving — storage is on us."
+            footer={<SignInPrompt />}
+        >
             <SignUpForm
                 inviteToken={token}
                 lockedEmail={redemption.email ?? undefined}
             />
-            <SignInPrompt className="mt-6" />
-        </div>
+        </AuthPageShell>
     );
 }
 
@@ -76,14 +75,13 @@ function InviteUnavailable({
 }) {
     const copy = UNAVAILABLE_COPY[status];
     return (
-        <div className="mx-auto w-full max-w-md text-center">
-            <div className="mb-6 inline-flex size-12 items-center justify-center rounded-full bg-muted">
-                <MailQuestion className="size-6 text-muted-foreground" />
-            </div>
-            <h1 className="mb-2 text-2xl font-bold">{copy.title}</h1>
-            <p className="mb-8 text-muted-foreground">{copy.body}</p>
+        <AuthNotice
+            icon={<MailQuestion className="size-6 text-muted-foreground" />}
+            title={copy.title}
+            body={copy.body}
+        >
             <SignInPrompt />
-        </div>
+        </AuthNotice>
     );
 }
 

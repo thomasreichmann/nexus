@@ -11,8 +11,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { GoogleIcon } from '@/components/icons/google-icon';
+import { FormError } from '@/components/auth/form-feedback';
 import { OAuthDivider } from '@/components/auth/oauth-divider';
 import { signUp } from '@/lib/auth/client';
+import { MIN_PASSWORD_LENGTH } from '@/lib/auth/constants';
 import { DEFAULT_REDIRECT } from '@/lib/auth/sanitizeRedirect';
 import { captureEvent } from '@/lib/posthog/client';
 import { PostHogEvent } from '@/lib/posthog/events';
@@ -112,14 +114,7 @@ export function SignUpForm({
             )}
 
             <form onSubmit={onSubmit} className="space-y-4">
-                {error && (
-                    <div
-                        role="alert"
-                        className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
-                    >
-                        {error}
-                    </div>
-                )}
+                {error && <FormError>{error}</FormError>}
                 <div className="space-y-2">
                     <Label htmlFor="name">Name</Label>
                     <Input
@@ -161,8 +156,9 @@ export function SignUpForm({
                     <Input
                         id="password"
                         type="password"
-                        placeholder="Create a password"
+                        placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
                         required
+                        minLength={MIN_PASSWORD_LENGTH}
                         disabled={isLoading}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}

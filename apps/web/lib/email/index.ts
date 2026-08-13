@@ -26,4 +26,8 @@ export const email = {
     templates,
 } as const;
 
-export type { InviteEmailProps, RetrievalReadyEmailProps } from './templates';
+export type {
+    InviteEmailProps,
+    PasswordResetEmailProps,
+    RetrievalReadyEmailProps,
+} from './templates';

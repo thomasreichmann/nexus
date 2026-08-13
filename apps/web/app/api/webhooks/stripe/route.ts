@@ -3,6 +3,7 @@ import type Stripe from 'stripe';
 import { createWebhookRepo, type WebhookEvent } from '@nexus/db/repo/webhooks';
 import { alerts } from '@/lib/alerts';
 import { isLocalDevelopment } from '@/lib/env/runtime';
+import { toErrorMessage } from '@/lib/errors';
 import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import { stripe } from '@/lib/stripe';
@@ -156,8 +157,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             'Webhook processing failed'
         );
 
-        const errorMessage =
-            error instanceof Error ? error.message : String(error);
+        const errorMessage = toErrorMessage(error);
         await webhookRepo.update(webhookEvent.id, {
             status: 'failed',
             error: errorMessage,
