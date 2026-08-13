@@ -25,7 +25,8 @@
         "backfill:storage-tier": "tsx --env-file=.env.local scripts/backfill-storage-tier.ts",
         "check:s3-event-health": "tsx --env-file=.env.local scripts/check-s3-event-health.ts",
         "check:stripe-config": "tsx --env-file=.env.local scripts/check-stripe-config.ts",
-        "check:vercel-env-parity": "tsx --env-file=.env.local scripts/check-vercel-env-parity.ts"
+        "check:vercel-env-parity": "tsx --env-file=.env.local scripts/check-vercel-env-parity.ts",
+        "reap:stale-uploads": "tsx --env-file=.env.local scripts/reap-stale-uploads.ts"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.975.0",

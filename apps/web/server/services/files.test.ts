@@ -874,6 +874,24 @@ describe('files service', () => {
             );
         });
 
+        // Clear-all sweeps completed rows too, so this has to be safe against a
+        // fileId whose upload already confirmed and was counted.
+        it('is a no-op on a file that already confirmed', async () => {
+            const availableFile = createFileFixture({ status: 'available' });
+            mocks.files.findFirst.mockResolvedValue(availableFile);
+            const abort = vi.spyOn(mockS3.multipart, 'abort');
+
+            await fileService.abortMultipartUpload(
+                db,
+                TEST_USER_ID,
+                availableFile.id,
+                'some-upload-id'
+            );
+
+            expect(abort).not.toHaveBeenCalled();
+            expect(mocks.update).not.toHaveBeenCalled();
+        });
+
         it('throws NotFoundError when file does not exist', async () => {
             mocks.files.findFirst.mockResolvedValue(undefined);
 
@@ -884,6 +902,86 @@ describe('files service', () => {
                     'nonexistent',
                     'some-upload-id'
                 )
+            ).rejects.toThrow(NotFoundError);
+        });
+    });
+
+    describe('abandonUpload', () => {
+        it('deletes the object at the recorded key and soft-deletes the row', async () => {
+            const uploadingFile = createFileFixture({ status: 'uploading' });
+            mocks.files.findFirst.mockResolvedValue(uploadingFile);
+            mocks.returning.mockResolvedValue([
+                { ...uploadingFile, status: 'deleted' },
+            ]);
+            const remove = vi.spyOn(mockS3.objects, 'remove');
+
+            await fileService.abandonUpload(db, TEST_USER_ID, uploadingFile.id);
+
+            // The row's own s3Key is the whole input — no uploadId involved,
+            // which is what lets this serve single-part uploads.
+            expect(remove).toHaveBeenCalledWith(uploadingFile.s3Key);
+            expect(mocks.set).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    status: 'deleted',
+                    deletedAt: expect.any(Date),
+                })
+            );
+        });
+
+        // An abandoned upload was never counted (usage increments at confirm),
+        // so releasing it must not move the counter.
+        it('does not touch storage usage', async () => {
+            const uploadingFile = createFileFixture({ status: 'uploading' });
+            mocks.files.findFirst.mockResolvedValue(uploadingFile);
+            mocks.returning.mockResolvedValue([
+                { ...uploadingFile, status: 'deleted' },
+            ]);
+
+            await fileService.abandonUpload(db, TEST_USER_ID, uploadingFile.id);
+
+            // Only the file row's update — no usage decrement or upsert.
+            expect(mocks.update).toHaveBeenCalledTimes(1);
+            expect(mocks.onConflictDoUpdate).not.toHaveBeenCalled();
+        });
+
+        // The dangerous race: a cancel click landing just after the confirm it
+        // raced must not delete the bytes of a file the user now owns.
+        it('is a no-op on a file that already confirmed', async () => {
+            const availableFile = createFileFixture({ status: 'available' });
+            mocks.files.findFirst.mockResolvedValue(availableFile);
+            const remove = vi.spyOn(mockS3.objects, 'remove');
+
+            await fileService.abandonUpload(db, TEST_USER_ID, availableFile.id);
+
+            expect(remove).not.toHaveBeenCalled();
+            expect(mocks.update).not.toHaveBeenCalled();
+        });
+
+        it('is idempotent — a second abandon deletes nothing', async () => {
+            const deletedFile = createFileFixture({ status: 'deleted' });
+            mocks.files.findFirst.mockResolvedValue(deletedFile);
+            const remove = vi.spyOn(mockS3.objects, 'remove');
+
+            await fileService.abandonUpload(db, TEST_USER_ID, deletedFile.id);
+
+            expect(remove).not.toHaveBeenCalled();
+            expect(mocks.update).not.toHaveBeenCalled();
+        });
+
+        it('throws NotFoundError when file does not exist', async () => {
+            mocks.files.findFirst.mockResolvedValue(undefined);
+
+            await expect(
+                fileService.abandonUpload(db, TEST_USER_ID, 'nonexistent')
+            ).rejects.toThrow(NotFoundError);
+        });
+
+        it('throws NotFoundError when file belongs to a different user', async () => {
+            // findByUserAndId scopes by both ids, so a wrong user returns undefined
+            mocks.files.findFirst.mockResolvedValue(undefined);
+
+            await expect(
+                fileService.abandonUpload(db, 'different-user', 'some-file-id')
             ).rejects.toThrow(NotFoundError);
         });
     });

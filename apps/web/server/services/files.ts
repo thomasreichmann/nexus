@@ -390,26 +390,59 @@ async function signMultipartParts(
     return { parts, expiresAt };
 }
 
-async function abortMultipartUpload(
+/**
+ * Give up on an upload: hand its S3 side to `release`, then close the row.
+ * The two engines differ only in that release step, so the parts that must not
+ * drift between them live here.
+ *
+ * The status guard is the load-bearing line. A row past `uploading` has
+ * confirmed and been counted, so releasing it would delete the bytes of a
+ * file the user now owns while leaving its usage incremented — and a cancel
+ * click really can land just after the confirm it raced. Doing nothing there
+ * also makes a repeated release idempotent.
+ *
+ * No usage decrement anywhere: an upload that never confirmed was never
+ * counted (`confirmUpload` is what increments).
+ */
+async function releaseUpload(
     db: DB,
     userId: string,
     fileId: string,
-    uploadId: string
+    release: (file: File) => Promise<void>
 ): Promise<void> {
     const fileRepo = createFileRepo(db);
     const file = await fileRepo.findByUserAndId(userId, fileId);
     if (!file) {
         throw new NotFoundError('File', fileId);
     }
+    if (file.status !== 'uploading') return;
 
-    await s3.multipart.abort(file.s3Key, uploadId);
+    await release(file);
 
-    // Aborted uploads never made it to `available`, so usage was never
-    // incremented — no decrement needed here.
-    await fileRepo.update(fileId, {
-        status: 'deleted',
-        deletedAt: new Date(),
-    });
+    await fileRepo.softDelete(fileId);
+}
+
+function abortMultipartUpload(
+    db: DB,
+    userId: string,
+    fileId: string,
+    uploadId: string
+): Promise<void> {
+    return releaseUpload(db, userId, fileId, (file) =>
+        s3.multipart.abort(file.s3Key, uploadId)
+    );
+}
+
+// Release an upload the client gave up on — cancelled, cleared, or replaced by
+// a retry. Takes no uploadId, unlike `abortMultipartUpload`: `initiateUpload`
+// records `s3Key` on the row at insert, which is all a DeleteObject needs, so
+// this serves the single-part engine (which never mints an uploadId) too.
+// Without it a cancelled single-part upload leaves an `uploading` row that no
+// list ever shows and bytes in S3 that nothing accounts for (#330).
+function abandonUpload(db: DB, userId: string, fileId: string): Promise<void> {
+    return releaseUpload(db, userId, fileId, (file) =>
+        s3.objects.remove(file.s3Key)
+    );
 }
 
 const THUMBNAIL_URL_EXPIRY_SECONDS = 3600; // 1 hour
@@ -506,6 +539,7 @@ export const fileService = {
     listMultipartParts,
     signMultipartParts,
     abortMultipartUpload,
+    abandonUpload,
     deleteUserFile,
     getThumbnailUrls,
 } as const;

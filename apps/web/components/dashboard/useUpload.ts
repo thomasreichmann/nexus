@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useTRPC } from '@/lib/trpc/client';
+import { toastContext } from '@/lib/trpc/error-link';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { xhrPut } from '@/lib/http/xhr';
 import { retryAsync } from '@/lib/async/retry';
@@ -173,8 +174,18 @@ export function useUpload() {
             retry: CONFIRM_RETRIES,
         })
     );
+    // Both cleanup mutations fire and forget on a row the user already
+    // dismissed, so a failure has nothing to tell them — the nightly
+    // stale-`uploading` check is the backstop. Hence the shared skipToast.
     const multipartAbortMutation = useMutation(
-        trpc.files.multipart.abort.mutationOptions()
+        trpc.files.multipart.abort.mutationOptions({
+            trpc: toastContext({ skipToast: true }),
+        })
+    );
+    const abandonUploadMutation = useMutation(
+        trpc.files.abandonUpload.mutationOptions({
+            trpc: toastContext({ skipToast: true }),
+        })
     );
     const multipartListPartsMutation = useMutation(
         trpc.files.multipart.listParts.mutationOptions()
@@ -212,6 +223,16 @@ export function useUpload() {
             // init (mirrors the multipart engine).
             let fileId = uploadFile.fileId;
             try {
+                // Every restart of this engine (retry, or auto-resume after a
+                // network drop) mints a fresh fileId, row, and s3Key, so the
+                // attempt being replaced has to be released here or it strands
+                // as a hidden `uploading` row with billed bytes behind it
+                // (#330). Multipart is the opposite — it resumes the same
+                // uploadId — which is why this lives in the single engine.
+                if (fileId) {
+                    abandonUploadMutation.mutate({ fileId });
+                }
+
                 const init = await uploadMutation.mutateAsync({
                     name: file.name,
                     sizeBytes: file.size,
@@ -269,7 +290,13 @@ export function useUpload() {
                 });
             }
         },
-        [uploadMutation, confirmMutation, updateFile, invalidateFileList]
+        [
+            uploadMutation,
+            confirmMutation,
+            abandonUploadMutation,
+            updateFile,
+            invalidateFileList,
+        ]
     );
 
     const uploadMultipartFile = useCallback(
@@ -748,36 +775,55 @@ export function useUpload() {
         });
     }, []);
 
-    const removeFile = useCallback((id: string) => {
-        const file = filesRef.current.find((f) => f.id === id);
-        file?.abortController?.abort(CANCEL);
-        setFiles((prev) => prev.filter((f) => f.id !== id));
-    }, []);
-
-    const clearFiles = useCallback(() => {
-        for (const file of filesRef.current) {
-            file.abortController?.abort(CANCEL);
-        }
-        setFiles([]);
-    }, []);
-
-    const cancelFile = useCallback(
-        (id: string) => {
-            const file = filesRef.current.find((f) => f.id === id);
-            file?.abortController?.abort(CANCEL);
-            // Abort the S3 multipart session and drop the persisted state so a
-            // cancelled upload doesn't linger as resumable.
-            if (file?.fileId && file?.uploadId) {
+    // Release whatever the server already minted for a row we're dropping: the
+    // S3 multipart session when there is one (plus its persisted state, so a
+    // cancelled upload doesn't linger as resumable), otherwise the plain object
+    // at the row's recorded key. A row that never reached the server has no
+    // fileId and nothing to release. Fire-and-forget — the row leaves the UI
+    // either way, and the nightly stale-upload check backs this up.
+    const abandonServerUpload = useCallback(
+        (file: InternalUploadFile | undefined) => {
+            // Skipping `complete` rows is an optimization, not the safety net:
+            // clear-all sweeps confirmed rows too, and there's no point asking
+            // the server to release an upload the UI already knows finished.
+            // Refusing to touch a confirmed file is the server's job, and
+            // `releaseUpload` does it for both engines.
+            if (!file?.fileId || file.status === 'complete') return;
+            if (file.uploadId) {
                 multipartAbortMutation.mutate({
                     fileId: file.fileId,
                     uploadId: file.uploadId,
                 });
                 void deleteUpload(file.fileId);
+                return;
             }
+            abandonUploadMutation.mutate({ fileId: file.fileId });
+        },
+        [multipartAbortMutation, abandonUploadMutation]
+    );
+
+    // Drop a row and release anything the server holds for it. Exposed under
+    // two names because the UI offers two affordances — Remove on a queued row,
+    // Cancel on one in flight — but there's a single operation behind them.
+    const dropRow = useCallback(
+        (id: string) => {
+            const file = filesRef.current.find((f) => f.id === id);
+            file?.abortController?.abort(CANCEL);
+            abandonServerUpload(file);
             setFiles((prev) => prev.filter((f) => f.id !== id));
         },
-        [multipartAbortMutation]
+        [abandonServerUpload]
     );
+    const removeFile = dropRow;
+    const cancelFile = dropRow;
+
+    const clearFiles = useCallback(() => {
+        for (const file of filesRef.current) {
+            file.abortController?.abort(CANCEL);
+            abandonServerUpload(file);
+        }
+        setFiles([]);
+    }, [abandonServerUpload]);
 
     const retryFile = useCallback(
         (id: string) => {

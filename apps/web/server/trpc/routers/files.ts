@@ -116,6 +116,17 @@ export const filesRouter = router({
             );
         }),
 
+    // Top-level, not under `multipart`: it serves both engines.
+    abandonUpload: protectedProcedure
+        .input(z.object({ fileId: z.string().uuid() }))
+        .mutation(({ ctx, input }) => {
+            return fileService.abandonUpload(
+                ctx.db,
+                ctx.session.user.id,
+                input.fileId
+            );
+        }),
+
     delete: protectedProcedure
         .input(z.object({ id: z.string().uuid() }))
         .mutation(({ ctx, input }) => {
