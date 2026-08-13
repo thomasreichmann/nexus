@@ -28,6 +28,17 @@ import { timestamps } from './helpers';
 export const RESTORE_TIERS = ['standard', 'bulk', 'expedited'] as const;
 export type RestoreTier = (typeof RESTORE_TIERS)[number];
 
+/**
+ * Days a restored Glacier copy stays accessible. Also the length of the
+ * synthetic download window for standard-tier retrievals, which skip S3
+ * restore entirely — keep the two in lockstep so both tiers present the
+ * same window.
+ *
+ * Lives here beside `RESTORE_TIERS` rather than in `apps/web` so seeds and
+ * test-db helpers can reach it — they can't import from the app (#364).
+ */
+export const DEFAULT_RESTORE_DAYS_TO_KEEP = 7;
+
 // Nexus domain tables
 
 export const storageTierEnum = pgEnum('storage_tier', [

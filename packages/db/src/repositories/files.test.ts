@@ -8,7 +8,7 @@ import {
     TEST_USER_ID,
     TEST_FILE_ID,
 } from './fixtures';
-import { createFileRepo, type FileRepo } from './files';
+import { createFileRepo, originalKey, type FileRepo } from './files';
 
 describe('files repository', () => {
     let mocks: MockDbMocks;
@@ -502,5 +502,18 @@ describe('files repository', () => {
                 { ...f2, activeRetrieval: null },
             ]);
         });
+    });
+});
+
+describe('originalKey', () => {
+    it('builds the four-segment upload key', () => {
+        expect(
+            originalKey({
+                userId: 'usr_1',
+                batchId: 'batch_1',
+                id: 'file_1',
+                name: '_MG_4501.CR2',
+            })
+        ).toBe('usr_1/batch_1/file_1/_MG_4501.CR2');
     });
 });

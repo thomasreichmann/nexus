@@ -59,6 +59,16 @@
             "import": "./src/repositories/webhooks.ts",
             "default": "./src/repositories/webhooks.ts"
         },
+        "./invites": {
+            "types": "./src/invites.ts",
+            "import": "./src/invites.ts",
+            "default": "./src/invites.ts"
+        },
+        "./media": {
+            "types": "./src/media.ts",
+            "import": "./src/media.ts",
+            "default": "./src/media.ts"
+        },
         "./plans": {
             "types": "./src/plans.ts",
             "import": "./src/plans.ts",

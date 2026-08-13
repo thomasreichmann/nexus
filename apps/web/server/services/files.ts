@@ -1,5 +1,10 @@
 import type { DB } from '@nexus/db';
-import { createFileRepo, thumbnailKey, type File } from '@nexus/db/repo/files';
+import {
+    createFileRepo,
+    originalKey,
+    thumbnailKey,
+    type File,
+} from '@nexus/db/repo/files';
 import { createStorageUsageRepo } from '@nexus/db/repo/storage-usage';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
 import {
@@ -115,7 +120,12 @@ async function initiateUpload(
     const batchId = await resolveBatchId(db, userId, input);
     const fileRepo = createFileRepo(db);
     const fileId = crypto.randomUUID();
-    const s3Key = `${userId}/${batchId}/${fileId}/${input.name}`;
+    const s3Key = originalKey({
+        userId,
+        batchId,
+        id: fileId,
+        name: input.name,
+    });
 
     const uploadUrl = await s3.presigned.put(s3Key, {
         contentType: input.mimeType,
@@ -203,7 +213,12 @@ async function initiateMultipartUpload(
     const batchId = await resolveBatchId(db, userId, input);
     const fileRepo = createFileRepo(db);
     const fileId = crypto.randomUUID();
-    const s3Key = `${userId}/${batchId}/${fileId}/${input.name}`;
+    const s3Key = originalKey({
+        userId,
+        batchId,
+        id: fileId,
+        name: input.name,
+    });
     const partCount = Math.ceil(input.sizeBytes / MULTIPART_CHUNK_SIZE);
 
     const { uploadId } = await s3.multipart.create(s3Key, input.mimeType);
@@ -260,32 +275,37 @@ async function completeMultipartUpload(
     // covers status flip and usage bump atomically.
     await s3.multipart.complete(file.s3Key, input.uploadId, input.parts);
 
-    const { file: completed, isConfirmed } = await db.transaction(async (tx) => {
-        const txFileRepo = createFileRepo(tx);
-        const txUsageRepo = createStorageUsageRepo(tx);
+    const { file: completed, isConfirmed } = await db.transaction(
+        async (tx) => {
+            const txFileRepo = createFileRepo(tx);
+            const txUsageRepo = createStorageUsageRepo(tx);
 
-        // Idempotency guard inside the txn: a retry after S3 success could
-        // re-enter here with the file already 'available'. Re-fetch under the
-        // tx and short-circuit so we don't double-increment usage.
-        const current = await txFileRepo.findByUserAndId(userId, input.fileId);
-        if (!current) {
-            throw new NotFoundError('File', input.fileId);
+            // Idempotency guard inside the txn: a retry after S3 success could
+            // re-enter here with the file already 'available'. Re-fetch under the
+            // tx and short-circuit so we don't double-increment usage.
+            const current = await txFileRepo.findByUserAndId(
+                userId,
+                input.fileId
+            );
+            if (!current) {
+                throw new NotFoundError('File', input.fileId);
+            }
+            if (current.status !== 'uploading') {
+                return { file: current, isConfirmed: false };
+            }
+
+            const updated = await txFileRepo.update(input.fileId, {
+                status: 'available',
+            });
+            if (!updated) {
+                throw new NotFoundError('File', input.fileId);
+            }
+
+            await txUsageRepo.incrementUsage(userId, file.size);
+
+            return { file: updated, isConfirmed: true };
         }
-        if (current.status !== 'uploading') {
-            return { file: current, isConfirmed: false };
-        }
-
-        const updated = await txFileRepo.update(input.fileId, {
-            status: 'available',
-        });
-        if (!updated) {
-            throw new NotFoundError('File', input.fileId);
-        }
-
-        await txUsageRepo.incrementUsage(userId, file.size);
-
-        return { file: updated, isConfirmed: true };
-    });
+    );
 
     // Same post-commit, flip-branch-only enqueue as confirmUpload.
     if (isConfirmed) {

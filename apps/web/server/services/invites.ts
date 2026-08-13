@@ -1,8 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import type { DB } from '@nexus/db';
-import { createInviteRepo, type Invite } from '@nexus/db/repo/invites';
+import {
+    createInviteRepo,
+    isInviteExpired,
+    type Invite,
+} from '@nexus/db/repo/invites';
 import { env } from '@/lib/env';
-import { isInviteExpired } from '@/lib/invites';
 import { InvalidStateError, NotFoundError } from '@/server/errors';
 import { logger } from '@/server/lib/logger';
 import { emailService } from '@/server/services/email';
