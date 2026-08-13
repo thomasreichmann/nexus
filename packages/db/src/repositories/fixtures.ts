@@ -1,5 +1,5 @@
 import * as schema from '../schema';
-import { PLAN_LIMITS } from '../plans';
+import { PLAN_LIMITS, getTrialEnd } from '../plans';
 import type { File, NewFile } from './files';
 import type { Invite } from './invites';
 import type { Job, NewJob } from './jobs';
@@ -133,6 +133,10 @@ export function createNewJobFixture(overrides: Partial<NewJob> = {}): NewJob {
     };
 }
 
+/**
+ * Defaults to a fresh trial, matching the schema default and what the signup
+ * path writes. Tests that need a paid subscription pass `status` explicitly.
+ */
 export function createSubscriptionFixture(
     overrides: Partial<Subscription> = {}
 ): Subscription {
@@ -143,12 +147,12 @@ export function createSubscriptionFixture(
         stripeCustomerId: TEST_STRIPE_CUSTOMER_ID,
         stripeSubscriptionId: null,
         planTier: 'starter',
-        status: 'active',
+        status: 'trialing',
         storageLimit: PLAN_LIMITS.starter,
         currentPeriodStart: null,
         currentPeriodEnd: null,
         cancelAtPeriodEnd: false,
-        trialEnd: null,
+        trialEnd: getTrialEnd(now),
         createdAt: now,
         updatedAt: now,
         ...overrides,

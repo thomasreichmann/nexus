@@ -10,7 +10,7 @@ import { eq, count } from 'drizzle-orm';
 import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createSubscriptionFixture, type User } from '../repositories/fixtures';
-import { PLAN_LIMITS, type PlanTier } from '../plans';
+import { PLAN_LIMITS, getTrialEnd, type PlanTier } from '../plans';
 
 export async function findUserByEmail(
     db: DB,
@@ -123,7 +123,7 @@ export async function ensureTrialSubscription(
         currentPeriodStart: null,
         currentPeriodEnd: null,
         cancelAtPeriodEnd: false,
-        trialEnd: new Date(Date.now() + 30 * 86_400_000),
+        trialEnd: getTrialEnd(),
     });
     await db
         .insert(schema.subscriptions)
