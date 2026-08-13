@@ -334,7 +334,8 @@ describe('POST /api/webhooks/stripe', () => {
 
             const response = await POST(makeRequest(sampleEvent));
 
-            // Failed events still return 200 — see #201 for the retry-loss tradeoff
+            // Business errors still return 200: a retry hits the same bug.
+            // Only the transient class rethrows (#331).
             expect(response.status).toBe(200);
             await expect(response.json()).resolves.toEqual({ received: true });
             expect(mocks.set).toHaveBeenCalledWith({
@@ -362,6 +363,40 @@ describe('POST /api/webhooks/stripe', () => {
                 status: 'failed',
                 error: 'plain string failure',
             });
+        });
+
+        it('rethrows transient infra failures so Stripe retries', async () => {
+            // The database went away mid-dispatch. Marking the row 'failed'
+            // would need that same database, and nothing re-drives a failed
+            // row on its own — so this becomes a 5xx and Stripe retries.
+            dispatchWebhookEvent.mockRejectedValue(
+                Object.assign(new Error('connection refused'), {
+                    code: 'ECONNREFUSED',
+                })
+            );
+
+            await expect(POST(makeRequest(sampleEvent))).rejects.toThrow(
+                'connection refused'
+            );
+            expect(mocks.set).not.toHaveBeenCalled();
+            expect(hoisted.alertsSend).not.toHaveBeenCalled();
+        });
+
+        it('unwraps a transient cause from a fetch wrapper', async () => {
+            // undici reports a refused connection as `TypeError: fetch failed`
+            // with the real code one level down.
+            dispatchWebhookEvent.mockRejectedValue(
+                new TypeError('fetch failed', {
+                    cause: Object.assign(new Error('socket hang up'), {
+                        code: 'ECONNRESET',
+                    }),
+                })
+            );
+
+            await expect(POST(makeRequest(sampleEvent))).rejects.toThrow(
+                'fetch failed'
+            );
+            expect(mocks.set).not.toHaveBeenCalled();
         });
     });
 });

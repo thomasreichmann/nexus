@@ -2,7 +2,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createWebhookRepo } from '@nexus/db/repo/webhooks';
 import { alerts } from '@/lib/alerts';
 import { isLocalDevelopment } from '@/lib/env/runtime';
-import { toErrorMessage } from '@/lib/errors';
+import { isTransientInfraError, toErrorMessage } from '@/lib/errors';
+import {
+    recordWebhookFailure,
+    resolveWebhookEvent,
+} from '@/lib/webhooks/events';
 import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import { verifySnsMessage } from '@/lib/sns/webhooks';
@@ -56,16 +60,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const notification = body as unknown as SnsNotification;
     const webhookRepo = createWebhookRepo(db);
 
-    const existing = await webhookRepo.find('sns', notification.MessageId);
-
-    if (existing) {
-        log.debug(
-            { messageId: notification.MessageId, duplicate: true },
-            'Duplicate webhook event skipped'
-        );
-        return NextResponse.json({ received: true, duplicate: true });
-    }
-
     let s3Event: S3EventNotification;
     try {
         s3Event = JSON.parse(notification.Message) as S3EventNotification;
@@ -79,12 +73,36 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const eventType = s3Event.Records?.[0]?.eventName ?? 'unknown';
 
-    const webhookEvent = await webhookRepo.insert({
+    const lookup = await resolveWebhookEvent(webhookRepo, {
         source: 'sns',
         externalId: notification.MessageId,
         eventType,
         payload: body,
     });
+
+    if (lookup.outcome === 'duplicate') {
+        log.debug(
+            {
+                messageId: notification.MessageId,
+                duplicate: true,
+                reason: lookup.reason,
+            },
+            'Duplicate webhook event skipped'
+        );
+        return NextResponse.json({ received: true, duplicate: true });
+    }
+
+    if (lookup.outcome === 'retry') {
+        log.info(
+            {
+                messageId: notification.MessageId,
+                prevStatus: lookup.event.status,
+            },
+            'Retrying webhook event'
+        );
+    }
+
+    const webhookEvent = lookup.event;
 
     const start = Date.now();
     log.info(
@@ -152,14 +170,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             'Webhook processing failed'
         );
 
-        const errorMessage = toErrorMessage(error);
-        await webhookRepo.update(webhookEvent.id, {
-            status: 'failed',
-            error: errorMessage,
-        });
+        // Rethrow so the 5xx makes SNS redeliver — see `isTransientInfraError`
+        // for why nothing is written first (#331).
+        if (isTransientInfraError(error)) throw error;
 
-        await alerts.send({
-            severity: 'error',
+        await recordWebhookFailure(webhookRepo, webhookEvent.id, error, {
             title: 'S3 webhook processing failed',
             message:
                 'Handler threw while processing an SNS webhook; the event row is marked failed.',
@@ -167,7 +182,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 source: 'sns',
                 eventType,
                 externalId: notification.MessageId,
-                error: errorMessage,
             },
         });
 
@@ -181,13 +195,35 @@ async function handleSubscriptionConfirmation(
     log.info({ topicArn: message.TopicArn }, 'Confirming SNS subscription');
 
     try {
-        await fetch(message.SubscribeURL);
+        const response = await fetch(message.SubscribeURL);
+        // `fetch` only rejects on a network failure, so an SNS-side 4xx/5xx
+        // would otherwise log as confirmed while the topic stays unsubscribed.
+        if (!response.ok) {
+            throw new Error(
+                `SubscribeURL returned ${response.status} ${response.statusText}`
+            );
+        }
         log.info({ topicArn: message.TopicArn }, 'SNS subscription confirmed');
     } catch (err) {
+        // An unconfirmed subscription delivers nothing at all, so this is
+        // louder than a log line: every restore notification is lost until
+        // someone re-triggers confirmation (#331).
         log.error(
             { err, topicArn: message.TopicArn },
             'Failed to confirm SNS subscription'
         );
+
+        await alerts.send({
+            severity: 'error',
+            title: 'SNS subscription confirmation failed',
+            message:
+                'Could not confirm an SNS subscription; the topic will not deliver events to this endpoint until it is confirmed.',
+            context: {
+                source: 'sns',
+                topicArn: message.TopicArn,
+                error: toErrorMessage(err),
+            },
+        });
     }
 
     return NextResponse.json({ received: true });
