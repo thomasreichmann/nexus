@@ -7,6 +7,9 @@
  *     ObjectRestore:Post deliveries don't trip this)
  *   - any retrieval has sat in 'pending'/'in_progress' for over 48 hours
  *     (Deep Archive bulk restores complete within 48h — older is stuck)
+ *   - any file has sat in 'uploading' for over 24 hours (#330): the client
+ *     abandoned it without calling cleanup, so the row is invisible to every
+ *     list and whatever bytes reached S3 are billed but untracked
  *
  * Tier drift is covered separately by `backfill:storage-tier --check`; the
  * two together are the post-deploy watch for #278 (see #285).
@@ -25,6 +28,7 @@ import { and, count, eq, gte, inArray, lt } from 'drizzle-orm';
 import { alerts, getWorkflowRunUrl } from '@/lib/alerts';
 import { db } from '@/server/db';
 import { s3RestoreService } from '@/server/services/s3-restore';
+import { createFileRepo, STALE_UPLOAD_HOURS } from '@nexus/db/repo/files';
 import { retrievals, webhookEvents } from '@nexus/db/schema';
 
 const FAILED_WEBHOOK_WINDOW_DAYS = 7;
@@ -104,6 +108,24 @@ async function main(): Promise<void> {
     }
     if (stuckRetrievals.length > 0) hasFailure = true;
 
+    // Same query and threshold `reap:stale-uploads` acts on — this leg reports
+    // exactly what that script would clear.
+    const staleUploadsBefore = new Date(
+        Date.now() - STALE_UPLOAD_HOURS * 60 * 60 * 1000
+    );
+    const staleUploads =
+        await createFileRepo(db).findStaleUploads(staleUploadsBefore);
+
+    console.log(
+        `Uploads stuck >${STALE_UPLOAD_HOURS}h:                   ${staleUploads.length}`
+    );
+    for (const file of staleUploads) {
+        console.log(
+            `  ✗ ${file.createdAt.toISOString()}  ${file.size}B  file=${file.id} user=${file.userId} key=${file.s3Key}`
+        );
+    }
+    if (staleUploads.length > 0) hasFailure = true;
+
     if (since) {
         const [handled] = await db
             .select({ count: count() })
@@ -136,7 +158,7 @@ async function main(): Promise<void> {
         await alerts.send({
             severity: 'error',
             title: 'S3 event pipeline health check failed',
-            message: `${failedWebhooks.length} failed/unhandled SNS webhook event(s) in the last ${FAILED_WEBHOOK_WINDOW_DAYS}d; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h.`,
+            message: `${failedWebhooks.length} failed/unhandled SNS webhook event(s) in the last ${FAILED_WEBHOOK_WINDOW_DAYS}d; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h; ${staleUploads.length} upload(s) stuck >${STALE_UPLOAD_HOURS}h.`,
             context: {
                 source: 'check-s3-event-health',
                 ...(runUrl && { workflowRun: runUrl }),

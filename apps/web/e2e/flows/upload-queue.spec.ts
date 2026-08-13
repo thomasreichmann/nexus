@@ -1,12 +1,17 @@
 /**
  * Upload queue interactions, run as a dedicated user (provisioned by the
- * `dedicatedUserConfig` fixture). All client-side — the one test that reaches
- * the server (`files.upload`) intercepts and aborts the mutation, so no DB rows
- * or S3 objects are created. The real end-to-end upload lives in the validate
+ * `dedicatedUserConfig` fixture). Mostly client-side: the retry test intercepts
+ * and aborts `files.upload`, so it creates nothing.
+ *
+ * The cancel-cleanup test is the exception — it lets `files.upload` through to
+ * get a real `uploading` row, which is the thing the cleanup has to find. It
+ * stalls the presigned PUT instead, so no bytes ever reach S3, and clears its
+ * rows on the way out. The real end-to-end upload still lives in the validate
  * tier (upload-batches-and-quota.spec.ts).
  */
 import { test, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
+import { deleteUserData } from '@nexus/db/test-db';
 import { interceptTrpcCalls } from '../helpers/trpc';
 import { seedResumableUpload } from '../helpers/uploadStore';
 
@@ -31,6 +36,14 @@ const FILE_B = {
 
 test.describe.configure({ mode: 'serial' });
 test.use({ dedicatedUserConfig: { user: UPLOAD_USER, statePath: STATE_PATH } });
+
+// Only the cancel-cleanup test writes rows, but the teardown belongs here
+// rather than at the end of that test body: it asserts on an exact status
+// array, so a failure that skipped cleanup would leave rows behind and fail
+// every later run of this serial spec for the wrong reason.
+test.afterEach(async ({ db, seedUserId }) => {
+    await deleteUserData(db, seedUserId);
+});
 
 test(
     'adding files builds the queue with names, sizes, and a remove control',
@@ -173,5 +186,41 @@ test(
         await expect(
             page.getByRole('button', { name: 'Retry upload' })
         ).toBeVisible({ timeout: 15_000 });
+    }
+);
+
+test(
+    'cancelling an in-flight upload strands no uploading row',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-cancel-cleanup'] },
+    async ({ page, db, seedUserId }) => {
+        // Stall the presigned PUT rather than failing it: the upload stays in
+        // flight (so Cancel is the live affordance) and no object is ever
+        // written. Deliberately never settled — teardown discards it.
+        await page.route(/amazonaws\.com/, () => {});
+
+        const readStatuses = async () =>
+            (
+                await db.query.files.findMany({
+                    where: (f, { eq }) => eq(f.userId, seedUserId),
+                })
+            ).map((f) => f.status);
+
+        await page.goto(PAGE_URL);
+        await page.setInputFiles('input[type="file"]', [FILE_A]);
+        await page.getByRole('button', { name: 'Upload 1 file' }).click();
+
+        // Cancel only cleans up what `files.upload` already minted, so wait for
+        // the row before clicking — otherwise the test passes on a no-op.
+        await expect
+            .poll(readStatuses, { timeout: 15_000 })
+            .toEqual(['uploading']);
+
+        await page.getByRole('button', { name: 'Cancel upload' }).click();
+
+        // The whole point of #330: no row left hidden in `uploading`, where no
+        // list would ever show it and its S3 bytes would stay billed.
+        await expect
+            .poll(readStatuses, { timeout: 15_000 })
+            .toEqual(['deleted']);
     }
 );

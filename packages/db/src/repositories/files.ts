@@ -8,6 +8,7 @@ import {
     inArray,
     ne,
     gte,
+    lt,
     ilike,
 } from 'drizzle-orm';
 import type { DB } from '../connection';
@@ -161,6 +162,35 @@ function findByUserAndBatch(
  */
 export const HIDDEN_STATUSES: (typeof schema.files.status.enumValues)[number][] =
     ['uploading', 'deleted'];
+
+/**
+ * How long a row may sit in `uploading` before it counts as abandoned. Far
+ * past both presigned expiries (15 min single-part, 1 h per multipart part),
+ * but loose enough that a multipart upload resumed across sessions isn't
+ * called stale mid-flight.
+ *
+ * Shared by the nightly check that flags these and the script that reaps them
+ * (#330) — one threshold, so the two can't drift apart.
+ */
+export const STALE_UPLOAD_HOURS = 24;
+
+/**
+ * Uploads nothing is going to finish: still `uploading` well past any
+ * presigned URL's life. `HIDDEN_STATUSES` keeps them out of every list and
+ * every usage total, so they strand invisibly with their S3 bytes billed —
+ * which is exactly why they need sweeping (#330).
+ *
+ * Filters on `createdAt`, not `updatedAt`: nothing touches an abandoned row
+ * after the insert, so the two are equal anyway.
+ */
+function findStaleUploads(db: DB, olderThan: Date): Promise<File[]> {
+    return db.query.files.findMany({
+        where: and(
+            eq(schema.files.status, 'uploading'),
+            lt(schema.files.createdAt, olderThan)
+        ),
+    });
+}
 
 // Escape LIKE/ILIKE wildcards so a search for "100%" or "foo_bar" is treated
 // as a literal substring, not a pattern. Postgres' default escape char is `\`.
@@ -541,6 +571,7 @@ export const createFileRepo = createRepository({
     findByUserGroupedByBatch,
     countByUser,
     countStatusesByUser,
+    findStaleUploads,
     sumStorageByUser,
     insert,
     update,

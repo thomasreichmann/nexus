@@ -387,6 +387,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-cancel-cleanup',
+        title: 'Cancelling an in-flight upload strands no uploading row',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-multipart',
         title: 'Multipart upload for files >100MB',
         area: 'upload',
