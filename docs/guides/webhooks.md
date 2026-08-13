@@ -212,14 +212,29 @@ const webhookEvent = await insertWebhookEvent(db, {
 
 See `packages/db/src/schema/webhooks.ts` for the full schema. Key columns:
 
-| Column       | Purpose                                                |
-| ------------ | ------------------------------------------------------ |
-| `externalId` | Provider's event ID (e.g., `evt_1234` from Stripe)     |
-| `source`     | Provider name (`stripe`, `sns`)                        |
-| `eventType`  | Event type string (e.g., `invoice.paid`)               |
-| `payload`    | Full event payload as JSONB (for debugging/replaying)  |
-| `status`     | Processing status: `received` → `processed` / `failed` |
-| `error`      | Error message if processing failed                     |
+| Column       | Purpose                                               |
+| ------------ | ----------------------------------------------------- |
+| `externalId` | Provider's event ID (e.g., `evt_1234` from Stripe)    |
+| `source`     | Provider name (`stripe`, `sns`)                       |
+| `eventType`  | Event type string (e.g., `invoice.paid`)              |
+| `payload`    | Full event payload as JSONB (for debugging/replaying) |
+| `status`     | Processing status — see the table below               |
+| `error`      | Why the event isn't a clean success (`failed`/`noop`) |
+
+`status` starts at `received` and lands on one of:
+
+| Status      | Meaning                                                                                                              |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| `processed` | The handler applied the change, or skipped it by design (a payment failure on an already-canceled subscription)      |
+| `failed`    | The handler threw. `error` holds the message                                                                         |
+| `unhandled` | No handler matches this event type (#281)                                                                            |
+| `noop`      | A handler matched but the change didn't fully land — no local row, unresolvable plan tier (#332). `error` says which |
+
+`failed`, `unhandled`, and `noop` all alert at request time and are swept
+nightly by `check:s3-event-health`; the alert catches it now, the status keeps
+it findable after the alert scrolls past. A `noop` can still be a partial
+write — an unresolvable tier syncs status and period but keeps the old tier —
+so read `error` rather than assuming nothing happened.
 
 **Unique constraint** on `(source, external_id)` prevents duplicate inserts. If a concurrent request tries to insert the same event, the DB rejects it.
 

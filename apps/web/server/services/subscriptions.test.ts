@@ -46,7 +46,8 @@ interface SubscriptionEventOpts {
         | 'customer.subscription.created'
         | 'customer.subscription.updated'
         | 'customer.subscription.deleted';
-    customerId?: string;
+    /** Pass `null` to omit the customer entirely (a no-op branch). */
+    customerId?: string | null;
     stripeSubId?: string;
     status?: string;
     cancelAtPeriodEnd?: boolean;
@@ -108,7 +109,10 @@ function makeSubscriptionEvent(opts: SubscriptionEventOpts = {}): Stripe.Event {
 
     const subscription = {
         id: opts.stripeSubId ?? 'sub_stripe_test',
-        customer: opts.customerId ?? TEST_STRIPE_CUSTOMER_ID,
+        customer:
+            opts.customerId === undefined
+                ? TEST_STRIPE_CUSTOMER_ID
+                : opts.customerId,
         status: opts.status ?? 'active',
         cancel_at_period_end: opts.cancelAtPeriodEnd ?? false,
         trial_end: null,
@@ -130,6 +134,26 @@ function makePaymentFailedEvent(
     });
 }
 
+interface CheckoutSessionEventOpts {
+    mode?: string;
+    /** Pass `null` to omit; leave undefined for the happy-path default. */
+    subscriptionId?: string | null;
+}
+
+function makeCheckoutSessionEvent(
+    opts: CheckoutSessionEventOpts = {}
+): Stripe.Event {
+    return makeStripeEvent('checkout.session.completed', {
+        id: 'cs_test',
+        mode: opts.mode ?? 'subscription',
+        customer: TEST_STRIPE_CUSTOMER_ID,
+        subscription:
+            opts.subscriptionId === undefined
+                ? 'sub_stripe_test'
+                : opts.subscriptionId,
+    });
+}
+
 describe('subscriptionService.dispatchWebhookEvent', () => {
     let db: ReturnType<typeof createMockDb>['db'];
     let mocks: ReturnType<typeof createMockDb>['mocks'];
@@ -147,11 +171,12 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
                 createSubscriptionFixture({ status: 'active' })
             );
 
-            await subscriptionService.dispatchWebhookEvent(
+            const outcome = await subscriptionService.dispatchWebhookEvent(
                 db,
                 makePaymentFailedEvent()
             );
 
+            expect(outcome).toEqual({ outcome: 'applied' });
             expect(mocks.values).toHaveBeenCalledWith(
                 expect.objectContaining({ status: 'past_due' })
             );
@@ -162,11 +187,16 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
                 createSubscriptionFixture({ status: 'canceled' })
             );
 
-            await subscriptionService.dispatchWebhookEvent(
+            const outcome = await subscriptionService.dispatchWebhookEvent(
                 db,
                 makePaymentFailedEvent()
             );
 
+            // Expected by design, so it must not reach the alert path.
+            expect(outcome).toEqual({
+                outcome: 'ignored',
+                reason: expect.stringContaining('already canceled'),
+            });
             expect(mocks.insert).not.toHaveBeenCalled();
             expect(mocks.values).not.toHaveBeenCalled();
         });
@@ -176,35 +206,108 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
                 createSubscriptionFixture({ status: 'unpaid' })
             );
 
-            await subscriptionService.dispatchWebhookEvent(
+            const outcome = await subscriptionService.dispatchWebhookEvent(
                 db,
                 makePaymentFailedEvent()
             );
 
+            expect(outcome).toEqual({
+                outcome: 'ignored',
+                reason: expect.stringContaining('already unpaid'),
+            });
             expect(mocks.insert).not.toHaveBeenCalled();
             expect(mocks.values).not.toHaveBeenCalled();
         });
 
-        it('no-ops when no local subscription exists', async () => {
+        it('reports a no-op with reason when no local subscription exists', async () => {
             mocks.subscriptions.findFirst.mockResolvedValue(undefined);
 
-            await subscriptionService.dispatchWebhookEvent(
+            const outcome = await subscriptionService.dispatchWebhookEvent(
                 db,
                 makePaymentFailedEvent()
             );
 
+            expect(outcome).toEqual({
+                outcome: 'noop',
+                reason: expect.stringContaining(TEST_STRIPE_CUSTOMER_ID),
+            });
             expect(mocks.insert).not.toHaveBeenCalled();
             expect(mocks.values).not.toHaveBeenCalled();
         });
 
-        it('no-ops when invoice has no customer', async () => {
-            await subscriptionService.dispatchWebhookEvent(
+        it('reports a no-op with reason when invoice has no customer', async () => {
+            const outcome = await subscriptionService.dispatchWebhookEvent(
                 db,
                 makePaymentFailedEvent(null)
             );
 
+            expect(outcome).toEqual({
+                outcome: 'noop',
+                reason: expect.stringContaining('in_test'),
+            });
             expect(mocks.subscriptions.findFirst).not.toHaveBeenCalled();
             expect(mocks.insert).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('checkout.session.completed', () => {
+        it('links the Stripe subscription id onto the local row', async () => {
+            mocks.subscriptions.findFirst.mockResolvedValue(
+                createSubscriptionFixture({ stripeSubscriptionId: null })
+            );
+
+            const outcome = await subscriptionService.dispatchWebhookEvent(
+                db,
+                makeCheckoutSessionEvent()
+            );
+
+            expect(outcome).toEqual({ outcome: 'applied' });
+            expect(mocks.values).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    stripeSubscriptionId: 'sub_stripe_test',
+                })
+            );
+        });
+
+        it('ignores non-subscription checkout modes without alerting', async () => {
+            const outcome = await subscriptionService.dispatchWebhookEvent(
+                db,
+                makeCheckoutSessionEvent({ mode: 'payment' })
+            );
+
+            expect(outcome).toEqual({
+                outcome: 'ignored',
+                reason: expect.stringContaining('payment'),
+            });
+            expect(mocks.subscriptions.findFirst).not.toHaveBeenCalled();
+        });
+
+        it('reports a no-op with reason when the session has no subscription id', async () => {
+            const outcome = await subscriptionService.dispatchWebhookEvent(
+                db,
+                makeCheckoutSessionEvent({ subscriptionId: null })
+            );
+
+            expect(outcome).toEqual({
+                outcome: 'noop',
+                reason: expect.stringContaining('cs_test'),
+            });
+            expect(mocks.values).not.toHaveBeenCalled();
+        });
+
+        it('reports a no-op with reason when no local subscription exists', async () => {
+            mocks.subscriptions.findFirst.mockResolvedValue(undefined);
+
+            const outcome = await subscriptionService.dispatchWebhookEvent(
+                db,
+                makeCheckoutSessionEvent()
+            );
+
+            expect(outcome).toEqual({
+                outcome: 'noop',
+                reason: expect.stringContaining(TEST_STRIPE_CUSTOMER_ID),
+            });
+            expect(mocks.values).not.toHaveBeenCalled();
         });
     });
 
@@ -217,11 +320,12 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
                 })
             );
 
-            await subscriptionService.dispatchWebhookEvent(
+            const outcome = await subscriptionService.dispatchWebhookEvent(
                 db,
                 makeSubscriptionEvent({ productMetadata: { tier: 'pro' } })
             );
 
+            expect(outcome).toEqual({ outcome: 'applied' });
             expect(mocks.values).toHaveBeenCalledWith(
                 expect.objectContaining({
                     planTier: 'pro',
@@ -231,9 +335,11 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
             );
         });
 
-        it('preserves existing tier when Stripe product has no tier metadata', async () => {
+        it('preserves existing tier when Stripe product has no tier metadata, and reports a no-op', async () => {
             // Regression guard: a Stripe config mistake (missing metadata)
-            // must not silently downgrade an existing pro subscription.
+            // must not silently downgrade an existing pro subscription — and
+            // per #332 it must not read as a clean success either, since an
+            // unresolvable tier is how a paid upgrade goes missing.
             mocks.subscriptions.findFirst.mockResolvedValue(
                 createSubscriptionFixture({
                     planTier: 'pro',
@@ -241,11 +347,17 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
                 })
             );
 
-            await subscriptionService.dispatchWebhookEvent(
+            const outcome = await subscriptionService.dispatchWebhookEvent(
                 db,
                 makeSubscriptionEvent({ productMetadata: {} })
             );
 
+            expect(outcome).toEqual({
+                outcome: 'noop',
+                reason: expect.stringContaining(
+                    'Could not resolve a plan tier'
+                ),
+            });
             expect(mocks.values).toHaveBeenCalledWith(
                 expect.objectContaining({
                     planTier: 'pro',
@@ -347,14 +459,18 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
             );
         });
 
-        it('no-ops when no local subscription exists', async () => {
+        it('reports a no-op with reason when no local subscription exists', async () => {
             mocks.subscriptions.findFirst.mockResolvedValue(undefined);
 
-            await subscriptionService.dispatchWebhookEvent(
+            const outcome = await subscriptionService.dispatchWebhookEvent(
                 db,
                 makeSubscriptionEvent({ productMetadata: { tier: 'pro' } })
             );
 
+            expect(outcome).toEqual({
+                outcome: 'noop',
+                reason: expect.stringContaining(TEST_STRIPE_CUSTOMER_ID),
+            });
             expect(mocks.insert).not.toHaveBeenCalled();
             expect(mocks.values).not.toHaveBeenCalled();
             expect(productsRetrieve).not.toHaveBeenCalled();
@@ -383,23 +499,47 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
             );
         });
 
-        it('preserves existing tier when product retrieval fails', async () => {
+        it('preserves existing tier when product retrieval fails, and reports a no-op', async () => {
             mocks.subscriptions.findFirst.mockResolvedValue(
                 createSubscriptionFixture({ planTier: 'pro' })
             );
             productsRetrieve.mockRejectedValue(new Error('stripe api error'));
 
-            await subscriptionService.dispatchWebhookEvent(
+            const outcome = await subscriptionService.dispatchWebhookEvent(
                 db,
                 makeSubscriptionEvent({ unexpandedProductId: 'prod_test' })
             );
 
+            expect(outcome).toEqual({
+                outcome: 'noop',
+                reason: expect.stringContaining(
+                    'Could not resolve a plan tier'
+                ),
+            });
+            // The status/period half of the sync still lands — a Stripe API
+            // hiccup must not also strand the period dates.
             expect(mocks.values).toHaveBeenCalledWith(
                 expect.objectContaining({
                     planTier: 'pro',
                     storageLimit: PLAN_LIMITS.pro,
                 })
             );
+        });
+
+        it('reports a no-op with reason when the subscription has no customer', async () => {
+            const outcome = await subscriptionService.dispatchWebhookEvent(
+                db,
+                makeSubscriptionEvent({
+                    customerId: null,
+                    productMetadata: { tier: 'pro' },
+                })
+            );
+
+            expect(outcome).toEqual({
+                outcome: 'noop',
+                reason: expect.stringContaining('sub_stripe_test'),
+            });
+            expect(mocks.subscriptions.findFirst).not.toHaveBeenCalled();
         });
     });
 
@@ -412,7 +552,7 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
                 })
             );
 
-            const isHandled = await subscriptionService.dispatchWebhookEvent(
+            const outcome = await subscriptionService.dispatchWebhookEvent(
                 db,
                 makeSubscriptionEvent({
                     type: 'customer.subscription.deleted',
@@ -420,7 +560,7 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
                 })
             );
 
-            expect(isHandled).toBe(true);
+            expect(outcome).toEqual({ outcome: 'applied' });
             expect(mocks.values).toHaveBeenCalledWith(
                 expect.objectContaining({
                     status: 'canceled',
@@ -428,15 +568,33 @@ describe('subscriptionService.dispatchWebhookEvent', () => {
                 })
             );
         });
+
+        it('reports a no-op with reason when no local subscription exists', async () => {
+            mocks.subscriptions.findFirst.mockResolvedValue(undefined);
+
+            const outcome = await subscriptionService.dispatchWebhookEvent(
+                db,
+                makeSubscriptionEvent({
+                    type: 'customer.subscription.deleted',
+                    noItems: true,
+                })
+            );
+
+            expect(outcome).toEqual({
+                outcome: 'noop',
+                reason: expect.stringContaining(TEST_STRIPE_CUSTOMER_ID),
+            });
+            expect(mocks.values).not.toHaveBeenCalled();
+        });
     });
 
     it('reports unhandled event types without error', async () => {
-        const isHandled = await subscriptionService.dispatchWebhookEvent(
+        const outcome = await subscriptionService.dispatchWebhookEvent(
             db,
             makeStripeEvent('some.other.event', {})
         );
 
-        expect(isHandled).toBe(false);
+        expect(outcome).toEqual({ outcome: 'unhandled' });
         expect(mocks.subscriptions.findFirst).not.toHaveBeenCalled();
         expect(mocks.insert).not.toHaveBeenCalled();
     });

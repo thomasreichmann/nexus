@@ -10,11 +10,15 @@ import { timestamps } from './helpers';
 
 export const webhookSourceEnum = pgEnum('webhook_source', ['stripe', 'sns']);
 
+// `noop` (#332): a handler matched but the change didn't land. Distinct from
+// `processed` because it needs a human, from `failed` because nothing threw.
+// The reason goes in `error`; see `WebhookDispatchOutcome` for the full set.
 export const webhookStatusEnum = pgEnum('webhook_status', [
     'received',
     'processed',
     'failed',
     'unhandled',
+    'noop',
 ]);
 
 export const webhookEvents = pgTable(

@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, gte, inArray } from 'drizzle-orm';
 import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
@@ -40,10 +40,45 @@ async function update(
     return event;
 }
 
+/** The subset the health sweep prints; `id` and `payload` would only be noise. */
+export type StrandedWebhookEvent = Pick<
+    WebhookEvent,
+    'status' | 'eventType' | 'error' | 'createdAt'
+>;
+
+/**
+ * Events that reached a status needing a human — the handler threw, matched
+ * nothing, or matched but applied nothing. Scoped by source so each webhook
+ * strand can define its own set (`noop` is Stripe-only, #332).
+ */
+function findStranded(
+    db: DB,
+    source: WebhookEvent['source'],
+    statuses: WebhookEvent['status'][],
+    createdAfter: Date
+): Promise<StrandedWebhookEvent[]> {
+    return db
+        .select({
+            status: schema.webhookEvents.status,
+            eventType: schema.webhookEvents.eventType,
+            error: schema.webhookEvents.error,
+            createdAt: schema.webhookEvents.createdAt,
+        })
+        .from(schema.webhookEvents)
+        .where(
+            and(
+                eq(schema.webhookEvents.source, source),
+                inArray(schema.webhookEvents.status, statuses),
+                gte(schema.webhookEvents.createdAt, createdAfter)
+            )
+        );
+}
+
 export const createWebhookRepo = createRepository({
     find,
     insert,
     update,
+    findStranded,
 });
 
 export type WebhookRepo = ReturnType<typeof createWebhookRepo>;

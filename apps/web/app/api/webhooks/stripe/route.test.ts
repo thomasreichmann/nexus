@@ -72,9 +72,9 @@ describe('POST /api/webhooks/stripe', () => {
         // mockResolvedValue defaults set in createMockDb (e.g. returning -> []).
         mocks.returning.mockResolvedValue([]);
         mocks.webhookEvents.findFirst.mockResolvedValue(undefined);
-        // Dispatch resolves handled by default; tests override for the
-        // unhandled/failed outcomes.
-        dispatchWebhookEvent.mockResolvedValue(true);
+        // Dispatch resolves applied by default; tests override for the
+        // noop/ignored/unhandled/failed outcomes.
+        dispatchWebhookEvent.mockResolvedValue({ outcome: 'applied' });
     });
 
     afterEach(() => {
@@ -212,7 +212,7 @@ describe('POST /api/webhooks/stripe', () => {
                 error: 'previous downstream error',
             });
             mocks.webhookEvents.findFirst.mockResolvedValue(failedRecord);
-            dispatchWebhookEvent.mockResolvedValue(true);
+            dispatchWebhookEvent.mockResolvedValue({ outcome: 'applied' });
 
             const response = await POST(makeRequest(sampleEvent));
 
@@ -232,7 +232,7 @@ describe('POST /api/webhooks/stripe', () => {
                     status: 'received',
                 })
             );
-            dispatchWebhookEvent.mockResolvedValue(true);
+            dispatchWebhookEvent.mockResolvedValue({ outcome: 'applied' });
 
             const response = await POST(makeRequest(sampleEvent));
 
@@ -283,7 +283,7 @@ describe('POST /api/webhooks/stripe', () => {
         });
 
         it('marks event processed and returns 200 on success', async () => {
-            dispatchWebhookEvent.mockResolvedValue(true);
+            dispatchWebhookEvent.mockResolvedValue({ outcome: 'applied' });
 
             const response = await POST(makeRequest(sampleEvent));
 
@@ -294,7 +294,7 @@ describe('POST /api/webhooks/stripe', () => {
         });
 
         it('marks event unhandled and returns 200 for unrecognized event types', async () => {
-            dispatchWebhookEvent.mockResolvedValue(false);
+            dispatchWebhookEvent.mockResolvedValue({ outcome: 'unhandled' });
 
             const response = await POST(makeRequest(sampleEvent));
 
@@ -320,10 +320,56 @@ describe('POST /api/webhooks/stripe', () => {
         });
 
         it('does not alert on handled events', async () => {
-            dispatchWebhookEvent.mockResolvedValue(true);
+            dispatchWebhookEvent.mockResolvedValue({ outcome: 'applied' });
 
             await POST(makeRequest(sampleEvent));
 
+            expect(hoisted.alertsSend).not.toHaveBeenCalled();
+        });
+
+        // The #332 regression: a handler that matched but changed nothing used
+        // to land as `processed`, so the one table the nightly sweep reads went
+        // green on a subscription that never synced.
+        it('marks event noop with its reason and alerts when nothing was applied', async () => {
+            dispatchWebhookEvent.mockResolvedValue({
+                outcome: 'noop',
+                reason: 'No local subscription row for Stripe customer cus_x',
+            });
+
+            const response = await POST(makeRequest(sampleEvent));
+
+            expect(response.status).toBe(200);
+            await expect(response.json()).resolves.toEqual({ received: true });
+            expect(mocks.set).toHaveBeenCalledWith({
+                status: 'noop',
+                error: 'No local subscription row for Stripe customer cus_x',
+            });
+            expect(hoisted.alertsSend).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    severity: 'warning',
+                    context: expect.objectContaining({
+                        source: 'stripe',
+                        eventType: sampleEvent.type,
+                        externalId: sampleEvent.id,
+                        reason: 'No local subscription row for Stripe customer cus_x',
+                    }),
+                })
+            );
+        });
+
+        it('marks by-design no-ops processed without alerting', async () => {
+            // `ignored` is the expected outcome of a legitimate skip. Alerting
+            // on it would train the channel to be skimmed, which is what makes
+            // the noop alert above worth reading.
+            dispatchWebhookEvent.mockResolvedValue({
+                outcome: 'ignored',
+                reason: 'Checkout session cs_x is mode "payment", not subscription',
+            });
+
+            const response = await POST(makeRequest(sampleEvent));
+
+            expect(response.status).toBe(200);
+            expect(mocks.set).toHaveBeenCalledWith({ status: 'processed' });
             expect(hoisted.alertsSend).not.toHaveBeenCalled();
         });
 

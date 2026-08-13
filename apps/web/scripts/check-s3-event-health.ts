@@ -1,10 +1,15 @@
 /**
- * Health check for the S3 event pipeline (SNS webhook → DB side effects).
+ * Health check for the S3 event pipeline (SNS webhook → DB side effects), plus
+ * the Stripe webhook strand of the same `webhook_events` table.
  *
  * Fails (exit 1) when:
  *   - any SNS webhook event landed in status 'failed' or 'unhandled' in the
  *     last 7 days (allowlisted expected events stay 'processed', so routine
  *     ObjectRestore:Post deliveries don't trip this)
+ *   - any Stripe webhook event landed in 'failed', 'unhandled', or 'noop' in
+ *     the same window (#332). Request-time alerts fire once and are
+ *     best-effort; this is what makes a stranded billing event stay visible —
+ *     and a stranded upgrade is what leaves a paying user blocked.
  *   - any retrieval has sat in 'pending'/'in_progress' for over 48 hours
  *     (Deep Archive bulk restores complete within 48h — older is stuck)
  *   - any file has sat in 'uploading' for over 24 hours (#330): the client
@@ -29,10 +34,47 @@ import { alerts, getWorkflowRunUrl } from '@/lib/alerts';
 import { db } from '@/server/db';
 import { s3RestoreService } from '@/server/services/s3-restore';
 import { createFileRepo, STALE_UPLOAD_HOURS } from '@nexus/db/repo/files';
+import {
+    createWebhookRepo,
+    type StrandedWebhookEvent,
+    type WebhookEvent,
+} from '@nexus/db/repo/webhooks';
 import { retrievals, webhookEvents } from '@nexus/db/schema';
 
 const FAILED_WEBHOOK_WINDOW_DAYS = 7;
 const STUCK_RETRIEVAL_HOURS = 48;
+
+// Statuses that need a human: the event did not complete cleanly. 'noop' only
+// ever applies to Stripe (#332) — the SNS handlers don't produce it.
+const STRANDED_SNS_STATUSES: WebhookEvent['status'][] = ['failed', 'unhandled'];
+const STRANDED_STRIPE_STATUSES: WebhookEvent['status'][] = [
+    ...STRANDED_SNS_STATUSES,
+    'noop',
+];
+
+/**
+ * Prints the count header plus one line per row, naming the exact statuses
+ * swept so the header can't drift from what was queried.
+ */
+function reportStrandedWebhooks(
+    source: WebhookEvent['source'],
+    statuses: WebhookEvent['status'][],
+    rows: StrandedWebhookEvent[]
+): void {
+    console.log(`${strandedLabel(source, statuses)}: ${rows.length}`);
+    for (const event of rows) {
+        console.log(
+            `  ✗ ${event.createdAt.toISOString()}  ${event.status}  ${event.eventType}  ${event.error ?? '(no error recorded)'}`
+        );
+    }
+}
+
+function strandedLabel(
+    source: WebhookEvent['source'],
+    statuses: WebhookEvent['status'][]
+): string {
+    return `${statuses.join('/')} ${source} webhook events (last ${FAILED_WEBHOOK_WINDOW_DAYS}d)`;
+}
 
 function parseSinceArg(): Date | null {
     const index = process.argv.indexOf('--since');
@@ -52,32 +94,27 @@ async function main(): Promise<void> {
     const failedAfter = new Date(
         Date.now() - FAILED_WEBHOOK_WINDOW_DAYS * 24 * 60 * 60 * 1000
     );
-    const failedWebhooks = await db
-        .select({
-            id: webhookEvents.id,
-            eventType: webhookEvents.eventType,
-            status: webhookEvents.status,
-            error: webhookEvents.error,
-            createdAt: webhookEvents.createdAt,
-        })
-        .from(webhookEvents)
-        .where(
-            and(
-                eq(webhookEvents.source, 'sns'),
-                inArray(webhookEvents.status, ['failed', 'unhandled']),
-                gte(webhookEvents.createdAt, failedAfter)
-            )
-        );
+    const webhookRepo = createWebhookRepo(db);
 
-    console.log(
-        `Failed/unhandled SNS webhook events (last ${FAILED_WEBHOOK_WINDOW_DAYS}d): ${failedWebhooks.length}`
+    const failedWebhooks = await webhookRepo.findStranded(
+        'sns',
+        STRANDED_SNS_STATUSES,
+        failedAfter
     );
-    for (const event of failedWebhooks) {
-        console.log(
-            `  ✗ ${event.createdAt.toISOString()}  ${event.status}  ${event.eventType}  ${event.error ?? '(no error recorded)'}`
-        );
-    }
+    reportStrandedWebhooks('sns', STRANDED_SNS_STATUSES, failedWebhooks);
     if (failedWebhooks.length > 0) hasFailure = true;
+
+    const strandedStripeWebhooks = await webhookRepo.findStranded(
+        'stripe',
+        STRANDED_STRIPE_STATUSES,
+        failedAfter
+    );
+    reportStrandedWebhooks(
+        'stripe',
+        STRANDED_STRIPE_STATUSES,
+        strandedStripeWebhooks
+    );
+    if (strandedStripeWebhooks.length > 0) hasFailure = true;
 
     const stuckBefore = new Date(
         Date.now() - STUCK_RETRIEVAL_HOURS * 60 * 60 * 1000
@@ -148,7 +185,7 @@ async function main(): Promise<void> {
     }
 
     if (hasFailure) {
-        console.log('\nCheck failed: S3 event pipeline needs attention.');
+        console.log('\nCheck failed: event pipeline needs attention.');
         process.exitCode = 1;
 
         // The exit-1 (and its workflow-failure email) stays as the dead-man
@@ -157,8 +194,9 @@ async function main(): Promise<void> {
         const runUrl = getWorkflowRunUrl();
         await alerts.send({
             severity: 'error',
-            title: 'S3 event pipeline health check failed',
-            message: `${failedWebhooks.length} failed/unhandled SNS webhook event(s) in the last ${FAILED_WEBHOOK_WINDOW_DAYS}d; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h; ${staleUploads.length} upload(s) stuck >${STALE_UPLOAD_HOURS}h.`,
+            // Titled for what it covers; the filename still says S3 (#375).
+            title: 'Event pipeline health check failed',
+            message: `${failedWebhooks.length} ${strandedLabel('sns', STRANDED_SNS_STATUSES)}; ${strandedStripeWebhooks.length} ${strandedLabel('stripe', STRANDED_STRIPE_STATUSES)}; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h; ${staleUploads.length} upload(s) stuck >${STALE_UPLOAD_HOURS}h.`,
             context: {
                 source: 'check-s3-event-health',
                 ...(runUrl && { workflowRun: runUrl }),
