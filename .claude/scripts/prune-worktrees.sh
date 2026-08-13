@@ -171,15 +171,24 @@ for entry in "${prunable[@]}"; do
   IFS='|' read -r w branch pr_state <<< "$entry"
   if git worktree remove "$w"; then
     echo "removed $(basename "$w")"
-    # Its e2e database goes with it - same name derivation as worktree-setup.sh.
+    # Its e2e database goes with it. The name derivation must match
+    # worktree-setup.sh exactly, including `printf '%s'` - piping `basename`
+    # feeds tr a trailing newline, which `tr -c 'a-z0-9' '_'` turns into a
+    # trailing underscore, and the drop then silently misses the real database.
     pg_bin=$(command -v dropdb >/dev/null && dirname "$(command -v dropdb)" || echo /opt/homebrew/opt/postgresql@17/bin)
-    db="nexus_wt_$(basename "$w" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '_' | cut -c1-50)"
+    db="nexus_wt_$(printf '%s' "$(basename "$w")" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '_' | cut -c1-50)"
     [ -x "$pg_bin/dropdb" ] && "$pg_bin/dropdb" --if-exists "$db" 2>/dev/null \
       && echo "  dropped database $db"
     # Squash-merged branches never look merged to `git branch -d`, so -D is the
     # only option - gated on the PR state, which is the authoritative signal.
-    if [ "$pr_state" = MERGED ] && [ "$branch" != main ]; then
-      git branch -D "$branch" >/dev/null 2>&1 && echo "  deleted branch $branch"
+    # Everything else gets the safe `-d`, which refuses anything unmerged and so
+    # only ever clears branches with nothing on them.
+    if [ "$branch" != main ] && [ "$branch" != '(detached)' ]; then
+      if [ "$pr_state" = MERGED ]; then
+        git branch -D "$branch" >/dev/null 2>&1 && echo "  deleted branch $branch"
+      else
+        git branch -d "$branch" >/dev/null 2>&1 && echo "  deleted empty branch $branch"
+      fi
     fi
   else
     echo "SKIPPED $(basename "$w") - git refused the removal" >&2
