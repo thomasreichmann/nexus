@@ -6,6 +6,16 @@ import { WEBSERVER_LOG } from './e2e/helpers/webserver-log';
 
 const BASE_URL = E2E_BASE_URL;
 
+// Per-worktree e2e database, set by .claude/hooks/worktree-setup.sh. Assigning
+// it here — before any test module or the webServer child loads — is what makes
+// it stick everywhere: e2e/helpers/connection.ts reads process.env.DATABASE_URL,
+// and dotenv/Next both refuse to override a variable that is already set, so
+// .env.local's shared Supabase URL loses to this. Unset (CI, main checkout) is
+// the old behaviour: everything keeps using DATABASE_URL as before.
+if (process.env.E2E_DATABASE_URL) {
+    process.env.DATABASE_URL = process.env.E2E_DATABASE_URL;
+}
+
 const adminChrome = {
     ...devices['Desktop Chrome'],
     storageState: 'e2e/.auth/admin.json',
@@ -157,7 +167,15 @@ export default defineConfig({
         // S3_DERIVED_BUCKET is synthetic: presigning is local HMAC (no AWS
         // round-trip), and the thumbnails spec fulfills this bucket's image
         // requests via page.route — no real derived bucket needed in e2e.
-        env: { E2E: '1', S3_DERIVED_BUCKET: 'e2e-derived-bucket' },
+        // DATABASE_URL is passed explicitly rather than relying on inheritance,
+        // so the server is provably on the same database the fixtures seed.
+        env: {
+            E2E: '1',
+            S3_DERIVED_BUCKET: 'e2e-derived-bucket',
+            ...(process.env.DATABASE_URL
+                ? { DATABASE_URL: process.env.DATABASE_URL }
+                : {}),
+        },
         stdout: 'pipe',
         stderr: 'pipe',
     },
