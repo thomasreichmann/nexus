@@ -215,9 +215,9 @@ key manually (`aws iam create-access-key --user-name nexus-app-prod`).
   can't be scoped read-only: this token can also _write_ env vars, so treat
   it as a real credential.
 
-The prod DB health leg (`check:s3-event-health`) already runs nightly for
-both environments via the dev/prod matrix in `s3-event-health.yml`
-(`DATABASE_URL_PROD` secret).
+`s3-event-health.yml` runs nightly against both environments, matrixing
+`DATABASE_URL` and the AWS key/bucket per env. Secret names and how to create
+the prod key: [[../infra/supabase-manual-setup|Supabase Manual Setup]].
 
 ## Related
 

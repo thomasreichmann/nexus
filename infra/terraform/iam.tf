@@ -52,3 +52,32 @@ resource "aws_iam_user_policy" "app_sqs" {
     }]
   })
 }
+
+# Nightly-CI IAM user (#318)
+#
+# Exists so the s3-event-health workflow never needs the app user's key: that
+# would hand a scheduled job PutObject/DeleteObject/RestoreObject on production
+# data to answer a read-only question.
+#
+# Both workspaces get one to keep the module set identical across environments
+# (#127). Only prod's key is wired into GitHub Actions — the dev leg shares the
+# flat AWS_* secrets with workflows that do need to write.
+resource "aws_iam_user" "ci" {
+  name = "nexus-ci-${var.environment}"
+}
+
+resource "aws_iam_user_policy" "ci_s3_read" {
+  name = "nexus-ci-s3-read-${var.environment}"
+  user = aws_iam_user.ci.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      # ListBucket alone: ListObjectsV2 reports each object's StorageClass, so
+      # the drift check never reads object bodies or metadata.
+      Effect   = "Allow"
+      Action   = "s3:ListBucket"
+      Resource = aws_s3_bucket.files.arn
+    }]
+  })
+}

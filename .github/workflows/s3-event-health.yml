@@ -24,19 +24,29 @@ jobs:
                 include:
                     - env: dev
                       db-secret: DATABASE_URL
+                      aws-key-id-secret: AWS_ACCESS_KEY_ID
+                      aws-secret-key-secret: AWS_SECRET_ACCESS_KEY
+                      bucket-secret: S3_BUCKET
                     - env: prod
                       db-secret: DATABASE_URL_PROD
-        # Only DATABASE_URL is matrixed. AWS/Stripe/etc. stay dev-scoped: no
-        # prod S3 bucket exists yet, so on prod the storage-tier check
-        # compares an empty prod DB against dev AWS credentials (trivially
-        # green). Provisioning prod AWS resources + secrets is a follow-up
-        # for when the prod bucket exists.
+                      aws-key-id-secret: AWS_ACCESS_KEY_ID_PROD
+                      aws-secret-key-secret: AWS_SECRET_ACCESS_KEY_PROD
+                      bucket-secret: S3_BUCKET_PROD
+        # The DB and the bucket must come from the same environment or the
+        # storage-tier check compares prod rows against the dev bucket and
+        # reports every one as missing — which used to exit 0, so the prod leg
+        # was permanently green while checking nothing (#318).
+        #
+        # AWS_REGION is genuinely shared (us-east-1 both). The rest below stays
+        # dev-scoped and is inert: neither script reads Stripe, Resend, SQS or
+        # auth, but @/lib/env validates the whole server schema at import, so
+        # each var still has to be present and well-formed.
         env:
             DATABASE_URL: ${{ secrets[matrix.db-secret] }}
-            AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            AWS_ACCESS_KEY_ID: ${{ secrets[matrix.aws-key-id-secret] }}
+            AWS_SECRET_ACCESS_KEY: ${{ secrets[matrix.aws-secret-key-secret] }}
             AWS_REGION: ${{ secrets.AWS_REGION }}
-            S3_BUCKET: ${{ secrets.S3_BUCKET }}
+            S3_BUCKET: ${{ secrets[matrix.bucket-secret] }}
             SQS_QUEUE_URL: ${{ secrets.SQS_QUEUE_URL }}
             STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
             STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
@@ -50,11 +60,18 @@ jobs:
             DISCORD_ALERT_WEBHOOK_URL: ${{ secrets.DISCORD_ALERT_WEBHOOK_URL }}
             VERCEL_ENV: ${{ matrix.env }}
         steps:
-            # DATABASE_URL comes from the job env above (matrixed secret).
-            - name: Verify database secret is configured
+            # All four come from the job env above (matrixed secrets). An unset
+            # one has to fail loudly here: empty AWS creds would otherwise send
+            # the drift check off to compare against nothing.
+            - name: Verify environment secrets are configured
               run: |
-                  if [ -z "$DATABASE_URL" ]; then
-                      echo "::error::secret ${{ matrix.db-secret }} is not configured (see docs/infra/supabase-manual-setup.md)"
+                  missing=()
+                  [ -n "$DATABASE_URL" ] || missing+=("${{ matrix.db-secret }}")
+                  [ -n "$AWS_ACCESS_KEY_ID" ] || missing+=("${{ matrix.aws-key-id-secret }}")
+                  [ -n "$AWS_SECRET_ACCESS_KEY" ] || missing+=("${{ matrix.aws-secret-key-secret }}")
+                  [ -n "$S3_BUCKET" ] || missing+=("${{ matrix.bucket-secret }}")
+                  if [ ${#missing[@]} -gt 0 ]; then
+                      echo "::error::secret(s) not configured for ${{ matrix.env }}: ${missing[*]} (see docs/infra/supabase-manual-setup.md)"
                       exit 1
                   fi
 
