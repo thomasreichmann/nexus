@@ -1,11 +1,12 @@
-import { PLAN_LIMITS, type PlanTier } from '@nexus/db/plans';
+import {
+    PLAN_LIMITS,
+    TRIAL_DURATION_DAYS,
+    type PlanTier,
+} from '@nexus/db/plans';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
 
-export { PLAN_LIMITS, type PlanTier };
+export { PLAN_LIMITS, TRIAL_DURATION_DAYS, type PlanTier };
 export type { CheckoutTier, BillingInterval } from '@/lib/stripe/types';
-
-/** Trial duration in days. */
-export const TRIAL_DURATION_DAYS = 30;
 
 /**
  * Default storage cap for sponsored (comped alpha-tester) subscriptions.

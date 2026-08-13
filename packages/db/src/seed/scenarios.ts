@@ -11,7 +11,7 @@ import {
     buildStorageUsage,
     buildRetrievals,
 } from './builders';
-import { PLAN_LIMITS, withTransaction } from './constants';
+import { PLAN_LIMITS, getTrialEnd, withTransaction } from './constants';
 
 // Scenario registry
 
@@ -94,7 +94,7 @@ async function emptyUser(db: DB): Promise<SeedResult> {
     const sub = await buildSubscription(db, user.id, {
         planTier: 'starter',
         status: 'trialing',
-        trialEnd: new Date(Date.now() + 14 * 86_400_000),
+        trialEnd: getTrialEnd(),
     });
     const usage = await buildStorageUsage(db, user.id);
 

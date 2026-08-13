@@ -1,5 +1,5 @@
 import type { Connection, DB } from '../connection';
-export { PLAN_LIMITS, type PlanTier } from '../plans';
+export { PLAN_LIMITS, getTrialEnd, type PlanTier } from '../plans';
 
 // Seed ID prefixes
 // All seeded entities use these prefixes so cleanup can target them
