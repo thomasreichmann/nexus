@@ -200,11 +200,15 @@ if (lookup.outcome === 'duplicate') {
     return NextResponse.json({ received: true, duplicate: true });
 }
 
-// 'new' or 'retry' — a 'received'/'failed'/'unhandled' row is re-driven
+// 'new' or 'retry' — any row that isn't 'processed' is re-driven, so
+// 'received', 'failed', 'unhandled' and 'noop' all come back through here
 const webhookEvent = lookup.event;
 
 // Process the event...
-// On success: mark as 'processed' (or 'unhandled' if no handler matched)
+// On success: mark 'processed' and clear `error`, since a re-driven row may
+//   still carry the reason from the attempt that left it 'noop'/'failed'
+// On a partial apply: mark 'noop' with the reason, and alert (#332)
+// On no matching handler: mark 'unhandled' and alert
 // On business failure: recordWebhookFailure() marks it and alerts
 // On transient failure: rethrow, leaving the row at its current status
 ```

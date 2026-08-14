@@ -94,18 +94,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     };
 
     try {
-        const dispatch = await subscriptionService.dispatchWebhookEvent(
+        const dispatchOutcome = await subscriptionService.dispatchWebhookEvent(
             db,
             event
         );
 
-        switch (dispatch.outcome) {
-            case 'applied':
-                await webhookRepo.update(webhookEvent.id, {
-                    status: 'processed',
-                });
-                break;
-
+        switch (dispatchOutcome.outcome) {
             case 'ignored':
                 // By design, so the row stays a clean success and no alert
                 // fires — see `WebhookDispatchOutcome` for why.
@@ -113,12 +107,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     {
                         eventId: event.id,
                         eventType: event.type,
-                        reason: dispatch.reason,
+                        reason: dispatchOutcome.reason,
                     },
                     'Stripe event was a no-op by design'
                 );
+            // falls through — an ignored event is as processed as an applied one
+            case 'applied':
+                // `error` is cleared, not left: a redelivery re-drives any row
+                // that isn't `processed`, so a row arriving here may still be
+                // carrying the reason from the attempt that landed it in
+                // `noop` or `failed`.
                 await webhookRepo.update(webhookEvent.id, {
                     status: 'processed',
+                    error: null,
                 });
                 break;
 
@@ -131,19 +132,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                     {
                         eventId: event.id,
                         eventType: event.type,
-                        reason: dispatch.reason,
+                        reason: dispatchOutcome.reason,
                     },
                     'Stripe webhook did not fully apply'
                 );
                 await webhookRepo.update(webhookEvent.id, {
                     status: 'noop',
-                    error: dispatch.reason,
+                    error: dispatchOutcome.reason,
                 });
                 await alerts.send({
                     severity: 'warning',
                     title: 'Stripe webhook did not fully apply',
-                    message: `${dispatch.reason}. The event row is marked noop.`,
-                    context: { ...alertContext, reason: dispatch.reason },
+                    message: `${dispatchOutcome.reason}. The event row is marked noop.`,
+                    context: {
+                        ...alertContext,
+                        reason: dispatchOutcome.reason,
+                    },
                 });
                 break;
 
@@ -154,6 +158,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 );
                 await webhookRepo.update(webhookEvent.id, {
                     status: 'unhandled',
+                    error: null,
                 });
                 await alerts.send({
                     severity: 'warning',
@@ -165,11 +170,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 break;
 
             default:
-                // A new outcome variant must map to a status here. Without
-                // this the row would silently stay `received` — the exact
-                // false green #332 exists to kill — so fail the build instead.
+                // `satisfies never` is the real guard: a new outcome variant
+                // that maps to no status here breaks the build. The throw is
+                // the runtime backstop for a value that reached us from
+                // untyped ground — it lands in the catch below and marks the
+                // row failed, rather than leaving the `received` false green
+                // #332 exists to kill.
                 throw new Error(
-                    `Unmapped webhook dispatch outcome: ${JSON.stringify(dispatch satisfies never)}`
+                    `Unmapped webhook dispatch outcome: ${JSON.stringify(dispatchOutcome satisfies never)}`
                 );
         }
 
@@ -177,7 +185,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             {
                 eventId: event.id,
                 eventType: event.type,
-                outcome: dispatch.outcome,
+                outcome: dispatchOutcome.outcome,
                 durationMs: Date.now() - start,
             },
             'Webhook processed'

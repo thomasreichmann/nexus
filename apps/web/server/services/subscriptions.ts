@@ -423,15 +423,15 @@ export type WebhookDispatchOutcome =
     | { outcome: 'unhandled' };
 
 /** The dominant no-op: Stripe knows a customer we hold no row for. */
-function noLocalRowOutcome(customerId: string): WebhookDispatchOutcome {
+function createNoLocalRowOutcome(customerId: string): WebhookDispatchOutcome {
     return {
         outcome: 'noop',
         reason: `No local subscription row for Stripe customer ${customerId}`,
     };
 }
 
-/** Its sibling: the event carries no customer to look the row up by. */
-function missingCustomerOutcome(
+/** The no-op for an event carrying no customer id to look the row up by. */
+function createMissingCustomerOutcome(
     entity: string,
     entityId: string
 ): WebhookDispatchOutcome {
@@ -479,7 +479,7 @@ async function handleCheckoutCompleted(
             { customerId, sessionId: session.id },
             'No subscription record for customer'
         );
-        return noLocalRowOutcome(customerId);
+        return createNoLocalRowOutcome(customerId);
     }
 
     // subscription.created will fill in plan details; this just links the IDs
@@ -505,7 +505,7 @@ async function handleSubscriptionUpsert(
             { stripeSubscriptionId: sub.id },
             'Subscription upsert missing customer'
         );
-        return missingCustomerOutcome('Subscription', sub.id);
+        return createMissingCustomerOutcome('Subscription', sub.id);
     }
 
     const repo = createSubscriptionRepo(db);
@@ -515,7 +515,7 @@ async function handleSubscriptionUpsert(
             { customerId, stripeSubscriptionId: sub.id },
             'No local record for subscription upsert'
         );
-        return noLocalRowOutcome(customerId);
+        return createNoLocalRowOutcome(customerId);
     }
 
     // Period fields live on subscription items (Stripe API 2026-02-25.clover);
@@ -577,14 +577,14 @@ async function handleSubscriptionDeleted(
             { stripeSubscriptionId: sub.id },
             'Subscription deletion missing customer'
         );
-        return missingCustomerOutcome('Deleted subscription', sub.id);
+        return createMissingCustomerOutcome('Deleted subscription', sub.id);
     }
 
     const repo = createSubscriptionRepo(db);
     const existing = await repo.findByStripeCustomerId(customerId);
     if (!existing) {
         log.warn({ customerId }, 'No local record for subscription deletion');
-        return noLocalRowOutcome(customerId);
+        return createNoLocalRowOutcome(customerId);
     }
 
     await repo.upsertFromWebhook({
@@ -605,14 +605,14 @@ async function handlePaymentFailed(
 
     if (!customerId) {
         log.warn({ invoiceId: invoice.id }, 'Invoice missing customer');
-        return missingCustomerOutcome('Invoice', invoice.id);
+        return createMissingCustomerOutcome('Invoice', invoice.id);
     }
 
     const repo = createSubscriptionRepo(db);
     const existing = await repo.findByStripeCustomerId(customerId);
     if (!existing) {
         log.warn({ customerId }, 'No local record for payment failure');
-        return noLocalRowOutcome(customerId);
+        return createNoLocalRowOutcome(customerId);
     }
 
     // Don't regress from a more severe status if events arrive out of order

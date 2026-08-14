@@ -1,10 +1,25 @@
-import { eq, and, gte, inArray } from 'drizzle-orm';
+import { eq, and, gte, inArray, lt } from 'drizzle-orm';
 import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
 
 export type WebhookEvent = typeof schema.webhookEvents.$inferSelect;
 export type NewWebhookEvent = typeof schema.webhookEvents.$inferInsert;
+
+/** The subset the health sweep prints; `id` and `payload` would only be noise. */
+export type StrandedWebhookEvent = Pick<
+    WebhookEvent,
+    'status' | 'eventType' | 'error' | 'createdAt'
+>;
+
+/**
+ * Same idea for the stuck-at-`received` sweep, but `error` is always null on
+ * those rows and the source varies, since that query spans both strands.
+ */
+export type StuckWebhookEvent = Pick<
+    WebhookEvent,
+    'id' | 'source' | 'eventType' | 'createdAt'
+>;
 
 function find(
     db: DB,
@@ -40,12 +55,6 @@ async function update(
     return event;
 }
 
-/** The subset the health sweep prints; `id` and `payload` would only be noise. */
-export type StrandedWebhookEvent = Pick<
-    WebhookEvent,
-    'status' | 'eventType' | 'error' | 'createdAt'
->;
-
 /**
  * Events that reached a status needing a human — the handler threw, matched
  * nothing, or matched but applied nothing. Scoped by source so each webhook
@@ -74,11 +83,37 @@ function findStranded(
         );
 }
 
+/**
+ * Deliveries accepted but never acted on: a row is inserted at `received` and
+ * only moves after dispatch, so a crash in between strands it there (#331).
+ * Unscoped by source — a Stripe strand is the same silent hole as an SNS one.
+ */
+function findStuckAtReceived(
+    db: DB,
+    createdBefore: Date
+): Promise<StuckWebhookEvent[]> {
+    return db
+        .select({
+            id: schema.webhookEvents.id,
+            source: schema.webhookEvents.source,
+            eventType: schema.webhookEvents.eventType,
+            createdAt: schema.webhookEvents.createdAt,
+        })
+        .from(schema.webhookEvents)
+        .where(
+            and(
+                eq(schema.webhookEvents.status, 'received'),
+                lt(schema.webhookEvents.createdAt, createdBefore)
+            )
+        );
+}
+
 export const createWebhookRepo = createRepository({
     find,
     insert,
     update,
     findStranded,
+    findStuckAtReceived,
 });
 
 export type WebhookRepo = ReturnType<typeof createWebhookRepo>;

@@ -69,27 +69,40 @@ const STRANDED_STRIPE_STATUSES: WebhookEvent['status'][] = [
 ];
 
 /**
- * Prints the count header plus one line per row, naming the exact statuses
- * swept so the header can't drift from what was queried.
+ * Queries one strand and prints the count header plus a line per row. Query
+ * and header take the status list from the same argument, so the header can't
+ * claim a sweep the query didn't do.
  */
-function reportStrandedWebhooks(
+async function sweepStrandedWebhooks(
+    repo: ReturnType<typeof createWebhookRepo>,
     source: WebhookEvent['source'],
     statuses: WebhookEvent['status'][],
-    rows: StrandedWebhookEvent[]
-): void {
-    console.log(`${strandedLabel(source, statuses)}: ${rows.length}`);
+    createdAfter: Date
+): Promise<StrandedWebhookEvent[]> {
+    const rows = await repo.findStranded(source, statuses, createdAfter);
+
+    console.log(`${formatStrandedLabel(source, statuses)}: ${rows.length}`);
     for (const event of rows) {
         console.log(
             `  ✗ ${event.createdAt.toISOString()}  ${event.status}  ${event.eventType}  ${event.error ?? '(no error recorded)'}`
         );
     }
+    return rows;
 }
 
-function strandedLabel(
+/** How each source reads in a header — `sns` is an acronym, `stripe` a name. */
+const SOURCE_LABELS: Record<WebhookEvent['source'], string> = {
+    sns: 'SNS',
+    stripe: 'Stripe',
+};
+
+/** Capitalized to match every sibling header this script prints. */
+function formatStrandedLabel(
     source: WebhookEvent['source'],
     statuses: WebhookEvent['status'][]
 ): string {
-    return `${statuses.join('/')} ${source} webhook events (last ${FAILED_WEBHOOK_WINDOW_DAYS}d)`;
+    const statusList = statuses.join('/');
+    return `${statusList.charAt(0).toUpperCase()}${statusList.slice(1)} ${SOURCE_LABELS[source]} webhook events (last ${FAILED_WEBHOOK_WINDOW_DAYS}d)`;
 }
 
 function parseSinceArg(): Date | null {
@@ -112,30 +125,23 @@ async function main(): Promise<void> {
     );
     const webhookRepo = createWebhookRepo(db);
 
-    const failedWebhooks = await webhookRepo.findStranded(
+    const strandedSnsWebhooks = await sweepStrandedWebhooks(
+        webhookRepo,
         'sns',
         STRANDED_SNS_STATUSES,
         failedAfter
     );
-    reportStrandedWebhooks('sns', STRANDED_SNS_STATUSES, failedWebhooks);
-    if (failedWebhooks.length > 0) hasFailure = true;
+    if (strandedSnsWebhooks.length > 0) hasFailure = true;
 
-    const strandedStripeWebhooks = await webhookRepo.findStranded(
+    const strandedStripeWebhooks = await sweepStrandedWebhooks(
+        webhookRepo,
         'stripe',
         STRANDED_STRIPE_STATUSES,
         failedAfter
     );
-    reportStrandedWebhooks(
-        'stripe',
-        STRANDED_STRIPE_STATUSES,
-        strandedStripeWebhooks
-    );
     if (strandedStripeWebhooks.length > 0) hasFailure = true;
 
-    // Unscoped by source, unlike the two legs above: a Stripe strand is the
-    // same silent hole as an SNS one.
-    //
-    // No lower bound, unlike the failed leg. A stranded row is an open
+    // No lower bound, unlike the two legs above. A stranded row is an open
     // incident, not history — an event was accepted and never acted on — and
     // nothing re-drives it once the provider's retries are spent. Letting it
     // age out of this query would restore the exact blindness #331 closed,
@@ -143,20 +149,8 @@ async function main(): Promise<void> {
     const stuckReceivedBefore = new Date(
         Date.now() - STUCK_RECEIVED_MINUTES * 60 * 1000
     );
-    const stuckReceivedWebhooks = await db
-        .select({
-            id: webhookEvents.id,
-            source: webhookEvents.source,
-            eventType: webhookEvents.eventType,
-            createdAt: webhookEvents.createdAt,
-        })
-        .from(webhookEvents)
-        .where(
-            and(
-                eq(webhookEvents.status, 'received'),
-                lt(webhookEvents.createdAt, stuckReceivedBefore)
-            )
-        );
+    const stuckReceivedWebhooks =
+        await webhookRepo.findStuckAtReceived(stuckReceivedBefore);
 
     console.log(
         `Webhook events stranded at 'received' >${STUCK_RECEIVED_MINUTES}m: ${stuckReceivedWebhooks.length}`
@@ -248,7 +242,7 @@ async function main(): Promise<void> {
             severity: 'error',
             // Titled for what it covers; the filename still says S3 (#375).
             title: 'Event pipeline health check failed',
-            message: `${failedWebhooks.length} ${strandedLabel('sns', STRANDED_SNS_STATUSES)}; ${strandedStripeWebhooks.length} ${strandedLabel('stripe', STRANDED_STRIPE_STATUSES)}; ${stuckReceivedWebhooks.length} webhook event(s) stranded at 'received' >${STUCK_RECEIVED_MINUTES}m; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h; ${staleUploads.length} upload(s) stuck >${STALE_UPLOAD_HOURS}h.`,
+            message: `${strandedSnsWebhooks.length} ${formatStrandedLabel('sns', STRANDED_SNS_STATUSES)}; ${strandedStripeWebhooks.length} ${formatStrandedLabel('stripe', STRANDED_STRIPE_STATUSES)}; ${stuckReceivedWebhooks.length} webhook event(s) stranded at 'received' >${STUCK_RECEIVED_MINUTES}m; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h; ${staleUploads.length} upload(s) stuck >${STALE_UPLOAD_HOURS}h.`,
             context: {
                 source: 'check-s3-event-health',
                 ...(runUrl && { workflowRun: runUrl }),

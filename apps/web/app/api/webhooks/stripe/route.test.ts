@@ -212,7 +212,6 @@ describe('POST /api/webhooks/stripe', () => {
                 error: 'previous downstream error',
             });
             mocks.webhookEvents.findFirst.mockResolvedValue(failedRecord);
-            dispatchWebhookEvent.mockResolvedValue({ outcome: 'applied' });
 
             const response = await POST(makeRequest(sampleEvent));
 
@@ -220,7 +219,10 @@ describe('POST /api/webhooks/stripe', () => {
             await expect(response.json()).resolves.toEqual({ received: true });
             expect(dispatchWebhookEvent).toHaveBeenCalled();
             expect(mocks.insert).not.toHaveBeenCalled();
-            expect(mocks.set).toHaveBeenCalledWith({ status: 'processed' });
+            expect(mocks.set).toHaveBeenCalledWith({
+                status: 'processed',
+                error: null,
+            });
         });
 
         it('retries dispatch when prior attempt is still in received state', async () => {
@@ -232,13 +234,33 @@ describe('POST /api/webhooks/stripe', () => {
                     status: 'received',
                 })
             );
-            dispatchWebhookEvent.mockResolvedValue({ outcome: 'applied' });
 
             const response = await POST(makeRequest(sampleEvent));
 
             expect(response.status).toBe(200);
             expect(dispatchWebhookEvent).toHaveBeenCalled();
             expect(mocks.insert).not.toHaveBeenCalled();
+        });
+
+        it('clears the stale reason when a prior no-op finally applies', async () => {
+            // The row a redelivery re-drives may still carry the reason that
+            // put it in 'noop'. Leaving it there is the false green #332
+            // closes, one status later: a clean success explaining a failure.
+            mocks.webhookEvents.findFirst.mockResolvedValue(
+                createWebhookEventFixture({
+                    externalId: sampleEvent.id,
+                    status: 'noop',
+                    error: 'No local subscription row for Stripe customer cus_1',
+                })
+            );
+
+            const response = await POST(makeRequest(sampleEvent));
+
+            expect(response.status).toBe(200);
+            expect(mocks.set).toHaveBeenCalledWith({
+                status: 'processed',
+                error: null,
+            });
         });
 
         it('treats Postgres unique-violation on insert as a duplicate', async () => {
@@ -283,14 +305,15 @@ describe('POST /api/webhooks/stripe', () => {
         });
 
         it('marks event processed and returns 200 on success', async () => {
-            dispatchWebhookEvent.mockResolvedValue({ outcome: 'applied' });
-
             const response = await POST(makeRequest(sampleEvent));
 
             expect(response.status).toBe(200);
             await expect(response.json()).resolves.toEqual({ received: true });
             expect(mocks.update).toHaveBeenCalled();
-            expect(mocks.set).toHaveBeenCalledWith({ status: 'processed' });
+            expect(mocks.set).toHaveBeenCalledWith({
+                status: 'processed',
+                error: null,
+            });
         });
 
         it('marks event unhandled and returns 200 for unrecognized event types', async () => {
@@ -302,7 +325,10 @@ describe('POST /api/webhooks/stripe', () => {
             // row status and the warn log, not the response code.
             expect(response.status).toBe(200);
             await expect(response.json()).resolves.toEqual({ received: true });
-            expect(mocks.set).toHaveBeenCalledWith({ status: 'unhandled' });
+            expect(mocks.set).toHaveBeenCalledWith({
+                status: 'unhandled',
+                error: null,
+            });
             expect(hoisted.logger.warn).toHaveBeenCalledWith(
                 { eventId: sampleEvent.id, eventType: sampleEvent.type },
                 'Unhandled Stripe event type'
@@ -320,8 +346,6 @@ describe('POST /api/webhooks/stripe', () => {
         });
 
         it('does not alert on handled events', async () => {
-            dispatchWebhookEvent.mockResolvedValue({ outcome: 'applied' });
-
             await POST(makeRequest(sampleEvent));
 
             expect(hoisted.alertsSend).not.toHaveBeenCalled();
@@ -369,7 +393,10 @@ describe('POST /api/webhooks/stripe', () => {
             const response = await POST(makeRequest(sampleEvent));
 
             expect(response.status).toBe(200);
-            expect(mocks.set).toHaveBeenCalledWith({ status: 'processed' });
+            expect(mocks.set).toHaveBeenCalledWith({
+                status: 'processed',
+                error: null,
+            });
             expect(hoisted.alertsSend).not.toHaveBeenCalled();
         });
 
