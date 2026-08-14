@@ -43,8 +43,11 @@ export function formatDatabaseTarget(databaseUrl: string): string {
  * remember to and stdout stays pipeable.
  */
 export function requireDatabaseUrl(): string {
+    // quiet: dotenv's load notice goes to stdout, which would land in the
+    // middle of `db:query`'s JSON and break piping into jq.
     config({
         path: resolve(import.meta.dirname, '../../../../apps/web/.env.local'),
+        quiet: true,
     });
     const databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) {
