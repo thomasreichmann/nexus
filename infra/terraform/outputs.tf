@@ -5,6 +5,9 @@
 #   AWS_REGION        <- aws_region
 #   SQS_QUEUE_URL     <- sqs_queue_url
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY <- manual access key on app_iam_user
+#
+# GitHub Actions additionally holds a read-only key on ci_iam_user as
+# AWS_ACCESS_KEY_ID_PROD / AWS_SECRET_ACCESS_KEY_PROD (#318).
 
 output "s3_bucket" {
   description = "Files bucket name -> Vercel S3_BUCKET"
@@ -29,6 +32,11 @@ output "sqs_queue_url" {
 output "app_iam_user" {
   description = "Web-app IAM user; create its access key manually -> Vercel AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY"
   value       = aws_iam_user.app.name
+}
+
+output "ci_iam_user" {
+  description = "Read-only nightly-CI user (#318); create its access key manually -> GitHub Actions AWS_ACCESS_KEY_ID_PROD / AWS_SECRET_ACCESS_KEY_PROD"
+  value       = aws_iam_user.ci.name
 }
 
 output "sns_topic_arn" {

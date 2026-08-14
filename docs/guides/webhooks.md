@@ -1,7 +1,7 @@
 ---
 title: Webhook Handling
 created: 2026-02-15
-updated: 2026-02-15
+updated: 2026-08-13
 status: active
 tags:
     - guide
@@ -183,30 +183,33 @@ External providers retry webhook deliveries. Stripe may send the same event mult
 
 Track every processed event in a `webhook_events` table with a unique constraint on the provider event ID. Before processing, check if the event was already handled.
 
+The check is on **status**, not existence. A row is inserted at `received` and only moves to a terminal status after dispatch, so a crash in between leaves a `received` row behind. Short-circuiting on any existing row makes that strand permanent — the provider's redelivery is the only thing that would recover it, and it gets turned away. Only `processed` means "already done".
+
+Both routes get this from `resolveWebhookEvent` in `apps/web/lib/webhooks/events.ts` rather than restating it — it owns the find-or-insert, the `processed` short-circuit, and the concurrent-insert race.
+
 ```typescript
-// Pattern used in the route handler
-const existing = await findWebhookEvent(db, {
-    source: 'stripe',
-    externalId: event.id,
-});
-
-if (existing) {
-    // Already processed — return 200 to stop retries
-    return NextResponse.json({ received: true, duplicate: true });
-}
-
-// Insert tracking record before processing
-const webhookEvent = await insertWebhookEvent(db, {
+const lookup = await resolveWebhookEvent(webhookRepo, {
     source: 'stripe',
     externalId: event.id,
     eventType: event.type,
     payload: event,
 });
 
+// 'duplicate' — genuinely done, or a concurrent insert won the race
+if (lookup.outcome === 'duplicate') {
+    return NextResponse.json({ received: true, duplicate: true });
+}
+
+// 'new' or 'retry' — a 'received'/'failed'/'unhandled' row is re-driven
+const webhookEvent = lookup.event;
+
 // Process the event...
-// On success: mark as 'processed'
-// On failure: mark as 'failed' with error message
+// On success: mark as 'processed' (or 'unhandled' if no handler matched)
+// On business failure: recordWebhookFailure() marks it and alerts
+// On transient failure: rethrow, leaving the row at its current status
 ```
+
+Rows that never reach a terminal status are swept nightly — see [When to Return 5xx](#when-to-return-5xx).
 
 ### Table Schema
 
@@ -217,7 +220,7 @@ See `packages/db/src/schema/webhooks.ts` for the full schema. Key columns:
 | `externalId` | Provider's event ID (e.g., `evt_1234` from Stripe)    |
 | `source`     | Provider name (`stripe`, `sns`)                       |
 | `eventType`  | Event type string (e.g., `invoice.paid`)              |
-| `payload`    | Full event payload as JSONB (for debugging/replaying) |
+| `payload`    | Full event payload as JSONB (for debugging)           |
 | `status`     | Processing status — see the table below               |
 | `error`      | Why the event isn't a clean success (`failed`/`noop`) |
 
@@ -240,9 +243,9 @@ so read `error` rather than assuming nothing happened.
 
 ### Payload Retention & Cleanup
 
-Webhook payloads are stored for **debugging and replay** purposes. Cleanup strategy:
+Webhook payloads are stored for **debugging**. There is no replay tooling — the payload lets you reconstruct what happened, not re-run it. Recovery comes from provider redelivery hitting the status-aware idempotency check above.
 
-- **Active retention:** 90 days — payloads available for debugging and replay
+- **Active retention:** 90 days
 - **Cleanup:** Scheduled job (or manual query) deletes `webhook_events` rows older than 90 days where `status = 'processed'`
 - **Failed events:** Retained indefinitely until manually reviewed and resolved
 
@@ -315,6 +318,8 @@ Webhook error handling must consider provider retry behavior. The HTTP status co
 
 **Key insight:** Return `200` for business logic errors. Returning `5xx` would trigger retries, which would fail the same way. Log the error, mark the `webhook_events` record as `failed`, and investigate.
 
+The split is not a judgment call at the call site — `isTransientInfraError` in `@/lib/errors` decides it, and both routes rethrow when it says yes.
+
 ### Route Handler Error Handling
 
 ```typescript
@@ -341,14 +346,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             'Webhook processing failed'
         );
 
+        // Transient failures rethrow: Next.js turns that into a 500 and the
+        // provider retries. Nothing is written first — if the database is
+        // what broke, the write fails too, and the row staying at 'received'
+        // is what the nightly sweep looks for.
+        if (isTransientInfraError(error)) throw error;
+
         await updateWebhookEvent(db, webhookEvent.id, {
             status: 'failed',
-            error: error instanceof Error ? error.message : String(error),
+            error: toErrorMessage(error),
         });
 
-        // Return 200 to prevent retries for business logic errors.
-        // Only throw (return 5xx) for truly transient failures
-        // that would benefit from a retry.
+        // Business errors return 200: a retry hits the same bug.
         return NextResponse.json({ received: true });
     }
 }
@@ -362,7 +371,21 @@ Reserve `500` for infrastructure failures where a retry would genuinely help:
 - Connection timeout to a dependent service
 - Out of memory / process crash (automatic — Vercel returns 500)
 
-If you're unsure, default to `200`. You can always replay events from the `webhook_events` table.
+Don't decide this by hand. `isTransientInfraError` (`apps/web/lib/errors.ts`) is an **allowlist** of Node socket codes, postgres.js connection states, and the Postgres SQLSTATE families that clear on their own (class `08`, plus `53300`, `57P01`, `40001`, `40P01`). It walks the `cause` chain, because undici reports a refused connection as `TypeError: fetch failed` with the real code one level down. Anything it doesn't recognise is a business error and returns `200`.
+
+Allowlist, not denylist, on purpose: an unrecognised error retried forever is worse than one recorded as `failed` and investigated.
+
+#### This supersedes #281 for the transient class
+
+#281 decided "responses stay 200 in all cases", on the premise that "you can always replay events from the `webhook_events` table." That premise was never true. No replay tooling was built, and until #331 the nightly health check never queried `status = 'received'` at all — so a crash between the insert and the status update produced a row that was invisible to every check and that no redelivery could recover, because the S3-restore route's idempotency check turned away any existing row regardless of status.
+
+What changed in #331:
+
+- The S3-restore check became status-aware, so provider redelivery re-drives stranded rows (the Stripe route already did this, from #201).
+- `check-s3-event-health` gained a leg for rows sitting at `received` for over an hour, across both sources. Unlike the failed leg it has no lower time bound: a `failed` row is history, a `received` row is an open incident, so it holds the check red until someone resolves it.
+- Transient failures rethrow, so the provider's own retry is the first line of recovery rather than a nightly script.
+
+The rest of #281 stands: unhandled events, business errors, and duplicates all still return `200`.
 
 ## Logging
 

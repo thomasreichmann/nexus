@@ -1,26 +1,19 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import type Stripe from 'stripe';
-import { createWebhookRepo, type WebhookEvent } from '@nexus/db/repo/webhooks';
+import { createWebhookRepo } from '@nexus/db/repo/webhooks';
 import { alerts } from '@/lib/alerts';
 import { isLocalDevelopment } from '@/lib/env/runtime';
-import { toErrorMessage } from '@/lib/errors';
+import { isTransientInfraError } from '@/lib/errors';
+import {
+    recordWebhookFailure,
+    resolveWebhookEvent,
+} from '@/lib/webhooks/events';
 import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import { stripe } from '@/lib/stripe';
 import { subscriptionService } from '@/server/services/subscriptions';
 
 const log = logger.child({ handler: 'stripe-webhook' });
-
-const POSTGRES_UNIQUE_VIOLATION = '23505';
-
-function isUniqueViolation(err: unknown): boolean {
-    return (
-        typeof err === 'object' &&
-        err !== null &&
-        'code' in err &&
-        (err as { code: unknown }).code === POSTGRES_UNIQUE_VIOLATION
-    );
-}
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
     let rawBody: string;
@@ -65,47 +58,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const webhookRepo = createWebhookRepo(db);
 
-    // Stripe may redeliver events during outages, or retry after a prior
-    // failure. Only `processed` short-circuits — `failed` and `received` rows
-    // fall through so the dispatch can re-run and recover.
-    const existing = await webhookRepo.find('stripe', event.id);
-    if (existing?.status === 'processed') {
-        log.debug({ eventId: event.id }, 'Webhook already processed, skipping');
+    const lookup = await resolveWebhookEvent(webhookRepo, {
+        source: 'stripe',
+        externalId: event.id,
+        eventType: event.type,
+        payload: event as unknown as Record<string, unknown>,
+    });
+
+    if (lookup.outcome === 'duplicate') {
+        log.debug(
+            { eventId: event.id, duplicate: true, reason: lookup.reason },
+            'Duplicate webhook event skipped'
+        );
         return NextResponse.json({ received: true, duplicate: true });
     }
 
-    let webhookEvent: WebhookEvent;
-    if (existing) {
-        webhookEvent = existing;
+    if (lookup.outcome === 'retry') {
         log.info(
-            { eventId: event.id, prevStatus: existing.status },
+            { eventId: event.id, prevStatus: lookup.event.status },
             'Retrying webhook event'
         );
-    } else {
-        try {
-            webhookEvent = await webhookRepo.insert({
-                source: 'stripe',
-                externalId: event.id,
-                eventType: event.type,
-                payload: event as unknown as Record<string, unknown>,
-            });
-        } catch (err) {
-            // Only swallow Postgres unique-violation (23505) — that's a
-            // concurrent redelivery race. Anything else (schema mismatch,
-            // connection drop, etc.) is a real failure and must surface.
-            if (isUniqueViolation(err)) {
-                log.debug(
-                    { eventId: event.id },
-                    'Concurrent duplicate skipped'
-                );
-                return NextResponse.json({
-                    received: true,
-                    duplicate: true,
-                });
-            }
-            throw err;
-        }
     }
+
+    const webhookEvent = lookup.event;
 
     const start = Date.now();
     log.info({ eventId: event.id, eventType: event.type }, 'Webhook received');
@@ -215,18 +190,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             'Webhook processing failed'
         );
 
-        const errorMessage = toErrorMessage(error);
-        await webhookRepo.update(webhookEvent.id, {
-            status: 'failed',
-            error: errorMessage,
-        });
+        // Rethrow so the 5xx makes Stripe retry — see `isTransientInfraError`
+        // for why nothing is written first (#331).
+        if (isTransientInfraError(error)) throw error;
 
-        await alerts.send({
-            severity: 'error',
+        await recordWebhookFailure(webhookRepo, webhookEvent.id, error, {
             title: 'Stripe webhook processing failed',
             message:
                 'Handler threw while processing a Stripe webhook; the event row is marked failed.',
-            context: { ...alertContext, error: errorMessage },
+            context: alertContext,
         });
 
         return NextResponse.json({ received: true });

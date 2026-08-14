@@ -48,7 +48,10 @@ postgresql://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.co
 > [!warning] Port 6543 is load-bearing, not a preference.
 > `packages/db/src/connection.ts` sets `prepare: false` unconditionally because Supabase's transaction-mode pooler does not support prepared statements — statements can land on different pooled backends, which intermittently loses transactions. **Both dev and prod `DATABASE_URL`s must be transaction-pooler URLs (port 6543).** Do not use the direct connection (5432) or session pooler.
 
-## GitHub Actions Secret
+## GitHub Actions Secrets
+
+Every prod-scoped secret the nightly workflows need, Supabase and otherwise —
+`docs/infra/aws-manual-setup.md` is superseded, so the AWS ones live here too.
 
 The existing `DATABASE_URL` secret stays pointed at **dev** (no rename). Add the prod pooler URL as a new secret:
 
@@ -63,6 +66,21 @@ Consumed by:
 - `migration-drift.yml` — nightly drift check (prod matrix leg)
 - `supabase-keepalive.yml` — keepalive ping (prod matrix leg)
 - `s3-event-health.yml` — DB health checks (prod matrix leg)
+
+That workflow's prod leg also compares `files` rows against the prod bucket, so
+it needs prod AWS credentials in the same matrix (#318). The key belongs to
+`nexus-ci-prod` — a read-only IAM user Terraform creates for exactly this, so a
+nightly job never holds write access to production data:
+
+```bash
+aws iam create-access-key --user-name nexus-ci-prod
+
+gh secret set AWS_ACCESS_KEY_ID_PROD --app actions
+gh secret set AWS_SECRET_ACCESS_KEY_PROD --app actions
+gh secret set S3_BUCKET_PROD --app actions   # nexus-storage-files-prod
+```
+
+`AWS_REGION` stays shared — both environments live in `us-east-1`.
 
 ## Vercel Environment Variables
 
@@ -106,7 +124,7 @@ gh workflow run supabase-keepalive.yml
 ## Follow-Ups
 
 - ~~Repoint the Vercel production deployment at the prod project~~ — done in #291 (PR #315); Production runs on the prod `DATABASE_URL` and prod AWS resources.
-- **`s3-event-health.yml` prod leg**: still runs with dev AWS credentials (only `DATABASE_URL` is matrixed), so its prod storage-tier check is false-green — tracked in #318.
+- ~~**`s3-event-health.yml` prod leg** runs with dev AWS credentials~~ — fixed in #318; the AWS key and bucket are matrixed per env alongside `DATABASE_URL`.
 
 ## Related
 

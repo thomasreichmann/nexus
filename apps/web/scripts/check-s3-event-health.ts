@@ -10,6 +10,9 @@
  *     the same window (#332). Request-time alerts fire once and are
  *     best-effort; this is what makes a stranded billing event stay visible —
  *     and a stranded upgrade is what leaves a paying user blocked.
+ *   - any webhook event from either source has sat in 'received' for over an
+ *     hour (#331): the route inserts at 'received' and only moves the row
+ *     after dispatch, so a crash in between strands it there
  *   - any retrieval has sat in 'pending'/'in_progress' for over 48 hours
  *     (Deep Archive bulk restores complete within 48h — older is stuck)
  *   - any file has sat in 'uploading' for over 24 hours (#330): the client
@@ -41,7 +44,20 @@ import {
 } from '@nexus/db/repo/webhooks';
 import { retrievals, webhookEvents } from '@nexus/db/schema';
 
+/**
+ * How far back the failed/unhandled leg looks. Those rows are history: they
+ * record something that already went wrong and was dealt with, so they age
+ * out. The stranded leg below is deliberately unbounded — see there.
+ */
 const FAILED_WEBHOOK_WINDOW_DAYS = 7;
+
+/**
+ * How long a row may sit in 'received' before it counts as stranded. Real
+ * processing takes seconds; the hour is slack for a row inserted while this
+ * check runs, not a guess at how long dispatch takes.
+ */
+const STUCK_RECEIVED_MINUTES = 60;
+
 const STUCK_RETRIEVAL_HOURS = 48;
 
 // Statuses that need a human: the event did not complete cleanly. 'noop' only
@@ -115,6 +131,42 @@ async function main(): Promise<void> {
         strandedStripeWebhooks
     );
     if (strandedStripeWebhooks.length > 0) hasFailure = true;
+
+    // Unscoped by source, unlike the two legs above: a Stripe strand is the
+    // same silent hole as an SNS one.
+    //
+    // No lower bound, unlike the failed leg. A stranded row is an open
+    // incident, not history — an event was accepted and never acted on — and
+    // nothing re-drives it once the provider's retries are spent. Letting it
+    // age out of this query would restore the exact blindness #331 closed,
+    // just a week later. Resolve the row to clear the check.
+    const stuckReceivedBefore = new Date(
+        Date.now() - STUCK_RECEIVED_MINUTES * 60 * 1000
+    );
+    const stuckReceivedWebhooks = await db
+        .select({
+            id: webhookEvents.id,
+            source: webhookEvents.source,
+            eventType: webhookEvents.eventType,
+            createdAt: webhookEvents.createdAt,
+        })
+        .from(webhookEvents)
+        .where(
+            and(
+                eq(webhookEvents.status, 'received'),
+                lt(webhookEvents.createdAt, stuckReceivedBefore)
+            )
+        );
+
+    console.log(
+        `Webhook events stranded at 'received' >${STUCK_RECEIVED_MINUTES}m: ${stuckReceivedWebhooks.length}`
+    );
+    for (const event of stuckReceivedWebhooks) {
+        console.log(
+            `  ✗ ${event.createdAt.toISOString()}  ${event.source}  ${event.eventType}  event=${event.id}`
+        );
+    }
+    if (stuckReceivedWebhooks.length > 0) hasFailure = true;
 
     const stuckBefore = new Date(
         Date.now() - STUCK_RETRIEVAL_HOURS * 60 * 60 * 1000
@@ -196,7 +248,7 @@ async function main(): Promise<void> {
             severity: 'error',
             // Titled for what it covers; the filename still says S3 (#375).
             title: 'Event pipeline health check failed',
-            message: `${failedWebhooks.length} ${strandedLabel('sns', STRANDED_SNS_STATUSES)}; ${strandedStripeWebhooks.length} ${strandedLabel('stripe', STRANDED_STRIPE_STATUSES)}; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h; ${staleUploads.length} upload(s) stuck >${STALE_UPLOAD_HOURS}h.`,
+            message: `${failedWebhooks.length} ${strandedLabel('sns', STRANDED_SNS_STATUSES)}; ${strandedStripeWebhooks.length} ${strandedLabel('stripe', STRANDED_STRIPE_STATUSES)}; ${stuckReceivedWebhooks.length} webhook event(s) stranded at 'received' >${STUCK_RECEIVED_MINUTES}m; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h; ${staleUploads.length} upload(s) stuck >${STALE_UPLOAD_HOURS}h.`,
             context: {
                 source: 'check-s3-event-health',
                 ...(runUrl && { workflowRun: runUrl }),
