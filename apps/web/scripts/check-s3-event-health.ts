@@ -5,6 +5,9 @@
  *   - any SNS webhook event landed in status 'failed' or 'unhandled' in the
  *     last 7 days (allowlisted expected events stay 'processed', so routine
  *     ObjectRestore:Post deliveries don't trip this)
+ *   - any webhook event from either source has sat in 'received' for over an
+ *     hour (#331): the route inserts at 'received' and only moves the row
+ *     after dispatch, so a crash in between strands it there
  *   - any retrieval has sat in 'pending'/'in_progress' for over 48 hours
  *     (Deep Archive bulk restores complete within 48h — older is stuck)
  *   - any file has sat in 'uploading' for over 24 hours (#330): the client
@@ -31,7 +34,20 @@ import { s3RestoreService } from '@/server/services/s3-restore';
 import { createFileRepo, STALE_UPLOAD_HOURS } from '@nexus/db/repo/files';
 import { retrievals, webhookEvents } from '@nexus/db/schema';
 
+/**
+ * How far back the failed/unhandled leg looks. Those rows are history: they
+ * record something that already went wrong and was dealt with, so they age
+ * out. The stranded leg below is deliberately unbounded — see there.
+ */
 const FAILED_WEBHOOK_WINDOW_DAYS = 7;
+
+/**
+ * How long a row may sit in 'received' before it counts as stranded. Real
+ * processing takes seconds; the hour is slack for a row inserted while this
+ * check runs, not a guess at how long dispatch takes.
+ */
+const STUCK_RECEIVED_MINUTES = 60;
+
 const STUCK_RETRIEVAL_HOURS = 48;
 
 function parseSinceArg(): Date | null {
@@ -78,6 +94,41 @@ async function main(): Promise<void> {
         );
     }
     if (failedWebhooks.length > 0) hasFailure = true;
+
+    // Both sources: a Stripe strand is the same silent hole as an SNS one.
+    //
+    // No lower bound, unlike the failed leg. A stranded row is an open
+    // incident, not history — an event was accepted and never acted on — and
+    // nothing re-drives it once the provider's retries are spent. Letting it
+    // age out of this query would restore the exact blindness #331 closed,
+    // just a week later. Resolve the row to clear the check.
+    const strandedBefore = new Date(
+        Date.now() - STUCK_RECEIVED_MINUTES * 60 * 1000
+    );
+    const strandedWebhooks = await db
+        .select({
+            id: webhookEvents.id,
+            source: webhookEvents.source,
+            eventType: webhookEvents.eventType,
+            createdAt: webhookEvents.createdAt,
+        })
+        .from(webhookEvents)
+        .where(
+            and(
+                eq(webhookEvents.status, 'received'),
+                lt(webhookEvents.createdAt, strandedBefore)
+            )
+        );
+
+    console.log(
+        `Webhook events stranded at 'received' >${STUCK_RECEIVED_MINUTES}m: ${strandedWebhooks.length}`
+    );
+    for (const event of strandedWebhooks) {
+        console.log(
+            `  ✗ ${event.createdAt.toISOString()}  ${event.source}  ${event.eventType}  event=${event.id}`
+        );
+    }
+    if (strandedWebhooks.length > 0) hasFailure = true;
 
     const stuckBefore = new Date(
         Date.now() - STUCK_RETRIEVAL_HOURS * 60 * 60 * 1000
@@ -158,7 +209,7 @@ async function main(): Promise<void> {
         await alerts.send({
             severity: 'error',
             title: 'S3 event pipeline health check failed',
-            message: `${failedWebhooks.length} failed/unhandled SNS webhook event(s) in the last ${FAILED_WEBHOOK_WINDOW_DAYS}d; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h; ${staleUploads.length} upload(s) stuck >${STALE_UPLOAD_HOURS}h.`,
+            message: `${failedWebhooks.length} failed/unhandled SNS webhook event(s) in the last ${FAILED_WEBHOOK_WINDOW_DAYS}d; ${strandedWebhooks.length} webhook event(s) stranded at 'received' >${STUCK_RECEIVED_MINUTES}m; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h; ${staleUploads.length} upload(s) stuck >${STALE_UPLOAD_HOURS}h.`,
             context: {
                 source: 'check-s3-event-health',
                 ...(runUrl && { workflowRun: runUrl }),
