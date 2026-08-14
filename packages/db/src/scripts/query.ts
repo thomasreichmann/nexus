@@ -24,13 +24,8 @@ if (args.length !== 1 || !args[0]?.trim()) {
 }
 const query = args[0];
 
+// Prints the target host on stderr; see `requireDatabaseUrl`.
 const databaseUrl = requireDatabaseUrl();
-
-const target = new URL(databaseUrl);
-console.error(
-    `→ ${target.hostname}:${target.port || '5432'}${target.pathname}` +
-        (process.env.DB_ENV ? ` (DB_ENV=${process.env.DB_ENV})` : '')
-);
 
 // prepare:false for Supabase's transaction-mode pooler, same as createDb().
 const sql = postgres(databaseUrl, { prepare: false, max: 1 });
