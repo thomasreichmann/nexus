@@ -41,6 +41,7 @@ import {
     createWebhookRepo,
     type StrandedWebhookEvent,
     type WebhookEvent,
+    type WebhookRepo,
 } from '@nexus/db/repo/webhooks';
 import { retrievals, webhookEvents } from '@nexus/db/schema';
 
@@ -68,41 +69,46 @@ const STRANDED_STRIPE_STATUSES: WebhookEvent['status'][] = [
     'noop',
 ];
 
+/** How each source reads in prose — `sns` is an acronym, `stripe` a name. */
+const SOURCE_LABELS: Record<WebhookEvent['source'], string> = {
+    sns: 'SNS',
+    stripe: 'Stripe',
+};
+
+/**
+ * Lowercase, because this reads mid-sentence in the alert message alongside
+ * the other counts. The stdout header capitalizes it at the call site.
+ */
+function formatStrandedLabel(
+    source: WebhookEvent['source'],
+    statuses: WebhookEvent['status'][]
+): string {
+    return `${statuses.join('/')} ${SOURCE_LABELS[source]} webhook event(s) in the last ${FAILED_WEBHOOK_WINDOW_DAYS}d`;
+}
+
 /**
  * Queries one strand and prints the count header plus a line per row. Query
  * and header take the status list from the same argument, so the header can't
  * claim a sweep the query didn't do.
  */
 async function sweepStrandedWebhooks(
-    repo: ReturnType<typeof createWebhookRepo>,
+    repo: WebhookRepo,
     source: WebhookEvent['source'],
     statuses: WebhookEvent['status'][],
     createdAfter: Date
 ): Promise<StrandedWebhookEvent[]> {
     const rows = await repo.findStranded(source, statuses, createdAfter);
+    const label = formatStrandedLabel(source, statuses);
 
-    console.log(`${formatStrandedLabel(source, statuses)}: ${rows.length}`);
+    console.log(
+        `${label.charAt(0).toUpperCase()}${label.slice(1)}: ${rows.length}`
+    );
     for (const event of rows) {
         console.log(
             `  ✗ ${event.createdAt.toISOString()}  ${event.status}  ${event.eventType}  ${event.error ?? '(no error recorded)'}`
         );
     }
     return rows;
-}
-
-/** How each source reads in a header — `sns` is an acronym, `stripe` a name. */
-const SOURCE_LABELS: Record<WebhookEvent['source'], string> = {
-    sns: 'SNS',
-    stripe: 'Stripe',
-};
-
-/** Capitalized to match every sibling header this script prints. */
-function formatStrandedLabel(
-    source: WebhookEvent['source'],
-    statuses: WebhookEvent['status'][]
-): string {
-    const statusList = statuses.join('/');
-    return `${statusList.charAt(0).toUpperCase()}${statusList.slice(1)} ${SOURCE_LABELS[source]} webhook events (last ${FAILED_WEBHOOK_WINDOW_DAYS}d)`;
 }
 
 function parseSinceArg(): Date | null {

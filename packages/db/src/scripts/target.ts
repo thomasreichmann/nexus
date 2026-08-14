@@ -7,8 +7,9 @@
  * saying which database that is. Inside a worktree that is the shared dev
  * database, not the worktree's own — the failure mode this exists to surface.
  *
- * Banner only: it opens no connection and changes nothing, so chaining it
- * cannot break the command that follows.
+ * Banner only: it opens no connection and changes nothing. The one way it
+ * stops the chain is a missing DATABASE_URL, which would fail the migration a
+ * step later anyway — with a worse message.
  */
 import { requireDatabaseUrl } from './env';
 

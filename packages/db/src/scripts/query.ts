@@ -24,7 +24,6 @@ if (args.length !== 1 || !args[0]?.trim()) {
 }
 const query = args[0];
 
-// Prints the target host on stderr; see `requireDatabaseUrl`.
 const databaseUrl = requireDatabaseUrl();
 
 // prepare:false for Supabase's transaction-mode pooler, same as createDb().

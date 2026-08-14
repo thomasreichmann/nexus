@@ -127,19 +127,28 @@ describe('POST /api/webhooks/s3-restore', () => {
             expect(response.status).toBe(200);
             expect(dispatch).toHaveBeenCalled();
             expect(mocks.insert).not.toHaveBeenCalled();
-            expect(mocks.set).toHaveBeenCalledWith({ status: 'processed' });
+            expect(mocks.set).toHaveBeenCalledWith({
+                status: 'processed',
+                error: null,
+            });
         });
 
-        it('re-drives a row a prior attempt marked failed', async () => {
-            mocks.webhookEvents.findFirst.mockResolvedValue(
-                snsEventFixture('failed')
-            );
+        it('re-drives a row a prior attempt marked failed, clearing its error', async () => {
+            // Leaving the old message behind is a false green one status
+            // later: a clean success that still explains a failure (#332).
+            mocks.webhookEvents.findFirst.mockResolvedValue({
+                ...snsEventFixture('failed'),
+                error: 'downstream exploded',
+            });
 
             const response = await POST(makeRequest(makeNotification()));
 
             expect(response.status).toBe(200);
             expect(dispatch).toHaveBeenCalled();
-            expect(mocks.set).toHaveBeenCalledWith({ status: 'processed' });
+            expect(mocks.set).toHaveBeenCalledWith({
+                status: 'processed',
+                error: null,
+            });
         });
 
         it('treats Postgres unique-violation on insert as a duplicate', async () => {
