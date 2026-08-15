@@ -62,7 +62,7 @@ const FINDINGS_SCHEMA = {
                         type: 'string',
                         enum: ['high', 'medium', 'low'],
                         description:
-                            'high = ships a bug, breaks a user-visible behaviour, or leaves the codebase materially worse; medium = real problem worth fixing now; low = polish, safe to skip. Judge the issue itself — you are the only reviewer covering your lane, so do not discount a finding for being yours alone.',
+                            'Rate by consequence AND reachability. high = a user loses data, sees a wrong result, or hits a break, on a path that runs in production today. medium = the same defect behind a manual step, an unscheduled script, a flag, or an unreached path — real, but nobody is hitting it yet. low = polish, safe to skip. A destructive bug on a live path outranks the identical bug in a script nobody runs; say which one you are looking at. Judge the issue itself — you are the only reviewer covering your lane, so do not discount a finding for being yours alone.',
                     },
                 },
                 required: [
