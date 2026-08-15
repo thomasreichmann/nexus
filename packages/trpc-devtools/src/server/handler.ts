@@ -1,8 +1,8 @@
-import type { AnyRouter } from '@trpc/server';
-import type { NextRequest } from 'next/server';
 import { introspectRouter } from './introspect';
 import { getStandaloneJs, getStandaloneCss } from './assets';
 import { THEME_KEY } from '../lib/storage';
+import type { NextRequest } from 'next/server';
+import type { AnyRouter } from '@trpc/server';
 import type { TRPCDevtoolsConfig, RouterSchema } from './types';
 
 // Cache the introspected schema to avoid re-processing on every request

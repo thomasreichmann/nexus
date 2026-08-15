@@ -1,5 +1,10 @@
 import { test as setup } from '@playwright/test';
 import {
+    findUserByEmail,
+    ensureTrialSubscription,
+    deleteUserData,
+} from '@nexus/db/test-db';
+import {
     ADMIN_USER,
     ADMIN_STATE_PATH,
     REGULAR_USER,
@@ -8,11 +13,6 @@ import {
     promoteToAdmin,
     authenticateAndSaveState,
 } from './helpers/auth';
-import {
-    findUserByEmail,
-    ensureTrialSubscription,
-    deleteUserData,
-} from '@nexus/db/test-db';
 import { createTestDb } from './helpers/connection';
 
 /**

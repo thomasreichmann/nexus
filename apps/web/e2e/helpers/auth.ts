@@ -4,7 +4,6 @@ import {
     type APIRequestContext,
     type Page,
 } from '@playwright/test';
-import type { Connection } from '@nexus/db/test-db';
 import {
     findUserByEmail,
     updateUserRole,
@@ -12,6 +11,7 @@ import {
     deleteUserData,
 } from '@nexus/db/test-db';
 import { E2E_BASE_URL } from './server-url';
+import type { Connection } from '@nexus/db/test-db';
 
 // Shared with playwright.config.ts so the Origin header and the request
 // context's baseURL track the ephemeral server port (BetterAuth trusts the

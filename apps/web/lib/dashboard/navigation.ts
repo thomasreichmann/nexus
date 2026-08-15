@@ -1,4 +1,3 @@
-import type { LucideIcon } from 'lucide-react';
 import {
     FolderOpen,
     LayoutDashboard,
@@ -8,6 +7,7 @@ import {
     UserPlus,
     Wrench,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 export interface NavItem {
     name: string;

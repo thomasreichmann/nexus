@@ -17,6 +17,7 @@
         "capture": "pnpm --filter @nexus/capture exec tsx src/cli.ts"
     },
     "devDependencies": {
+        "eslint-plugin-import": "^2.32.0",
         "prettier": "^3.8.0",
         "turbo": "^2.9.10"
     },

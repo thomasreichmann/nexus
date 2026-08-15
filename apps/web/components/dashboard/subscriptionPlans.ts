@@ -1,9 +1,9 @@
-import type { VariantProps } from 'class-variance-authority';
 import { PLAN_LIMITS, type PlanTier } from '@nexus/db/plans';
-import type { Subscription } from '@nexus/db/repo/subscriptions';
 import { formatBytes } from '@/lib/format';
 import type { CheckoutTier, BillingInterval } from '@/lib/stripe/types';
 import type { badgeVariants } from '@/components/ui/badge';
+import type { Subscription } from '@nexus/db/repo/subscriptions';
+import type { VariantProps } from 'class-variance-authority';
 
 export type { BillingInterval };
 

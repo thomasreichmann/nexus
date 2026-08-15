@@ -23,16 +23,16 @@
  * (`retrieval.ts`, `files.ts` multipart, `s3-restore.ts`) treats the value as
  * opaque, so legacy keys can't regress through code changes here.
  */
-import { test, expect } from '../fixtures';
-import type { Connection } from '@nexus/db/test-db';
 import {
     findUserByEmail,
     deleteUserData,
     insertStorageUsage,
 } from '@nexus/db/test-db';
+import { PLAN_LIMITS } from '@nexus/db/plans';
+import { test, expect } from '../fixtures';
 import { REGULAR_USER } from '../helpers/auth';
 import { fileName } from '../helpers/table';
-import { PLAN_LIMITS } from '@nexus/db/plans';
+import type { Connection } from '@nexus/db/test-db';
 
 // Single shared user → tests must run serially. Belt-and-braces: the
 // `test:e2e:validate` script also passes `--workers=1`.

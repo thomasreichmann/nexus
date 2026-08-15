@@ -3,10 +3,10 @@ import {
     findSourceMap as findSourceMapCjs,
     SourceMap as NodeSourceMap,
 } from 'node:module';
-import type { SourceMapPayload, SourceMapping } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { evictOldEntries } from './utils';
+import type { SourceMapPayload, SourceMapping } from 'node:module';
 
 export interface MappedPosition {
     file: string;

@@ -1,6 +1,6 @@
+import { deleteUserByEmail } from '@nexus/db/test-db';
 import { test as base, expect } from './db';
 import { type TestUser, provisionDedicatedUser } from '../helpers/auth';
-import { deleteUserByEmail } from '@nexus/db/test-db';
 
 type DedicatedUserWorkerFixtures = {
     /**

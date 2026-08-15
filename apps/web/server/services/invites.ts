@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import type { DB } from '@nexus/db';
 import {
     createInviteRepo,
     isInviteExpired,
@@ -9,6 +8,7 @@ import { env } from '@/lib/env';
 import { InvalidStateError, NotFoundError } from '@/server/errors';
 import { logger } from '@/server/lib/logger';
 import { emailService } from '@/server/services/email';
+import type { DB } from '@nexus/db';
 
 const log = logger.child({ service: 'invites' });
 

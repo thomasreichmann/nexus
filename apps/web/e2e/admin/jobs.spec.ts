@@ -1,10 +1,10 @@
+import { countJobsByStatus, type Job } from '@nexus/db/test-db';
 import { test, expect } from '../fixtures';
-import type { Page } from '@playwright/test';
 import { USER_STATE_PATH } from '../helpers/auth';
 import { statusCells, waitForTableLoad } from '../helpers/table';
 import { waitForTrpcRequest } from '../helpers/trpc';
-import { countJobsByStatus, type Job } from '@nexus/db/test-db';
 import { seedJobs, cleanupJobs } from '../helpers/scenarios';
+import type { Page } from '@playwright/test';
 
 const PAGE_URL = '/dashboard/admin/jobs';
 

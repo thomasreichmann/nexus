@@ -1,6 +1,6 @@
-import type { DB } from '@nexus/db';
 import { jobs } from '@/lib/jobs';
 import { logger } from '@/server/lib/logger';
+import type { DB } from '@nexus/db';
 
 const log = logger.child({ service: 'thumbnails' });
 

@@ -20,9 +20,9 @@
  *   pnpm -F web reap:stale-uploads --apply  # delete objects + close rows
  */
 
+import { createFileRepo, STALE_UPLOAD_HOURS } from '@nexus/db/repo/files';
 import { db } from '@/server/db';
 import { fileService } from '@/server/services/files';
-import { createFileRepo, STALE_UPLOAD_HOURS } from '@nexus/db/repo/files';
 
 async function main(): Promise<void> {
     const shouldApply = process.argv.includes('--apply');

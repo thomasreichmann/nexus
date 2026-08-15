@@ -21,13 +21,13 @@
  *   STRIPE_SECRET_KEY=sk_live_... pnpm -F web check:stripe-config
  */
 
-import type Stripe from 'stripe';
 
 import { PLAN_DISPLAY } from '@/components/dashboard/subscriptionPlans';
 import { alerts, getWorkflowRunUrl } from '@/lib/alerts';
 import { stripeClient } from '@/lib/stripe/client';
 import type { BillingInterval, CheckoutTier } from '@/lib/stripe/types';
 import { BILLING_INTERVALS } from '@/lib/stripe/types';
+import type Stripe from 'stripe';
 
 // Keep in sync with dispatchWebhookEvent in server/services/subscriptions.ts
 // — the switch there is the ground truth for what the app handles.

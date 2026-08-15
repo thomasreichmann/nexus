@@ -1,11 +1,11 @@
 import { withSentryConfig } from '@sentry/nextjs';
-import type { NextConfig } from 'next';
 import path from 'node:path';
 import {
     DEFAULT_POSTHOG_HOST,
     POSTHOG_INGEST_PATH,
     resolveAssetsHost,
 } from './lib/posthog/hosts';
+import type { NextConfig } from 'next';
 
 const posthogHost =
     process.env.NEXT_PUBLIC_POSTHOG_HOST ?? DEFAULT_POSTHOG_HOST;

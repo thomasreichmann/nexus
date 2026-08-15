@@ -1,4 +1,3 @@
-import { test as base, expect } from './dedicated-user';
 import {
     type UploadBatch,
     type File,
@@ -12,6 +11,7 @@ import {
     markSubscriptionPaid,
     ensureTrialSubscription,
 } from '@nexus/db/test-db';
+import { test as base, expect } from './dedicated-user';
 
 type DataFixtures = {
     seededBatch: UploadBatch;

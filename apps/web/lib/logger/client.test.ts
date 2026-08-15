@@ -1,4 +1,3 @@
-import type { LogEvent } from 'pino';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -6,6 +5,7 @@ import {
     setClientLogContext,
     transmitToDevServer,
 } from './client';
+import type { LogEvent } from 'pino';
 
 function makeLogEvent(overrides: Partial<LogEvent> = {}): LogEvent {
     return {

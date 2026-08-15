@@ -1,14 +1,14 @@
-import { auth } from '@/lib/auth/server';
-import { lazyAsync } from '@/lib/async/lazy';
-import { db } from '@/server/db';
-import type { Connection } from '@nexus/db';
-import { isDomainError } from '@/server/errors';
 import { createSubscriptionRepo } from '@nexus/db/repo/subscriptions';
 import { initTRPC, TRPCError } from '@trpc/server';
 import { headers } from 'next/headers';
 import superjson from 'superjson';
+import { isDomainError } from '@/server/errors';
+import { db } from '@/server/db';
+import { lazyAsync } from '@/lib/async/lazy';
+import { auth } from '@/lib/auth/server';
 import { domainErrorFormatter } from './error-formatter';
 import { logRequest, type LoggingContext } from './middleware/logging';
+import type { Connection } from '@nexus/db';
 
 type Session = Awaited<ReturnType<typeof auth.api.getSession>>;
 

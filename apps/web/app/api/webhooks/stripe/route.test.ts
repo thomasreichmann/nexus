@@ -1,6 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import type Stripe from 'stripe';
 import { createWebhookEventFixture } from '@nexus/db/testing';
 
 const hoisted = await vi.hoisted(async () => {
@@ -43,6 +42,7 @@ vi.mock('@/server/services/subscriptions', () => ({
 }));
 
 import { POST } from './route';
+import type Stripe from 'stripe';
 
 const constructEvent = hoisted.stripe.webhooks.constructEvent;
 const dispatchWebhookEvent = hoisted.dispatchWebhookEvent;

@@ -17,9 +17,9 @@
 
 import { eq, isNull } from 'drizzle-orm';
 
+import { subscriptions, user } from '@nexus/db/schema';
 import { db } from '@/server/db';
 import { subscriptionService } from '@/server/services/subscriptions';
-import { subscriptions, user } from '@nexus/db/schema';
 
 async function main(): Promise<void> {
     const apply = process.argv.includes('--apply');

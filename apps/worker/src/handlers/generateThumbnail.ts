@@ -3,7 +3,6 @@ import { createWriteStream } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import {
@@ -14,6 +13,7 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { classifyMedia } from '@nexus/db/media';
 import { createFileRepo, thumbnailKey, type File } from '@nexus/db/repo/files';
+import type { Readable } from 'node:stream';
 import type { HandlerContext } from '../registry';
 
 const execFileAsync = promisify(execFile);

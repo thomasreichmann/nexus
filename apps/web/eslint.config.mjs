@@ -2,6 +2,7 @@ import { defineConfig, globalIgnores } from 'eslint/config';
 import nextVitals from 'eslint-config-next/core-web-vitals';
 import nextTs from 'eslint-config-next/typescript';
 import tailwindPlugin from 'eslint-plugin-better-tailwindcss';
+import { importOrderConfig } from '../../eslint.import-order.mjs';
 
 // Convention: "Main export first, helper components below" (conventions.md)
 const localPlugin = {
@@ -133,6 +134,7 @@ const eslintConfig = defineConfig([
         // Generated coverage output
         'coverage/**',
     ]),
+    importOrderConfig,
     // Playwright fixtures use `use()` which triggers react-hooks/rules-of-hooks.
     // Specs can also define inline fixtures (spec-local preconditions), so the
     // carve-out covers the whole e2e tree, not just fixtures/.

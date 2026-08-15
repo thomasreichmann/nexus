@@ -1,5 +1,4 @@
 import { SendMessageCommand } from '@aws-sdk/client-sqs';
-import type { DB } from '@nexus/db';
 import {
     createJobRepo,
     type Job,
@@ -7,6 +6,7 @@ import {
     type SqsMessageBody,
 } from '@nexus/db/repo/jobs';
 import { client, queueUrl } from './client';
+import type { DB } from '@nexus/db';
 
 /** Send an SQS message for a job. Used by publish() and retry flows. */
 export async function sendToQueue(body: SqsMessageBody): Promise<void> {

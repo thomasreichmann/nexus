@@ -1,5 +1,5 @@
-import type Stripe from 'stripe';
 import { stripeClient } from './client';
+import type Stripe from 'stripe';
 
 interface CreateCheckoutSessionParams {
     customerId: string;

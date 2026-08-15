@@ -1,5 +1,4 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import type Stripe from 'stripe';
 import {
     createMockDb,
     createInviteFixture,
@@ -29,6 +28,7 @@ vi.mock('@/lib/stripe', () => ({
 
 import { subscriptionService } from './subscriptions';
 import { PLAN_LIMITS, SPONSORED_DEFAULT_STORAGE_LIMIT } from './constants';
+import type Stripe from 'stripe';
 
 const productsRetrieve = hoisted.stripeClient.products.retrieve;
 

@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import type { LucideIcon } from 'lucide-react';
 import { Search } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
 import { Kbd } from '@/components/ui/kbd';
@@ -9,6 +8,7 @@ import { fuzzyFilter, type FuzzyMatch } from '@/lib/fuzzy';
 import { cn } from '@/lib/utils';
 import type { ProcedureSchema } from '@/server/types';
 import { ProcedureTypeBadge } from './procedure-type-badge';
+import type { LucideIcon } from 'lucide-react';
 
 export interface PaletteAction {
     id: string;

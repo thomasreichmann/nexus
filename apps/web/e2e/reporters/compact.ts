@@ -11,14 +11,6 @@
  * Full output when needed: `npx playwright test --reporter=list` (the CLI
  * flag overrides this config) or `npx playwright show-report` for traces.
  */
-import type {
-    FullConfig,
-    FullResult,
-    Reporter,
-    Suite,
-    TestCase,
-    TestResult,
-} from '@playwright/test/reporter';
 import {
     closeSync,
     existsSync,
@@ -29,6 +21,14 @@ import {
 } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { WEBSERVER_LOG } from '../helpers/webserver-log';
+import type {
+    FullConfig,
+    FullResult,
+    Reporter,
+    Suite,
+    TestCase,
+    TestResult,
+} from '@playwright/test/reporter';
 
 const MAX_ERROR_LINES = 20;
 // Server-log slice shown under a failing test: prefer warn/error lines, else

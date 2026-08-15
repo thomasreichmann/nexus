@@ -1,15 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuPositioner,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
     Clock,
     Download,
@@ -18,16 +9,25 @@ import {
     RotateCw,
     Trash2,
 } from 'lucide-react';
-import { useTRPC } from '@/lib/trpc/client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { useTRPC } from '@/lib/trpc/client';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuPositioner,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Button } from '@/components/ui/button';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { captureEvent } from '@/lib/posthog/client';
 import { PostHogEvent } from '@/lib/posthog/events';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
-import type { FileWithRetrieval } from '@nexus/db/repo/files';
 import { toastContext } from '@/lib/trpc/error-link';
 import { toastRetrievalResult } from './retrievalFeedback';
+import type { FileWithRetrieval } from '@nexus/db/repo/files';
 import type { DerivedStatus } from './status';
 
 export function useFileActions(file: FileWithRetrieval) {

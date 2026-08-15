@@ -9,9 +9,9 @@
  * rows on the way out. The real end-to-end upload still lives in the validate
  * tier (upload-batches-and-quota.spec.ts).
  */
+import { deleteUserData } from '@nexus/db/test-db';
 import { test, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
-import { deleteUserData } from '@nexus/db/test-db';
 import { interceptTrpcCalls } from '../helpers/trpc';
 import { seedResumableUpload } from '../helpers/uploadStore';
 

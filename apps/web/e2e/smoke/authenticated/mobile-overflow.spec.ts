@@ -21,13 +21,13 @@
  * test would provision the same dedicated user concurrently and race the
  * seed inserts/deletes.
  */
-import { test as base, expect } from '../../fixtures';
-import { type TestUser } from '../../helpers/auth';
 import {
     type AdversarialLibrary,
     seedAdversarialLibrary,
     deleteUserData,
 } from '@nexus/db/test-db';
+import { test as base, expect } from '../../fixtures';
+import { type TestUser } from '../../helpers/auth';
 import { expectNoHorizontalOverflow } from '../../helpers/overflow';
 
 const SPEC_USER: TestUser = {

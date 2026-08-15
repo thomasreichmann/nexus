@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import type { DB } from '@nexus/db';
 import {
     SCENARIO_DEFINITIONS,
     buildFiles,
@@ -15,6 +14,7 @@ import {
 } from '@nexus/db/seed';
 import { TrialExpiredError } from '@/server/errors';
 import { devToolsProcedure, router } from '../init';
+import type { DB } from '@nexus/db';
 
 const scenarioNames = Object.keys(SCENARIO_DEFINITIONS) as [
     string,

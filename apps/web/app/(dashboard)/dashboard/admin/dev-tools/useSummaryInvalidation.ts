@@ -1,7 +1,7 @@
 'use client';
 
-import { useTRPC } from '@/lib/trpc/client';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTRPC } from '@/lib/trpc/client';
 
 export function useSummaryInvalidation() {
     const trpc = useTRPC();

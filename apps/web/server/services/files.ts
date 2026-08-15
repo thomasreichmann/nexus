@@ -1,4 +1,3 @@
-import type { DB } from '@nexus/db';
 import {
     createFileRepo,
     originalKey,
@@ -6,7 +5,6 @@ import {
     type File,
 } from '@nexus/db/repo/files';
 import { createStorageUsageRepo } from '@nexus/db/repo/storage-usage';
-import type { Subscription } from '@nexus/db/repo/subscriptions';
 import {
     createUploadBatchRepo,
     type UploadBatch,
@@ -17,6 +15,8 @@ import { PostHogEvent } from '@/lib/posthog/events';
 import { captureServerEvent } from '@/lib/posthog/server';
 import { quotaService } from './quota';
 import { enqueueThumbnailGeneration } from './thumbnails';
+import type { Subscription } from '@nexus/db/repo/subscriptions';
+import type { DB } from '@nexus/db';
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 900; // 15 minutes
 const MULTIPART_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB

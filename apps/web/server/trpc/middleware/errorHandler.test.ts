@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { initTRPC, TRPCError } from '@trpc/server';
-import type { TRPCDefaultErrorShape } from '@trpc/server';
 import {
     isDomainError,
     NotFoundError,
@@ -10,6 +9,7 @@ import {
     TrialExpiredError,
 } from '@/server/errors';
 import { domainErrorFormatter } from '../error-formatter';
+import type { TRPCDefaultErrorShape } from '@trpc/server';
 
 // Minimal tRPC setup for testing the middleware
 const t = initTRPC.create();

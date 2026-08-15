@@ -309,7 +309,7 @@ function E2EBody({ report, ready }: { report: E2eReport; ready: boolean }) {
 
 function AllCoveredBadge({ excluded }: { excluded: number }) {
     return (
-        <div className="rounded-xl border border-[oklch(0.72_0.17_155_/_0.35)] bg-[oklch(0.72_0.17_155_/_0.07)] px-5 py-4">
+        <div className="rounded-xl border border-[oklch(0.72_0.17_155/0.35)] bg-[oklch(0.72_0.17_155/0.07)] px-5 py-4">
             <p
                 className="font-mono text-sm font-semibold"
                 style={{ color: 'oklch(0.72 0.17 155)' }}
@@ -332,7 +332,7 @@ function GapList({
     gaps: { key: string; label: string; kind: string }[];
 }) {
     return (
-        <div className="rounded-xl border border-[oklch(0.63_0.22_25_/_0.35)] bg-[oklch(0.63_0.22_25_/_0.06)] px-5 py-4">
+        <div className="rounded-xl border border-[oklch(0.63_0.22_25/0.35)] bg-[oklch(0.63_0.22_25/0.06)] px-5 py-4">
             <p
                 className="mb-2 font-mono text-xs font-semibold uppercase tracking-wider"
                 style={{ color: 'oklch(0.63 0.22 25)' }}

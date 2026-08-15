@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import type Stripe from 'stripe';
 import { createWebhookRepo } from '@nexus/db/repo/webhooks';
 import { alerts } from '@/lib/alerts';
 import { isLocalDevelopment } from '@/lib/env/runtime';
@@ -12,6 +11,7 @@ import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import { stripe } from '@/lib/stripe';
 import { subscriptionService } from '@/server/services/subscriptions';
+import type Stripe from 'stripe';
 
 const log = logger.child({ handler: 'stripe-webhook' });
 

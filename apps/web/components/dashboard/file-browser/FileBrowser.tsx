@@ -1,6 +1,17 @@
 'use client';
 
 import { Fragment, useCallback, useMemo, useRef, useState } from 'react';
+import {
+    Search,
+    LayoutGrid,
+    LayoutList,
+    Trash2,
+    RotateCw,
+    Loader2,
+    X,
+    Snowflake,
+} from 'lucide-react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -23,19 +34,8 @@ import {
 import { Card } from '@/components/ui/card';
 import { ResponsiveRows } from '@/components/ui/responsive-rows';
 import { StackedList } from '@/components/ui/stacked-list';
-import {
-    Search,
-    LayoutGrid,
-    LayoutList,
-    Trash2,
-    RotateCw,
-    Loader2,
-    X,
-    Snowflake,
-} from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { useTRPC } from '@/lib/trpc/client';
-import { useMutation, useQuery } from '@tanstack/react-query';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { captureEvent } from '@/lib/posthog/client';
@@ -372,7 +372,7 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                 {filteredGroups.length === 0 && hasActiveSearch ? (
                     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16">
                         <Search className="mb-3 size-5 text-muted-foreground/60" />
-                        <p className="max-w-full break-words px-4 text-sm text-muted-foreground">
+                        <p className="max-w-full wrap-break-word px-4 text-sm text-muted-foreground">
                             No files match &ldquo;{debouncedSearch.trim()}
                             &rdquo;
                         </p>

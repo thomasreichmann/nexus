@@ -1,4 +1,3 @@
-import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
 import { createRetrievalRepo, type Retrieval } from '@nexus/db/repo/retrievals';
 import { alerts } from '@/lib/alerts';
@@ -10,6 +9,7 @@ import type { S3EventRecord } from '@/lib/sns/types';
 import { PostHogEvent } from '@/lib/posthog/events';
 import { captureServerEvent } from '@/lib/posthog/server';
 import { resolveStorageTier } from '@/lib/storage/types';
+import type { DB } from '@nexus/db';
 
 const log = logger.child({ service: 's3-restore' });
 

@@ -1,10 +1,10 @@
-import type Stripe from 'stripe';
 import {
     CHECKOUT_TIERS,
     type CheckoutTier,
     type BillingInterval,
 } from './types';
 import { stripeClient } from './client';
+import type Stripe from 'stripe';
 
 // Cache the in-flight promise (not just the resolved Map) so concurrent first
 // callers share a single Stripe pagination instead of stampeding.
