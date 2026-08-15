@@ -11,10 +11,10 @@ import {
     lt,
     ilike,
 } from 'drizzle-orm';
-import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
 import { activeRetrievalFilter } from './retrievals';
+import type { DB } from '../connection';
 
 export type File = typeof schema.files.$inferSelect;
 export type NewFile = typeof schema.files.$inferInsert;

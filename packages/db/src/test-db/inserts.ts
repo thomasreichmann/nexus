@@ -15,7 +15,6 @@
  * `DB` is a type-only import, so this module never pulls the `postgres` driver —
  * the driver only enters when the caller builds a connection via `createDb()`.
  */
-import type { DB } from '../connection';
 import * as schema from '../schema';
 import { DEFAULT_RESTORE_DAYS_TO_KEEP } from '../schema';
 import {
@@ -30,6 +29,7 @@ import {
     type User,
     type StorageUsage,
 } from '../repositories/fixtures';
+import type { DB } from '../connection';
 import type { File } from '../repositories/files';
 import type { UploadBatch } from '../repositories/uploadBatches';
 import type { Retrieval } from '../repositories/retrievals';

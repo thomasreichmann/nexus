@@ -1,9 +1,9 @@
 import { mkdirSync } from 'node:fs';
 
 import { chromium } from '@playwright/test';
+import { Stage } from './stage';
 import type { Browser, BrowserContext } from '@playwright/test';
 
-import { Stage } from './stage';
 
 export interface RecorderOptions {
     baseUrl: string;
