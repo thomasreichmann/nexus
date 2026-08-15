@@ -353,6 +353,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-clear-keeps-resumable',
+        title: 'Clear all empties the queue without destroying resumable uploads',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-single-file-flow',
         title: 'Upload a file end-to-end (S3 + DB + batch + usage)',
         area: 'upload',

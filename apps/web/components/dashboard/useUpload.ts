@@ -817,9 +817,19 @@ export function useUpload() {
     const removeFile = dropRow;
     const cancelFile = dropRow;
 
+    // Clear all empties the list; it is not a per-row "give up on this upload"
+    // the way Cancel/Remove is. So it must not destroy multipart work the user
+    // can still come back to: a row carrying an `uploadId` has parts in S3 and
+    // a persisted record behind it, and releasing it here would abort the
+    // session and delete that record, silently killing an upload the queue is
+    // offering to resume. Those are left to the bucket's 7-day
+    // abort-incomplete-multipart rule and the nightly stale-upload check.
+    // Single-part rows mint no session and have nothing to resume, so they
+    // still get released — that is the #330 leak this whole path exists for.
     const clearFiles = useCallback(() => {
         for (const file of filesRef.current) {
             file.abortController?.abort(CANCEL);
+            if (file.uploadId) continue;
             abandonServerUpload(file);
         }
         setFiles([]);

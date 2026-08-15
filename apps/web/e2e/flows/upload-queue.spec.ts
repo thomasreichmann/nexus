@@ -117,6 +117,36 @@ test(
     }
 );
 
+// Clear all used to release every row it swept, which for a multipart row
+// meant aborting the S3 session and deleting its IndexedDB record — tidying
+// the list silently destroyed an upload the queue was offering to resume.
+test(
+    'clear-all leaves an interrupted upload resumable',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-clear-keeps-resumable'] },
+    async ({ page, consoleErrors }) => {
+        await page.goto(PAGE_URL);
+        await expect(page.getByText('Drop files here to upload')).toBeVisible();
+
+        await seedResumableUpload(page);
+        await page.reload();
+        await expect(
+            page.getByText('Interrupted — re-add this file to resume')
+        ).toBeVisible();
+
+        await page.getByRole('button', { name: 'Clear all' }).click();
+        await expect(page.getByText(/Selected Files/)).toBeHidden();
+
+        // The record outlives the clear: a reload rehydrates the same row.
+        await page.reload();
+        await expect(page.getByText('big-shoot.zip')).toBeVisible();
+        await expect(
+            page.getByText('Interrupted — re-add this file to resume')
+        ).toBeVisible();
+
+        expect(consoleErrors).toEqual([]);
+    }
+);
+
 test(
     'an interrupted upload with a persisted handle is shown as one-click resumable',
     { tag: ['@page:/dashboard/upload', '@uc:upload-resume-one-click'] },
