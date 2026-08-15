@@ -19,11 +19,10 @@ Review code changes for quality issues that hurt maintainability.
 - Premature generalization ("what if we need X later")
 - Configuration for things that won't change
 
-### Redundancy
+### Over-abstraction
 
-- Duplicate code that should be extracted
-- Extracted code only used once (over-abstraction)
-- Re-implementing existing utilities
+- Extracted code used only once
+- Indirection that adds a hop without adding meaning
 
 ### Unnecessary Complexity
 
@@ -40,6 +39,18 @@ Review code changes for quality issues that hurt maintainability.
 - Changes unrelated to the issue
 - "While I'm here" improvements
 - Refactoring that wasn't requested
+
+## Not Your Lane
+
+You run alongside two other reviewers with their own scopes. Leave these to
+them even when you spot them — a finding raised in the wrong lane gets deduped
+against the owning reviewer's better-researched version, or lands with no
+supporting search behind it:
+
+- Duplicated logic, code that re-implements an existing utility, or new code
+  that should move to `lib/` → `reuse-review` (it greps the codebase; you don't)
+- Comment style, naming, file placement, return types, layout/responsive rules
+  → `conventions-review`
 
 ## Input
 
