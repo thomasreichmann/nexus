@@ -57,22 +57,33 @@ export async function stubS3Puts(
         seen.inFlight++;
         seen.peak = Math.max(seen.peak, seen.inFlight);
 
-        // Deliberately never settled — Playwright discards it at teardown.
+        // Never settled, and never decremented: the connection genuinely stays
+        // open until teardown, which is the whole point of this mode.
         if (options.stall) return;
 
-        if (options.holdMs) {
-            await new Promise((resolve) => setTimeout(resolve, options.holdMs));
+        try {
+            if (options.holdMs) {
+                await new Promise((resolve) =>
+                    setTimeout(resolve, options.holdMs)
+                );
+            }
+            const isDoomed =
+                options.failFor !== undefined &&
+                route.request().url().includes(options.failFor);
+            await route.fulfill({
+                status: isDoomed ? 500 : 200,
+                headers: { ...CORS_HEADERS, ETag: '"e2e-stub"' },
+            });
+        } catch {
+            // The browser hung up first — an upload aborted by a pause or a
+            // cancel. There's nothing left to answer, but the connection is
+            // just as closed as a fulfilled one, so it still has to be counted
+            // out below or `peak` drifts up across the rest of the test.
+        } finally {
+            // Decremented once the response is delivered rather than before, so
+            // `peak` covers the whole window the connection was open.
+            seen.inFlight--;
         }
-        const isDoomed =
-            options.failFor !== undefined &&
-            route.request().url().includes(options.failFor);
-        await route.fulfill({
-            status: isDoomed ? 500 : 200,
-            headers: { ...CORS_HEADERS, ETag: '"e2e-stub"' },
-        });
-        // Decremented after the response is delivered, so `peak` covers the
-        // whole window the browser held the connection open.
-        seen.inFlight--;
     });
 
     return seen;
@@ -89,4 +100,33 @@ export function makeTextFiles(
         // Lengths differ so a mixed-up name→row mapping can't pass by symmetry.
         buffer: Buffer.from(`${prefix} file ${i}${'!'.repeat(i)}\n`),
     }));
+}
+
+/**
+ * Files big enough to take the multipart engine, written to disk and handed to
+ * `setInputFiles` by path.
+ *
+ * By path, not by buffer, on purpose: a buffer is base64'd across the CDP
+ * connection, so several hundred MB of fixtures would be copied twice before
+ * the browser ever sees them. Returns a cleanup to call from `afterAll`.
+ */
+export async function writeLargeFiles(options: {
+    count: number;
+    prefix: string;
+    bytes: number;
+}): Promise<{ paths: string[]; cleanup: () => Promise<void> }> {
+    const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+
+    const dir = await mkdtemp(join(tmpdir(), 'nexus-e2e-large-'));
+    const paths: string[] = [];
+    for (let i = 0; i < options.count; i++) {
+        const path = join(dir, `${options.prefix}-${i}.bin`);
+        // Zero-filled: the stub never inspects the bytes, and allocating is
+        // faster than generating content no assertion reads.
+        await writeFile(path, Buffer.alloc(options.bytes));
+        paths.push(path);
+    }
+    return { paths, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }

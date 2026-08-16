@@ -182,6 +182,10 @@ test.describe('upload batches + storage quota', () => {
             ],
         },
         async ({ page, db, seedUserId: userId }) => {
+            // Six real round trips to S3, not one — past what the default
+            // per-test budget leaves room for once the network is involved.
+            test.setTimeout(120_000);
+
             // Reset so "exactly one batch" is a strict assertion rather than a
             // delta over the single-file test's leftover batch. Runs before
             // the quota test, which re-parks usage itself.

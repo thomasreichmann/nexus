@@ -13,12 +13,20 @@
  */
 import { resetUserData, insertStorageUsage } from '@nexus/db/test-db';
 import { PLAN_LIMITS, SOFT_LIMIT_MULTIPLIER } from '@nexus/db/plans';
-import { MAX_CONCURRENT_FILES } from '@/lib/upload/limits';
+import {
+    MAX_CONCURRENT_FILES,
+    MULTIPART_THRESHOLD,
+    S3_CONNECTION_BUDGET,
+} from '@/lib/upload/limits';
 import { test, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
 import { interceptTrpcCalls } from '../helpers/trpc';
 import { seedResumableUpload } from '../helpers/uploadStore';
-import { makeTextFiles, stubS3Puts } from '../helpers/uploadStubs';
+import {
+    makeTextFiles,
+    stubS3Puts,
+    writeLargeFiles,
+} from '../helpers/uploadStubs';
 
 const UPLOAD_USER: TestUser = {
     email: 'upload-flows-e2e@test.local',
@@ -278,6 +286,63 @@ test(
             expect(row.s3Key).toBe(
                 `${seedUserId}/${batches[0].id}/${row.id}/${row.name}`
             );
+        }
+    }
+);
+
+// The one case the single-PUT tests can't reach: four files each opening their
+// own chunk pool want 4 × MAX_CONCURRENT_CHUNKS connections, well past what a
+// browser will give one host. The shared budget is what holds the line.
+test(
+    'four multipart files stay inside the shared S3 connection budget',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-multipart-budget'] },
+    async ({ page }) => {
+        // 400MB of fixtures and 44 part PUTs — well past the default budget.
+        test.setTimeout(180_000);
+
+        // Just over the multipart threshold, so each file is a handful of parts
+        // rather than hundreds — the budget doesn't care how many follow.
+        const large = await writeLargeFiles({
+            count: MAX_CONCURRENT_FILES,
+            prefix: 'queue-multipart',
+            bytes: MULTIPART_THRESHOLD + 1024,
+        });
+        // Held long enough that the PUTs, not the browser's reading of 100MB
+        // blobs, are what limits overlap. At a short hold the file reads become
+        // the bottleneck and the observed peak drops below the budget, which
+        // would make this pass without the semaphore doing anything.
+        const puts = await stubS3Puts(page, { holdMs: 1200 });
+        const inFlightRows = page.getByRole('button', {
+            name: 'Cancel upload',
+        });
+
+        try {
+            await page.goto(PAGE_URL);
+            await page.setInputFiles('input[type="file"]', large.paths);
+            await page
+                .getByRole('button', {
+                    name: `Upload ${MAX_CONCURRENT_FILES} files`,
+                })
+                .click();
+
+            // Waits for every row to leave `uploading`, not for them to reach
+            // `complete`: `files.multipart.complete` is a real S3 call that
+            // verifies each part landed, and these PUTs were answered locally,
+            // so the rows finish their PUT phase and then fail at completion.
+            // Which is fine — the budget is a property of the PUTs, and by the
+            // time no row is uploading, every part PUT has been made.
+            await expect(inFlightRows).toHaveCount(MAX_CONCURRENT_FILES, {
+                timeout: 60_000,
+            });
+            await expect(inFlightRows).toHaveCount(0, { timeout: 150_000 });
+
+            // Exactly the budget, not merely under it: four files each wanting
+            // MAX_CONCURRENT_CHUNKS would open 12 connections unbounded, and
+            // landing on 6 shows the semaphore is what's holding them back
+            // rather than some incidental bottleneck.
+            expect(puts.peak).toBe(S3_CONNECTION_BUDGET);
+        } finally {
+            await large.cleanup();
         }
     }
 );

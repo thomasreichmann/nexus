@@ -405,6 +405,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-multipart-budget',
+        title: 'Concurrent multipart files stay inside the shared S3 connection budget',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-offline-resume-wave',
         title: 'Going offline mid-wave pauses the queue; reconnect drains it pool-bound',
         area: 'upload',
