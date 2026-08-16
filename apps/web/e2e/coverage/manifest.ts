@@ -393,6 +393,30 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-concurrent-wave',
+        title: 'Multi-file upload runs several files at once, bounded by the pool size',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
+        id: 'upload-failure-isolation',
+        title: 'One file failing mid-wave leaves its siblings uploading',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
+        id: 'upload-offline-resume-wave',
+        title: 'Going offline mid-wave pauses the queue; reconnect drains it pool-bound',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
+        id: 'upload-quota-halt',
+        title: 'First quota rejection halts the wave with one message',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-cancel-cleanup',
         title: 'Cancelling an in-flight upload strands no uploading row',
         area: 'upload',

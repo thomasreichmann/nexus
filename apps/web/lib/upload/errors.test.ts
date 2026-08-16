@@ -16,6 +16,7 @@ import {
     isExpiredUrlError,
     isNetworkError,
     isAbortError,
+    isQuotaExceededError,
     reportUploadFailure,
 } from './errors';
 
@@ -31,6 +32,35 @@ describe('isExpiredUrlError', () => {
     it('is false for non-http errors', () => {
         expect(isExpiredUrlError(new UploadNetworkError())).toBe(false);
         expect(isExpiredUrlError(new Error('x'))).toBe(false);
+    });
+});
+
+describe('isQuotaExceededError', () => {
+    it('is true for a QUOTA_EXCEEDED domain error', () => {
+        expect(
+            isQuotaExceededError(
+                makeClientError({
+                    code: 'PRECONDITION_FAILED',
+                    domainCode: 'QUOTA_EXCEEDED',
+                })
+            )
+        ).toBe(true);
+    });
+
+    it('is false for other domain errors', () => {
+        expect(
+            isQuotaExceededError(
+                makeClientError({
+                    code: 'FORBIDDEN',
+                    domainCode: 'TRIAL_EXPIRED',
+                })
+            )
+        ).toBe(false);
+    });
+
+    it('is false for transport failures', () => {
+        expect(isQuotaExceededError(new UploadHttpError(403))).toBe(false);
+        expect(isQuotaExceededError(new Error('x'))).toBe(false);
     });
 });
 

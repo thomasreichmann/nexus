@@ -8,6 +8,21 @@ import { toastContext } from '@/lib/trpc/error-link';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { xhrPut } from '@/lib/http/xhr';
 import { retryAsync } from '@/lib/async/retry';
+import { createSemaphore } from '@/lib/async/semaphore';
+import {
+    createFilePool,
+    type FilePool,
+    type FileRunOutcome,
+} from '@/lib/upload/filePool';
+import {
+    CONFIRM_RETRIES,
+    MAX_CHUNK_RETRIES,
+    MAX_CONCURRENT_CHUNKS,
+    MAX_CONCURRENT_FILES,
+    MAX_IN_FLIGHT_BYTES,
+    MULTIPART_THRESHOLD,
+    S3_CONNECTION_BUDGET,
+} from '@/lib/upload/limits';
 import {
     addCompletedPart,
     deleteUpload,
@@ -33,6 +48,7 @@ import {
     isAbortError,
     isExpiredUrlError,
     isNetworkError,
+    isQuotaExceededError,
     reportUploadFailure,
     uploadEventProps,
     type UploadEngine,
@@ -40,10 +56,8 @@ import {
 import { captureEvent } from '@/lib/posthog/client';
 import { PostHogEvent } from '@/lib/posthog/events';
 
-const MULTIPART_THRESHOLD = 100 * 1024 * 1024; // 100MB
-const MAX_CONCURRENT_CHUNKS = 3;
-const MAX_CHUNK_RETRIES = 3;
-const CONFIRM_RETRIES = 3;
+// One budget for the whole tab, shared across every engine and file.
+const s3Budget = createSemaphore(S3_CONNECTION_BUDGET);
 
 // AbortController reasons let the engine's catch tell why an in-flight upload
 // was stopped: a pause keeps the persisted state for auto-resume, a cancel
@@ -95,6 +109,24 @@ interface InternalUploadFile extends UploadFile {
     // truth reconciled on every resume.
     completedParts?: CompletedPart[];
     abortController?: AbortController;
+}
+
+/**
+ * What the pool needs to admit a row: an identity to de-duplicate on, a size to
+ * weigh against the in-flight byte budget, and the batch the row belongs to.
+ * The row itself is re-read at start time, so nothing here can go stale.
+ */
+interface QueuedUpload {
+    id: string;
+    size: number;
+    batchId?: string;
+}
+
+function toQueuedUpload(
+    file: InternalUploadFile,
+    batchId?: string
+): QueuedUpload {
+    return { id: file.id, size: file.size, batchId: batchId ?? file.batchId };
 }
 
 function randomId(): string {
@@ -155,6 +187,11 @@ export function useUpload() {
 
     const invalidateFileList = useInvalidateFileList();
 
+    // These observers are shared by every file the pool runs at once. Each
+    // `mutateAsync` call still builds its own mutation and resolves with its
+    // own result, but the observer's `isPending`/`data`/`error` are
+    // last-writer-wins across files — per-row state has to come from the row
+    // itself, never from these objects.
     const uploadMutation = useMutation(trpc.files.upload.mutationOptions());
     const createBatchMutation = useMutation(
         trpc.files.createBatch.mutationOptions()
@@ -203,13 +240,64 @@ export function useUpload() {
         []
     );
 
+    /**
+     * The failure policy both engines share, in one place so a fix can't land
+     * in only one of them: an abort is a pause unless the row is being torn
+     * down, a drop while offline waits for reconnect, and anything else is a
+     * real failure the row reports and the user can retry. Quota is the one
+     * failure about the account rather than the file, so it also stops the
+     * pool from spending the rest of the queue on the same rejection.
+     */
+    const handleUploadFailure = useCallback(
+        (
+            error: unknown,
+            engine: UploadEngine,
+            uploadFile: InternalUploadFile,
+            context: {
+                // Fresher than the row's own: init assigns it after the engine
+                // has already closed over `uploadFile`.
+                fileId: string | undefined;
+                batchId: string | undefined;
+                signal: AbortSignal;
+            }
+        ): FileRunOutcome => {
+            if (isAbortError(error)) {
+                // A cancel tears the row down in cancelFile, so there's nothing
+                // left to update. A pause has to leave the row in `paused` for
+                // the reconnect handler to find.
+                if (context.signal.reason !== CANCEL) {
+                    updateFile(uploadFile.id, { status: 'paused' });
+                }
+                return 'continue';
+            }
+            if (isNetworkError(error) && !navigatorIsOnline()) {
+                updateFile(uploadFile.id, { status: 'paused' });
+                return 'continue';
+            }
+            reportUploadFailure(error, engine, {
+                ...uploadFile,
+                fileId: context.fileId,
+                batchId: context.batchId,
+            });
+            updateFile(uploadFile.id, {
+                status: 'error',
+                error: error instanceof Error ? error.message : 'Upload failed',
+            });
+            return isQuotaExceededError(error) ? 'halt' : 'continue';
+        },
+        [updateFile]
+    );
+
     const uploadSingleFile = useCallback(
         // batchId is threaded explicitly (not read back via filesRef) because a
         // just-issued updateFile isn't visible until the next render commit.
         // Callers without a session batch (retry) fall back to the row's own.
-        async (uploadFile: InternalUploadFile, batchId?: string) => {
+        async (
+            uploadFile: InternalUploadFile,
+            batchId?: string
+        ): Promise<FileRunOutcome> => {
             const file = uploadFile.file;
-            if (!file) return;
+            if (!file) return 'continue';
             const sessionBatchId = batchId ?? uploadFile.batchId;
             const abortController = new AbortController();
             updateFile(uploadFile.id, {
@@ -222,6 +310,36 @@ export function useUpload() {
             // id once init has assigned it — the uploadFile closure predates
             // init (mirrors the multipart engine).
             let fileId = uploadFile.fileId;
+
+            // Presign *inside* the permit, not before waiting for it: a
+            // single-part URL lives 15 minutes, and a small file queued behind
+            // multipart traffic on a slow uplink can wait longer than that.
+            // Minting the URL after the wait means it is always fresh when the
+            // PUT starts. The ~185ms this holds the permit is cheap, and it's
+            // the only permit this worker takes, so it can't deadlock.
+            const presignAndPut = () =>
+                s3Budget.run(async () => {
+                    const init = await uploadMutation.mutateAsync({
+                        name: file.name,
+                        sizeBytes: file.size,
+                        mimeType: file.type || undefined,
+                        batchId: sessionBatchId,
+                    });
+                    fileId = init.fileId;
+
+                    updateFile(uploadFile.id, { fileId });
+
+                    await xhrPut(init.uploadUrl, file, {
+                        onProgress: (loaded, total) => {
+                            updateFile(uploadFile.id, {
+                                progress: Math.round((loaded / total) * 100),
+                            });
+                        },
+                        signal: abortController.signal,
+                    });
+                    return init.fileId;
+                });
+
             try {
                 // Every restart of this engine (retry, or auto-resume after a
                 // network drop) mints a fresh fileId, row, and s3Key, so the
@@ -233,26 +351,24 @@ export function useUpload() {
                     abandonUploadMutation.mutate({ fileId });
                 }
 
-                const init = await uploadMutation.mutateAsync({
-                    name: file.name,
-                    sizeBytes: file.size,
-                    mimeType: file.type || undefined,
-                    batchId: sessionBatchId,
-                });
-                fileId = init.fileId;
+                let confirmedFileId: string;
+                try {
+                    confirmedFileId = await presignAndPut();
+                } catch (error) {
+                    if (!isExpiredUrlError(error)) throw error;
+                    // S3 reports an expired URL as a 403. This engine has no
+                    // re-presign procedure — `files.upload` is the only source
+                    // of a single-part URL and it mints a whole new row — so
+                    // releasing the dead attempt and starting over is the
+                    // re-presign. Once: a 403 that isn't expiry (a bucket
+                    // policy denial) would fail identically forever.
+                    if (fileId) abandonUploadMutation.mutate({ fileId });
+                    confirmedFileId = await presignAndPut();
+                }
 
-                updateFile(uploadFile.id, { fileId });
-
-                await xhrPut(init.uploadUrl, file, {
-                    onProgress: (loaded, total) => {
-                        updateFile(uploadFile.id, {
-                            progress: Math.round((loaded / total) * 100),
-                        });
-                    },
-                    signal: abortController.signal,
-                });
-
-                await confirmMutation.mutateAsync({ fileId: init.fileId });
+                // Confirm goes to the app origin, a different host with its own
+                // socket budget, so it runs outside the S3 permit.
+                await confirmMutation.mutateAsync({ fileId: confirmedFileId });
 
                 updateFile(uploadFile.id, {
                     status: 'complete',
@@ -264,29 +380,12 @@ export function useUpload() {
                     fileId,
                     sessionBatchId
                 );
-                await invalidateFileList();
+                return 'continue';
             } catch (error) {
-                if (isAbortError(error)) {
-                    return;
-                }
-                // A network drop pauses for reconnect rather than failing the
-                // upload — same policy as the multipart engine; the online
-                // handler restarts it.
-                if (isNetworkError(error) && !navigatorIsOnline()) {
-                    updateFile(uploadFile.id, { status: 'paused' });
-                    return;
-                }
-                reportUploadFailure(error, 'single', {
-                    ...uploadFile,
+                return handleUploadFailure(error, 'single', uploadFile, {
                     fileId,
                     batchId: sessionBatchId,
-                });
-                updateFile(uploadFile.id, {
-                    status: 'error',
-                    error:
-                        error instanceof Error
-                            ? error.message
-                            : 'Upload failed',
+                    signal: abortController.signal,
                 });
             }
         },
@@ -295,7 +394,7 @@ export function useUpload() {
             confirmMutation,
             abandonUploadMutation,
             updateFile,
-            invalidateFileList,
+            handleUploadFailure,
         ]
     );
 
@@ -303,9 +402,12 @@ export function useUpload() {
         // Same explicit batchId threading as uploadSingleFile; only the
         // fresh-start branch uses it (a resume already committed membership
         // server-side at the original init).
-        async (uploadFile: InternalUploadFile, batchId?: string) => {
+        async (
+            uploadFile: InternalUploadFile,
+            batchId?: string
+        ): Promise<FileRunOutcome> => {
             const file = uploadFile.file;
-            if (!file) return;
+            if (!file) return 'continue';
             const sessionBatchId = batchId ?? uploadFile.batchId;
 
             const abortController = new AbortController();
@@ -427,12 +529,18 @@ export function useUpload() {
                     const retryablePutError = (error: unknown) =>
                         !isAbortError(error) && !isExpiredUrlError(error);
 
+                    // One permit per attempt, taken and released around the PUT
+                    // itself: the retry backoff and the re-presign below happen
+                    // without holding a connection, and a chunk worker never
+                    // holds one permit while waiting on another.
                     const put = (url: string) =>
                         retryAsync(
                             () =>
-                                xhrPut(url, blob, {
-                                    signal: abortController.signal,
-                                }),
+                                s3Budget.run(() =>
+                                    xhrPut(url, blob, {
+                                        signal: abortController.signal,
+                                    })
+                                ),
                             MAX_CHUNK_RETRIES,
                             1000,
                             retryablePutError
@@ -466,33 +574,32 @@ export function useUpload() {
                     });
                 };
 
-                // Bounded worker pool. The first real failure aborts its
-                // siblings (their in-flight PUTs reject) and propagates out.
-                const queue = [...partUrls.keys()].sort((a, b) => a - b);
+                // Per-file part concurrency. Deliberately fail-fast, unlike the
+                // file pool: the first real failure aborts its siblings (their
+                // in-flight PUTs reject) and propagates out, because these are
+                // parts of one object rather than independent files.
+                //
+                // A part holds this file's chunk permit while waiting for the
+                // shared S3 permit inside `put`. That nesting is always in the
+                // same order — chunk budget, then connection budget — so it
+                // can't deadlock, and the outer permit is what keeps
+                // MAX_CONCURRENT_CHUNKS a per-file ceiling.
+                const chunkBudget = createSemaphore(MAX_CONCURRENT_CHUNKS);
+                const partNumbers = [...partUrls.keys()].sort((a, b) => a - b);
                 let firstError: unknown = null;
-                const worker = async (): Promise<void> => {
-                    while (queue.length > 0 && !firstError) {
-                        const partNumber = queue.shift()!;
-                        try {
-                            await uploadOnePart(partNumber);
-                        } catch (error) {
-                            if (!firstError) {
-                                firstError = error;
-                                abortController.abort();
-                            }
-                            return;
-                        }
-                    }
-                };
                 await Promise.all(
-                    Array.from(
-                        {
-                            length: Math.min(
-                                MAX_CONCURRENT_CHUNKS,
-                                queue.length
-                            ),
-                        },
-                        () => worker()
+                    partNumbers.map((partNumber) =>
+                        chunkBudget.run(async () => {
+                            if (firstError) return;
+                            try {
+                                await uploadOnePart(partNumber);
+                            } catch (error) {
+                                if (!firstError) {
+                                    firstError = error;
+                                    abortController.abort();
+                                }
+                            }
+                        })
                     )
                 );
                 if (firstError) throw firstError;
@@ -514,35 +621,12 @@ export function useUpload() {
                     fileId,
                     sessionBatchId
                 );
-                await invalidateFileList();
+                return 'continue';
             } catch (error) {
-                if (isAbortError(error)) {
-                    // A cancel tears everything down in cancelFile; the engine
-                    // just stands down. A pause keeps the record for resume.
-                    if (abortController.signal.reason === CANCEL) return;
-                    updateFile(uploadFile.id, { status: 'paused' });
-                    return;
-                }
-                // A network drop past the retry budget pauses for reconnect
-                // rather than failing the whole upload.
-                if (isNetworkError(error) && !navigatorIsOnline()) {
-                    updateFile(uploadFile.id, { status: 'paused' });
-                    return;
-                }
-                // Spread picks up the local fileId assigned after init and
-                // the threaded session batch — both fresher than the stale
-                // uploadFile closure.
-                reportUploadFailure(error, 'multipart', {
-                    ...uploadFile,
+                return handleUploadFailure(error, 'multipart', uploadFile, {
                     fileId,
                     batchId: sessionBatchId,
-                });
-                updateFile(uploadFile.id, {
-                    status: 'error',
-                    error:
-                        error instanceof Error
-                            ? error.message
-                            : 'Upload failed',
+                    signal: abortController.signal,
                 });
             }
         },
@@ -552,7 +636,7 @@ export function useUpload() {
             multipartListPartsMutation,
             multipartSignPartsMutation,
             updateFile,
-            invalidateFileList,
+            handleUploadFailure,
         ]
     );
 
@@ -564,8 +648,75 @@ export function useUpload() {
         [uploadMultipartFile, uploadSingleFile]
     );
 
+    // The pool re-reads the row here rather than trusting the queued snapshot:
+    // between admission and start the user may have removed the row, and a
+    // prior attempt may have left a fileId/uploadId worth resuming from. Only
+    // the row's existence is checked, not its status — `filesRef` is assigned
+    // during render, so a just-issued "pending" hasn't committed yet.
+    const runQueued = useCallback(
+        async (item: QueuedUpload): Promise<FileRunOutcome> => {
+            const current = filesRef.current.find((f) => f.id === item.id);
+            if (!current?.file) return 'continue';
+            // A drop mid-wave pauses the files already in flight, but the pool
+            // keeps handing out the rest of the queue. Park them in `paused`
+            // alongside their siblings — the reconnect handler resumes the
+            // whole set — rather than spending a doomed presign on each and
+            // leaving a row in `error` that nothing comes back for.
+            if (!navigatorIsOnline()) {
+                updateFile(current.id, { status: 'paused' });
+                return 'continue';
+            }
+            return runUpload(current, item.batchId);
+        },
+        [runUpload, updateFile]
+    );
+
+    // Callbacks reach the pool through refs so it can be built once and outlive
+    // their re-creation — a pool rebuilt mid-wave would lose its in-flight set.
+    const runQueuedRef = useRef(runQueued);
+    runQueuedRef.current = runQueued;
+    const invalidateFileListRef = useRef(invalidateFileList);
+    invalidateFileListRef.current = invalidateFileList;
+
+    const poolRef = useRef<FilePool<QueuedUpload> | null>(null);
+    poolRef.current ??= createFilePool<QueuedUpload>({
+        maxConcurrent: MAX_CONCURRENT_FILES,
+        maxInFlightBytes: MAX_IN_FLIGHT_BYTES,
+        run: (item) => runQueuedRef.current(item),
+        // Once per drained wave, not once per file: four concurrent files
+        // would otherwise fire four refetch storms across three queries.
+        onDrained: () => invalidateFileListRef.current(),
+    });
+
+    // `isUploading` has several owners (the pool, quick-resume) and must not
+    // dip between files — the Upload button reads it, so a momentary false
+    // re-enables and re-labels it mid-wave.
+    const activeDriversRef = useRef(0);
+    const withUploadingState = useCallback(
+        async (work: () => Promise<void>): Promise<void> => {
+            activeDriversRef.current++;
+            setIsUploading(true);
+            try {
+                await work();
+            } finally {
+                activeDriversRef.current--;
+                if (activeDriversRef.current === 0) setIsUploading(false);
+            }
+        },
+        []
+    );
+
+    const drive = useCallback(
+        (items: QueuedUpload[]) =>
+            withUploadingState(() => poolRef.current!.enqueue(items)),
+        [withUploadingState]
+    );
+
     const processQueue = useCallback(async () => {
-        setIsUploading(true);
+        const pending = filesRef.current.filter(
+            (f) => f.status === 'pending' && f.file
+        );
+        if (pending.length === 0) return;
 
         // One batch per Upload click: every pending file in this pass joins
         // it, so a multi-file selection lands in a single upload_batches row.
@@ -575,10 +726,7 @@ export function useUpload() {
         let batchId: string | undefined;
         // Rows that already have a batch (retries, re-added resumables) keep
         // it, so only mint a session batch when some file still needs one.
-        const hasPending = filesRef.current.some(
-            (f) => f.status === 'pending' && f.file && !f.batchId
-        );
-        if (hasPending) {
+        if (pending.some((f) => !f.batchId)) {
             try {
                 ({ batchId } = await createBatchMutation.mutateAsync());
             } catch {
@@ -586,26 +734,18 @@ export function useUpload() {
             }
         }
 
-        for (const file of filesRef.current) {
-            if (file.status !== 'pending') continue;
+        // Retried/resumed rows keep their original batch; only rows without one
+        // join this session's batch. Written to the row for retry/persistence,
+        // but carried on the queue item too — the ref won't reflect this update
+        // until the next render commit.
+        const queued = pending.map((f) => {
+            const rowBatchId = f.batchId ?? batchId;
+            updateFile(f.id, { batchId: rowBatchId });
+            return toQueuedUpload(f, rowBatchId);
+        });
 
-            // Re-read from ref to get latest state (file may have been removed)
-            const current = filesRef.current.find((f) => f.id === file.id);
-            if (!current || current.status !== 'pending' || !current.file) {
-                continue;
-            }
-
-            // Retried/resumed rows keep their original batch; only rows
-            // without one join this session's batch. Written to the row for
-            // retry/persistence, but threaded to runUpload explicitly — the
-            // ref won't reflect this update until the next render commit.
-            const rowBatchId = current.batchId ?? batchId;
-            updateFile(current.id, { batchId: rowBatchId });
-            await runUpload(current, rowBatchId);
-        }
-
-        setIsUploading(false);
-    }, [runUpload, createBatchMutation, updateFile]);
+        await drive(queued);
+    }, [drive, createBatchMutation, updateFile]);
 
     // Surface interrupted uploads found in IndexedDB on mount as `resumable`
     // rows. Records that persisted a File System Access handle (and run on a
@@ -673,19 +813,11 @@ export function useUpload() {
             );
             if (paused.length === 0) return;
             toast.info('Back online — resuming upload');
-            void (async () => {
-                setIsUploading(true);
-                for (const f of paused) {
-                    const current = filesRef.current.find((x) => x.id === f.id);
-                    if (current?.status === 'paused' && current.file) {
-                        // runUpload, not uploadMultipartFile: a single-engine
-                        // upload paused by a network drop restarts through
-                        // its own engine.
-                        await runUpload(current);
-                    }
-                }
-                setIsUploading(false);
-            })();
+            // Back through the same pool, so a reconnect with twenty paused
+            // rows resumes them four at a time rather than all at once. Each
+            // row re-enters its own engine: a single-part upload paused by a
+            // drop restarts from byte zero, multipart resumes its parts.
+            void drive(paused.map((f) => toQueuedUpload(f)));
         };
         window.addEventListener('offline', onOffline);
         window.addEventListener('online', onOnline);
@@ -693,7 +825,7 @@ export function useUpload() {
             window.removeEventListener('offline', onOffline);
             window.removeEventListener('online', onOnline);
         };
-    }, [runUpload]);
+    }, [drive]);
 
     const addFiles = useCallback(async (picked: PickedFile[]) => {
         if (picked.length === 0) return;
@@ -835,33 +967,20 @@ export function useUpload() {
         setFiles([]);
     }, [abandonServerUpload]);
 
+    // Retry joins the live pool rather than waiting for it to empty: with
+    // several files in flight, a failed row's Retry is most often clicked while
+    // its siblings are still going.
     const retryFile = useCallback(
         (id: string) => {
+            const file = filesRef.current.find((f) => f.id === id);
+            if (!file?.file) return;
             updateFile(id, {
                 status: 'pending',
                 error: undefined,
             });
-            // If not currently uploading, start processing
-            if (!filesRef.current.some((f) => f.status === 'uploading')) {
-                const file = filesRef.current.find((f) => f.id === id);
-                if (file) {
-                    setIsUploading(true);
-                    const doRetry = async () => {
-                        const current = filesRef.current.find(
-                            (f) => f.id === id
-                        );
-                        if (!current || !current.file) {
-                            setIsUploading(false);
-                            return;
-                        }
-                        await runUpload(current);
-                        setIsUploading(false);
-                    };
-                    void doRetry();
-                }
-            }
+            void drive([toQueuedUpload(file)]);
         },
-        [updateFile, runUpload]
+        [updateFile, drive]
     );
 
     // Reopen interrupted uploads from their persisted handles and resume them
@@ -873,8 +992,7 @@ export function useUpload() {
     const resumeRows = useCallback(
         async (rows: InternalUploadFile[]) => {
             if (rows.length === 0) return;
-            setIsUploading(true);
-            try {
+            await withUploadingState(async () => {
                 const reopened = await Promise.all(
                     rows.map(async (row) => ({
                         row,
@@ -905,12 +1023,19 @@ export function useUpload() {
                             ? "Couldn't reopen the files — re-add them to resume"
                             : "Couldn't reopen the file — re-add it to resume"
                     );
+                    return;
                 }
-            } finally {
-                setIsUploading(false);
-            }
+                // The engines no longer refresh the list per file — the pool
+                // does it once per wave, and this path bypasses the pool.
+                await invalidateFileList();
+            });
         },
-        [updateFile, uploadMultipartFile]
+        [
+            updateFile,
+            uploadMultipartFile,
+            withUploadingState,
+            invalidateFileList,
+        ]
     );
 
     const resumeWithHandle = useCallback(

@@ -1,19 +1,24 @@
 /**
  * Upload queue interactions, run as a dedicated user (provisioned by the
- * `dedicatedUserConfig` fixture). Mostly client-side: the retry test intercepts
- * and aborts `files.upload`, so it creates nothing.
+ * `dedicatedUserConfig` fixture). The retry test intercepts and aborts
+ * `files.upload`, so it creates nothing.
  *
- * The cancel-cleanup test is the exception — it lets `files.upload` through to
- * get a real `uploading` row, which is the thing the cleanup has to find. It
- * stalls the presigned PUT instead, so no bytes ever reach S3, and clears its
- * rows on the way out. The real end-to-end upload still lives in the validate
- * tier (upload-batches-and-quota.spec.ts).
+ * The rest write real rows. The cancel-cleanup test needs an `uploading` row
+ * for the cleanup to find, and the concurrency tests run whole presign → PUT →
+ * confirm chains so they can assert on `files`/`upload_batches`. All of them
+ * answer the presigned PUT locally (`stubS3Puts`), so no bytes ever reach S3,
+ * and the shared teardown resets the user. The real end-to-end upload against a
+ * live bucket still lives in the validate tier
+ * (upload-batches-and-quota.spec.ts).
  */
-import { deleteUserData } from '@nexus/db/test-db';
+import { resetUserData, insertStorageUsage } from '@nexus/db/test-db';
+import { PLAN_LIMITS, SOFT_LIMIT_MULTIPLIER } from '@nexus/db/plans';
+import { MAX_CONCURRENT_FILES } from '@/lib/upload/limits';
 import { test, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
 import { interceptTrpcCalls } from '../helpers/trpc';
 import { seedResumableUpload } from '../helpers/uploadStore';
+import { makeTextFiles, stubS3Puts } from '../helpers/uploadStubs';
 
 const UPLOAD_USER: TestUser = {
     email: 'upload-flows-e2e@test.local',
@@ -37,12 +42,12 @@ const FILE_B = {
 test.describe.configure({ mode: 'serial' });
 test.use({ dedicatedUserConfig: { user: UPLOAD_USER, statePath: STATE_PATH } });
 
-// Only the cancel-cleanup test writes rows, but the teardown belongs here
-// rather than at the end of that test body: it asserts on an exact status
-// array, so a failure that skipped cleanup would leave rows behind and fail
-// every later run of this serial spec for the wrong reason.
+// The teardown belongs here rather than at the end of the test bodies that
+// need it: the cancel-cleanup test asserts on an exact status array, so a
+// failure that skipped cleanup would leave rows behind and fail every later run
+// of this serial spec for the wrong reason.
 test.afterEach(async ({ db, seedUserId }) => {
-    await deleteUserData(db, seedUserId);
+    await resetUserData(db, seedUserId);
 });
 
 test(
@@ -219,14 +224,179 @@ test(
     }
 );
 
+// Uploads used to run strictly one at a time (#340): the queue awaited each
+// file's whole presign → PUT → confirm chain before starting the next, so a
+// 20-file selection spent its wall clock with one request in flight.
+test(
+    'a multi-file wave uploads concurrently, bounded by the pool size',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-concurrent-wave'] },
+    async ({ page, db, seedUserId }) => {
+        const puts = await stubS3Puts(page, { holdMs: 400 });
+        const files = makeTextFiles(MAX_CONCURRENT_FILES * 2, 'queue-wave');
+
+        await page.goto(PAGE_URL);
+        await page.setInputFiles('input[type="file"]', files);
+        await page
+            .getByRole('button', { name: `Upload ${files.length} files` })
+            .click();
+
+        // The button state belongs to the wave, not to each file: once the
+        // first file lands there are still four in flight and three queued, and
+        // an "Uploading…" that dipped between files would re-render the Upload
+        // button here.
+        await expect(
+            page.getByText('Uploaded', { exact: true }).first()
+        ).toBeVisible({ timeout: 30_000 });
+        await expect(
+            page.getByRole('button', { name: /^Upload \d+ files?$/ })
+        ).toHaveCount(0);
+
+        await expect(page.getByText('Uploaded', { exact: true })).toHaveCount(
+            files.length,
+            { timeout: 30_000 }
+        );
+
+        // More than one PUT open at a time (the whole point), never more than
+        // the pool allows (which also keeps every mix inside the 6-connection
+        // S3 budget, since a single-part file holds one connection).
+        expect(puts.total).toBe(files.length);
+        expect(puts.peak).toBe(MAX_CONCURRENT_FILES);
+
+        // Concurrency must not fragment the batch: still one row per click,
+        // still one shared key prefix.
+        const batches = await db.query.uploadBatches.findMany({
+            where: (b, { eq }) => eq(b.userId, seedUserId),
+        });
+        expect(batches).toHaveLength(1);
+        const rows = await db.query.files.findMany({
+            where: (f, { eq }) => eq(f.userId, seedUserId),
+        });
+        expect(rows).toHaveLength(files.length);
+        for (const row of rows) {
+            expect(row.status).toBe('available');
+            expect(row.batchId).toBe(batches[0].id);
+            expect(row.s3Key).toBe(
+                `${seedUserId}/${batches[0].id}/${row.id}/${row.name}`
+            );
+        }
+    }
+);
+
+// The chunk pool inside a single file is deliberately fail-fast — its siblings
+// are parts of one object. A *file* pool has to be the opposite.
+test(
+    'one file failing mid-wave leaves its siblings running',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-failure-isolation'] },
+    async ({ page }) => {
+        const files = makeTextFiles(MAX_CONCURRENT_FILES + 1, 'queue-isolate');
+        const doomed = files[1].name;
+        await stubS3Puts(page, { holdMs: 200, failFor: doomed });
+
+        await page.goto(PAGE_URL);
+        await page.setInputFiles('input[type="file"]', files);
+        await page
+            .getByRole('button', { name: `Upload ${files.length} files` })
+            .click();
+
+        // The failed row keeps its own error state and Retry affordance...
+        await expect(
+            page.getByRole('button', { name: 'Retry upload' })
+        ).toHaveCount(1, { timeout: 30_000 });
+        // ...and every other file in the wave still finishes.
+        await expect(page.getByText('Uploaded', { exact: true })).toHaveCount(
+            files.length - 1,
+            { timeout: 30_000 }
+        );
+    }
+);
+
+test(
+    'going offline mid-wave pauses the queue and reconnect drains it',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-offline-resume-wave'] },
+    async ({ page, context }) => {
+        // Long enough that the offline switch lands while PUTs are open.
+        const puts = await stubS3Puts(page, { holdMs: 1500 });
+        const files = makeTextFiles(MAX_CONCURRENT_FILES * 2, 'queue-offline');
+
+        await page.goto(PAGE_URL);
+        await page.setInputFiles('input[type="file"]', files);
+        await page
+            .getByRole('button', { name: `Upload ${files.length} files` })
+            .click();
+
+        await expect
+            .poll(() => puts.inFlight, { timeout: 15_000 })
+            .toBeGreaterThan(0);
+        await context.setOffline(true);
+
+        // Every unfinished row parks — the ones in flight and the ones still
+        // queued behind them — so reconnect has a single set to resume.
+        await expect(
+            page.getByText('Paused — waiting for your connection').first()
+        ).toBeVisible({ timeout: 15_000 });
+
+        await context.setOffline(false);
+
+        await expect(page.getByText('Uploaded', { exact: true })).toHaveCount(
+            files.length,
+            { timeout: 45_000 }
+        );
+        // The resumed wave is still pool-bound, not a stampede of everything
+        // that was paused.
+        expect(puts.peak).toBeLessThanOrEqual(MAX_CONCURRENT_FILES);
+    }
+);
+
+// Quota is the one failure that says something about the account rather than
+// the file, so it's the one case where the pool gives up on the rest.
+test(
+    'the first quota rejection halts the wave',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-quota-halt'] },
+    async ({ page, db, seedUserId }) => {
+        // Park usage at 105% of starter: any positive size is over the cap.
+        await insertStorageUsage(db, {
+            userId: seedUserId,
+            usedBytes: Math.floor(PLAN_LIMITS.starter * SOFT_LIMIT_MULTIPLIER),
+            fileCount: 1,
+        });
+        const files = makeTextFiles(MAX_CONCURRENT_FILES * 2, 'queue-quota');
+
+        await page.goto(PAGE_URL);
+        await page.setInputFiles('input[type="file"]', files);
+        await page
+            .getByRole('button', { name: `Upload ${files.length} files` })
+            .click();
+
+        // Only the files already admitted attempt and fail...
+        await expect(
+            page.getByRole('button', { name: 'Retry upload' })
+        ).toHaveCount(MAX_CONCURRENT_FILES, { timeout: 30_000 });
+        // ...the rest are never started, so they stay queued.
+        await expect(
+            page.getByRole('button', {
+                name: `Upload ${MAX_CONCURRENT_FILES} files`,
+            })
+        ).toBeVisible();
+
+        // One message for the wave, not one per rejected file.
+        await expect(page.locator('[data-sonner-toast]')).toHaveCount(1);
+
+        // The quota check runs before anything is minted, so nothing landed.
+        const rows = await db.query.files.findMany({
+            where: (f, { eq }) => eq(f.userId, seedUserId),
+        });
+        expect(rows).toHaveLength(0);
+    }
+);
+
 test(
     'cancelling an in-flight upload strands no uploading row',
     { tag: ['@page:/dashboard/upload', '@uc:upload-cancel-cleanup'] },
     async ({ page, db, seedUserId }) => {
         // Stall the presigned PUT rather than failing it: the upload stays in
         // flight (so Cancel is the live affordance) and no object is ever
-        // written. Deliberately never settled — teardown discards it.
-        await page.route(/amazonaws\.com/, () => {});
+        // written.
+        await stubS3Puts(page, { stall: true });
 
         const readStatuses = async () =>
             (

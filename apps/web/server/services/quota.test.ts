@@ -6,7 +6,12 @@ import {
     type MockDbMocks,
     TEST_USER_ID,
 } from '@nexus/db/testing';
+import { SOFT_LIMIT_MULTIPLIER } from '@nexus/db/plans';
 import { QuotaExceededError, TrialExpiredError } from '@/server/errors';
+import {
+    MAX_CONCURRENT_FILES,
+    MAX_IN_FLIGHT_BYTES,
+} from '@/lib/upload/limits';
 import { PLAN_LIMITS } from './constants';
 import { quotaService, type QuotaContext } from './quota';
 
@@ -26,7 +31,7 @@ describe('assertUploadAllowed', () => {
     describe('without a subscription', () => {
         it('falls back to the starter plan limit', () => {
             // Push past the 105% soft cap to force rejection.
-            const overSoftCap = Math.floor(PLAN_LIMITS.starter * 1.05) + oneGB;
+            const overSoftCap = Math.floor(PLAN_LIMITS.starter * SOFT_LIMIT_MULTIPLIER) + oneGB;
             expect(() =>
                 assertUploadAllowed(ctx({ currentUsage: overSoftCap }), 1, NOW)
             ).toThrow(QuotaExceededError);
@@ -330,5 +335,72 @@ describe('checkQuota', () => {
                 undefined
             )
         ).rejects.toThrow(QuotaExceededError);
+    });
+});
+
+/**
+ * Uploads run several files at once (#340), so every file in a wave pre-checks
+ * against the same committed baseline — none of them has confirmed yet. That is
+ * the case `SOFT_LIMIT_MULTIPLIER` exists for, and what bounds the overshoot is
+ * the summed bytes of the wave, which the client's upload pool caps at
+ * `MAX_IN_FLIGHT_BYTES`. These tests pin the arithmetic that makes the two
+ * numbers compatible, against the real constants — raising either one on its
+ * own should turn this suite red.
+ */
+describe('concurrent admission overshoot bound', () => {
+    const SMALLEST_LIMIT = PLAN_LIMITS.starter;
+    const slackBytes =
+        Math.floor(SMALLEST_LIMIT * SOFT_LIMIT_MULTIPLIER) - SMALLEST_LIMIT;
+
+    let db: MockDb;
+    let mocks: MockDbMocks;
+
+    beforeEach(() => {
+        const mockDb = createMockDb();
+        db = mockDb.db;
+        mocks = mockDb.mocks;
+    });
+
+    it('admits a whole wave checked against one baseline, landing inside the soft cap', async () => {
+        // Worst case: usage already sitting exactly on the plan limit, so every
+        // byte the wave adds comes out of the slack band.
+        mocks.storageUsage.findFirst.mockResolvedValue(
+            createStorageUsageFixture({
+                usedBytes: SMALLEST_LIMIT,
+                fileCount: 1000,
+            })
+        );
+        const perFile = MAX_IN_FLIGHT_BYTES / MAX_CONCURRENT_FILES;
+
+        const results = await Promise.all(
+            Array.from({ length: MAX_CONCURRENT_FILES }, () =>
+                checkQuota(db, TEST_USER_ID, perFile, undefined)
+            )
+        );
+
+        // Every file in the wave passes — none of them can see the others'
+        // bytes — and the pool's ceiling is what keeps all of them landing
+        // inside the slack band the soft cap opens.
+        expect(results.every((r) => r.allowed)).toBe(true);
+        expect(MAX_IN_FLIGHT_BYTES).toBeLessThan(slackBytes);
+    });
+
+    it('still rejects a wave whose files each breach the soft cap', async () => {
+        mocks.storageUsage.findFirst.mockResolvedValue(
+            createStorageUsageFixture({
+                usedBytes: SMALLEST_LIMIT,
+                fileCount: 1000,
+            })
+        );
+
+        const attempts = await Promise.allSettled(
+            Array.from({ length: MAX_CONCURRENT_FILES }, () =>
+                checkQuota(db, TEST_USER_ID, slackBytes + oneGB, undefined)
+            )
+        );
+
+        // The soft cap is a bound, not an open door: concurrency doesn't buy a
+        // file admission it wouldn't get on its own.
+        expect(attempts.every((a) => a.status === 'rejected')).toBe(true);
     });
 });

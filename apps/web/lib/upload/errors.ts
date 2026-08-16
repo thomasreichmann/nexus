@@ -1,7 +1,9 @@
 import * as Sentry from '@sentry/nextjs';
 import { TRPCClientError } from '@trpc/client';
 
+import { DOMAIN_ERROR_CODES } from '@/lib/errors/codes';
 import { UploadHttpError, UploadNetworkError } from '@/lib/http/xhr';
+import { getDomainError } from '@/lib/trpc/get-domain-error';
 import { captureEvent } from '@/lib/posthog/client';
 import { PostHogEvent } from '@/lib/posthog/events';
 
@@ -24,6 +26,18 @@ export function isNetworkError(error: unknown): boolean {
 /** The upload was aborted (pause or cancel), not a real failure. */
 export function isAbortError(error: unknown): boolean {
     return error instanceof DOMException && error.name === 'AbortError';
+}
+
+/**
+ * The server rejected the upload because the account is out of storage. Unlike
+ * every other failure this one is about the account, not the file, so there is
+ * nothing to gain from letting the rest of a queued wave attempt and fail too.
+ */
+export function isQuotaExceededError(error: unknown): boolean {
+    return (
+        error instanceof TRPCClientError &&
+        getDomainError(error)?.code === DOMAIN_ERROR_CODES.QUOTA_EXCEEDED
+    );
 }
 
 /** Which upload path moved the bytes. */
