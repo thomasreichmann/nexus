@@ -7,5 +7,9 @@
 .env.*.local
 apps/web/.env.local
 .vercel
+# Never copy the per-worktree e2e DB pointer: it names the SOURCE checkout's
+# database, so sharing it would undo the isolation. The SessionStart hook
+# regenerates it per worktree (.claude/hooks/worktree-setup.sh).
+!apps/web/.env.e2e.local
 # Playwright auth state — skips the re-login `setup` project in a fresh worktree.
 **/e2e/.auth

@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { config as loadEnv } from 'dotenv';
 // E2E runs its own production server on an ephemeral free port (see the module
 // for why), so it never collides with a running `pnpm dev` on 3000.
 import { E2E_PORT, E2E_BASE_URL } from './e2e/helpers/server-url';
@@ -6,14 +7,32 @@ import { WEBSERVER_LOG } from './e2e/helpers/webserver-log';
 
 const BASE_URL = E2E_BASE_URL;
 
-// Per-worktree e2e database, set by .claude/hooks/worktree-setup.sh. Assigning
-// it here — before any test module or the webServer child loads — is what makes
-// it stick everywhere: e2e/helpers/connection.ts reads process.env.DATABASE_URL,
-// and dotenv/Next both refuse to override a variable that is already set, so
-// .env.local's shared Supabase URL loses to this. Unset (CI, main checkout) is
-// the old behaviour: everything keeps using DATABASE_URL as before.
+// Per-worktree e2e database. A provisioner (locally: .claude/hooks/
+// worktree-setup.sh) may drop a git-ignored .env.e2e.local next to this
+// config; loading it feeds the E2E_DATABASE_URL contract below. The carrier is
+// a file rather than session env because the env relay broke silently once
+// already (#379: set but never exported) — a file in the checkout is
+// worktree-scoped by construction and works from any terminal. dotenv never
+// overrides, so an explicitly exported E2E_DATABASE_URL still wins.
+loadEnv({ path: '.env.e2e.local', quiet: true });
+
+// Assigning DATABASE_URL here — before any test module or the webServer child
+// loads — is what makes it stick everywhere: e2e/helpers/connection.ts reads
+// process.env.DATABASE_URL, and dotenv/Next both refuse to override a variable
+// that is already set, so .env.local's shared Supabase URL loses to this.
+// Unset (CI, main checkout) is the old behaviour: everything keeps using
+// DATABASE_URL as before.
 if (process.env.E2E_DATABASE_URL) {
     process.env.DATABASE_URL = process.env.E2E_DATABASE_URL;
+} else if (!process.env.CI && !process.argv.includes('--list')) {
+    // Every local run should know when isolation is off — the last silent
+    // fallback took a four-day detour through a pgbouncer hang to notice
+    // (#379). CI legitimately shares the dev DB; --list is config evaluation
+    // without a run (e2e:coverage), where this would be noise.
+    console.warn(
+        '[e2e] E2E_DATABASE_URL is not set — running against the shared ' +
+            'DATABASE_URL; destructive per-user resets are skipped.'
+    );
 }
 
 const adminChrome = {
