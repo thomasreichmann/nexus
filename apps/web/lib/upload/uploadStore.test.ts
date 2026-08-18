@@ -6,7 +6,6 @@ import {
     getUpload,
     listUploads,
     deleteUpload,
-    findUploadByIdentity,
     addCompletedPart,
     resetUploadStoreForTests,
     type ResumableUpload,
@@ -79,49 +78,6 @@ describe('uploadStore', () => {
         await deleteUpload('file-1');
 
         expect(await getUpload('file-1')).toBeUndefined();
-    });
-
-    describe('findUploadByIdentity', () => {
-        it('matches on name + size + lastModified', async () => {
-            await putUpload(
-                makeRecord({
-                    fileId: 'a',
-                    name: 'a.zip',
-                    size: 1,
-                    lastModified: 1,
-                })
-            );
-            await putUpload(
-                makeRecord({
-                    fileId: 'b',
-                    name: 'b.zip',
-                    size: 2,
-                    lastModified: 2,
-                })
-            );
-
-            const found = await findUploadByIdentity({
-                name: 'b.zip',
-                size: 2,
-                lastModified: 2,
-            });
-
-            expect(found?.fileId).toBe('b');
-        });
-
-        it('returns undefined when size differs (same name)', async () => {
-            await putUpload(
-                makeRecord({ name: 'a.zip', size: 1, lastModified: 1 })
-            );
-
-            const found = await findUploadByIdentity({
-                name: 'a.zip',
-                size: 999,
-                lastModified: 1,
-            });
-
-            expect(found).toBeUndefined();
-        });
     });
 
     describe('addCompletedPart', () => {

@@ -30,6 +30,7 @@ import {
     makePngFile,
     makeTextFiles,
     stubS3Puts,
+    writeFolderTree,
     writeLargeFiles,
 } from '../helpers/uploadStubs';
 
@@ -69,7 +70,10 @@ test(
     async ({ page, consoleErrors }) => {
         await page.goto(PAGE_URL);
 
-        await page.setInputFiles('input[type="file"]', [FILE_A, FILE_B]);
+        await page.setInputFiles('[data-testid="file-input"]', [
+            FILE_A,
+            FILE_B,
+        ]);
 
         await expect(page.getByText('Selected Files (2)')).toBeVisible();
         // fileName(): queue rows render names through MiddleTruncateName,
@@ -94,13 +98,50 @@ test(
     }
 );
 
+// A shoot is a folder (#388): selecting one queues the whole directory —
+// nested files included, dotfile litter skipped. This drives the hidden
+// `webkitdirectory` input directly; the native pickers and the drop-walk
+// recursion can't be driven synthetically and are covered by unit tests.
+test(
+    'selecting a folder queues its files — nested included, hidden skipped',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-add-folder-queue'] },
+    async ({ page, consoleErrors }) => {
+        const tree = await writeFolderTree({
+            name: 'shoot-2026-08-18',
+            files: {
+                'IMG_0001.txt': 'frame one\n',
+                'day2/IMG_0002.txt': 'frame two\n',
+                '.DS_Store': 'finder litter\n',
+            },
+        });
+        try {
+            await page.goto(PAGE_URL);
+            await page.setInputFiles('[data-testid="folder-input"]', tree.dir);
+
+            await expect(page.getByText('Selected Files (2)')).toBeVisible();
+            await expect(fileName(page, 'IMG_0001.txt')).toBeVisible();
+            await expect(fileName(page, 'IMG_0002.txt')).toBeVisible();
+            await expect(
+                page.getByRole('button', { name: 'Upload 2 files' })
+            ).toBeVisible();
+
+            expect(consoleErrors).toEqual([]);
+        } finally {
+            await tree.cleanup();
+        }
+    }
+);
+
 test(
     'clear-all empties the pending queue',
     { tag: ['@page:/dashboard/upload', '@uc:upload-clear-queue'] },
     async ({ page }) => {
         await page.goto(PAGE_URL);
 
-        await page.setInputFiles('input[type="file"]', [FILE_A, FILE_B]);
+        await page.setInputFiles('[data-testid="file-input"]', [
+            FILE_A,
+            FILE_B,
+        ]);
         await expect(page.getByText('Selected Files (2)')).toBeVisible();
 
         await page.getByRole('button', { name: 'Clear all' }).click();
@@ -128,7 +169,7 @@ test(
         const files = [image, ...makeTextFiles(49, 'queue-large')];
 
         await page.goto(PAGE_URL);
-        await page.setInputFiles('input[type="file"]', files);
+        await page.setInputFiles('[data-testid="file-input"]', files);
 
         await expect(page.getByText('Selected Files (50)')).toBeVisible();
         await expect(
@@ -181,7 +222,9 @@ test(
     async ({ page, consoleErrors }) => {
         await page.goto(PAGE_URL);
         // Wait for the app to open the IndexedDB store before seeding it.
-        await expect(page.getByText('Drop files here to upload')).toBeVisible();
+        await expect(
+            page.getByText('Drop files or folders here to upload')
+        ).toBeVisible();
 
         // Seed a half-finished multipart upload (5 of 10 parts) with no persisted
         // handle, as if a prior session had been interrupted before this feature.
@@ -214,7 +257,9 @@ test(
     { tag: ['@page:/dashboard/upload', '@uc:upload-clear-keeps-resumable'] },
     async ({ page, consoleErrors }) => {
         await page.goto(PAGE_URL);
-        await expect(page.getByText('Drop files here to upload')).toBeVisible();
+        await expect(
+            page.getByText('Drop files or folders here to upload')
+        ).toBeVisible();
 
         await seedResumableUpload(page);
         await page.reload();
@@ -245,7 +290,9 @@ test(
     { tag: ['@page:/dashboard/upload', '@uc:upload-cancel-guard'] },
     async ({ page }) => {
         await page.goto(PAGE_URL);
-        await expect(page.getByText('Drop files here to upload')).toBeVisible();
+        await expect(
+            page.getByText('Drop files or folders here to upload')
+        ).toBeVisible();
 
         await seedResumableUpload(page);
         await page.reload();
@@ -273,7 +320,9 @@ test(
         // races the store and resurrects the upload under load.
         await expect.poll(() => readResumableUploadIds(page)).toEqual([]);
         await page.reload();
-        await expect(page.getByText('Drop files here to upload')).toBeVisible();
+        await expect(
+            page.getByText('Drop files or folders here to upload')
+        ).toBeVisible();
         await expect(fileName(page, 'big-shoot.zip')).toBeHidden();
     }
 );
@@ -283,7 +332,9 @@ test(
     { tag: ['@page:/dashboard/upload', '@uc:upload-resume-one-click'] },
     async ({ page, consoleErrors }) => {
         await page.goto(PAGE_URL);
-        await expect(page.getByText('Drop files here to upload')).toBeVisible();
+        await expect(
+            page.getByText('Drop files or folders here to upload')
+        ).toBeVisible();
 
         // Seed an interrupted upload that captured a File System Access handle.
         // A plain stand-in is enough for the surfacing: the app keys the
@@ -330,7 +381,7 @@ test(
 
         await page.goto(PAGE_URL);
 
-        await page.setInputFiles('input[type="file"]', [FILE_A]);
+        await page.setInputFiles('[data-testid="file-input"]', [FILE_A]);
         await page.getByRole('button', { name: 'Upload 1 file' }).click();
 
         // First attempt fails → inline error + retry affordance.
@@ -361,7 +412,7 @@ test(
         const files = makeTextFiles(MAX_CONCURRENT_FILES * 2, 'queue-wave');
 
         await page.goto(PAGE_URL);
-        await page.setInputFiles('input[type="file"]', files);
+        await page.setInputFiles('[data-testid="file-input"]', files);
         await page
             .getByRole('button', { name: `Upload ${files.length} files` })
             .click();
@@ -445,7 +496,7 @@ test(
 
         try {
             await page.goto(PAGE_URL);
-            await page.setInputFiles('input[type="file"]', large.paths);
+            await page.setInputFiles('[data-testid="file-input"]', large.paths);
             await page
                 .getByRole('button', {
                     name: `Upload ${MAX_CONCURRENT_FILES} files`,
@@ -485,7 +536,7 @@ test(
         await stubS3Puts(page, { holdMs: 200, failFor: doomed });
 
         await page.goto(PAGE_URL);
-        await page.setInputFiles('input[type="file"]', files);
+        await page.setInputFiles('[data-testid="file-input"]', files);
         await page
             .getByRole('button', { name: `Upload ${files.length} files` })
             .click();
@@ -531,7 +582,7 @@ test(
         const late = makeTextFiles(2, 'queue-late');
 
         await page.goto(PAGE_URL);
-        await page.setInputFiles('input[type="file"]', first);
+        await page.setInputFiles('[data-testid="file-input"]', first);
         await page
             .getByRole('button', { name: `Upload ${first.length} files` })
             .click();
@@ -557,7 +608,7 @@ test(
 
         // Adding files mid-wave re-arms the Upload button for just the new
         // rows; clicking it joins the wave already in flight.
-        await page.setInputFiles('input[type="file"]', late);
+        await page.setInputFiles('[data-testid="file-input"]', late);
         await page.getByRole('button', { name: 'Upload 2 files' }).click();
 
         await expect(page.getByText('Uploaded', { exact: true })).toHaveCount(
@@ -578,7 +629,7 @@ test(
         const files = makeTextFiles(MAX_CONCURRENT_FILES * 2, 'queue-offline');
 
         await page.goto(PAGE_URL);
-        await page.setInputFiles('input[type="file"]', files);
+        await page.setInputFiles('[data-testid="file-input"]', files);
         await page
             .getByRole('button', { name: `Upload ${files.length} files` })
             .click();
@@ -623,7 +674,7 @@ test(
         // fetch can otherwise lose the race to the insert, and the pre-flight
         // would see the parked row and disable Upload.
         await expect(page.getByText('0 Bytes of')).toBeVisible();
-        await page.setInputFiles('input[type="file"]', files);
+        await page.setInputFiles('[data-testid="file-input"]', files);
         await insertStorageUsage(db, {
             userId: seedUserId,
             usedBytes: Math.floor(PLAN_LIMITS.starter * SOFT_LIMIT_MULTIPLIER),
@@ -675,7 +726,7 @@ test(
         });
 
         await page.goto(PAGE_URL);
-        await page.setInputFiles('input[type="file"]', [FILE_A]);
+        await page.setInputFiles('[data-testid="file-input"]', [FILE_A]);
 
         await expect(page.getByText(/Not enough storage —/)).toBeVisible();
         await expect(
@@ -701,7 +752,7 @@ test(
         });
 
         await page.goto(PAGE_URL);
-        await page.setInputFiles('input[type="file"]', [FILE_A]);
+        await page.setInputFiles('[data-testid="file-input"]', [FILE_A]);
 
         await expect(
             page.getByText('This upload will put you over your storage limit.')
@@ -735,7 +786,7 @@ test(
             ).map((f) => f.status);
 
         await page.goto(PAGE_URL);
-        await page.setInputFiles('input[type="file"]', [FILE_A]);
+        await page.setInputFiles('[data-testid="file-input"]', [FILE_A]);
         await page.getByRole('button', { name: 'Upload 1 file' }).click();
 
         // Cancel only cleans up what `files.upload` already minted, so wait for

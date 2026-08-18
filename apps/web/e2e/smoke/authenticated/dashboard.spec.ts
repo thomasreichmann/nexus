@@ -46,7 +46,7 @@ test.describe('Dashboard Pages', () => {
                 page.getByRole('heading', { name: 'Upload Files', exact: true })
             ).toBeVisible();
             await expect(
-                page.getByText('Drop files here to upload')
+                page.getByText('Drop files or folders here to upload')
             ).toBeVisible();
 
             expect(consoleErrors).toEqual([]);

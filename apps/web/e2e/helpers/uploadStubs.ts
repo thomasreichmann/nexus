@@ -161,3 +161,31 @@ export async function writeLargeFiles(options: {
     }
     return { paths, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
+
+/**
+ * A real on-disk directory tree for driving the folder input
+ * (`setInputFiles` accepts a directory path for `webkitdirectory` inputs and
+ * enumerates it recursively, setting each file's `webkitRelativePath`).
+ * Keys are paths relative to the root, values the file contents. Returns the
+ * root directory path and a cleanup to call once the test is done.
+ */
+export async function writeFolderTree(options: {
+    name: string;
+    files: Record<string, string>;
+}): Promise<{ dir: string; cleanup: () => Promise<void> }> {
+    const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join, dirname } = await import('node:path');
+
+    const parent = await mkdtemp(join(tmpdir(), 'nexus-e2e-folder-'));
+    const dir = join(parent, options.name);
+    for (const [relativePath, content] of Object.entries(options.files)) {
+        const path = join(dir, relativePath);
+        await mkdir(dirname(path), { recursive: true });
+        await writeFile(path, content);
+    }
+    return {
+        dir,
+        cleanup: () => rm(parent, { recursive: true, force: true }),
+    };
+}

@@ -20,10 +20,23 @@ interface OpenFilePickerOptions {
     excludeAcceptAllOption?: boolean;
 }
 
+interface DirectoryPickerOptions {
+    mode?: 'read' | 'readwrite';
+}
+
 interface Window {
     showOpenFilePicker(
         options?: OpenFilePickerOptions
     ): Promise<FileSystemFileHandle[]>;
+    showDirectoryPicker(
+        options?: DirectoryPickerOptions
+    ): Promise<FileSystemDirectoryHandle>;
+}
+
+interface FileSystemDirectoryHandle {
+    values(): AsyncIterableIterator<
+        FileSystemFileHandle | FileSystemDirectoryHandle
+    >;
 }
 
 interface DataTransferItem {
