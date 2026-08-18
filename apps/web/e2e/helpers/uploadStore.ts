@@ -72,3 +72,33 @@ export async function seedResumableUpload(
         db.close();
     }, record);
 }
+
+/**
+ * The fileIds the resume store currently holds.
+ *
+ * Cancelling a row deletes its record fire-and-forget (`abandonServerUpload`
+ * in `useUpload`), so the row leaves the UI before the delete lands. A test
+ * that reloads to prove the upload is really gone has to wait on the store
+ * itself — an empty queue is not evidence the record went with it.
+ */
+export async function readResumableUploadIds(page: Page): Promise<string[]> {
+    return page.evaluate(async () => {
+        const open = indexedDB.open('nexus-uploads', 1);
+        const db: IDBDatabase = await new Promise((res, rej) => {
+            open.onupgradeneeded = () =>
+                open.result.createObjectStore('uploads', { keyPath: 'fileId' });
+            open.onsuccess = () => res(open.result);
+            open.onerror = () => rej(open.error);
+        });
+        const keys = await new Promise<IDBValidKey[]>((res, rej) => {
+            const request = db
+                .transaction('uploads', 'readonly')
+                .objectStore('uploads')
+                .getAllKeys();
+            request.onsuccess = () => res(request.result);
+            request.onerror = () => rej(request.error);
+        });
+        db.close();
+        return keys.map(String);
+    });
+}

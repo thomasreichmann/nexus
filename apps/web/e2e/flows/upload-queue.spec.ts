@@ -22,7 +22,10 @@ import { test, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
 import { fileName } from '../helpers/table';
 import { interceptTrpcCalls } from '../helpers/trpc';
-import { seedResumableUpload } from '../helpers/uploadStore';
+import {
+    seedResumableUpload,
+    readResumableUploadIds,
+} from '../helpers/uploadStore';
 import {
     makePngFile,
     makeTextFiles,
@@ -265,6 +268,10 @@ test(
         await page.getByRole('button', { name: 'Cancel upload' }).click();
         await dialog.getByRole('button', { name: 'Cancel upload' }).click();
         await expect(page.getByText(/Selected Files/)).toBeHidden();
+        // The row leaves the list before its resume record is deleted — that
+        // delete is fire-and-forget — so reloading on the empty queue alone
+        // races the store and resurrects the upload under load.
+        await expect.poll(() => readResumableUploadIds(page)).toEqual([]);
         await page.reload();
         await expect(page.getByText('Drop files here to upload')).toBeVisible();
         await expect(fileName(page, 'big-shoot.zip')).toBeHidden();
