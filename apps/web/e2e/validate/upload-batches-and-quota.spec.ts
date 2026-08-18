@@ -72,7 +72,7 @@ test.describe('upload batches + storage quota', () => {
             const fileBuf = Buffer.from('hello upload batches validate\n');
             const fileName = `validate-${Date.now()}.txt`;
 
-            await page.setInputFiles('input[type="file"]', {
+            await page.setInputFiles('[data-testid="file-input"]', {
                 name: fileName,
                 mimeType: 'text/plain',
                 buffer: fileBuf,
@@ -205,7 +205,10 @@ test.describe('upload batches + storage quota', () => {
                 `validate-multi-${Date.now()}`
             );
 
-            await page.setInputFiles('input[type="file"]', filesToUpload);
+            await page.setInputFiles(
+                '[data-testid="file-input"]',
+                filesToUpload
+            );
             await expect(
                 page.getByText(`Selected Files (${filesToUpload.length})`)
             ).toBeVisible();
@@ -283,7 +286,7 @@ test.describe('upload batches + storage quota', () => {
             ).toBeVisible();
 
             const rejectedName = `quota-rejected-${Date.now()}.txt`;
-            await page.setInputFiles('input[type="file"]', {
+            await page.setInputFiles('[data-testid="file-input"]', {
                 name: rejectedName,
                 mimeType: 'text/plain',
                 buffer: Buffer.from('over-quota attempt\n'),

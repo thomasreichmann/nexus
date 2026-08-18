@@ -89,24 +89,6 @@ export async function deleteUpload(fileId: string): Promise<void> {
 }
 
 /**
- * Find a persisted upload matching a re-added file's identity. In-progress
- * uploads are few, so a full scan is fine and avoids a composite-key index.
- */
-export async function findUploadByIdentity(identity: {
-    name: string;
-    size: number;
-    lastModified: number;
-}): Promise<ResumableUpload | undefined> {
-    const all = await listUploads();
-    return all.find(
-        (u) =>
-            u.name === identity.name &&
-            u.size === identity.size &&
-            u.lastModified === identity.lastModified
-    );
-}
-
-/**
  * Record a completed part. Read-modify-write inside a single readwrite
  * transaction; IndexedDB serializes overlapping-scope transactions, so the
  * concurrent chunk uploads can't lose each other's writes. Dedupes by part

@@ -26,13 +26,13 @@ import {
 import {
     addCompletedPart,
     deleteUpload,
-    findUploadByIdentity,
     listUploads,
     putUpload,
     type CompletedPart,
 } from '@/lib/upload/uploadStore';
 import {
     computeRemainingPartNumbers,
+    isFileMatch,
     isResumable,
     mergeParts,
     partByteRange,
@@ -852,10 +852,14 @@ export function useUpload() {
         if (picked.length === 0) return;
 
         // Match each file against a persisted interrupted upload so a re-add
-        // resumes from where S3 left off instead of starting over.
-        const matches = await Promise.all(
-            picked.map(({ file }) => findUploadByIdentity(toFileIdentity(file)))
-        );
+        // resumes from where S3 left off instead of starting over. One store
+        // read for the whole batch (folder drops make it thousands of files),
+        // and one identity per file rather than one per comparison.
+        const records = await listUploads();
+        const matches = picked.map(({ file }) => {
+            const identity = toFileIdentity(file);
+            return records.find((record) => isFileMatch(record, identity));
+        });
 
         setFiles((prev) => {
             // Reattach re-added files to their resumable rows (immutably), then

@@ -39,3 +39,12 @@ export const S3_CONNECTION_BUDGET = 6;
  * it; it exists for videographer-scale files.
  */
 export const MAX_IN_FLIGHT_BYTES = 32 * 1024 ** 3; // 32 GiB
+
+/**
+ * Ceiling on files one gesture (a drop or a folder pick) may add to the queue.
+ * The queue itself survives far more (#390) — this bounds the directory walk,
+ * so dropping a home folder by accident stops early instead of grinding
+ * through the whole disk. Sized for the ICP's worst case: a multi-day wedding
+ * shoot is a few thousand frames, not five thousand.
+ */
+export const MAX_FILES_PER_DROP = 5000;

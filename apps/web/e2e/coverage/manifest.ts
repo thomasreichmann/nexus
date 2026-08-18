@@ -347,6 +347,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-add-folder-queue',
+        title: 'Select a whole folder — nested files join the queue, hidden entries are skipped',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-clear-queue',
         title: 'Clear the pending upload queue',
         area: 'upload',

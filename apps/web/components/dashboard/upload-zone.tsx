@@ -17,6 +17,7 @@ import {
     History,
     Play,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -24,10 +25,15 @@ import { cn } from '@/lib/cn';
 import { formatBytes } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
 import {
+    isDirectoryPickerSupported,
     isFileSystemAccessSupported,
     pickFilesWithHandles,
+    pickFolderWithHandles,
     pickedFilesFromDataTransfer,
+    pickedFilesFromDirectoryInput,
+    type PickedFileBatch,
 } from '@/lib/upload/fileSystemAccess';
+import { MAX_FILES_PER_DROP } from '@/lib/upload/limits';
 import { waveProgress } from '@/lib/upload/parts';
 import { preflightQuota } from '@/lib/upload/preflight';
 import { getImagePreviewUrl } from '@/lib/upload/thumbnails';
@@ -62,16 +68,39 @@ export function UploadZone() {
         null
     );
     const inputRef = useRef<HTMLInputElement>(null);
+    const folderInputRef = useRef<HTMLInputElement>(null);
+
+    // The one queueing seam for every ingest gesture. Feedback lives here so
+    // no path can regress into the silent ignore #388 was about: a capped walk
+    // says what it kept, an empty folder says it had nothing.
+    const addPickedBatch = useCallback(
+        ({ files: picked, truncated, emptySelection }: PickedFileBatch) => {
+            if (truncated) {
+                toast.info(
+                    `Large selection — only the first ${MAX_FILES_PER_DROP.toLocaleString()} files were added.`
+                );
+            }
+            if (picked.length === 0) {
+                if (emptySelection)
+                    toast.info('No files found in that folder.');
+                return;
+            }
+            void addFiles(picked);
+        },
+        [addFiles]
+    );
 
     const handleDrop = useCallback(
         (e: React.DragEvent) => {
             e.preventDefault();
             setIsDragOver(false);
-            // Read the DataTransfer synchronously — its items are only live
-            // during the event — then queue the files (with handles when present).
-            void pickedFilesFromDataTransfer(e.dataTransfer).then(addFiles);
+            // The DataTransfer is read synchronously inside — its items are
+            // only live during the event.
+            void pickedFilesFromDataTransfer(e.dataTransfer).then(
+                addPickedBatch
+            );
         },
-        [addFiles]
+        [addPickedBatch]
     );
 
     // On Chromium the picker captures persistable handles for zero-touch resume;
@@ -79,13 +108,21 @@ export function UploadZone() {
     // at click time so there's no SSR/client mismatch and no render-time state.
     const handleBrowse = useCallback(() => {
         if (isFileSystemAccessSupported()) {
-            void pickFilesWithHandles().then((picked) => {
-                if (picked.length > 0) void addFiles(picked);
-            });
+            void pickFilesWithHandles().then(addPickedBatch);
         } else {
             inputRef.current?.click();
         }
-    }, [addFiles]);
+    }, [addPickedBatch]);
+
+    // Folder flavor of the same split: native directory picker on Chromium,
+    // hidden `webkitdirectory` input everywhere else.
+    const handleBrowseFolder = useCallback(() => {
+        if (isDirectoryPickerSupported()) {
+            void pickFolderWithHandles().then(addPickedBatch);
+        } else {
+            folderInputRef.current?.click();
+        }
+    }, [addPickedBatch]);
 
     const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
@@ -193,7 +230,7 @@ export function UploadZone() {
                             <Upload className="h-8 w-8 text-primary" />
                         </div>
                         <h3 className="mb-2 text-lg font-semibold">
-                            Drop files here to upload
+                            Drop files or folders here to upload
                         </h3>
                         <p className="mb-4 text-sm text-muted-foreground">
                             or click to browse your computer
@@ -206,6 +243,7 @@ export function UploadZone() {
                             type="file"
                             multiple
                             className="hidden"
+                            data-testid="file-input"
                             onChange={(e) => {
                                 const picked = Array.from(
                                     e.target.files ?? []
@@ -216,12 +254,39 @@ export function UploadZone() {
                                 e.target.value = '';
                             }}
                         />
+                        {/* The folder twin of the input above. `webkitdirectory`
+                            isn't in React's prop types, hence the spread. */}
+                        <input
+                            ref={folderInputRef}
+                            type="file"
+                            className="hidden"
+                            data-testid="folder-input"
+                            {...{ webkitdirectory: '' }}
+                            onChange={(e) => {
+                                if (e.target.files) {
+                                    addPickedBatch(
+                                        pickedFilesFromDirectoryInput(
+                                            e.target.files
+                                        )
+                                    );
+                                }
+                                e.target.value = '';
+                            }}
+                        />
                         {/* Deliberately enabled mid-wave (drag-drop always
                             was): added files queue as pending and the Upload
                             button lets them join the running wave. */}
-                        <Button variant="outline" onClick={handleBrowse}>
-                            Browse files
-                        </Button>
+                        <div className="flex flex-wrap items-center justify-center gap-3">
+                            <Button variant="outline" onClick={handleBrowse}>
+                                Browse files
+                            </Button>
+                            <Button
+                                variant="outline"
+                                onClick={handleBrowseFolder}
+                            >
+                                Browse folder
+                            </Button>
+                        </div>
                     </div>
                 </CardContent>
             </Card>
