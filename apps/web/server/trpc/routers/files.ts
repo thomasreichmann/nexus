@@ -5,6 +5,10 @@ import { fileService } from '@/server/services/files';
 import { retrievalService } from '@/server/services/retrieval';
 import { protectedProcedure, router } from '../init';
 
+// One rule for both ways a batch gets named: per-file on `upload`, and up front
+// on `createBatch`.
+const batchNameSchema = z.string().min(1).max(255);
+
 const uploadInputSchema = z.object({
     name: z.string().min(1).max(255),
     sizeBytes: z.number().positive(),
@@ -12,7 +16,7 @@ const uploadInputSchema = z.object({
     // Join an existing batch by id, or seed a new one with a custom name.
     // Omit both to get an auto-named single-file batch.
     batchId: z.string().uuid().optional(),
-    batchName: z.string().min(1).max(255).optional(),
+    batchName: batchNameSchema.optional(),
 });
 
 export const filesRouter = router({
@@ -89,11 +93,14 @@ export const filesRouter = router({
             return fileRepo.findByUserAndId(ctx.session.user.id, input.id);
         }),
 
-    // Pre-create a session batch (fallback-named) so a multi-file upload can
-    // pass one batchId to every per-file initiate call.
-    createBatch: protectedProcedure.mutation(({ ctx }) =>
-        fileService.createBatch(ctx.db, ctx.session.user.id)
-    ),
+    // Pre-create a session batch so a multi-file upload can pass one batchId to
+    // every per-file initiate call. `name` labels a whole-folder upload after
+    // its folder; without it the batch gets the timestamp fallback name.
+    createBatch: protectedProcedure
+        .input(z.object({ name: batchNameSchema.optional() }).prefault({}))
+        .mutation(({ ctx, input }) =>
+            fileService.createBatch(ctx.db, ctx.session.user.id, input.name)
+        ),
 
     upload: protectedProcedure
         .input(uploadInputSchema)

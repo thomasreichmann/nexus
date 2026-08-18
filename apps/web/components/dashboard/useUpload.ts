@@ -39,7 +39,11 @@ import {
     partsProgress,
     toFileIdentity,
 } from '@/lib/upload/parts';
-import { patchRowById } from '@/lib/upload/rows';
+import {
+    patchRowById,
+    resolveUnanimousFolderName,
+    type FolderOrigin,
+} from '@/lib/upload/rows';
 import {
     isFileSystemAccessSupported,
     reacquireMatchingFile,
@@ -108,6 +112,9 @@ interface InternalUploadFile extends UploadFile {
     // Session batch the file belongs to — set once per Upload click and kept
     // across failures so a retry/resume rejoins the same batch.
     batchId?: string;
+    // Folder gesture that queued this row, when it came from one. Consulted
+    // only for rows still awaiting a batch — it names the batch they land in.
+    folderOrigin?: FolderOrigin;
     uploadId?: string;
     chunkSize?: number;
     totalParts?: number;
@@ -190,6 +197,8 @@ export function useUpload() {
     const [isUploading, setIsUploading] = useState(false);
     const filesRef = useRef(files);
     filesRef.current = files;
+    // Monotonic per-mount counter stamped on rows by `addFiles`; see FolderOrigin.
+    const folderGestureRef = useRef(0);
 
     const invalidateFileList = useInvalidateFileList();
 
@@ -746,10 +755,14 @@ export function useUpload() {
         // falls back to the server's auto-created single-file batch.
         let batchId: string | undefined;
         // Rows that already have a batch (retries, re-added resumables) keep
-        // it, so only mint a session batch when some file still needs one.
-        if (pending.some((f) => !f.batchId)) {
+        // it, so only mint a session batch when some file still needs one —
+        // and only those rows decide what the new batch is named after.
+        const rowsNeedingBatch = pending.filter((f) => !f.batchId);
+        if (rowsNeedingBatch.length > 0) {
             try {
-                ({ batchId } = await createBatchMutation.mutateAsync());
+                ({ batchId } = await createBatchMutation.mutateAsync({
+                    name: resolveUnanimousFolderName(rowsNeedingBatch),
+                }));
             } catch {
                 batchId = undefined;
             }
@@ -848,89 +861,100 @@ export function useUpload() {
         };
     }, [drive]);
 
-    const addFiles = useCallback(async (picked: PickedFile[]) => {
-        if (picked.length === 0) return;
+    const addFiles = useCallback(
+        async (picked: PickedFile[], folderName?: string) => {
+            if (picked.length === 0) return;
 
-        // Match each file against a persisted interrupted upload so a re-add
-        // resumes from where S3 left off instead of starting over. One store
-        // read for the whole batch (folder drops make it thousands of files),
-        // and one identity per file rather than one per comparison.
-        const records = await listUploads();
-        const matches = picked.map(({ file }) => {
-            const identity = toFileIdentity(file);
-            return records.find((record) => isFileMatch(record, identity));
-        });
+            // One id per call, so re-dropping the same folder counts as a
+            // second gesture rather than merging into the first.
+            const folderOrigin = folderName
+                ? { gestureId: ++folderGestureRef.current, name: folderName }
+                : undefined;
 
-        setFiles((prev) => {
-            // Reattach re-added files to their resumable rows (immutably), then
-            // append rows for everything that didn't match an existing row.
-            const reattach = new Map<string, PickedFile>();
-            const appended: InternalUploadFile[] = [];
+            // Match each file against a persisted interrupted upload so a re-add
+            // resumes from where S3 left off instead of starting over. One store
+            // read for the whole batch (folder drops make it thousands of files),
+            // and one identity per file rather than one per comparison.
+            const records = await listUploads();
+            const matches = picked.map(({ file }) => {
+                const identity = toFileIdentity(file);
+                return records.find((record) => isFileMatch(record, identity));
+            });
 
-            picked.forEach(({ file, handle }, i) => {
-                const match = matches[i];
-                const existing =
-                    match && isResumable(match)
-                        ? prev.find((f) => f.fileId === match.fileId)
-                        : undefined;
+            setFiles((prev) => {
+                // Reattach re-added files to their resumable rows (immutably), then
+                // append rows for everything that didn't match an existing row.
+                const reattach = new Map<string, PickedFile>();
+                const appended: InternalUploadFile[] = [];
 
-                if (match && isResumable(match) && existing) {
-                    // Re-add of an interrupted upload: queue it as resumable;
-                    // clicking Upload continues from the last completed part.
-                    reattach.set(existing.id, { file, handle });
-                    return;
-                }
-                if (match && isResumable(match)) {
+                picked.forEach(({ file, handle }, i) => {
+                    const match = matches[i];
+                    const existing =
+                        match && isResumable(match)
+                            ? prev.find((f) => f.fileId === match.fileId)
+                            : undefined;
+
+                    if (match && isResumable(match) && existing) {
+                        // Re-add of an interrupted upload: queue it as resumable;
+                        // clicking Upload continues from the last completed part.
+                        reattach.set(existing.id, { file, handle });
+                        return;
+                    }
+                    if (match && isResumable(match)) {
+                        appended.push({
+                            id: match.fileId,
+                            name: file.name,
+                            size: file.size,
+                            progress: partsProgress(
+                                match.completedParts.length,
+                                match.totalParts
+                            ),
+                            status: 'pending',
+                            file,
+                            fileHandle: handle,
+                            fileId: match.fileId,
+                            batchId: match.batchId,
+                            uploadId: match.uploadId,
+                            chunkSize: match.chunkSize,
+                            totalParts: match.totalParts,
+                            completedParts: match.completedParts,
+                            folderOrigin,
+                        });
+                        return;
+                    }
                     appended.push({
-                        id: match.fileId,
+                        id: randomId(),
                         name: file.name,
                         size: file.size,
-                        progress: partsProgress(
-                            match.completedParts.length,
-                            match.totalParts
-                        ),
+                        progress: 0,
                         status: 'pending',
                         file,
                         fileHandle: handle,
-                        fileId: match.fileId,
-                        batchId: match.batchId,
-                        uploadId: match.uploadId,
-                        chunkSize: match.chunkSize,
-                        totalParts: match.totalParts,
-                        completedParts: match.completedParts,
+                        folderOrigin,
                     });
-                    return;
-                }
-                appended.push({
-                    id: randomId(),
-                    name: file.name,
-                    size: file.size,
-                    progress: 0,
-                    status: 'pending',
-                    file,
-                    fileHandle: handle,
                 });
-            });
 
-            const updated = prev.map((f) => {
-                const reattached = reattach.get(f.id);
-                return reattached
-                    ? {
-                          ...f,
-                          file: reattached.file,
-                          // Keep any handle we already had if the re-add lacked one.
-                          fileHandle: reattached.handle ?? f.fileHandle,
-                          status: 'pending' as const,
-                          progress: partsProgress(
-                              f.completedParts?.length ?? 0,
-                              f.totalParts ?? 0
-                          ),
-                      }
-                    : f;
+                const updated = prev.map((f) => {
+                    const reattached = reattach.get(f.id);
+                    return reattached
+                        ? {
+                              ...f,
+                              file: reattached.file,
+                              // Keep any handle we already had if the re-add lacked one.
+                              fileHandle: reattached.handle ?? f.fileHandle,
+                              status: 'pending' as const,
+                              progress: partsProgress(
+                                  f.completedParts?.length ?? 0,
+                                  f.totalParts ?? 0
+                              ),
+                          }
+                        : f;
+                });
+                return [...updated, ...appended];
             });
-            return [...updated, ...appended];
-        });
-    }, []);
+        },
+        []
+    );
 
     // Release whatever the server already minted for a row we're dropping: the
     // S3 multipart session when there is one (plus its persisted state, so a

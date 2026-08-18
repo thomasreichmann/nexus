@@ -77,8 +77,13 @@ interface CreateBatchResult {
 
 // Pre-create a session batch so every file in a multi-file upload joins the
 // same batch (the per-file initiate calls pass this id back as input.batchId).
-async function createBatch(db: DB, userId: string): Promise<CreateBatchResult> {
-    return { batchId: (await insertBatch(db, userId)).id };
+// `name` labels a whole-folder upload after its folder (#395).
+async function createBatch(
+    db: DB,
+    userId: string,
+    name?: string
+): Promise<CreateBatchResult> {
+    return { batchId: (await insertBatch(db, userId, name)).id };
 }
 
 interface InitiateUploadResult {

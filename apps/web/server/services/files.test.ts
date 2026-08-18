@@ -265,6 +265,20 @@ describe('files service', () => {
                 })
             );
         });
+
+        it('uses the caller-supplied name when given one', async () => {
+            const batch = createUploadBatchFixture();
+            mocks.returning.mockResolvedValueOnce([batch]);
+
+            await fileService.createBatch(db, TEST_USER_ID, 'shoot-2026-08-18');
+
+            expect(mocks.values).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    userId: TEST_USER_ID,
+                    name: 'shoot-2026-08-18',
+                })
+            );
+        });
     });
 
     describe('formatFallbackBatchName', () => {
