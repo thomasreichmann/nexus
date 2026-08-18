@@ -29,7 +29,9 @@ import {
     pickedFilesFromDataTransfer,
 } from '@/lib/upload/fileSystemAccess';
 import { waveProgress } from '@/lib/upload/parts';
+import { preflightQuota } from '@/lib/upload/preflight';
 import { getImagePreviewUrl } from '@/lib/upload/thumbnails';
+import { CancelUploadDialog } from './CancelUploadDialog';
 import { MiddleTruncateName } from './MiddleTruncateName';
 import { useUpload, type UploadFile, type UploadStatus } from './useUpload';
 
@@ -54,6 +56,11 @@ export function UploadZone() {
     } = useUpload();
 
     const [isDragOver, setIsDragOver] = useState(false);
+    // Row awaiting cancel confirmation — the destructive X (in-flight or
+    // resumable rows) opens the dialog instead of dropping the row outright.
+    const [cancelCandidateId, setCancelCandidateId] = useState<string | null>(
+        null
+    );
     const inputRef = useRef<HTMLInputElement>(null);
 
     const handleDrop = useCallback(
@@ -116,6 +123,33 @@ export function UploadZone() {
     const quickResumable = files.filter(
         (f) => f.status === 'resumable' && f.isQuickResumable
     );
+    // Only while the row is still in a guarded state: if it finishes (or
+    // errors out) with the dialog open, the dialog auto-closes rather than
+    // dropping a settled row under "progress will be thrown away" copy.
+    const cancelCandidate =
+        files.find(
+            (f) =>
+                f.id === cancelCandidateId &&
+                (f.status === 'uploading' ||
+                    f.status === 'paused' ||
+                    f.status === 'resumable')
+        ) ?? null;
+
+    // Pre-flight quota: judge only the bytes the Upload button would submit.
+    // Resumable rows are excluded — their landed parts are already counted in
+    // `usedBytes`, so summing their full size would double-count.
+    const pendingBytes = pendingFiles.reduce((acc, f) => acc + f.size, 0);
+    const availableBytes = usage
+        ? Math.max(usage.quotaBytes - usage.usedBytes, 0)
+        : null;
+    const preflight =
+        usage && pendingFiles.length > 0
+            ? preflightQuota({
+                  pendingBytes,
+                  usedBytes: usage.usedBytes,
+                  quotaBytes: usage.quotaBytes,
+              })
+            : 'ok';
 
     // The aggregate header's view of the wave — at 50+ rows the per-row bars
     // scroll out of sight, so the wave needs one bar that means something.
@@ -294,11 +328,19 @@ export function UploadZone() {
                                                     transform: `translateY(${virtualRow.start}px)`,
                                                 }}
                                             >
+                                                {/* Cancel is guarded, unlike
+                                                    Remove: that X aborts the
+                                                    S3 session and deletes the
+                                                    resume record, so the row
+                                                    opens the confirm dialog
+                                                    instead (#389). */}
                                                 <UploadQueueRow
                                                     file={file}
                                                     isUploading={isUploading}
                                                     onRemove={removeFile}
-                                                    onCancel={cancelFile}
+                                                    onCancel={
+                                                        setCancelCandidateId
+                                                    }
                                                     onRetry={retryFile}
                                                     onResume={resumeWithHandle}
                                                 />
@@ -333,6 +375,26 @@ export function UploadZone() {
                                         </span>
                                     </p>
                                 )}
+                                {preflight === 'blocked' && (
+                                    <p className="text-sm text-destructive">
+                                        Not enough storage — these files need{' '}
+                                        {formatBytes(pendingBytes)}, but only{' '}
+                                        {formatBytes(availableBytes ?? 0)} is
+                                        available.
+                                    </p>
+                                )}
+                                {preflight === 'over-limit' && (
+                                    <p className="text-sm text-amber-600">
+                                        This upload will put you over your
+                                        storage limit.
+                                    </p>
+                                )}
+                                {preflight === 'near-limit' && (
+                                    <p className="text-sm text-amber-600">
+                                        This upload will use most of your
+                                        remaining storage.
+                                    </p>
+                                )}
                             </div>
                             <div className="flex flex-wrap items-center gap-3">
                                 {/* Persistent live region so the wave's
@@ -363,7 +425,14 @@ export function UploadZone() {
                                     </Button>
                                 )}
                                 {pendingFiles.length > 0 ? (
-                                    <Button onClick={startUpload}>
+                                    <Button
+                                        onClick={startUpload}
+                                        // Only past the soft cap, where the
+                                        // server would reject the wave anyway;
+                                        // over-limit selections inside the 5%
+                                        // grace band still upload.
+                                        disabled={preflight === 'blocked'}
+                                    >
                                         <Upload className="mr-2 h-4 w-4" />
                                         Upload {pendingFiles.length}{' '}
                                         {pendingFiles.length === 1
@@ -381,6 +450,17 @@ export function UploadZone() {
                     </CardContent>
                 </Card>
             )}
+            <CancelUploadDialog
+                open={cancelCandidate !== null}
+                onOpenChange={(open) => {
+                    if (!open) setCancelCandidateId(null);
+                }}
+                fileName={cancelCandidate?.name ?? null}
+                onConfirm={() => {
+                    if (cancelCandidate) cancelFile(cancelCandidate.id);
+                    setCancelCandidateId(null);
+                }}
+            />
         </div>
     );
 }

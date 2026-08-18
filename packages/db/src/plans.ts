@@ -22,6 +22,24 @@ export const PLAN_LIMITS: Record<PlanTier, number> = {
 export const SOFT_LIMIT_MULTIPLIER = 1.05;
 
 /**
+ * The byte ceiling `checkQuota` actually enforces for a plan limit. A
+ * function rather than "multiply it yourself" so the client-side pre-flight
+ * (`apps/web/lib/upload/preflight.ts`) can't drift from the server on the
+ * rounding step.
+ */
+export function softCapBytes(limitBytes: number): number {
+    return Math.floor(limitBytes * SOFT_LIMIT_MULTIPLIER);
+}
+
+/**
+ * Projected usage above this fraction of the plan limit counts as "near the
+ * limit" — the server's `checkQuota` computes it and the upload page's
+ * pre-flight warning mirrors it client-side, so the two must share one
+ * number (same reasoning as `SOFT_LIMIT_MULTIPLIER` above).
+ */
+export const NEAR_LIMIT_RATIO = 0.9;
+
+/**
  * Lives here rather than in `apps/web` so seeds and test-db helpers can reach
  * it — they can't import from the app.
  */

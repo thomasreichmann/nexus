@@ -7,7 +7,7 @@
  * touching a bucket. The stub also counts overlap, which is the only way to
  * observe the client's upload concurrency from the outside.
  */
-import type { Page } from '@playwright/test';
+import type { Page, Request } from '@playwright/test';
 
 /** What the stub observed. Read after the assertions on the UI settle. */
 export interface S3PutObserver {
@@ -48,6 +48,19 @@ export async function stubS3Puts(
 ): Promise<S3PutObserver> {
     const seen: S3PutObserver = { total: 0, inFlight: 0, peak: 0 };
 
+    // Each counted PUT is settled exactly once, whichever side closes it
+    // first. The browser aborting (a pause, a cancel, going offline) must
+    // count out immediately via `requestfailed` — waiting for the handler's
+    // `holdMs` sleep to notice leaves a window where dead connections still
+    // occupy the counter, and a resumed wave opening inside it reads as
+    // double the client's real concurrency (#392).
+    const counted = new Set<Request>();
+    const settle = (request: Request) => {
+        if (!counted.delete(request)) return;
+        seen.inFlight--;
+    };
+    page.on('requestfailed', settle);
+
     await page.route(/amazonaws\.com/, async (route) => {
         if (route.request().method() === 'OPTIONS') {
             await route.fulfill({ status: 204, headers: CORS_HEADERS });
@@ -56,9 +69,10 @@ export async function stubS3Puts(
         seen.total++;
         seen.inFlight++;
         seen.peak = Math.max(seen.peak, seen.inFlight);
+        counted.add(route.request());
 
-        // Never settled, and never decremented: the connection genuinely stays
-        // open until teardown, which is the whole point of this mode.
+        // Never answered: the connection stays open for as long as the test
+        // needs it, and only a browser-side abort settles it.
         if (options.stall) return;
 
         try {
@@ -75,14 +89,12 @@ export async function stubS3Puts(
                 headers: { ...CORS_HEADERS, ETag: '"e2e-stub"' },
             });
         } catch {
-            // The browser hung up first — an upload aborted by a pause or a
-            // cancel. There's nothing left to answer, but the connection is
-            // just as closed as a fulfilled one, so it still has to be counted
-            // out below or `peak` drifts up across the rest of the test.
+            // The browser hung up first — `requestfailed` already settled this
+            // PUT the moment it aborted; the settle below is a no-op.
         } finally {
-            // Decremented once the response is delivered rather than before, so
+            // Settled once the response is delivered rather than before, so
             // `peak` covers the whole window the connection was open.
-            seen.inFlight--;
+            settle(route.request());
         }
     });
 

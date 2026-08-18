@@ -1,12 +1,13 @@
-import { isTrialExpired, SOFT_LIMIT_MULTIPLIER } from '@nexus/db/plans';
+import {
+    isTrialExpired,
+    NEAR_LIMIT_RATIO,
+    softCapBytes,
+} from '@nexus/db/plans';
 import { createStorageUsageRepo } from '@nexus/db/repo/storage-usage';
 import { QuotaExceededError, TrialExpiredError } from '@/server/errors';
 import { PLAN_LIMITS } from './constants';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
 import type { DB } from '@nexus/db';
-
-// Threshold for surfacing a "near limit" warning to the client (e.g. banner).
-const NEAR_LIMIT_RATIO = 0.9;
 
 export interface QuotaContext {
     currentUsage: number;
@@ -50,7 +51,7 @@ function assertUploadAllowed(
 
     const limitBytes = subscription?.storageLimit ?? PLAN_LIMITS.starter;
     const projectedUsage = currentUsage + additionalBytes;
-    const softCap = Math.floor(limitBytes * SOFT_LIMIT_MULTIPLIER);
+    const softCap = softCapBytes(limitBytes);
 
     if (projectedUsage > softCap) {
         throw new QuotaExceededError({
