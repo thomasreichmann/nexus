@@ -11,8 +11,9 @@ import { config } from 'dotenv';
  * The user is included on purpose, and it carries the weight. Every Supabase
  * project reaches the same pooler host and a database literally named
  * `postgres`, so host and path alone print identically for dev and prod; the
- * project ref that distinguishes them lives in the user. It is not a secret —
- * the same ref ships to the browser in `NEXT_PUBLIC_SUPABASE_URL`.
+ * project ref that distinguishes them lives in the user. The ref is an
+ * identifier, not a credential — the password is the secret here, and it is
+ * the one field this banner never names.
  *
  * `DB_ENV` is appended as a hint, not as the answer. It is a separate variable
  * — an exported value wins, otherwise `.env.local` supplies it — so it records
