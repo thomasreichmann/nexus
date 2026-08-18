@@ -200,11 +200,15 @@ if (lookup.outcome === 'duplicate') {
     return NextResponse.json({ received: true, duplicate: true });
 }
 
-// 'new' or 'retry' — a 'received'/'failed'/'unhandled' row is re-driven
+// 'new' or 'retry' — any row that isn't 'processed' is re-driven, so
+// 'received', 'failed', 'unhandled' and 'noop' all come back through here
 const webhookEvent = lookup.event;
 
 // Process the event...
-// On success: mark as 'processed' (or 'unhandled' if no handler matched)
+// On success: mark 'processed' and clear `error`, since a re-driven row may
+//   still carry the reason from the attempt that left it 'noop'/'failed'
+// On a partial apply: mark 'noop' with the reason, and alert (#332)
+// On no matching handler: mark 'unhandled' and alert
 // On business failure: recordWebhookFailure() marks it and alerts
 // On transient failure: rethrow, leaving the row at its current status
 ```
@@ -215,14 +219,29 @@ Rows that never reach a terminal status are swept nightly — see [When to Retur
 
 See `packages/db/src/schema/webhooks.ts` for the full schema. Key columns:
 
-| Column       | Purpose                                            |
-| ------------ | -------------------------------------------------- |
-| `externalId` | Provider's event ID (e.g., `evt_1234` from Stripe) |
-| `source`     | Provider name (`stripe`, `sns`)                    |
-| `eventType`  | Event type string (e.g., `invoice.paid`)           |
-| `payload`    | Full event payload as JSONB (for debugging)        |
-| `status`     | `received` → `processed` / `failed` / `unhandled`  |
-| `error`      | Error message if processing failed                 |
+| Column       | Purpose                                               |
+| ------------ | ----------------------------------------------------- |
+| `externalId` | Provider's event ID (e.g., `evt_1234` from Stripe)    |
+| `source`     | Provider name (`stripe`, `sns`)                       |
+| `eventType`  | Event type string (e.g., `invoice.paid`)              |
+| `payload`    | Full event payload as JSONB (for debugging)           |
+| `status`     | Processing status — see the table below               |
+| `error`      | Why the event isn't a clean success (`failed`/`noop`) |
+
+`status` starts at `received` and lands on one of:
+
+| Status      | Meaning                                                                                                              |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| `processed` | The handler applied the change, or skipped it by design (a payment failure on an already-canceled subscription)      |
+| `failed`    | The handler threw. `error` holds the message                                                                         |
+| `unhandled` | No handler matches this event type (#281)                                                                            |
+| `noop`      | A handler matched but the change didn't fully land — no local row, unresolvable plan tier (#332). `error` says which |
+
+`failed`, `unhandled`, and `noop` all alert at request time and are swept
+nightly by `check:s3-event-health`; the alert catches it now, the status keeps
+it findable after the alert scrolls past. A `noop` can still be a partial
+write — an unresolvable tier syncs status and period but keeps the old tier —
+so read `error` rather than assuming nothing happened.
 
 **Unique constraint** on `(source, external_id)` prevents duplicate inserts. If a concurrent request tries to insert the same event, the DB rejects it.
 

@@ -123,7 +123,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         },
     });
 
-    await webhookRepo.update(webhookEvent.id, { status: 'processed' });
+    // `error` is cleared for the same reason as the other webhook routes: a
+    // redelivery re-drives any row that isn't `processed`, so this one may
+    // still carry the message from a previous failed attempt.
+    await webhookRepo.update(webhookEvent.id, {
+        status: 'processed',
+        error: null,
+    });
 
     return NextResponse.json({ received: true });
 }

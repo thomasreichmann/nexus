@@ -136,8 +136,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
 
         const hasUnhandledRecord = unhandledEventNames.length > 0;
+        // `error` is cleared, not left: a redelivery re-drives any row that
+        // isn't `processed`, so a row arriving here may still carry the
+        // message from the attempt that marked it `failed`.
         await webhookRepo.update(webhookEvent.id, {
             status: hasUnhandledRecord ? 'unhandled' : 'processed',
+            error: null,
         });
 
         if (hasUnhandledRecord) {

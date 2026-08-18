@@ -1,12 +1,10 @@
 import {
     type NewWebhookEvent,
     type WebhookEvent,
-    type createWebhookRepo,
+    type WebhookRepo,
 } from '@nexus/db/repo/webhooks';
 import { alerts } from '@/lib/alerts';
 import { isUniqueViolation, toErrorMessage } from '@/lib/errors';
-
-type WebhookRepo = ReturnType<typeof createWebhookRepo>;
 
 export type WebhookEventLookup =
     | { outcome: 'duplicate'; reason: 'processed' | 'concurrent-insert' }

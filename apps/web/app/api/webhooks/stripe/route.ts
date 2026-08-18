@@ -85,41 +85,107 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const start = Date.now();
     log.info({ eventId: event.id, eventType: event.type }, 'Webhook received');
 
+    // Every alert below identifies the same delivery; spread this in so a new
+    // one can't ship with a thinner context than its siblings.
+    const alertContext = {
+        source: 'stripe',
+        eventType: event.type,
+        externalId: event.id,
+    };
+
     try {
-        const isHandled = await subscriptionService.dispatchWebhookEvent(
+        const dispatchOutcome = await subscriptionService.dispatchWebhookEvent(
             db,
             event
         );
 
-        if (!isHandled) {
-            log.warn(
-                { eventId: event.id, eventType: event.type },
-                'Unhandled Stripe event type'
-            );
-        }
+        switch (dispatchOutcome.outcome) {
+            case 'ignored':
+                // By design, so the row stays a clean success and no alert
+                // fires — see `WebhookDispatchOutcome` for why.
+                log.info(
+                    {
+                        eventId: event.id,
+                        eventType: event.type,
+                        reason: dispatchOutcome.reason,
+                    },
+                    'Stripe event was a no-op by design'
+                );
+            // falls through — an ignored event is as processed as an applied one
+            case 'applied':
+                // `error` is cleared, not left: a redelivery re-drives any row
+                // that isn't `processed`, so a row arriving here may still be
+                // carrying the reason from the attempt that landed it in
+                // `noop` or `failed`.
+                await webhookRepo.update(webhookEvent.id, {
+                    status: 'processed',
+                    error: null,
+                });
+                break;
 
-        await webhookRepo.update(webhookEvent.id, {
-            status: isHandled ? 'processed' : 'unhandled',
-        });
+            case 'noop':
+                // Both halves matter: the alert catches it now, the `noop`
+                // status keeps it findable by the nightly sweep long after the
+                // alert has scrolled past (#332). The reason carries the
+                // detail, because a no-op can still be a partial write.
+                log.warn(
+                    {
+                        eventId: event.id,
+                        eventType: event.type,
+                        reason: dispatchOutcome.reason,
+                    },
+                    'Stripe webhook did not fully apply'
+                );
+                await webhookRepo.update(webhookEvent.id, {
+                    status: 'noop',
+                    error: dispatchOutcome.reason,
+                });
+                await alerts.send({
+                    severity: 'warning',
+                    title: 'Stripe webhook did not fully apply',
+                    message: `${dispatchOutcome.reason}. The event row is marked noop.`,
+                    context: {
+                        ...alertContext,
+                        reason: dispatchOutcome.reason,
+                    },
+                });
+                break;
 
-        if (!isHandled) {
-            await alerts.send({
-                severity: 'warning',
-                title: 'Unhandled Stripe event type',
-                message:
-                    'A Stripe webhook delivered an event type no handler matches; the event row is marked unhandled.',
-                context: {
-                    source: 'stripe',
-                    eventType: event.type,
-                    externalId: event.id,
-                },
-            });
+            case 'unhandled':
+                log.warn(
+                    { eventId: event.id, eventType: event.type },
+                    'Unhandled Stripe event type'
+                );
+                await webhookRepo.update(webhookEvent.id, {
+                    status: 'unhandled',
+                    error: null,
+                });
+                await alerts.send({
+                    severity: 'warning',
+                    title: 'Unhandled Stripe event type',
+                    message:
+                        'A Stripe webhook delivered an event type no handler matches; the event row is marked unhandled.',
+                    context: alertContext,
+                });
+                break;
+
+            default:
+                // `satisfies never` is the real guard: a new outcome variant
+                // that maps to no status here breaks the build. The throw is
+                // the runtime backstop for a value that reached us from
+                // untyped ground — it lands in the catch below and marks the
+                // row failed, rather than leaving the `received` false green
+                // #332 exists to kill.
+                throw new Error(
+                    `Unmapped webhook dispatch outcome: ${JSON.stringify(dispatchOutcome satisfies never)}`
+                );
         }
 
         log.info(
             {
                 eventId: event.id,
                 eventType: event.type,
+                outcome: dispatchOutcome.outcome,
                 durationMs: Date.now() - start,
             },
             'Webhook processed'
@@ -140,11 +206,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             title: 'Stripe webhook processing failed',
             message:
                 'Handler threw while processing a Stripe webhook; the event row is marked failed.',
-            context: {
-                source: 'stripe',
-                eventType: event.type,
-                externalId: event.id,
-            },
+            context: alertContext,
         });
 
         return NextResponse.json({ received: true });

@@ -400,11 +400,63 @@ async function provisionSignupSubscription(
 
 // ─── Webhook event handlers ─────────────────────────────────────────────
 
+/**
+ * What dispatching one Stripe event actually did.
+ *
+ * `noop` needs a human: a handler matched but the change didn't land — no
+ * local row for the customer, an unresolvable plan tier. `ignored` is a no-op
+ * the design expects (a payment failure on an already-canceled subscription;
+ * defensively, a non-subscription checkout), so it's logged and never alerted.
+ * Keeping the two apart is what leaves the alert channel worth reading.
+ *
+ * Reasons are self-contained sentences carrying their own identifiers: they
+ * land in `webhook_events.error` and the nightly sweep prints them verbatim,
+ * so an operator shouldn't need a second query to act on one.
+ *
+ * Scope (#204): this covers events whose customer has no matching local row.
+ * Concurrent writes racing on rows that DO match stay untouched here.
+ */
+export type WebhookDispatchOutcome =
+    | { outcome: 'applied' }
+    | { outcome: 'noop'; reason: string }
+    | { outcome: 'ignored'; reason: string }
+    | { outcome: 'unhandled' };
+
+/** The dominant no-op: Stripe knows a customer we hold no row for. */
+function createNoLocalRowOutcome(customerId: string): WebhookDispatchOutcome {
+    return {
+        outcome: 'noop',
+        reason: `No local subscription row for Stripe customer ${customerId}`,
+    };
+}
+
+/** The no-op for an event carrying no customer id to look the row up by. */
+function createMissingCustomerOutcome(
+    entity: string,
+    entityId: string
+): WebhookDispatchOutcome {
+    return {
+        outcome: 'noop',
+        reason: `${entity} ${entityId} arrived with no customer id`,
+    };
+}
+
 async function handleCheckoutCompleted(
     db: DB,
     session: Stripe.Checkout.Session
-): Promise<void> {
-    if (session.mode !== 'subscription') return;
+): Promise<WebhookDispatchOutcome> {
+    if (session.mode !== 'subscription') {
+        // Defensive only — `lib/stripe/checkout.ts` always creates
+        // subscription-mode sessions, so this is unreachable in current usage.
+        log.info(
+            { sessionId: session.id, mode: session.mode },
+            'Ignoring non-subscription checkout session'
+        );
+        return {
+            outcome: 'ignored',
+            reason: `Checkout session ${session.id} is mode "${session.mode}", not subscription`,
+        };
+    }
 
     const customerId = resolveStripeId(session.customer);
     const subscriptionId = resolveStripeId(session.subscription);
@@ -414,7 +466,10 @@ async function handleCheckoutCompleted(
             { sessionId: session.id },
             'Checkout session missing customer or subscription'
         );
-        return;
+        return {
+            outcome: 'noop',
+            reason: `Checkout session ${session.id} is missing a customer or subscription id`,
+        };
     }
 
     const repo = createSubscriptionRepo(db);
@@ -424,7 +479,7 @@ async function handleCheckoutCompleted(
             { customerId, sessionId: session.id },
             'No subscription record for customer'
         );
-        return;
+        return createNoLocalRowOutcome(customerId);
     }
 
     // subscription.created will fill in plan details; this just links the IDs
@@ -437,14 +492,21 @@ async function handleCheckoutCompleted(
         { customerId, subscriptionId },
         'Linked Stripe subscription from checkout'
     );
+    return { outcome: 'applied' };
 }
 
 async function handleSubscriptionUpsert(
     db: DB,
     sub: Stripe.Subscription
-): Promise<void> {
+): Promise<WebhookDispatchOutcome> {
     const customerId = resolveStripeId(sub.customer);
-    if (!customerId) return;
+    if (!customerId) {
+        log.warn(
+            { stripeSubscriptionId: sub.id },
+            'Subscription upsert missing customer'
+        );
+        return createMissingCustomerOutcome('Subscription', sub.id);
+    }
 
     const repo = createSubscriptionRepo(db);
     const existing = await repo.findByStripeCustomerId(customerId);
@@ -453,15 +515,14 @@ async function handleSubscriptionUpsert(
             { customerId, stripeSubscriptionId: sub.id },
             'No local record for subscription upsert'
         );
-        return;
+        return createNoLocalRowOutcome(customerId);
     }
 
     // Period fields live on subscription items (Stripe API 2026-02-25.clover);
     // pick the plan item once and reuse it for both tier and period extraction.
     const planItem = findPlanItem(sub);
-    const tier =
-        (planItem ? await resolveTierFromItem(planItem) : null) ??
-        existing.planTier;
+    const resolvedTier = planItem ? await resolveTierFromItem(planItem) : null;
+    const tier = resolvedTier ?? existing.planTier;
     const storageLimit = PLAN_LIMITS[tier];
 
     const periodStart = planItem
@@ -483,24 +544,47 @@ async function handleSubscriptionUpsert(
         trialEnd: sub.trial_end ? new Date(sub.trial_end * 1000) : null,
     });
 
+    // The status/period sync above landed, but the tier — the one field that
+    // decides whether a paying user gets blocked — fell back to whatever was
+    // already there. Report the event as a no-op anyway: silently keeping the
+    // old tier is exactly the stuck-tier bug (#332). The write is deliberately
+    // left in place so a resolver hiccup can't also strand the period dates.
+    if (!resolvedTier) {
+        log.warn(
+            { customerId, stripeSubscriptionId: sub.id, keptTier: tier },
+            'Could not resolve plan tier from Stripe; kept existing tier'
+        );
+        return {
+            outcome: 'noop',
+            reason: `Could not resolve a plan tier for Stripe customer ${customerId}; synced status and period but kept existing tier "${tier}"`,
+        };
+    }
+
     log.info(
         { customerId, tier, status: sub.status },
         'Subscription synced from webhook'
     );
+    return { outcome: 'applied' };
 }
 
 async function handleSubscriptionDeleted(
     db: DB,
     sub: Stripe.Subscription
-): Promise<void> {
+): Promise<WebhookDispatchOutcome> {
     const customerId = resolveStripeId(sub.customer);
-    if (!customerId) return;
+    if (!customerId) {
+        log.warn(
+            { stripeSubscriptionId: sub.id },
+            'Subscription deletion missing customer'
+        );
+        return createMissingCustomerOutcome('Deleted subscription', sub.id);
+    }
 
     const repo = createSubscriptionRepo(db);
     const existing = await repo.findByStripeCustomerId(customerId);
     if (!existing) {
         log.warn({ customerId }, 'No local record for subscription deletion');
-        return;
+        return createNoLocalRowOutcome(customerId);
     }
 
     await repo.upsertFromWebhook({
@@ -510,24 +594,25 @@ async function handleSubscriptionDeleted(
     });
 
     log.info({ customerId }, 'Subscription marked as canceled');
+    return { outcome: 'applied' };
 }
 
 async function handlePaymentFailed(
     db: DB,
     invoice: Stripe.Invoice
-): Promise<void> {
+): Promise<WebhookDispatchOutcome> {
     const customerId = resolveStripeId(invoice.customer);
 
     if (!customerId) {
         log.warn({ invoiceId: invoice.id }, 'Invoice missing customer');
-        return;
+        return createMissingCustomerOutcome('Invoice', invoice.id);
     }
 
     const repo = createSubscriptionRepo(db);
     const existing = await repo.findByStripeCustomerId(customerId);
     if (!existing) {
         log.warn({ customerId }, 'No local record for payment failure');
-        return;
+        return createNoLocalRowOutcome(customerId);
     }
 
     // Don't regress from a more severe status if events arrive out of order
@@ -536,7 +621,10 @@ async function handlePaymentFailed(
             { customerId, currentStatus: existing.status },
             'Skipping past_due — subscription already in terminal status'
         );
-        return;
+        return {
+            outcome: 'ignored',
+            reason: `Subscription for Stripe customer ${customerId} is already ${existing.status}; not regressing it to past_due`,
+        };
     }
 
     await repo.upsertFromWebhook({
@@ -548,39 +636,37 @@ async function handlePaymentFailed(
         { customerId, invoiceId: invoice.id },
         'Subscription marked past_due'
     );
+    return { outcome: 'applied' };
 }
 
-// Returns whether the event type had a handler — the webhook route uses this
-// to mark unhandled events visibly instead of silently succeeding (#281).
+// Reports what the event did, not just whether a handler existed — the webhook
+// route maps the outcome onto the row's status so unhandled types (#281) and
+// no-ops (#332) are both visible instead of silently succeeding.
 async function dispatchWebhookEvent(
     db: DB,
     event: Stripe.Event
-): Promise<boolean> {
+): Promise<WebhookDispatchOutcome> {
     switch (event.type) {
         case 'checkout.session.completed':
-            await handleCheckoutCompleted(
+            return handleCheckoutCompleted(
                 db,
                 event.data.object as Stripe.Checkout.Session
             );
-            return true;
         case 'customer.subscription.created':
         case 'customer.subscription.updated':
-            await handleSubscriptionUpsert(
+            return handleSubscriptionUpsert(
                 db,
                 event.data.object as Stripe.Subscription
             );
-            return true;
         case 'customer.subscription.deleted':
-            await handleSubscriptionDeleted(
+            return handleSubscriptionDeleted(
                 db,
                 event.data.object as Stripe.Subscription
             );
-            return true;
         case 'invoice.payment_failed':
-            await handlePaymentFailed(db, event.data.object as Stripe.Invoice);
-            return true;
+            return handlePaymentFailed(db, event.data.object as Stripe.Invoice);
         default:
-            return false;
+            return { outcome: 'unhandled' };
     }
 }
 
