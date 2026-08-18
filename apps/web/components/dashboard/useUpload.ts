@@ -39,6 +39,7 @@ import {
     partsProgress,
     toFileIdentity,
 } from '@/lib/upload/parts';
+import { patchRowById } from '@/lib/upload/rows';
 import {
     isFileSystemAccessSupported,
     reacquireMatchingFile,
@@ -238,9 +239,7 @@ export function useUpload() {
 
     const updateFile = useCallback(
         (id: string, updates: Partial<InternalUploadFile>) => {
-            setFiles((prev) =>
-                prev.map((f) => (f.id === id ? { ...f, ...updates } : f))
-            );
+            setFiles((prev) => patchRowById(prev, id, updates));
         },
         []
     );
@@ -968,8 +967,14 @@ export function useUpload() {
         },
         [abandonServerUpload]
     );
-    const removeFile = dropRow;
-    const cancelFile = dropRow;
+    // Row-facing callbacks go through a ref (same pattern as runQueuedRef):
+    // dropRow's identity changes every render because it closes over the
+    // per-render useMutation objects, and a fresh prop identity per render
+    // would defeat UploadQueueRow's memo.
+    const dropRowRef = useRef(dropRow);
+    dropRowRef.current = dropRow;
+    const removeFile = useCallback((id: string) => dropRowRef.current(id), []);
+    const cancelFile = removeFile;
 
     // Clear all empties the list; it is not a per-row "give up on this upload"
     // the way Cancel/Remove is. So it must not destroy multipart work the user
@@ -1065,13 +1070,14 @@ export function useUpload() {
         ]
     );
 
-    const resumeWithHandle = useCallback(
-        (id: string) => {
-            const row = filesRef.current.find((f) => f.id === id);
-            if (row) void resumeRows([row]);
-        },
-        [resumeRows]
-    );
+    // Ref-stable for the same reason as removeFile: resumeRows re-forms per
+    // render via the multipart engine's mutation deps.
+    const resumeRowsRef = useRef(resumeRows);
+    resumeRowsRef.current = resumeRows;
+    const resumeWithHandle = useCallback((id: string) => {
+        const row = filesRef.current.find((f) => f.id === id);
+        if (row) void resumeRowsRef.current([row]);
+    }, []);
 
     const resumeAllWithHandles = useCallback(() => {
         const rows = filesRef.current.filter(
@@ -1081,27 +1087,7 @@ export function useUpload() {
     }, [resumeRows]);
 
     // Expose only the public UploadFile shape (strip internal fields)
-    const publicFiles: UploadFile[] = files.map(
-        ({
-            id,
-            name,
-            size,
-            progress,
-            status,
-            error,
-            isQuickResumable,
-            file,
-        }) => ({
-            id,
-            name,
-            size,
-            progress,
-            status,
-            error,
-            isQuickResumable,
-            previewFile: file,
-        })
-    );
+    const publicFiles: UploadFile[] = files.map(toPublicUploadFile);
 
     return {
         files: publicFiles,
@@ -1115,6 +1101,31 @@ export function useUpload() {
         resumeWithHandle,
         resumeAllWithHandles,
     };
+}
+
+// Public projection, cached per internal row object. Internal rows are
+// immutable (updateFile replaces, never mutates), so an unchanged row projects
+// to the *same* public object across renders — which is what lets the
+// memoized queue row skip reconciling the 50+ siblings a progress tick
+// didn't touch.
+const publicRowCache = new WeakMap<InternalUploadFile, UploadFile>();
+
+function toPublicUploadFile(row: InternalUploadFile): UploadFile {
+    let cached = publicRowCache.get(row);
+    if (!cached) {
+        cached = {
+            id: row.id,
+            name: row.name,
+            size: row.size,
+            progress: row.progress,
+            status: row.status,
+            error: row.error,
+            isQuickResumable: row.isQuickResumable,
+            previewFile: row.file,
+        };
+        publicRowCache.set(row, cached);
+    }
+    return cached;
 }
 
 // Reopen the bytes behind a resumable row's persisted handle, verifying identity.

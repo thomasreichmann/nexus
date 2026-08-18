@@ -101,6 +101,25 @@ export async function stubS3Puts(
     return seen;
 }
 
+/**
+ * A real decodable image (1x1 transparent PNG), for tests that need the
+ * preview/thumbnail pipeline to run rather than fall through to an icon tile.
+ */
+export function makePngFile(name: string): {
+    name: string;
+    mimeType: string;
+    buffer: Buffer;
+} {
+    return {
+        name,
+        mimeType: 'image/png',
+        buffer: Buffer.from(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+            'base64'
+        ),
+    };
+}
+
 /** Distinct text files, for driving a multi-file upload. */
 export function makeTextFiles(
     count: number,
