@@ -23,3 +23,30 @@ export function patchRowById<T extends { id: string }>(
     next[index] = { ...row, ...updates };
     return next;
 }
+
+/**
+ * The folder gesture a row arrived on. `gestureId` is what makes "one folder"
+ * decidable — two drops of same-named folders are two gestures, and only a
+ * wave that is unanimously one of them gets named after it (#395). An explicit
+ * id rather than object identity, so the rule survives a row being cloned.
+ */
+export interface FolderOrigin {
+    gestureId: number;
+    name: string;
+}
+
+/**
+ * The folder name to label a wave's batch with, or undefined to leave it to the
+ * server's timestamp fallback. Set only when every row joining the new batch
+ * came from the same folder gesture — a loose file or a second folder in the
+ * mix makes the batch about more than one folder, so it stays generically named.
+ */
+export function resolveUnanimousFolderName(
+    rows: { folderOrigin?: FolderOrigin }[]
+): string | undefined {
+    const origin = rows[0]?.folderOrigin;
+    if (!origin) return undefined;
+    return rows.every((row) => row.folderOrigin?.gestureId === origin.gestureId)
+        ? origin.name
+        : undefined;
+}

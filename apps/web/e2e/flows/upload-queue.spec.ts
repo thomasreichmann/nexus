@@ -132,6 +132,92 @@ test(
     }
 );
 
+// The folder is the shoot (#395): a whole-folder upload carries its name to
+// the batch, which is the only label the file browser groups by. Same
+// `webkitdirectory` seam as the queue test above, driven all the way through
+// the upload so the header can be asserted on /dashboard/files.
+test(
+    'a whole-folder upload names its batch after the folder',
+    {
+        tag: [
+            '@page:/dashboard/upload',
+            '@page:/dashboard/files',
+            '@uc:upload-folder-names-batch',
+        ],
+    },
+    async ({ page, db, seedUserId }) => {
+        const folderName = 'shoot-2026-08-18';
+        const tree = await writeFolderTree({
+            name: folderName,
+            files: {
+                'IMG_0001.txt': 'frame one\n',
+                'day2/IMG_0002.txt': 'frame two\n',
+            },
+        });
+        try {
+            await stubS3Puts(page);
+            await page.goto(PAGE_URL);
+            await page.setInputFiles('[data-testid="folder-input"]', tree.dir);
+            await page.getByRole('button', { name: 'Upload 2 files' }).click();
+
+            await expect(
+                page.getByText('Uploaded', { exact: true })
+            ).toHaveCount(2, { timeout: 30_000 });
+
+            const batches = await db.query.uploadBatches.findMany({
+                where: (b, { eq }) => eq(b.userId, seedUserId),
+            });
+            expect(batches).toHaveLength(1);
+            expect(batches[0].name).toBe(folderName);
+
+            // The header already renders `batchName`; this is what the name is
+            // for, so assert the shoot is findable by it rather than by a date.
+            await page.goto('/dashboard/files');
+            await expect(
+                page.getByRole('button', { name: new RegExp(folderName) })
+            ).toBeVisible();
+        } finally {
+            await tree.cleanup();
+        }
+    }
+);
+
+// The naming rule's other half: a wave assembled from more than one gesture
+// isn't about one folder, so it keeps the timestamp label rather than
+// borrowing the name of whichever folder happened to be picked first.
+test(
+    'a wave mixing a folder with a loose file keeps the fallback batch name',
+    {
+        tag: ['@page:/dashboard/upload', '@uc:upload-mixed-wave-fallback-name'],
+    },
+    async ({ page, db, seedUserId }) => {
+        const tree = await writeFolderTree({
+            name: 'shoot-mixed',
+            files: { 'IMG_0001.txt': 'frame one\n' },
+        });
+        try {
+            await stubS3Puts(page);
+            await page.goto(PAGE_URL);
+            await page.setInputFiles('[data-testid="folder-input"]', tree.dir);
+            await page.setInputFiles('[data-testid="file-input"]', [FILE_A]);
+            await expect(page.getByText('Selected Files (2)')).toBeVisible();
+
+            await page.getByRole('button', { name: 'Upload 2 files' }).click();
+            await expect(
+                page.getByText('Uploaded', { exact: true })
+            ).toHaveCount(2, { timeout: 30_000 });
+
+            const batches = await db.query.uploadBatches.findMany({
+                where: (b, { eq }) => eq(b.userId, seedUserId),
+            });
+            expect(batches).toHaveLength(1);
+            expect(batches[0].name).toMatch(/^Upload \d{4}-\d{2}-\d{2} /);
+        } finally {
+            await tree.cleanup();
+        }
+    }
+);
+
 test(
     'clear-all empties the pending queue',
     { tag: ['@page:/dashboard/upload', '@uc:upload-clear-queue'] },
@@ -454,6 +540,7 @@ test(
             where: (b, { eq }) => eq(b.userId, seedUserId),
         });
         expect(batches).toHaveLength(1);
+        expect(batches[0].name).toMatch(/^Upload \d{4}-\d{2}-\d{2} /);
         const rows = await db.query.files.findMany({
             where: (f, { eq }) => eq(f.userId, seedUserId),
         });

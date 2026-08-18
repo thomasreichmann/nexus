@@ -268,6 +268,7 @@ describe('pickedFilesFromDataTransfer', () => {
                 { file: imgB, handle: handleB },
             ],
             truncated: false,
+            folderName: 'shoot',
         });
     });
 
@@ -289,7 +290,34 @@ describe('pickedFilesFromDataTransfer', () => {
             files: [],
             truncated: false,
             emptySelection: true,
+            folderName: 'empty-shoot',
         });
+    });
+
+    it('leaves a folder dropped alongside a loose file unnamed', async () => {
+        (window as { showOpenFilePicker?: unknown }).showOpenFilePicker =
+            () => {};
+        const loose = makeFile('loose.txt', 1, 1);
+        const img = makeFile('IMG_1.NEF', 2, 2);
+        const looseHandle = stubHandle();
+        const imgHandle = fileHandleOf(img);
+        const dataTransfer = stubDataTransfer([
+            {
+                kind: 'file',
+                getAsFile: () => loose,
+                getAsFileSystemHandle: async () => looseHandle,
+            },
+            {
+                kind: 'file',
+                getAsFile: () => null,
+                getAsFileSystemHandle: async () =>
+                    stubDirectoryHandle('shoot', [imgHandle]),
+            },
+        ]);
+
+        const picked = await pickedFilesFromDataTransfer(dataTransfer);
+        expect(picked.files).toHaveLength(2);
+        expect(picked.folderName).toBeUndefined();
     });
 
     it('stops the walk at the cap and reports truncation', async () => {
@@ -314,6 +342,24 @@ describe('pickedFilesFromDataTransfer', () => {
         const picked = await pickedFilesFromDataTransfer(dataTransfer);
         expect(picked.files).toHaveLength(MAX_FILES_PER_DROP);
         expect(picked.truncated).toBe(true);
+    });
+
+    it('names a lone folder dropped on the legacy entry path', async () => {
+        const img = makeFile('IMG_1.NEF', 1, 1);
+        const dataTransfer = stubDataTransfer([
+            {
+                kind: 'file',
+                getAsFile: () => null,
+                webkitGetAsEntry: () =>
+                    stubDirectoryEntry('shoot', [[stubFileEntry(img)]]),
+            },
+        ]);
+
+        expect(await pickedFilesFromDataTransfer(dataTransfer)).toEqual({
+            files: [{ file: img }],
+            truncated: false,
+            folderName: 'shoot',
+        });
     });
 
     it('walks directories via webkitGetAsEntry when handles are unsupported', async () => {
@@ -366,6 +412,7 @@ describe('pickFolderWithHandles', () => {
         expect(await pickFolderWithHandles()).toEqual({
             files: [{ file: img, handle }],
             truncated: false,
+            folderName: 'shoot',
         });
     });
 
@@ -376,6 +423,7 @@ describe('pickFolderWithHandles', () => {
             files: [],
             truncated: false,
             emptySelection: true,
+            folderName: 'empty',
         });
 
         (window as { showDirectoryPicker?: unknown }).showDirectoryPicker =
@@ -411,6 +459,7 @@ describe('pickedFilesFromDirectoryInput', () => {
         expect(pickedFilesFromDirectoryInput(fileList)).toEqual({
             files: [{ file: imgA }, { file: imgB }],
             truncated: false,
+            folderName: 'shoot',
         });
     });
 
@@ -421,7 +470,18 @@ describe('pickedFilesFromDirectoryInput', () => {
         expect(pickedFilesFromDirectoryInput(fileList)).toEqual({
             files: [{ file: img }],
             truncated: false,
+            folderName: '.backup',
         });
+    });
+
+    it('leaves a multi-root selection unnamed', () => {
+        const imgA = makeTreeFile('IMG_1.NEF', 'shoot-a/IMG_1.NEF');
+        const imgB = makeTreeFile('IMG_2.NEF', 'shoot-b/IMG_2.NEF');
+        const fileList = [imgA, imgB] as unknown as FileList;
+
+        expect(
+            pickedFilesFromDirectoryInput(fileList).folderName
+        ).toBeUndefined();
     });
 
     it('flags a folder whose files were all filtered out', () => {

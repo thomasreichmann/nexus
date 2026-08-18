@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { patchRowById } from './rows';
+import { patchRowById, resolveUnanimousFolderName } from './rows';
 
 interface Row {
     id: string;
@@ -43,5 +43,40 @@ describe('patchRowById', () => {
         const next = patchRowById(failed, 'a', { error: undefined });
         expect(next).not.toBe(failed);
         expect(next[0].error).toBeUndefined();
+    });
+});
+
+describe('resolveUnanimousFolderName', () => {
+    const shoot = { gestureId: 1, name: 'shoot-2026-08-18' };
+
+    it('names a wave that came entirely from one folder gesture', () => {
+        expect(
+            resolveUnanimousFolderName([
+                { folderOrigin: shoot },
+                { folderOrigin: shoot },
+            ])
+        ).toBe('shoot-2026-08-18');
+    });
+
+    it('declines a wave holding a file from no folder', () => {
+        expect(
+            resolveUnanimousFolderName([{ folderOrigin: shoot }, {}])
+        ).toBeUndefined();
+        expect(
+            resolveUnanimousFolderName([{}, { folderOrigin: shoot }])
+        ).toBeUndefined();
+    });
+
+    it('declines two folder gestures, even same-named ones', () => {
+        expect(
+            resolveUnanimousFolderName([
+                { folderOrigin: shoot },
+                { folderOrigin: { gestureId: 2, name: shoot.name } },
+            ])
+        ).toBeUndefined();
+    });
+
+    it('declines an empty wave', () => {
+        expect(resolveUnanimousFolderName([])).toBeUndefined();
     });
 });

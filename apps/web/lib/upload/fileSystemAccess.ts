@@ -24,11 +24,16 @@ export interface PickedFile {
  * none survived (an empty folder, or hidden litter only) — distinct from a
  * dismissed dialog or a text drag, which stay silent. Callers surface both
  * instead of silently shortchanging the selection (#388).
+ *
+ * `folderName` is the chosen folder's own name, set only when the gesture was
+ * exactly one folder and nothing else — it labels the upload batch (#395), so
+ * a mixed gesture leaves it unset rather than picking one of several roots.
  */
 export interface PickedFileBatch {
     files: PickedFile[];
     truncated: boolean;
     emptySelection?: boolean;
+    folderName?: string;
 }
 
 /** True when the browser exposes the picker + persistable handles (Chromium). */
@@ -186,6 +191,10 @@ export async function pickedFilesFromDataTransfer(
             if (sink.truncated) break;
             const handle = await handlePromise.catch(() => null);
             if (handle && handle.kind === 'directory') {
+                // A single dropped folder is the only composition we can name:
+                // a second item (another folder, or a loose file) makes the
+                // drop mixed. Same rule as the legacy branch below.
+                if (captured.length === 1) sink.folderName = handle.name;
                 await walkDirectoryHandle(
                     handle as FileSystemDirectoryHandle,
                     sink
@@ -218,6 +227,7 @@ export async function pickedFilesFromDataTransfer(
         sink.files = Array.from(dataTransfer.files).map((file) => ({ file }));
         return flagEmptySelection(sink, captured.length > 0);
     }
+    if (captured.length === 1) sink.folderName = captured[0].entry?.name;
     for (const { file, entry } of captured) {
         if (sink.truncated) break;
         if (entry?.isDirectory) {
@@ -244,6 +254,7 @@ export async function pickFolderWithHandles(): Promise<PickedFileBatch> {
         if (isAbortError(error)) return sink;
         throw error;
     }
+    sink.folderName = directory.name;
     await walkDirectoryHandle(directory, sink);
     // The user did choose a folder here, so an empty yield deserves feedback.
     return flagEmptySelection(sink, true);
@@ -271,7 +282,22 @@ export function pickedFilesFromDirectoryInput(
         files.length > MAX_FILES_PER_DROP
             ? { files: files.slice(0, MAX_FILES_PER_DROP), truncated: true }
             : { files, truncated: false };
+    // Computed before truncation so a capped selection still carries its name.
+    sink.folderName = getSoleRootSegment(files);
     return flagEmptySelection(sink, true);
+}
+
+/**
+ * The chosen root of a `webkitdirectory` selection: the first path segment,
+ * when every file shares it. Unset for a pathless (synthetic) FileList, and
+ * for the multi-root selections the input permits on some platforms.
+ */
+function getSoleRootSegment(files: PickedFile[]): string | undefined {
+    const rootOf = (picked: PickedFile) =>
+        picked.file.webkitRelativePath.split('/')[0];
+    const root = files[0] ? rootOf(files[0]) : undefined;
+    if (!root) return undefined;
+    return files.every((picked) => rootOf(picked) === root) ? root : undefined;
 }
 
 /**

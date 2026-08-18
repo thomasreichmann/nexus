@@ -353,6 +353,18 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-folder-names-batch',
+        title: 'A whole-folder upload names its batch after the folder',
+        area: 'upload',
+        routes: ['/dashboard/upload', '/dashboard/files'],
+    },
+    {
+        id: 'upload-mixed-wave-fallback-name',
+        title: 'A wave mixing a folder with a loose file keeps the fallback batch name',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-clear-queue',
         title: 'Clear the pending upload queue',
         area: 'upload',

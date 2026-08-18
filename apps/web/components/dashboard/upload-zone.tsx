@@ -74,7 +74,12 @@ export function UploadZone() {
     // no path can regress into the silent ignore #388 was about: a capped walk
     // says what it kept, an empty folder says it had nothing.
     const addPickedBatch = useCallback(
-        ({ files: picked, truncated, emptySelection }: PickedFileBatch) => {
+        ({
+            files: picked,
+            truncated,
+            emptySelection,
+            folderName,
+        }: PickedFileBatch) => {
             if (truncated) {
                 toast.info(
                     `Large selection — only the first ${MAX_FILES_PER_DROP.toLocaleString()} files were added.`
@@ -85,7 +90,7 @@ export function UploadZone() {
                     toast.info('No files found in that folder.');
                 return;
             }
-            void addFiles(picked);
+            void addFiles(picked, folderName);
         },
         [addFiles]
     );
