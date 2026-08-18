@@ -20,6 +20,7 @@ import {
 } from '@/lib/upload/limits';
 import { test, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
+import { fileName } from '../helpers/table';
 import { interceptTrpcCalls } from '../helpers/trpc';
 import { seedResumableUpload } from '../helpers/uploadStore';
 import {
@@ -67,11 +68,16 @@ test(
         await page.setInputFiles('input[type="file"]', [FILE_A, FILE_B]);
 
         await expect(page.getByText('Selected Files (2)')).toBeVisible();
-        await expect(page.getByText(FILE_A.name)).toBeVisible();
-        await expect(page.getByText(FILE_B.name)).toBeVisible();
+        // fileName(): queue rows render names through MiddleTruncateName,
+        // whose twin spans trip a bare getByText in strict mode.
+        await expect(fileName(page, FILE_A.name)).toBeVisible();
+        await expect(fileName(page, FILE_B.name)).toBeVisible();
         await expect(
             page.getByRole('button', { name: 'Upload 2 files' })
         ).toBeVisible();
+        // The summary tells the user how much room they actually have,
+        // instead of the invented per-GB price it used to show.
+        await expect(page.getByText('Storage available:')).toBeVisible();
 
         // Remove one queued file.
         await page.getByRole('button', { name: 'Remove' }).first().click();
@@ -115,7 +121,7 @@ test(
 
         // The interrupted upload surfaces as resumable (not failed), with its
         // prior progress and a re-add prompt — no retry/error affordance.
-        await expect(page.getByText('big-shoot.zip')).toBeVisible();
+        await expect(fileName(page, 'big-shoot.zip')).toBeVisible();
         await expect(
             page.getByText('Interrupted — re-add this file to resume')
         ).toBeVisible();
@@ -151,7 +157,7 @@ test(
 
         // The record outlives the clear: a reload rehydrates the same row.
         await page.reload();
-        await expect(page.getByText('big-shoot.zip')).toBeVisible();
+        await expect(fileName(page, 'big-shoot.zip')).toBeVisible();
         await expect(
             page.getByText('Interrupted — re-add this file to resume')
         ).toBeVisible();
@@ -186,7 +192,7 @@ test(
 
         // The row offers one-click resume (not the re-add prompt), with both a
         // per-row Resume button and a Resume-all affordance.
-        await expect(page.getByText('handle-shoot.zip')).toBeVisible();
+        await expect(fileName(page, 'handle-shoot.zip')).toBeVisible();
         await expect(
             page.getByText('Interrupted — resume in one click')
         ).toBeVisible();
@@ -263,6 +269,15 @@ test(
             files.length,
             { timeout: 30_000 }
         );
+
+        // A clean wave earns the success line and a route to the files it
+        // just created — the page is not a dead end.
+        await expect(
+            page.getByText('All files uploaded successfully!')
+        ).toBeVisible();
+        await expect(
+            page.getByRole('link', { name: 'View files' })
+        ).toBeVisible();
 
         // More than one PUT open at a time (the whole point), never more than
         // the pool allows (which also keeps every mix inside the 6-connection
@@ -372,6 +387,57 @@ test(
             files.length - 1,
             { timeout: 30_000 }
         );
+
+        // The failed row explains itself in words, not an HTTP status...
+        await expect(page.getByText('Upload failed — try again')).toBeVisible();
+        // ...and the summary owns the failure instead of claiming success.
+        await expect(
+            page.getByText(
+                `${files.length - 1} of ${files.length} files uploaded — 1 failed`
+            )
+        ).toBeVisible();
+        await expect(
+            page.getByText('All files uploaded successfully!')
+        ).toBeHidden();
+    }
+);
+
+// The pool is re-entrant, so a wave in flight is not a locked door: files
+// added while it runs queue as pending and a click folds them in.
+test(
+    'files added mid-wave join the running wave',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-add-mid-wave'] },
+    async ({ page }) => {
+        const puts = await stubS3Puts(page, { holdMs: 2000 });
+        const first = makeTextFiles(MAX_CONCURRENT_FILES + 2, 'queue-first');
+        const late = makeTextFiles(2, 'queue-late');
+
+        await page.goto(PAGE_URL);
+        await page.setInputFiles('input[type="file"]', first);
+        await page
+            .getByRole('button', { name: `Upload ${first.length} files` })
+            .click();
+
+        // The pool takes four; the overflow rows say they're waiting and
+        // stay removable while they wait.
+        await expect(page.getByText('Waiting to upload').first()).toBeVisible({
+            timeout: 15_000,
+        });
+        await expect(
+            page.getByRole('button', { name: 'Remove' }).first()
+        ).toBeVisible();
+
+        // Adding files mid-wave re-arms the Upload button for just the new
+        // rows; clicking it joins the wave already in flight.
+        await page.setInputFiles('input[type="file"]', late);
+        await page.getByRole('button', { name: 'Upload 2 files' }).click();
+
+        await expect(page.getByText('Uploaded', { exact: true })).toHaveCount(
+            first.length + late.length,
+            { timeout: 60_000 }
+        );
+        // Joining the wave respects the pool bound — no stampede.
+        expect(puts.peak).toBeLessThanOrEqual(MAX_CONCURRENT_FILES);
     }
 );
 
@@ -443,8 +509,12 @@ test(
             })
         ).toBeVisible();
 
-        // One message for the wave, not one per rejected file.
+        // One message for the wave, not one per rejected file — and written
+        // for people, not the raw byte counts the server logs.
         await expect(page.locator('[data-sonner-toast]')).toHaveCount(1);
+        await expect(page.locator('[data-sonner-toast]')).toContainText(
+            'Not enough storage'
+        );
 
         // The quota check runs before anything is minted, so nothing landed.
         const rows = await db.query.files.findMany({

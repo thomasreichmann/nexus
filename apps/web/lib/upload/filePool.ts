@@ -37,6 +37,13 @@ export interface FilePoolOptions<T extends PoolItem> {
     run: (item: T) => Promise<FileRunOutcome>;
     /** Fires once when the pool goes idle, not once per file. */
     onDrained?: () => unknown;
+    /**
+     * Fires with the queued items a halt threw away, so their rows can be
+     * put back into a state the user can act on — without this they'd sit
+     * in whatever "waiting" state admission gave them, with nothing left
+     * that will ever start them.
+     */
+    onDropped?: (items: T[]) => unknown;
 }
 
 export interface FilePool<T extends PoolItem> {
@@ -104,7 +111,13 @@ export function createFilePool<T extends PoolItem>(
             // decision by the user, and dropping it would strand the row in
             // `pending` with nothing left to start it.
             if (isHalted) {
-                queue.length = 0;
+                // Splice first, report second: `?.()` skips its arguments
+                // when the callback is absent, so the splice must not live
+                // inside the call.
+                const droppedItems = queue.splice(0);
+                if (droppedItems.length > 0) {
+                    options.onDropped?.(droppedItems);
+                }
                 isHalted = false;
             }
             const next = queue[0];

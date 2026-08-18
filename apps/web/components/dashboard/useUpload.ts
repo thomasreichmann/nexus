@@ -50,6 +50,7 @@ import {
     isNetworkError,
     isQuotaExceededError,
     reportUploadFailure,
+    uploadErrorMessage,
     uploadEventProps,
     type UploadEngine,
 } from '@/lib/upload/errors';
@@ -67,6 +68,10 @@ const CANCEL = 'cancel';
 
 export type UploadStatus =
     | 'pending'
+    // Admitted to the pool but not started — distinct from `pending` so the
+    // Upload button only counts files the user hasn't submitted yet, which is
+    // what lets files added mid-wave join the running wave with a click.
+    | 'queued'
     | 'uploading'
     | 'paused'
     | 'resumable'
@@ -281,7 +286,7 @@ export function useUpload() {
             });
             updateFile(uploadFile.id, {
                 status: 'error',
-                error: error instanceof Error ? error.message : 'Upload failed',
+                error: uploadErrorMessage(error),
             });
             return isQuotaExceededError(error) ? 'halt' : 'continue';
         },
@@ -686,6 +691,15 @@ export function useUpload() {
         // Once per drained wave, not once per file: four concurrent files
         // would otherwise fire four refetch storms across three queries.
         onDrained: () => invalidateFileListRef.current(),
+        // A quota halt throws away the queue; put those rows back to
+        // `pending` so the Upload button re-owns them instead of leaving
+        // them stranded in `queued` with nothing left to start them.
+        // (`updateFile` is stable, so closing over it here is safe.)
+        onDropped: (items) => {
+            for (const item of items) {
+                updateFile(item.id, { status: 'pending' });
+            }
+        },
     });
 
     // `isUploading` has several owners (the pool, quick-resume) and must not
@@ -717,6 +731,14 @@ export function useUpload() {
             (f) => f.status === 'pending' && f.file
         );
         if (pending.length === 0) return;
+
+        // Claim the rows before the batch round trip: the Upload button stays
+        // enabled while a wave runs (so added files can join it), which makes
+        // a second click during the await possible — `queued` is what keeps
+        // that click from minting a second batch for the same rows.
+        for (const f of pending) {
+            updateFile(f.id, { status: 'queued' });
+        }
 
         // One batch per Upload click: every pending file in this pass joins
         // it, so a multi-file selection lands in a single upload_batches row.
@@ -974,8 +996,11 @@ export function useUpload() {
         (id: string) => {
             const file = filesRef.current.find((f) => f.id === id);
             if (!file?.file) return;
+            // Straight to `queued`, not `pending`: the row is being handed to
+            // the pool right now, so it must not re-enter the Upload button's
+            // pending count on the way through.
             updateFile(id, {
-                status: 'pending',
+                status: 'queued',
                 error: undefined,
             });
             void drive([toQueuedUpload(file)]);
@@ -1006,15 +1031,17 @@ export function useUpload() {
                         continue;
                     }
                     hasResumedAny = true;
+                    // `queued`, not `pending`: the row is on its way into the
+                    // engine, so it must not count toward the Upload button.
                     updateFile(row.id, {
                         file,
-                        status: 'pending',
+                        status: 'queued',
                         error: undefined,
                     });
                     await uploadMultipartFile({
                         ...row,
                         file,
-                        status: 'pending',
+                        status: 'queued',
                     });
                 }
                 if (!hasResumedAny) {

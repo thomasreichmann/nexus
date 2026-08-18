@@ -122,7 +122,7 @@ describe('errorHandlerMiddleware', () => {
             expect(error).toBeInstanceOf(TRPCError);
             expect((error as TRPCError).code).toBe('PRECONDITION_FAILED');
             expect((error as TRPCError).message).toContain(
-                'Storage quota exceeded'
+                'Not enough storage'
             );
         }
     });

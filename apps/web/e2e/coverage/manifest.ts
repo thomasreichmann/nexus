@@ -405,6 +405,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-add-mid-wave',
+        title: 'Files added while a wave runs can join it without waiting',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-multipart-budget',
         title: 'Concurrent multipart files stay inside the shared S3 connection budget',
         area: 'upload',

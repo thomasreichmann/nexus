@@ -1,6 +1,6 @@
 import { DOMAIN_ERROR_CODES, type DomainErrorCode } from '@/lib/errors/codes';
+import { formatBytes } from '@/lib/format';
 import type { TRPC_ERROR_CODE_KEY } from '@trpc/server/rpc';
-
 
 /**
  * Base class for all domain errors. Services throw these, middleware maps to
@@ -65,8 +65,11 @@ export class QuotaExceededError extends DomainError {
     readonly details: QuotaDetails;
 
     constructor(details: QuotaDetails) {
+        // User-facing, like every other DomainError message: the error link
+        // shows this string verbatim in the toast and the upload row. The raw
+        // byte counts stay on `details` for logs and programmatic use.
         super(
-            `Storage quota exceeded: ${details.usedBytes}/${details.limitBytes} used, ${details.requestedBytes} requested`,
+            `Not enough storage — ${formatBytes(details.usedBytes)} of ${formatBytes(details.limitBytes)} used`,
             'PRECONDITION_FAILED'
         );
         this.details = details;

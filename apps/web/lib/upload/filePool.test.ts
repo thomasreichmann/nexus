@@ -172,6 +172,28 @@ describe('createFilePool', () => {
         expect(ctl.started).toEqual(['f0', 'f1']);
     });
 
+    it('reports the queued items a halt threw away', async () => {
+        const ctl = createControllableRunner();
+        ctl.outcomes.set('f0', 'halt');
+        const dropped: string[] = [];
+        const pool = createFilePool({
+            maxConcurrent: 2,
+            maxInFlightBytes: Infinity,
+            run: ctl.run,
+            onDropped: (items) => dropped.push(...items.map((i) => i.id)),
+        });
+
+        const drained = pool.enqueue(makeItems(6));
+        await flushMicrotasks();
+        await ctl.finish('f0');
+        await ctl.finish('f1');
+        await drained;
+
+        // Exactly the never-started remainder, so the caller can reset those
+        // rows — the two in-flight files report through their own outcomes.
+        expect(dropped).toEqual(['f2', 'f3', 'f4', 'f5']);
+    });
+
     it('runs work enqueued after a halt, while the halted wave drains', async () => {
         // The user's Retry click on the quota-failed row lands while its
         // siblings are still finishing. Latching the halt would drop it and
