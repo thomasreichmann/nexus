@@ -525,11 +525,15 @@ test(
         const files = makeTextFiles(MAX_CONCURRENT_FILES * 2, 'queue-quota');
 
         await page.goto(PAGE_URL);
-        await page.setInputFiles('input[type="file"]', files);
         // Park usage at 105% of starter (any positive size is over the cap)
         // only after the page has cached a clear `getUsage`: with the #389
         // pre-flight in place, this stale-cache window is exactly where the
-        // server-side halt still fires.
+        // server-side halt still fires. The sidebar rendering the clear
+        // snapshot is the proof the cache holds it — under full-tier load the
+        // fetch can otherwise lose the race to the insert, and the pre-flight
+        // would see the parked row and disable Upload.
+        await expect(page.getByText('0 Bytes of')).toBeVisible();
+        await page.setInputFiles('input[type="file"]', files);
         await insertStorageUsage(db, {
             userId: seedUserId,
             usedBytes: Math.floor(PLAN_LIMITS.starter * SOFT_LIMIT_MULTIPLIER),
