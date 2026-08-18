@@ -166,6 +166,44 @@ test(
     }
 );
 
+// The per-row X on an in-flight or resumable row aborts the S3 session and
+// deletes the resume record — visually identical to the harmless Remove on a
+// pending row, so a misclick deep into a big upload used to be unrecoverable
+// (#389). It now confirms first.
+test(
+    'cancelling a resumable upload asks for confirmation first',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-cancel-guard'] },
+    async ({ page }) => {
+        await page.goto(PAGE_URL);
+        await expect(page.getByText('Drop files here to upload')).toBeVisible();
+
+        await seedResumableUpload(page);
+        await page.reload();
+        await expect(fileName(page, 'big-shoot.zip')).toBeVisible();
+
+        // The X opens the guard instead of destroying the upload outright.
+        await page.getByRole('button', { name: 'Cancel upload' }).click();
+        const dialog = page.getByRole('alertdialog');
+        await expect(dialog.getByText('Cancel this upload?')).toBeVisible();
+
+        // Backing out leaves the upload untouched — still resumable after a
+        // reload.
+        await dialog.getByRole('button', { name: 'Keep upload' }).click();
+        await expect(dialog).toBeHidden();
+        await page.reload();
+        await expect(fileName(page, 'big-shoot.zip')).toBeVisible();
+
+        // Confirming destroys it for real: row gone, and the resume record
+        // with it — a reload resurrects nothing.
+        await page.getByRole('button', { name: 'Cancel upload' }).click();
+        await dialog.getByRole('button', { name: 'Cancel upload' }).click();
+        await expect(page.getByText(/Selected Files/)).toBeHidden();
+        await page.reload();
+        await expect(page.getByText('Drop files here to upload')).toBeVisible();
+        await expect(fileName(page, 'big-shoot.zip')).toBeHidden();
+    }
+);
+
 test(
     'an interrupted upload with a persisted handle is shown as one-click resumable',
     { tag: ['@page:/dashboard/upload', '@uc:upload-resume-one-click'] },
@@ -484,16 +522,19 @@ test(
     'the first quota rejection halts the wave',
     { tag: ['@page:/dashboard/upload', '@uc:upload-quota-halt'] },
     async ({ page, db, seedUserId }) => {
-        // Park usage at 105% of starter: any positive size is over the cap.
+        const files = makeTextFiles(MAX_CONCURRENT_FILES * 2, 'queue-quota');
+
+        await page.goto(PAGE_URL);
+        await page.setInputFiles('input[type="file"]', files);
+        // Park usage at 105% of starter (any positive size is over the cap)
+        // only after the page has cached a clear `getUsage`: with the #389
+        // pre-flight in place, this stale-cache window is exactly where the
+        // server-side halt still fires.
         await insertStorageUsage(db, {
             userId: seedUserId,
             usedBytes: Math.floor(PLAN_LIMITS.starter * SOFT_LIMIT_MULTIPLIER),
             fileCount: 1,
         });
-        const files = makeTextFiles(MAX_CONCURRENT_FILES * 2, 'queue-quota');
-
-        await page.goto(PAGE_URL);
-        await page.setInputFiles('input[type="file"]', files);
         await page
             .getByRole('button', { name: `Upload ${files.length} files` })
             .click();
@@ -524,6 +565,65 @@ test(
     }
 );
 
+// Pre-flight quota (#389): the client already knows the usage and every
+// queued file's size, so a doomed wave is refused before Upload is clicked
+// instead of being discovered through a rejected wave.
+test(
+    'a selection that cannot fit disables Upload before the wave starts',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-preflight-quota'] },
+    async ({ page, db, seedUserId }) => {
+        // Park usage at the soft cap: any pending byte overflows what the
+        // server would accept.
+        await insertStorageUsage(db, {
+            userId: seedUserId,
+            usedBytes: Math.floor(PLAN_LIMITS.starter * SOFT_LIMIT_MULTIPLIER),
+            fileCount: 1,
+        });
+
+        await page.goto(PAGE_URL);
+        await page.setInputFiles('input[type="file"]', [FILE_A]);
+
+        await expect(page.getByText(/Not enough storage —/)).toBeVisible();
+        await expect(
+            page.getByRole('button', { name: 'Upload 1 file' })
+        ).toBeDisabled();
+
+        // Removing the oversized selection clears the block.
+        await page.getByRole('button', { name: 'Remove' }).click();
+        await expect(page.getByText(/Not enough storage —/)).toBeHidden();
+    }
+);
+
+test(
+    'a selection past the limit but inside the grace band warns without blocking',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-preflight-quota'] },
+    async ({ page, db, seedUserId }) => {
+        // 10 bytes of the plan left: FILE_A projects past 100% but nowhere
+        // near the 5% soft-cap band, so it may still upload.
+        await insertStorageUsage(db, {
+            userId: seedUserId,
+            usedBytes: PLAN_LIMITS.starter - 10,
+            fileCount: 1,
+        });
+
+        await page.goto(PAGE_URL);
+        await page.setInputFiles('input[type="file"]', [FILE_A]);
+
+        await expect(
+            page.getByText('This upload will put you over your storage limit.')
+        ).toBeVisible();
+        await expect(
+            page.getByRole('button', { name: 'Upload 1 file' })
+        ).toBeEnabled();
+
+        // The sidebar bar shows the near-limit state rather than the calm
+        // brand color at ~100% usage.
+        await expect(
+            page.locator('aside [data-usage-level="near-limit"]')
+        ).toBeVisible();
+    }
+);
+
 test(
     'cancelling an in-flight upload strands no uploading row',
     { tag: ['@page:/dashboard/upload', '@uc:upload-cancel-cleanup'] },
@@ -551,6 +651,12 @@ test(
             .toEqual(['uploading']);
 
         await page.getByRole('button', { name: 'Cancel upload' }).click();
+        // The X now opens the #389 confirmation guard; cleanup only fires
+        // once the cancel is confirmed.
+        await page
+            .getByRole('alertdialog')
+            .getByRole('button', { name: 'Cancel upload' })
+            .click();
 
         // The whole point of #330: no row left hidden in `uploading`, where no
         // list would ever show it and its S3 bytes would stay billed.

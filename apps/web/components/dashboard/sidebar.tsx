@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Archive } from 'lucide-react';
+import { NEAR_LIMIT_RATIO } from '@nexus/db/plans';
 import { useSession } from '@/lib/auth/client';
 import { cn } from '@/lib/cn';
 import { getNavItems } from '@/lib/dashboard/navigation';
@@ -16,6 +17,17 @@ export function DashboardSidebar() {
     const navItems = getNavItems(session?.user?.role);
     const trpc = useTRPC();
     const { data: usage } = useQuery(trpc.storage.getUsage.queryOptions());
+    const usagePercent = usage?.percentage ?? 0;
+    // A full bar in the brand color reads as calm; at the cap it should read
+    // as the reason uploads are failing, and near it as a heads-up before
+    // they start to. Also a stable hook for tests, so they don't couple to
+    // the tint classes.
+    const usageLevel =
+        usagePercent >= 100
+            ? 'over-limit'
+            : usagePercent >= NEAR_LIMIT_RATIO * 100
+              ? 'near-limit'
+              : 'ok';
 
     return (
         <aside className="hidden w-64 flex-col border-r border-border bg-sidebar md:flex">
@@ -55,17 +67,17 @@ export function DashboardSidebar() {
                     </p>
                     <div className="mt-2 h-2 overflow-hidden rounded-full bg-sidebar-border">
                         <div
+                            data-usage-level={usageLevel}
                             className={cn(
                                 'h-full rounded-full transition-all',
-                                // A full bar in the brand color reads as calm;
-                                // at the cap it should read as the reason
-                                // uploads are failing.
-                                (usage?.percentage ?? 0) >= 100
+                                usageLevel === 'over-limit'
                                     ? 'bg-destructive'
-                                    : 'bg-primary'
+                                    : usageLevel === 'near-limit'
+                                      ? 'bg-amber-500'
+                                      : 'bg-primary'
                             )}
                             style={{
-                                width: `${usage?.percentage ?? 0}%`,
+                                width: `${usagePercent}%`,
                             }}
                         />
                     </div>

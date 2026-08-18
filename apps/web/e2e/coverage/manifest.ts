@@ -359,6 +359,18 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-cancel-guard',
+        title: 'Cancelling an in-flight/resumable upload asks for confirmation',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
+        id: 'upload-preflight-quota',
+        title: 'Selection exceeding available storage warns before upload and blocks past the soft cap',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-single-file-flow',
         title: 'Upload a file end-to-end (S3 + DB + batch + usage)',
         area: 'upload',
