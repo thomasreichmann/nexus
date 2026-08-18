@@ -1,7 +1,10 @@
 import * as Sentry from '@sentry/nextjs';
 import { TRPCClientError } from '@trpc/client';
 
+import { DOMAIN_ERROR_CODES } from '@/lib/errors/codes';
 import { UploadHttpError, UploadNetworkError } from '@/lib/http/xhr';
+import { getErrorMessage } from '@/lib/trpc/error-link';
+import { getDomainError } from '@/lib/trpc/get-domain-error';
 import { captureEvent } from '@/lib/posthog/client';
 import { PostHogEvent } from '@/lib/posthog/events';
 
@@ -24,6 +27,38 @@ export function isNetworkError(error: unknown): boolean {
 /** The upload was aborted (pause or cancel), not a real failure. */
 export function isAbortError(error: unknown): boolean {
     return error instanceof DOMException && error.name === 'AbortError';
+}
+
+/**
+ * The server rejected the upload because the account is out of storage. Unlike
+ * every other failure this one is about the account, not the file, so there is
+ * nothing to gain from letting the rest of a queued wave attempt and fail too.
+ */
+export function isQuotaExceededError(error: unknown): boolean {
+    return (
+        error instanceof TRPCClientError &&
+        getDomainError(error)?.code === DOMAIN_ERROR_CODES.QUOTA_EXCEEDED
+    );
+}
+
+/**
+ * The message an upload row shows when its attempt terminally fails. Raw
+ * `error.message` is written for logs ("Upload failed with status 500") and
+ * Sentry already gets the real error via {@link reportUploadFailure}, so the
+ * row can afford to speak plainly. tRPC errors go through the same mapping
+ * the toast uses, which keeps the row and the toast telling one story.
+ */
+export function uploadErrorMessage(error: unknown): string {
+    if (error instanceof TRPCClientError) {
+        return getErrorMessage(error);
+    }
+    if (error instanceof UploadHttpError) {
+        return 'Upload failed — try again';
+    }
+    if (error instanceof UploadNetworkError) {
+        return 'Connection problem — check your network and retry';
+    }
+    return 'Upload failed';
 }
 
 /** Which upload path moved the bytes. */

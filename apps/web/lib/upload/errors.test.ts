@@ -16,7 +16,9 @@ import {
     isExpiredUrlError,
     isNetworkError,
     isAbortError,
+    isQuotaExceededError,
     reportUploadFailure,
+    uploadErrorMessage,
 } from './errors';
 
 describe('isExpiredUrlError', () => {
@@ -31,6 +33,35 @@ describe('isExpiredUrlError', () => {
     it('is false for non-http errors', () => {
         expect(isExpiredUrlError(new UploadNetworkError())).toBe(false);
         expect(isExpiredUrlError(new Error('x'))).toBe(false);
+    });
+});
+
+describe('isQuotaExceededError', () => {
+    it('is true for a QUOTA_EXCEEDED domain error', () => {
+        expect(
+            isQuotaExceededError(
+                makeClientError({
+                    code: 'PRECONDITION_FAILED',
+                    domainCode: 'QUOTA_EXCEEDED',
+                })
+            )
+        ).toBe(true);
+    });
+
+    it('is false for other domain errors', () => {
+        expect(
+            isQuotaExceededError(
+                makeClientError({
+                    code: 'FORBIDDEN',
+                    domainCode: 'TRIAL_EXPIRED',
+                })
+            )
+        ).toBe(false);
+    });
+
+    it('is false for transport failures', () => {
+        expect(isQuotaExceededError(new UploadHttpError(403))).toBe(false);
+        expect(isQuotaExceededError(new Error('x'))).toBe(false);
     });
 });
 
@@ -53,6 +84,37 @@ describe('isAbortError', () => {
 
     it('is false for other errors', () => {
         expect(isAbortError(new Error('nope'))).toBe(false);
+    });
+});
+
+describe('uploadErrorMessage', () => {
+    it('passes a domain error message through — those are user-facing', () => {
+        const error = makeClientError({
+            code: 'PRECONDITION_FAILED',
+            domainCode: 'QUOTA_EXCEEDED',
+            message: 'Not enough storage — 1.05 TB of 1 TB used',
+        });
+        expect(uploadErrorMessage(error)).toBe(
+            'Not enough storage — 1.05 TB of 1 TB used'
+        );
+    });
+
+    it('hides the raw status of an S3 rejection', () => {
+        const message = uploadErrorMessage(new UploadHttpError(500));
+        expect(message).not.toContain('500');
+        expect(message).toContain('try again');
+    });
+
+    it('describes a transport drop as a connection problem', () => {
+        expect(uploadErrorMessage(new UploadNetworkError())).toContain(
+            'Connection problem'
+        );
+    });
+
+    it('falls back to a plain failure line for anything else', () => {
+        expect(uploadErrorMessage(new Error('ENOENT: no such file'))).toBe(
+            'Upload failed'
+        );
     });
 });
 

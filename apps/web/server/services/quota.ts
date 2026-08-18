@@ -1,15 +1,10 @@
-import { isTrialExpired } from '@nexus/db/plans';
+import { isTrialExpired, SOFT_LIMIT_MULTIPLIER } from '@nexus/db/plans';
 import { createStorageUsageRepo } from '@nexus/db/repo/storage-usage';
 import { QuotaExceededError, TrialExpiredError } from '@/server/errors';
 import { PLAN_LIMITS } from './constants';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
 import type { DB } from '@nexus/db';
 
-// Optimistic concurrency: pre-checks pass at 100%, but we accept up to 105%
-// of the plan limit so a burst of concurrent uploads (each individually
-// passing the check before any have written) can land without rejection.
-// The 5% bound also covers small drift between storage_usage and reality.
-const SOFT_LIMIT_MULTIPLIER = 1.05;
 // Threshold for surfacing a "near limit" warning to the client (e.g. banner).
 const NEAR_LIMIT_RATIO = 0.9;
 

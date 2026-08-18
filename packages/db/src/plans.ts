@@ -12,6 +12,16 @@ export const PLAN_LIMITS: Record<PlanTier, number> = {
 };
 
 /**
+ * Optimistic concurrency: upload pre-checks pass at 100% of the plan limit, but
+ * we accept up to 105% so a burst of concurrent uploads — each individually
+ * passing the check before any of them has written — can land without
+ * rejection. The 5% band also covers small drift between `storage_usage` and
+ * reality. Enforced in `apps/web/server/services/quota.ts`; it lives here so
+ * the specs that park a user at the cap don't each carry their own copy.
+ */
+export const SOFT_LIMIT_MULTIPLIER = 1.05;
+
+/**
  * Lives here rather than in `apps/web` so seeds and test-db helpers can reach
  * it — they can't import from the app.
  */

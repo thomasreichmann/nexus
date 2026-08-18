@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 import { Analytics } from '@vercel/analytics/next';
 import { Geist, Geist_Mono } from 'next/font/google';
-import { Toaster } from 'sonner';
 import { ClientErrorReporter } from '@/components/ClientErrorReporter';
 import { PostHogAnalytics } from '@/components/PostHogAnalytics';
 import { ThemeProvider } from '@/components/theme-provider';
+import { Toaster } from '@/components/ui/sonner';
 import { TRPCReactProvider } from '@/lib/trpc/client';
 import type { Metadata } from 'next';
 import './globals.css';
@@ -46,8 +46,10 @@ export default function RootLayout({
                         <PostHogAnalytics />
                         {children}
                     </TRPCReactProvider>
+                    {/* Inside ThemeProvider: the toaster reads the resolved
+                        theme so toasts match the UI. */}
+                    <Toaster />
                 </ThemeProvider>
-                <Toaster />
                 {/* Vercel injects /_vercel/insights/script.js only on its edge;
                     off-Vercel (local/CI production builds, e.g. e2e) that script
                     404s and pollutes the zero-console-error assertions, so only

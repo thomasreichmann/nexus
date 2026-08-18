@@ -2,6 +2,8 @@
 
 import type React from 'react';
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import {
     Upload,
     X,
@@ -19,11 +21,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/cn';
 import { formatBytes } from '@/lib/format';
+import { useTRPC } from '@/lib/trpc/client';
 import {
     isFileSystemAccessSupported,
     pickFilesWithHandles,
     pickedFilesFromDataTransfer,
 } from '@/lib/upload/fileSystemAccess';
+import { MiddleTruncateName } from './MiddleTruncateName';
 import { useUpload, type UploadStatus } from './useUpload';
 
 // Formats the browser can decode natively — RAW files (NEF/CR3/ARW/…) carry
@@ -82,10 +86,30 @@ export function UploadZone() {
         setIsDragOver(false);
     };
 
+    const trpc = useTRPC();
+    // Cached by the sidebar's identical query most of the time; gives the
+    // summary an honest "how much room is left" figure.
+    const { data: usage } = useQuery(trpc.storage.getUsage.queryOptions());
+
     const totalSize = files.reduce((acc, f) => acc + f.size, 0);
-    const estimatedCost = (totalSize / (1024 * 1024 * 1024)) * 0.01; // $0.01 per GB per month
     const pendingFiles = files.filter((f) => f.status === 'pending');
-    const hasCompletedFiles = files.some((f) => f.status === 'complete');
+    const completedCount = files.filter((f) => f.status === 'complete').length;
+    const errorCount = files.filter((f) => f.status === 'error').length;
+    const pausedCount = files.filter((f) => f.status === 'paused').length;
+    const activeCount = files.filter(
+        (f) => f.status === 'queued' || f.status === 'uploading'
+    ).length;
+    // The wave is live while the pool holds rows; `isUploading` alone would
+    // blink off during the batch-creation await before any row is admitted.
+    const hasActiveWave = isUploading || activeCount > 0;
+    const attemptedCount = completedCount + errorCount;
+    // The outcome line waits for a settled queue: nothing moving, nothing the
+    // user still has to submit, nothing parked waiting for a reconnect.
+    const showOutcome =
+        !hasActiveWave &&
+        pendingFiles.length === 0 &&
+        pausedCount === 0 &&
+        attemptedCount > 0;
     const quickResumable = files.filter(
         (f) => f.status === 'resumable' && f.isQuickResumable
     );
@@ -131,13 +155,11 @@ export function UploadZone() {
                                 // an interrupted upload) to fire onChange again.
                                 e.target.value = '';
                             }}
-                            disabled={isUploading}
                         />
-                        <Button
-                            variant="outline"
-                            disabled={isUploading}
-                            onClick={handleBrowse}
-                        >
+                        {/* Deliberately enabled mid-wave (drag-drop always
+                            was): added files queue as pending and the Upload
+                            button lets them join the running wave. */}
+                        <Button variant="outline" onClick={handleBrowse}>
                             Browse files
                         </Button>
                     </div>
@@ -197,9 +219,10 @@ export function UploadZone() {
                                         status={file.status}
                                     />
                                     <div className="flex-1 min-w-0">
-                                        <p className="truncate font-medium">
-                                            {file.name}
-                                        </p>
+                                        <MiddleTruncateName
+                                            name={file.name}
+                                            className="font-medium"
+                                        />
                                         <p className="text-sm text-muted-foreground">
                                             {formatBytes(file.size)}
                                         </p>
@@ -210,6 +233,11 @@ export function UploadZone() {
                                                 value={file.progress}
                                                 className="mt-2 h-1"
                                             />
+                                        )}
+                                        {file.status === 'queued' && (
+                                            <p className="mt-1 text-xs text-muted-foreground">
+                                                Waiting to upload
+                                            </p>
                                         )}
                                         {file.status === 'paused' && (
                                             <p className="mt-1 text-xs text-amber-600">
@@ -231,21 +259,22 @@ export function UploadZone() {
                                                 </p>
                                             )}
                                     </div>
-                                    {file.status === 'pending' &&
-                                        !isUploading && (
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() =>
-                                                    removeFile(file.id)
-                                                }
-                                            >
-                                                <X className="h-4 w-4" />
-                                                <span className="sr-only">
-                                                    Remove
-                                                </span>
-                                            </Button>
-                                        )}
+                                    {/* Removable while queued too: the pool
+                                        re-reads the row at start time, so a
+                                        removed row is simply skipped. */}
+                                    {(file.status === 'pending' ||
+                                        file.status === 'queued') && (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => removeFile(file.id)}
+                                        >
+                                            <X className="h-4 w-4" />
+                                            <span className="sr-only">
+                                                Remove
+                                            </span>
+                                        </Button>
+                                    )}
                                     {file.status === 'resumable' &&
                                         file.isQuickResumable && (
                                             <Button
@@ -303,43 +332,77 @@ export function UploadZone() {
                                         {formatBytes(totalSize)}
                                     </span>
                                 </p>
-                                <p className="text-sm">
-                                    <span className="text-muted-foreground">
-                                        Est. monthly cost:
-                                    </span>{' '}
-                                    <span className="font-medium">
-                                        ${estimatedCost.toFixed(2)}
-                                    </span>
-                                </p>
-                            </div>
-                            {pendingFiles.length > 0 && (
-                                <Button
-                                    onClick={startUpload}
-                                    disabled={isUploading}
-                                >
-                                    {isUploading ? (
-                                        <>
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            Uploading...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Upload className="mr-2 h-4 w-4" />
-                                            Upload {pendingFiles.length}{' '}
-                                            {pendingFiles.length === 1
-                                                ? 'file'
-                                                : 'files'}
-                                        </>
-                                    )}
-                                </Button>
-                            )}
-                            {hasCompletedFiles &&
-                                pendingFiles.length === 0 &&
-                                !isUploading && (
-                                    <p className="text-sm font-medium text-green-500">
-                                        All files uploaded successfully!
+                                {usage && (
+                                    <p className="text-sm">
+                                        <span className="text-muted-foreground">
+                                            Storage available:
+                                        </span>{' '}
+                                        <span className="font-medium">
+                                            {formatBytes(
+                                                Math.max(
+                                                    usage.quotaBytes -
+                                                        usage.usedBytes,
+                                                    0
+                                                )
+                                            )}
+                                        </span>
                                     </p>
                                 )}
+                                {hasActiveWave && (
+                                    <p className="text-sm">
+                                        <span className="text-muted-foreground">
+                                            Uploaded:
+                                        </span>{' '}
+                                        <span className="font-medium">
+                                            {completedCount} of{' '}
+                                            {activeCount + attemptedCount} files
+                                        </span>
+                                    </p>
+                                )}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3">
+                                {/* Persistent live region so the wave's
+                                    outcome is announced, not just painted. */}
+                                <div aria-live="polite">
+                                    {showOutcome &&
+                                        (errorCount === 0 ? (
+                                            <p className="text-sm font-medium text-green-500">
+                                                All files uploaded successfully!
+                                            </p>
+                                        ) : (
+                                            <p className="text-sm font-medium text-amber-600">
+                                                {completedCount} of{' '}
+                                                {attemptedCount} files uploaded
+                                                — {errorCount} failed
+                                            </p>
+                                        ))}
+                                </div>
+                                {showOutcome && completedCount > 0 && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        render={
+                                            <Link href="/dashboard/files" />
+                                        }
+                                    >
+                                        View files
+                                    </Button>
+                                )}
+                                {pendingFiles.length > 0 ? (
+                                    <Button onClick={startUpload}>
+                                        <Upload className="mr-2 h-4 w-4" />
+                                        Upload {pendingFiles.length}{' '}
+                                        {pendingFiles.length === 1
+                                            ? 'file'
+                                            : 'files'}
+                                    </Button>
+                                ) : hasActiveWave ? (
+                                    <Button disabled>
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        Uploading...
+                                    </Button>
+                                ) : null}
+                            </div>
                         </div>
                     </CardContent>
                 </Card>
@@ -379,7 +442,10 @@ function UploadPreviewTile({
         return () => URL.revokeObjectURL(previewUrl);
     }, [previewUrl]);
 
-    const showStatusIcon = status !== 'pending' || !previewUrl;
+    // Pending and queued rows keep a clean preview — the scrim + icon only
+    // takes over once the row has a state worth signalling.
+    const showStatusIcon =
+        (status !== 'pending' && status !== 'queued') || !previewUrl;
 
     return (
         <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">

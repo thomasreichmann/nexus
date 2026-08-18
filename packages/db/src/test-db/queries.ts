@@ -10,6 +10,7 @@ import { eq, count } from 'drizzle-orm';
 import * as schema from '../schema';
 import { createSubscriptionFixture, type User } from '../repositories/fixtures';
 import { PLAN_LIMITS, getTrialEnd, type PlanTier } from '../plans';
+import { insertStorageUsage } from './inserts';
 import type { DB } from '../connection';
 
 export async function findUserByEmail(
@@ -47,6 +48,19 @@ export async function deleteUserData(db: DB, userId: string): Promise<void> {
     await db
         .delete(schema.uploadBatches)
         .where(eq(schema.uploadBatches.userId, userId));
+}
+
+/**
+ * `deleteUserData` plus a zeroed `storage_usage` row — the full reset for a
+ * spec that actually confirms uploads or parks a user at the quota cap.
+ *
+ * The usage row is rewritten rather than deleted so the user stays in the same
+ * shape a signed-up user has, and because `deleteUserData` deliberately spares
+ * it: most specs never touch usage and shouldn't pay to re-seed it.
+ */
+export async function resetUserData(db: DB, userId: string): Promise<void> {
+    await deleteUserData(db, userId);
+    await insertStorageUsage(db, { userId, usedBytes: 0, fileCount: 0 });
 }
 
 /**

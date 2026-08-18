@@ -25,13 +25,15 @@
  */
 import {
     findUserByEmail,
-    deleteUserData,
+    resetUserData,
     insertStorageUsage,
 } from '@nexus/db/test-db';
-import { PLAN_LIMITS } from '@nexus/db/plans';
+import { PLAN_LIMITS, SOFT_LIMIT_MULTIPLIER } from '@nexus/db/plans';
+import { MAX_CONCURRENT_FILES } from '@/lib/upload/limits';
 import { test, expect } from '../fixtures';
 import { REGULAR_USER } from '../helpers/auth';
 import { fileName } from '../helpers/table';
+import { makeTextFiles } from '../helpers/uploadStubs';
 import type { Connection } from '@nexus/db/test-db';
 
 // Single shared user → tests must run serially. Belt-and-braces: the
@@ -49,18 +51,13 @@ async function getUserId(db: Connection): Promise<string> {
     return u.id;
 }
 
-async function resetUserState(db: Connection, userId: string): Promise<void> {
-    await deleteUserData(db, userId);
-    await insertStorageUsage(db, { userId, usedBytes: 0, fileCount: 0 });
-}
-
 test.describe('upload batches + storage quota', () => {
     test.beforeAll(async ({ db }) => {
-        await resetUserState(db, await getUserId(db));
+        await resetUserData(db, await getUserId(db));
     });
 
     test.afterAll(async ({ db }) => {
-        await resetUserState(db, await getUserId(db));
+        await resetUserData(db, await getUserId(db));
     });
 
     test(
@@ -185,32 +182,33 @@ test.describe('upload batches + storage quota', () => {
             ],
         },
         async ({ page, db, seedUserId: userId }) => {
+            // Six real round trips to S3, not one — past what the default
+            // per-test budget leaves room for once the network is involved.
+            test.setTimeout(120_000);
+
             // Reset so "exactly one batch" is a strict assertion rather than a
             // delta over the single-file test's leftover batch. Runs before
             // the quota test, which re-parks usage itself.
-            await resetUserState(db, userId);
+            await resetUserData(db, userId);
 
             await page.goto('/dashboard/upload');
             await expect(
                 page.getByRole('heading', { name: 'Upload Files', exact: true })
             ).toBeVisible();
 
-            const stamp = Date.now();
-            const filesToUpload = [
-                {
-                    name: `validate-multi-a-${stamp}.txt`,
-                    mimeType: 'text/plain',
-                    buffer: Buffer.from('multi-file batch validate: file a\n'),
-                },
-                {
-                    name: `validate-multi-b-${stamp}.txt`,
-                    mimeType: 'text/plain',
-                    buffer: Buffer.from('multi-file batch validate: file b!\n'),
-                },
-            ];
+            // Deliberately more than the client's upload pool is wide (#340):
+            // the batch assertions below are the ones that would break if
+            // concurrency fragmented a click into several batches, so they have
+            // to run with the pool saturated and files queued behind it.
+            const filesToUpload = makeTextFiles(
+                MAX_CONCURRENT_FILES + 2,
+                `validate-multi-${Date.now()}`
+            );
 
             await page.setInputFiles('input[type="file"]', filesToUpload);
-            await expect(page.getByText('Selected Files (2)')).toBeVisible();
+            await expect(
+                page.getByText(`Selected Files (${filesToUpload.length})`)
+            ).toBeVisible();
             await page.screenshot({
                 path: `${SCREENSHOTS}/06-multi-after-select.png`,
                 fullPage: true,
@@ -221,7 +219,7 @@ test.describe('upload batches + storage quota', () => {
                 .click();
             await expect(
                 page.getByText('Uploaded', { exact: true })
-            ).toHaveCount(2, { timeout: 30_000 });
+            ).toHaveCount(filesToUpload.length, { timeout: 30_000 });
             await page.screenshot({
                 path: `${SCREENSHOTS}/07-multi-after-upload.png`,
                 fullPage: true,
@@ -243,7 +241,7 @@ test.describe('upload batches + storage quota', () => {
                 where: (f, { eq, and, inArray }) =>
                     and(eq(f.userId, userId), inArray(f.name, names)),
             });
-            expect(files).toHaveLength(2);
+            expect(files).toHaveLength(filesToUpload.length);
             for (const file of files) {
                 expect(file.status).toBe('available');
                 expect(file.batchId).toBe(batch.id);
@@ -260,7 +258,7 @@ test.describe('upload batches + storage quota', () => {
                 where: (u, { eq }) => eq(u.userId, userId),
             });
             expect(usage?.usedBytes).toBe(totalBytes);
-            expect(usage?.fileCount).toBe(2);
+            expect(usage?.fileCount).toBe(filesToUpload.length);
         }
     );
 
@@ -270,7 +268,9 @@ test.describe('upload batches + storage quota', () => {
         async ({ page, db, seedUserId: userId }) => {
             // Park usage at exactly 105% of starter — any positive sizeBytes
             // pushes past the soft cap.
-            const at105 = Math.floor(PLAN_LIMITS.starter * 1.05);
+            const at105 = Math.floor(
+                PLAN_LIMITS.starter * SOFT_LIMIT_MULTIPLIER
+            );
             await insertStorageUsage(db, {
                 userId,
                 usedBytes: at105,

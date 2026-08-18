@@ -55,7 +55,15 @@ export function DashboardSidebar() {
                     </p>
                     <div className="mt-2 h-2 overflow-hidden rounded-full bg-sidebar-border">
                         <div
-                            className="h-full rounded-full bg-primary transition-all"
+                            className={cn(
+                                'h-full rounded-full transition-all',
+                                // A full bar in the brand color reads as calm;
+                                // at the cap it should read as the reason
+                                // uploads are failing.
+                                (usage?.percentage ?? 0) >= 100
+                                    ? 'bg-destructive'
+                                    : 'bg-primary'
+                            )}
                             style={{
                                 width: `${usage?.percentage ?? 0}%`,
                             }}

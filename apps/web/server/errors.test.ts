@@ -159,11 +159,14 @@ describe('QuotaExceededError', () => {
         expect(error.details).toEqual(details);
     });
 
-    it('renders a message containing all three byte counts', () => {
+    it('writes a user-facing message — the raw counts live on details', () => {
         const error = new QuotaExceededError(details);
 
-        expect(error.message).toContain('1000/2000');
-        expect(error.message).toContain('1500');
+        // Shown verbatim in the toast and the upload row, so formatted
+        // sizes, not integers.
+        expect(error.message).toBe(
+            'Not enough storage — 1000 Bytes of 1.95 KB used'
+        );
     });
 });
 
