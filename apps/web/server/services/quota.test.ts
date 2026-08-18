@@ -8,10 +8,7 @@ import {
 } from '@nexus/db/testing';
 import { SOFT_LIMIT_MULTIPLIER } from '@nexus/db/plans';
 import { QuotaExceededError, TrialExpiredError } from '@/server/errors';
-import {
-    MAX_CONCURRENT_FILES,
-    MAX_IN_FLIGHT_BYTES,
-} from '@/lib/upload/limits';
+import { MAX_CONCURRENT_FILES, MAX_IN_FLIGHT_BYTES } from '@/lib/upload/limits';
 import { PLAN_LIMITS } from './constants';
 import { quotaService, type QuotaContext } from './quota';
 
@@ -31,7 +28,8 @@ describe('assertUploadAllowed', () => {
     describe('without a subscription', () => {
         it('falls back to the starter plan limit', () => {
             // Push past the 105% soft cap to force rejection.
-            const overSoftCap = Math.floor(PLAN_LIMITS.starter * SOFT_LIMIT_MULTIPLIER) + oneGB;
+            const overSoftCap =
+                Math.floor(PLAN_LIMITS.starter * SOFT_LIMIT_MULTIPLIER) + oneGB;
             expect(() =>
                 assertUploadAllowed(ctx({ currentUsage: overSoftCap }), 1, NOW)
             ).toThrow(QuotaExceededError);

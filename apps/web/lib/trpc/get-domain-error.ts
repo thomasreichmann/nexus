@@ -1,4 +1,3 @@
-
 import type { DomainErrorCode } from '@/lib/errors/codes';
 import type { AppRouter } from '@/server/trpc/router';
 import type { TRPCClientErrorLike } from '@trpc/client';

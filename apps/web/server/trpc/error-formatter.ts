@@ -1,4 +1,3 @@
-
 import type { DomainErrorCode } from '@/lib/errors/codes';
 import { isDomainError } from '@/server/errors';
 

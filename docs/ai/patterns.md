@@ -40,6 +40,7 @@ log.error({ err }, 'Failed to fetch data');
 ```
 
 **Key details:**
+
 - Client logger is disabled during SSR (`enabled: typeof window !== 'undefined'`)
 - Dev only: client logs transmit to `/api/dev-log` and appear in terminal with `[client]` prefix
 - Same pino API on both sides

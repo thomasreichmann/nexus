@@ -21,7 +21,6 @@
  *   STRIPE_SECRET_KEY=sk_live_... pnpm -F web check:stripe-config
  */
 
-
 import { PLAN_DISPLAY } from '@/components/dashboard/subscriptionPlans';
 import { alerts, getWorkflowRunUrl } from '@/lib/alerts';
 import { stripeClient } from '@/lib/stripe/client';

@@ -4,7 +4,6 @@ import { createDb } from '@nexus/db';
 import { WEB_ENV } from './paths';
 import type { Connection } from '@nexus/db';
 
-
 // Same source of truth as drizzle, the seed CLI, and the e2e suite: the web
 // app's .env.local. Load it before reading DATABASE_URL.
 config({ path: WEB_ENV, quiet: true });

@@ -40,7 +40,9 @@ const rawClientEnv = Object.fromEntries(
     clientKeys.map((key) => [key, process.env[key]])
 );
 const clientResult = clientSchema.safeParse(rawClientEnv);
-const allClientMissing = Object.values(rawClientEnv).every((v) => v === undefined);
+const allClientMissing = Object.values(rawClientEnv).every(
+    (v) => v === undefined
+);
 const clientEnv = clientResult.success
     ? clientResult.data
     : formatEnvError(clientResult.error, 'client', allClientMissing);
