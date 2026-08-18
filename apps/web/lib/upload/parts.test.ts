@@ -5,6 +5,7 @@ import {
     mergeParts,
     partByteRange,
     partsProgress,
+    waveProgress,
     isResumable,
 } from './parts';
 import type { ResumableUpload } from './uploadStore';
@@ -94,6 +95,23 @@ describe('partsProgress', () => {
 
     it('is 0 for zero total', () => {
         expect(partsProgress(0, 0)).toBe(0);
+    });
+});
+
+describe('waveProgress', () => {
+    it('weights by bytes, not by row count', () => {
+        // The big file at 50% dominates nine tiny finished files.
+        const rows = [
+            { size: 9_000, progress: 50 },
+            ...Array.from({ length: 9 }, () => ({ size: 100, progress: 100 })),
+        ];
+        expect(waveProgress(rows)).toBe(55);
+    });
+
+    it('is 100 when every byte is done and 0 for an empty wave', () => {
+        expect(waveProgress([{ size: 10, progress: 100 }])).toBe(100);
+        expect(waveProgress([])).toBe(0);
+        expect(waveProgress([{ size: 0, progress: 100 }])).toBe(0);
     });
 });
 
