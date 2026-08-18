@@ -1,6 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
-import type { LogEvent } from 'pino';
 
 const hoisted = await vi.hoisted(async () => {
     const { createMockLogger } = await import('@/server/lib/logger/testing');
@@ -11,6 +10,7 @@ vi.mock('@/server/lib/logger', () => ({ logger: hoisted.logger }));
 
 // Import after mock setup
 import { POST } from './route';
+import type { LogEvent } from 'pino';
 
 const mockChild = hoisted.logger;
 

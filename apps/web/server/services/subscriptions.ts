@@ -1,6 +1,4 @@
-import type Stripe from 'stripe';
 import { addDays } from 'date-fns';
-import type { DB } from '@nexus/db';
 import { createInviteRepo, isInviteExpired } from '@nexus/db/repo/invites';
 import {
     createSubscriptionRepo,
@@ -19,6 +17,8 @@ import {
     type CheckoutTier,
     type BillingInterval,
 } from './constants';
+import type { DB } from '@nexus/db';
+import type Stripe from 'stripe';
 
 const log = logger.child({ service: 'subscriptions' });
 

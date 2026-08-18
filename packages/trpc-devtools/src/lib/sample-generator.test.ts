@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { generateSample, parseJsonWithPosition } from './sample-generator';
 import type { JSONSchema } from '@/server/types';
+import { generateSample, parseJsonWithPosition } from './sample-generator';
 
 describe('generateSample', () => {
     it('returns undefined for null schema', () => {

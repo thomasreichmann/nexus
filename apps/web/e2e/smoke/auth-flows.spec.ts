@@ -4,8 +4,8 @@
  * invalidate the shared `e2e/.auth/*.json` states used by other specs.
  */
 import { test, expect } from '@playwright/test';
-import { REGULAR_USER, signUpViaUi, uniqueTestEmail } from '../helpers/auth';
 import { deleteUserByEmail } from '@nexus/db/test-db';
+import { REGULAR_USER, signUpViaUi, uniqueTestEmail } from '../helpers/auth';
 import { withTestDb } from '../helpers/connection';
 
 // Unique per run so a crashed previous run can't collide; cleaned in afterAll.

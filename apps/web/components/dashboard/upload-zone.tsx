@@ -2,9 +2,6 @@
 
 import type React from 'react';
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import {
     Upload,
     X,
@@ -17,6 +14,9 @@ import {
     History,
     Play,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/cn';
 import { formatBytes } from '@/lib/format';
 import {

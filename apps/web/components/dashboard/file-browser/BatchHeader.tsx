@@ -1,19 +1,19 @@
 'use client';
 
 import { useState } from 'react';
+import { ChevronRight, RotateCw } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { TableCell, TableRow } from '@/components/ui/table';
-import { ChevronRight, RotateCw } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatBytes } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
-import { useMutation } from '@tanstack/react-query';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
-import type { FileBatchGroup, FileWithRetrieval } from '@nexus/db/repo/files';
 import { toastContext } from '@/lib/trpc/error-link';
 import { toastRetrievalResult } from './retrievalFeedback';
 import { deriveStatus } from './status';
+import type { FileBatchGroup, FileWithRetrieval } from '@nexus/db/repo/files';
 
 function formatBatchDate(date: Date | null): string | null {
     if (!date) return null;

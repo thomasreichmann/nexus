@@ -1,5 +1,4 @@
 import * as Sentry from '@sentry/nextjs';
-import type { DB } from '@nexus/db';
 import { createFileRepo, type File } from '@nexus/db/repo/files';
 import {
     createRetrievalRepo,
@@ -15,6 +14,7 @@ import { s3 } from '@/lib/storage';
 // '@/lib/storage' don't erase the constant.
 import { DEFAULT_RESTORE_DAYS_TO_KEEP } from '@/lib/storage/types';
 import type { RestoreTier } from '@/lib/storage';
+import type { DB } from '@nexus/db';
 
 const log = logger.child({ service: 'retrieval' });
 

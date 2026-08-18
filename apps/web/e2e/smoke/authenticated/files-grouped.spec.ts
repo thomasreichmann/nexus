@@ -5,12 +5,12 @@
  * batch" button all render — instead of a smoke-test that only checks the page
  * heading.
  */
-import { test as base, expect } from '../../fixtures';
 import {
     insertUploadBatch,
     insertFile,
     deleteUserData,
 } from '@nexus/db/test-db';
+import { test as base, expect } from '../../fixtures';
 
 const test = base.extend<{ groupedFiles: { batchName: string } }>({
     groupedFiles: async ({ db, seedUserId }, use) => {

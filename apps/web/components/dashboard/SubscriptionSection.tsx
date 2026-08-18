@@ -16,6 +16,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import type { CheckoutTier } from '@/lib/stripe/types';
 import {
     PLAN_DISPLAY,
     comparePlans,
@@ -26,7 +27,6 @@ import {
     type PlanDisplay,
 } from './subscriptionPlans';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
-import type { CheckoutTier } from '@/lib/stripe/types';
 
 export function SubscriptionSection() {
     const trpc = useTRPC();

@@ -1,4 +1,3 @@
-import type { RequestLogger, LoggingContext } from './middleware/logging';
 import {
     createMockDb,
     type MockDbMocks,
@@ -6,6 +5,7 @@ import {
     type User,
 } from '@nexus/db/testing';
 import { buildContext, type LoggedContext } from './init';
+import type { RequestLogger, LoggingContext } from './middleware/logging';
 
 /**
  * Options for creating a mock tRPC context

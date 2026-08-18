@@ -1,9 +1,9 @@
-import { test, expect } from '../../fixtures';
 import {
     ensureTrialSubscription,
     markSubscriptionPaid,
     markSubscriptionSponsored,
 } from '@nexus/db/test-db';
+import { test, expect } from '../../fixtures';
 import { interceptTrpcCalls } from '../../helpers/trpc';
 
 test.use({ userRole: 'user' });

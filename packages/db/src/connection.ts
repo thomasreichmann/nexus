@@ -13,6 +13,23 @@ export function createDb(
         // confirmUpload's status flip returning success but never
         // committing). Callers on a direct connection can override.
         prepare: false,
+        // Bound contention so it fails fast instead of hanging (#379: a
+        // dashboard query queued behind the pooler's backend pool waited
+        // forever, and the HTTP request carrying it hung with no error).
+        // postgres-js has no client-side acquire/query timeout, so the bounds
+        // are: pool size explicit (the driver default, but load-bearing here),
+        // connection establishment capped, and execution capped server-side.
+        // statement_timeout travels as a startup parameter and lands on direct
+        // connections (local e2e, `show statement_timeout` = 1min); Supabase's
+        // pooler ignores it and applies its own role default instead (measured
+        // 2min), so execution is bounded on every path — just by Supabase's
+        // value there, not ours. A wait in the pooler's backend queue is the
+        // one stage only the pooler can bound.
+        max: 10,
+        connect_timeout: 10,
+        connection: { statement_timeout: 60_000 },
+        // Shallow spread on purpose: a caller passing `connection` owns the
+        // whole startup-parameter set, timeout included.
         ...options,
     });
     return drizzle(client, { schema });

@@ -1,9 +1,9 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { createMockDb, type MockDbMocks } from './mocks';
 import { createInviteFixture } from './fixtures';
 import { createInviteRepo, isInviteExpired, type InviteRepo } from './invites';
+import type { SQL } from 'drizzle-orm';
 
 const NOW = new Date('2026-08-12T12:00:00Z');
 const PAST = new Date('2026-08-11T12:00:00Z');

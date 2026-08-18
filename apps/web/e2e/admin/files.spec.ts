@@ -1,9 +1,9 @@
-import { test, expect } from '../fixtures';
-import type { Page } from '@playwright/test';
 import { findUserByEmail, type File } from '@nexus/db/test-db';
+import { test, expect } from '../fixtures';
 import { ADMIN_USER } from '../helpers/auth';
 import { seedFiles, cleanupFiles } from '../helpers/scenarios';
 import { fileName, waitForTableLoad } from '../helpers/table';
+import type { Page } from '@playwright/test';
 
 const PAGE_URL = '/dashboard/files';
 

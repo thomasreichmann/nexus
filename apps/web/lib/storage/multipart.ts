@@ -4,6 +4,7 @@ import {
     CompleteMultipartUploadCommand,
     AbortMultipartUploadCommand,
     ListPartsCommand,
+    ListMultipartUploadsCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { client, bucket } from './client';
@@ -163,6 +164,42 @@ export async function complete(
         },
     });
     await client.send(command);
+}
+
+/**
+ * Keys with a multipart session S3 still considers open — parts are staged but
+ * CompleteMultipartUpload hasn't run. Nothing records the upload ID against the
+ * file row, so this is the only way to tell a half-finished multipart upload
+ * from a single-part one that never landed.
+ *
+ * Bucket-wide and unpaginated per call, so it walks the markers rather than
+ * trusting the first page.
+ */
+export async function listOpenKeys(): Promise<Set<string>> {
+    const keys = new Set<string>();
+    let keyMarker: string | undefined;
+    let uploadIdMarker: string | undefined;
+
+    do {
+        const response = await client.send(
+            new ListMultipartUploadsCommand({
+                Bucket: bucket,
+                KeyMarker: keyMarker,
+                UploadIdMarker: uploadIdMarker,
+            })
+        );
+
+        for (const upload of response.Uploads ?? []) {
+            if (upload.Key) keys.add(upload.Key);
+        }
+
+        keyMarker = response.IsTruncated ? response.NextKeyMarker : undefined;
+        uploadIdMarker = response.IsTruncated
+            ? response.NextUploadIdMarker
+            : undefined;
+    } while (keyMarker);
+
+    return keys;
 }
 
 /** Abort a multipart upload, cleaning up any uploaded parts on S3 */

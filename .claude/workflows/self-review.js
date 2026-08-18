@@ -12,7 +12,7 @@ export const meta = {
         },
         {
             title: 'Aggregate',
-            detail: 'merge duplicate findings, tally which reviewers reported each',
+            detail: 'merge duplicate findings, rank by severity',
             model: 'opus',
         },
     ],
@@ -58,8 +58,20 @@ const FINDINGS_SCHEMA = {
                         type: 'string',
                         description: 'The specific change that resolves it',
                     },
+                    severity: {
+                        type: 'string',
+                        enum: ['high', 'medium', 'low'],
+                        description:
+                            'Rate by consequence AND reachability. high = a user loses data, sees a wrong result, or hits a break, on a path that runs in production today. medium = the same defect behind a manual step, an unscheduled script, a flag, or an unreached path — real, but nobody is hitting it yet. low = polish, safe to skip. A destructive bug on a live path outranks the identical bug in a script nobody runs; say which one you are looking at. Judge the issue itself — you are the only reviewer covering your lane, so do not discount a finding for being yours alone.',
+                    },
                 },
-                required: ['file', 'category', 'description', 'fix'],
+                required: [
+                    'file',
+                    'category',
+                    'description',
+                    'fix',
+                    'severity',
+                ],
             },
         },
         notes: {
@@ -85,11 +97,17 @@ const AGGREGATED_SCHEMA = {
                     category: { type: 'string' },
                     description: { type: 'string' },
                     fix: { type: 'string' },
+                    severity: {
+                        type: 'string',
+                        enum: ['high', 'medium', 'low'],
+                        description:
+                            'Carry through unchanged; on a merge take the highest severity of the merged findings',
+                    },
                     reviewers: {
                         type: 'array',
                         items: { type: 'string' },
                         description:
-                            'Every reviewer that independently reported this finding',
+                            'Which reviewer lane(s) raised this — provenance for the reader, not a vote count',
                     },
                 },
                 required: [
@@ -97,6 +115,7 @@ const AGGREGATED_SCHEMA = {
                     'category',
                     'description',
                     'fix',
+                    'severity',
                     'reviewers',
                 ],
             },
@@ -108,7 +127,8 @@ const AGGREGATED_SCHEMA = {
 const task = [
     `Review the diff at ${input.diffPath}. Read it with the Read tool — read all of it, it may be long.`,
     `Changed files:\n${input.changedFiles.map((f) => `- ${f}`).join('\n')}`,
-    'Report via structured output instead of the text format in your instructions: one findings entry per issue (file, line, category, description, fix). Put good patterns, searched locations, and clean files in notes.',
+    'Report via structured output instead of the text format in your instructions: one findings entry per issue (file, line, category, description, fix, severity). Put good patterns, searched locations, and clean files in notes.',
+    'Two other reviewers cover the other lanes; stay in yours. Nobody else covers yours, so a finding only you can see is not a weak finding — severity is about the issue, not about who found it.',
 ].join('\n\n');
 
 const reviewers = [
@@ -161,7 +181,8 @@ if (raw.length < 2) {
     const merged = await agent(
         [
             'Below are code-review findings from independent reviewers who each reviewed the same diff. Merge duplicates: findings describing the same underlying issue count as duplicates even when wording, category, or exact line differ slightly.',
-            'For each merged finding keep the clearest description, the most specific fix, and the most precise file/line; list in `reviewers` every reviewer that reported it. Findings reported by a single reviewer pass through unchanged with that one reviewer listed.',
+            'The reviewers have deliberately disjoint lanes, so most findings will be reported once. That is expected — a single-reviewer finding is not a weaker finding.',
+            'For each merged finding keep the clearest description, the most specific fix, the most precise file/line, and the highest severity of the merged set; list in `reviewers` every reviewer that reported it. Findings reported by a single reviewer pass through unchanged with that one reviewer listed.',
             'Never drop a non-duplicate finding, never invent findings, never judge whether a finding is valid — only merge.',
             JSON.stringify(raw, null, 2),
         ].join('\n\n'),
@@ -180,7 +201,9 @@ if (raw.length < 2) {
         aggregated = false;
     }
 }
-findings.sort((a, b) => b.reviewers.length - a.reviewers.length);
+const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
+const rank = (f) => SEVERITY_RANK[f.severity] ?? SEVERITY_RANK.medium;
+findings.sort((a, b) => rank(a) - rank(b));
 
 log(
     `${findings.length} finding(s) after dedup${aggregated ? '' : ' (aggregate agent failed — unmerged)'}`

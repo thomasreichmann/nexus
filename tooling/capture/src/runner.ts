@@ -7,10 +7,10 @@ import { connect } from './db';
 import { encodeGif, encodeMp4 } from './encode';
 import { ASSETS_DIR, TMP_DIR } from './paths';
 import { startRecording } from './recorder';
-import type { Scene, SceneContext } from './scene';
 import { seedDemoLibrary } from './seed';
 import { ensureServer } from './server';
 import { CAPTURE_USER, provisionCaptureUser } from './session';
+import type { Scene, SceneContext } from './scene';
 
 /** CLI-level overrides; each falls back to the scene's own `output`, then a default. */
 export interface RunOverrides {

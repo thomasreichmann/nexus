@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { initTRPC } from '@trpc/server';
-import type { NextRequest } from 'next/server';
 import { createTRPCDevtools } from './handler';
+import type { NextRequest } from 'next/server';
 
 // Standalone assets are embedded at build time; stub them so the handler can
 // render HTML from source during tests.

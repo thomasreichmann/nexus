@@ -52,6 +52,19 @@ Review code changes against project conventions defined in `docs/ai/conventions.
 - Flag new shell-level `overflow-hidden` that would mask content overflow as
   clipping — prefer contained scroll (`overflow-x-auto`) on the wide element
 
+## Not Your Lane
+
+You run alongside two other reviewers with their own scopes. Leave these to
+them even when you spot them:
+
+- Over-engineering, needless complexity, deep nesting, scope creep →
+  `code-quality-review`
+- Duplicated logic, code that re-implements an existing utility, or new code
+  that should move to `lib/` → `reuse-review`
+
+Judge the code against the rules above. A rule you cannot point to in
+`docs/ai/conventions.md` or in this list is not a convention violation.
+
 ## Input
 
 You will receive:

@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
-import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
+import type { DB } from '../connection';
 
 export type Subscription = typeof schema.subscriptions.$inferSelect;
 export type NewSubscription = typeof schema.subscriptions.$inferInsert;

@@ -1,7 +1,7 @@
 import { eq, and } from 'drizzle-orm';
-import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
+import type { DB } from '../connection';
 
 export type UploadBatch = typeof schema.uploadBatches.$inferSelect;
 type NewUploadBatch = typeof schema.uploadBatches.$inferInsert;

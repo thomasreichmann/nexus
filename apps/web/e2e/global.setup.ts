@@ -1,5 +1,10 @@
 import { test as setup } from '@playwright/test';
 import {
+    findUserByEmail,
+    ensureTrialSubscription,
+    deleteUserData,
+} from '@nexus/db/test-db';
+import {
     ADMIN_USER,
     ADMIN_STATE_PATH,
     REGULAR_USER,
@@ -8,11 +13,6 @@ import {
     promoteToAdmin,
     authenticateAndSaveState,
 } from './helpers/auth';
-import {
-    findUserByEmail,
-    ensureTrialSubscription,
-    deleteUserData,
-} from '@nexus/db/test-db';
 import { createTestDb } from './helpers/connection';
 
 /**
@@ -20,10 +20,11 @@ import { createTestDb } from './helpers/connection';
  * the previous run can't produce strict-mode violations ("resolved to 3
  * elements") in specs that assert on a filename.
  *
- * Only when this worktree has its own database (E2E_DATABASE_URL, see
- * .claude/hooks/worktree-setup.sh). On the shared dev DB a wipe would delete
- * rows out from under another worktree's in-flight run — the exact failure this
- * whole change exists to remove.
+ * Only when this worktree has its own database — E2E_DATABASE_URL, loaded by
+ * playwright.config.ts from the git-ignored .env.e2e.local that
+ * .claude/hooks/worktree-setup.sh writes. On the shared dev DB a wipe would
+ * delete rows out from under another worktree's in-flight run — the exact
+ * failure this whole change exists to remove.
  */
 const OWNS_DB = !!process.env.E2E_DATABASE_URL;
 

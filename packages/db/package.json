@@ -101,19 +101,23 @@
         "test": "vitest",
         "test:run": "vitest run",
         "test:coverage": "vitest run --coverage",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "lint": "eslint src/"
     },
     "dependencies": {
         "drizzle-orm": "^0.45.1",
         "postgres": "^3.4.7"
     },
     "devDependencies": {
+        "@eslint/js": "^9.39.2",
         "@types/node": "^20",
         "@vitest/coverage-v8": "^4.0.18",
         "dotenv": "^17.2.3",
         "drizzle-kit": "^0.31.8",
+        "eslint": "^9.39.2",
         "tsx": "^4.19.0",
         "typescript": "^5",
+        "typescript-eslint": "^8.67.0",
         "vitest": "^4.0.18"
     }
 }

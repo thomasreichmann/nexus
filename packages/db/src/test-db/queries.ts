@@ -7,10 +7,10 @@
  * that used to live in `apps/web/e2e/helpers/db.ts` as hand-written SQL.
  */
 import { eq, count } from 'drizzle-orm';
-import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createSubscriptionFixture, type User } from '../repositories/fixtures';
 import { PLAN_LIMITS, getTrialEnd, type PlanTier } from '../plans';
+import type { DB } from '../connection';
 
 export async function findUserByEmail(
     db: DB,

@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
+import type { DB } from '../connection';
 
 export type Invite = typeof schema.invites.$inferSelect;
 export type NewInvite = typeof schema.invites.$inferInsert;

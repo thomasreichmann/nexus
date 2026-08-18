@@ -8,8 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ResizablePanels } from '@/components/ui/resizable-panels';
 import { Skeleton } from '@/components/ui/skeleton';
-import { SchemaForm } from './schema-form';
-import { ResponseViewer } from './response-viewer';
 import { buildCurlCommand } from '@/lib/curl';
 import { executeRequest, type TRPCResponse } from '@/lib/request';
 import { useCopyToClipboard } from '@/lib/use-copy-to-clipboard';
@@ -20,6 +18,8 @@ import {
     saveSuperJSONPreference,
 } from '@/lib/storage';
 import type { ProcedureSchema } from '@/server/types';
+import { ResponseViewer } from './response-viewer';
+import { SchemaForm } from './schema-form';
 
 interface ProcedureViewProps {
     procedure: ProcedureSchema;

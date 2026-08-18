@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import { Archive } from 'lucide-react';
 import { useSession } from '@/lib/auth/client';
 import { cn } from '@/lib/cn';
 import { getNavItems } from '@/lib/dashboard/navigation';
 import { formatBytes } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
-import { useQuery } from '@tanstack/react-query';
-import { Archive } from 'lucide-react';
 
 export function DashboardSidebar() {
     const pathname = usePathname();

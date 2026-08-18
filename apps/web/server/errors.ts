@@ -1,6 +1,6 @@
+import { DOMAIN_ERROR_CODES, type DomainErrorCode } from '@/lib/errors/codes';
 import type { TRPC_ERROR_CODE_KEY } from '@trpc/server/rpc';
 
-import { DOMAIN_ERROR_CODES, type DomainErrorCode } from '@/lib/errors/codes';
 
 /**
  * Base class for all domain errors. Services throw these, middleware maps to

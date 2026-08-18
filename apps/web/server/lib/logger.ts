@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import pino from 'pino';
-import type { z } from 'zod';
 
 // Install source-mapped stack traces in development
 import './logger/patches/install';
 
 import { env } from '@/lib/env';
 import { logErrorVerbositySchema } from '@/lib/env/schema';
+import type { z } from 'zod';
 
 export const isDev = process.env.NODE_ENV === 'development';
 

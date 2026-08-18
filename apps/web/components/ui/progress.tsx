@@ -1,7 +1,7 @@
 'use client';
 
-import { Progress as ProgressPrimitive } from '@base-ui/react/progress';
 import * as React from 'react';
+import { Progress as ProgressPrimitive } from '@base-ui/react/progress';
 
 import { cn } from '@/lib/cn';
 

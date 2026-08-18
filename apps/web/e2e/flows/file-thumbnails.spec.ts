@@ -9,9 +9,9 @@
  * <img> elements genuinely load. Runs as a dedicated user so file counts
  * can't race the other flows specs.
  */
+import { type File, insertFile, deleteUserData } from '@nexus/db/test-db';
 import { test as base, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
-import { type File, insertFile, deleteUserData } from '@nexus/db/test-db';
 import { fileName } from '../helpers/table';
 
 const THUMBS_USER: TestUser = {

@@ -1,11 +1,11 @@
 'use client';
 
 import { AlertTriangle } from 'lucide-react';
-import type { TRPCClientErrorLike } from '@trpc/client';
 
 import { cn } from '@/lib/cn';
 import { getDomainError } from '@/lib/trpc/get-domain-error';
 import type { AppRouter } from '@/server/trpc/router';
+import type { TRPCClientErrorLike } from '@trpc/client';
 
 interface TrialExpiredBannerProps {
     error: TRPCClientErrorLike<AppRouter> | null | undefined;

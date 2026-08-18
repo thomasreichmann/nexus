@@ -1,3 +1,4 @@
+import { Clock, Shield, Info } from 'lucide-react';
 import { UploadZone } from '@/components/dashboard/upload-zone';
 import {
     Card,
@@ -6,7 +7,6 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import { Clock, Shield, Info } from 'lucide-react';
 
 export default function UploadPage() {
     return (

@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { SQSRecord } from 'aws-lambda';
 import {
     createMockDb,
     type MockDb,
@@ -23,6 +22,7 @@ vi.mock('./handlers/index', () => ({}));
 
 import { processRecord } from './handler';
 import { registerHandler } from './registry';
+import type { SQSRecord } from 'aws-lambda';
 
 function createSqsRecord(body: object): SQSRecord {
     return {

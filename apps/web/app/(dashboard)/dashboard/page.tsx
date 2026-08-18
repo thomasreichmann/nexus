@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { FileIcon, ArrowRight, RotateCw, Archive } from 'lucide-react';
-import type { Retrieval } from '@nexus/db/repo/retrievals';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -28,6 +27,7 @@ import { MiddleTruncateName } from '@/components/dashboard/MiddleTruncateName';
 import { StorageUsageBar } from '@/components/dashboard/StorageUsageBar';
 import { StorageByType } from '@/components/dashboard/StorageByType';
 import { UploadHistory } from '@/components/dashboard/UploadHistory';
+import type { Retrieval } from '@nexus/db/repo/retrievals';
 
 export default function DashboardPage() {
     const trpc = useTRPC();

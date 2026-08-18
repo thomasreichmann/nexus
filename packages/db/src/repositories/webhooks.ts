@@ -1,7 +1,7 @@
 import { eq, and, gte, inArray, lt } from 'drizzle-orm';
-import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
+import type { DB } from '../connection';
 
 export type WebhookEvent = typeof schema.webhookEvents.$inferSelect;
 export type NewWebhookEvent = typeof schema.webhookEvents.$inferInsert;

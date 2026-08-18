@@ -30,6 +30,19 @@ Review code changes for duplication and opportunities to reuse existing code.
 - Patterns that other features might need
 - Hooks or helpers that are reusable
 
+## Not Your Lane
+
+You run alongside two other reviewers with their own scopes. Leave these to
+them even when you spot them:
+
+- Over-engineering, needless complexity, deep nesting, scope creep →
+  `code-quality-review`
+- Comment style, naming, file placement, return types, layout/responsive rules
+  → `conventions-review`
+
+An abstraction you think is unnecessary is a code-quality call, not a reuse
+one. Yours is the opposite direction: code that should be shared and isn't.
+
 ## Search Strategy
 
 1. Look in `lib/` for existing utilities

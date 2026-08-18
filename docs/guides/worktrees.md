@@ -59,6 +59,25 @@ cd ~/projects/nexus-worktrees/wt-1
 pnpm env:pull
 ```
 
+### E2E Database Isolation
+
+Each worktree gets its own local Postgres database for e2e
+(`nexus_wt_<dirname>`), so parallel sessions can't corrupt each other's test
+data. In a Claude session this is automatic: the SessionStart hook
+(`.claude/hooks/worktree-setup.sh`) creates the database, applies migrations,
+and writes the git-ignored `apps/web/.env.e2e.local` that
+`playwright.config.ts` loads. For a manual worktree, run the hook once from the
+worktree root:
+
+```bash
+bash .claude/hooks/worktree-setup.sh < /dev/null
+```
+
+Without the file (or without local Postgres), e2e falls back to the shared dev
+database, prints a warning, and skips its destructive per-run resets. Removing
+a worktree via `.claude/scripts/prune-worktrees.sh --apply` also drops its
+database.
+
 ## Using Worktrees with Claude Code
 
 ### Start a Session

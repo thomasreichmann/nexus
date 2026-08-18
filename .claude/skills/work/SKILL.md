@@ -56,5 +56,8 @@ Implement a GitHub issue: research, implement, review, commit, PR.
     - <change>
 
     ## Test Plan
-    - [ ] <how to verify>
+    - [x] <verification you performed>
+    - [ ] <step you tried to verify but couldn't — note what you tried>
     ```
+
+    The Test Plan records verification, it's not a to-do for the reader. If an item hasn't run yet, run it now — a UI flow via Playwright spec, DB state via `db:query`, an endpoint via `curl` — then check it. Leave a box unchecked only after an automation attempt failed or none exists (visual judgment, prod-only access), and say which in its note.

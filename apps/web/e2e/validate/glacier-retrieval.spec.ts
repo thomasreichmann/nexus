@@ -24,18 +24,18 @@
  * tests AWS's error rather than ours — the integration test
  * (`partial S3 restore failure (#329)`) owns that path.
  */
-import { test, expect } from '../fixtures';
 import {
     DeleteObjectCommand,
     HeadObjectCommand,
     PutObjectCommand,
 } from '@aws-sdk/client-s3';
-import type { Connection, File } from '@nexus/db/test-db';
 import { insertFile, deleteFile, deleteRetrieval } from '@nexus/db/test-db';
 import { originalKey } from '@nexus/db/repo/files';
 import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
+import { test, expect } from '../fixtures';
 import { createTestS3, getStorageClass, type TestS3 } from '../helpers/s3';
 import { fileName } from '../helpers/table';
+import type { Connection, File } from '@nexus/db/test-db';
 
 test.describe.configure({ mode: 'serial' });
 test.use({ userRole: 'user' });

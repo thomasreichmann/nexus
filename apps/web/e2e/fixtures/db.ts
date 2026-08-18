@@ -1,8 +1,8 @@
-import { test as base, expect } from './authenticated';
-import type { Connection } from '@nexus/db/test-db';
 import { findUserByEmail } from '@nexus/db/test-db';
+import { test as base, expect } from './authenticated';
 import { createTestDb } from '../helpers/connection';
 import { ADMIN_USER, REGULAR_USER } from '../helpers/auth';
+import type { Connection } from '@nexus/db/test-db';
 
 type DbTestFixtures = {
     /** The user precondition fixtures seed against. Resolves to the shared

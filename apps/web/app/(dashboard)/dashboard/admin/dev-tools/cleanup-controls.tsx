@@ -1,5 +1,8 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Loader2, Trash2, User } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import {
     AlertDialog,
@@ -11,9 +14,6 @@ import {
     AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { useTRPC } from '@/lib/trpc/client';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
-import { Loader2, Trash2, User } from 'lucide-react';
 import { ME_VALUE } from './presets';
 import { useSummaryInvalidation } from './useSummaryInvalidation';
 

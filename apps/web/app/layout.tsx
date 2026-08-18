@@ -1,12 +1,12 @@
+import type { ReactNode } from 'react';
+import { Analytics } from '@vercel/analytics/next';
+import { Geist, Geist_Mono } from 'next/font/google';
+import { Toaster } from 'sonner';
 import { ClientErrorReporter } from '@/components/ClientErrorReporter';
 import { PostHogAnalytics } from '@/components/PostHogAnalytics';
 import { ThemeProvider } from '@/components/theme-provider';
 import { TRPCReactProvider } from '@/lib/trpc/client';
-import { Analytics } from '@vercel/analytics/next';
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
-import type { ReactNode } from 'react';
-import { Toaster } from 'sonner';
 import './globals.css';
 
 const geistSans = Geist({

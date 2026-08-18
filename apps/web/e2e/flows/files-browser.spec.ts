@@ -15,8 +15,6 @@
  * wiring: menu/button → correct tRPC mutation + payload. Deletion runs for real
  * (S3 DeleteObjects is a no-op for missing keys).
  */
-import { test as base, expect } from '../fixtures';
-import { type TestUser } from '../helpers/auth';
 import {
     type UploadBatch,
     type File,
@@ -25,6 +23,8 @@ import {
     insertRetrieval,
     deleteUserData,
 } from '@nexus/db/test-db';
+import { test as base, expect } from '../fixtures';
+import { type TestUser } from '../helpers/auth';
 import { interceptTrpcCalls } from '../helpers/trpc';
 import { fileName } from '../helpers/table';
 

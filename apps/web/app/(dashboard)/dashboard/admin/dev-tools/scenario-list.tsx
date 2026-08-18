@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { Check, Loader2, Play } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
-import { Check, Loader2, Play } from 'lucide-react';
 import {
     DEFAULT_DISTRIBUTION,
     SCENARIO_PRESETS,

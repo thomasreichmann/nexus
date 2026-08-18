@@ -1,5 +1,5 @@
-import { clientSchema, serverSchema } from '@/lib/env/schema';
 import z from 'zod';
+import { clientSchema, serverSchema } from '@/lib/env/schema';
 
 type ServerEnv = z.infer<typeof serverSchema>;
 type ClientEnv = z.infer<typeof clientSchema>;

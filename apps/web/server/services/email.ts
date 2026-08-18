@@ -1,5 +1,4 @@
 import { createElement } from 'react';
-import type { DB } from '@nexus/db';
 import { createUserRepo } from '@nexus/db/repo/users';
 import { alerts } from '@/lib/alerts';
 import {
@@ -10,6 +9,7 @@ import {
 } from '@/lib/email';
 import { toErrorMessage } from '@/lib/errors';
 import { logger } from '@/server/lib/logger';
+import type { DB } from '@nexus/db';
 
 const log = logger.child({ service: 'email' });
 

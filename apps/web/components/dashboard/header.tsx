@@ -1,5 +1,17 @@
 'use client';
 
+import { useState } from 'react';
+import {
+    Archive,
+    LogOut,
+    Menu,
+    MessageSquare,
+    Settings,
+    User,
+} from 'lucide-react';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -18,18 +30,6 @@ import {
     resetAnalytics,
     showFeedbackSurvey,
 } from '@/lib/posthog/client';
-import {
-    Archive,
-    LogOut,
-    Menu,
-    MessageSquare,
-    Settings,
-    User,
-} from 'lucide-react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { toast } from 'sonner';
 
 export function DashboardHeader() {
     const pathname = usePathname();

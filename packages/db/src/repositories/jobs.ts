@@ -1,7 +1,7 @@
 import { eq, desc, sql } from 'drizzle-orm';
-import type { DB } from '../connection';
 import * as schema from '../schema';
 import { createRepository } from './create';
+import type { DB } from '../connection';
 
 export type Job = typeof schema.backgroundJobs.$inferSelect;
 export type NewJob = typeof schema.backgroundJobs.$inferInsert;

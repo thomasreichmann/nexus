@@ -1,4 +1,3 @@
-import { test, expect } from '../fixtures';
 import {
     insertInvite,
     deleteInvite,
@@ -7,9 +6,10 @@ import {
     findUserByEmail,
     type Invite,
 } from '@nexus/db/test-db';
-import type { Page, Locator } from '@playwright/test';
+import { test, expect } from '../fixtures';
 import { ADMIN_USER } from '../helpers/auth';
 import { statusCell, statusCells, waitForTableLoad } from '../helpers/table';
+import type { Page, Locator } from '@playwright/test';
 
 const PAGE_URL = '/dashboard/admin/invites';
 

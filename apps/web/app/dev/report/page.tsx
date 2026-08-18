@@ -248,7 +248,7 @@ export default function ReportPage() {
                             <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                                 {c.label}
                             </p>
-                            <p className="mt-2 font-mono text-sm tabular-nums text-muted-foreground/60 line-through decoration-[oklch(0.63_0.22_25_/_0.5)]">
+                            <p className="mt-2 font-mono text-sm tabular-nums text-muted-foreground/60 line-through decoration-[oklch(0.63_0.22_25/0.5)]">
                                 {c.before}
                             </p>
                             <p
@@ -287,10 +287,10 @@ export default function ReportPage() {
                                     aria-hidden
                                     className="absolute -left-[26px] top-[5px] size-2 rounded-full border border-border bg-background"
                                 />
-                                <h3 className="text-sm font-semibold leading-snug">
+                                <h3 className="text-sm/snug font-semibold">
                                     {t.title}
                                 </h3>
-                                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                                <p className="mt-1.5 text-sm/relaxed text-muted-foreground">
                                     {t.detail}
                                 </p>
                             </div>
@@ -333,7 +333,7 @@ export default function ReportPage() {
                                 </span>
                             </div>
                             <h3 className="text-sm font-semibold">{f.title}</h3>
-                            <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                            <p className="mt-1.5 text-sm/relaxed text-muted-foreground">
                                 {f.detail}
                             </p>
                         </article>
@@ -408,7 +408,7 @@ function TitleBlock({
             <p className="font-mono text-[11px] font-medium uppercase tracking-[0.25em] text-muted-foreground">
                 Engineering report · NX-E2E-001
             </p>
-            <h1 className="mt-3 max-w-md text-3xl font-bold leading-tight tracking-tight">
+            <h1 className="mt-3 max-w-md text-3xl/tight font-bold tracking-tight">
                 E2E Coverage: from untracked to a gated 100%
             </h1>
 
@@ -433,7 +433,7 @@ function TitleBlock({
 
             {/* verdict stamp */}
             <div
-                className="report-stamp absolute right-6 top-6 hidden rotate-[-6deg] rounded-md border-2 px-4 py-2 sm:block"
+                className="report-stamp absolute right-6 top-6 hidden -rotate-6 rounded-md border-2 px-4 py-2 sm:block"
                 style={{
                     borderColor: verified
                         ? 'oklch(0.72 0.17 155 / 0.7)'
@@ -585,7 +585,7 @@ function Performance() {
                             {s.name}
                         </span>
                         <div>
-                            <div className="h-1.5 overflow-hidden rounded-full bg-[oklch(0.62_0.19_260_/_0.12)]">
+                            <div className="h-1.5 overflow-hidden rounded-full bg-[oklch(0.62_0.19_260/0.12)]">
                                 <div
                                     className="h-full rounded-full"
                                     style={{

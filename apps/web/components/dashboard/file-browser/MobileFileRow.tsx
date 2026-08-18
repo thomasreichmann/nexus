@@ -2,11 +2,11 @@
 
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDate } from '@/lib/format';
+import { StackedListRow } from '@/components/ui/stacked-list';
 import { deriveStatus, getDownloadWindowLabel } from './status';
 import { SelectableIcon, StatusDot } from './SelectableIcon';
 import { FileActions, useFileActions } from './FileActions';
 import { MiddleTruncateName } from '../MiddleTruncateName';
-import { StackedListRow } from '@/components/ui/stacked-list';
 import type { FileItemProps } from './types';
 
 /* Below sm the 6-column table can't give the name meaningful width, so the

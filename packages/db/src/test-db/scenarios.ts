@@ -3,11 +3,11 @@
  * compose the insert/query helpers so column defaults still flow from the
  * shared factories.
  */
+import { insertFile, insertRetrieval } from './inserts';
+import { ensureTrialSubscription, markSubscriptionPaid } from './queries';
 import type { DB } from '../connection';
 import type { File } from '../repositories/files';
 import type { Retrieval } from '../repositories/retrievals';
-import { insertFile, insertRetrieval } from './inserts';
-import { ensureTrialSubscription, markSubscriptionPaid } from './queries';
 import type { PlanTier } from '../plans';
 
 export interface ReadyRetrievalResult {

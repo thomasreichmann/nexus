@@ -19,6 +19,7 @@ import {
     signParts,
     signPartsByNumber,
     listParts,
+    listOpenKeys,
     complete,
     abort,
 } from './multipart';
@@ -199,6 +200,62 @@ describe('multipart storage', () => {
             await abort('key', 'uid');
 
             expect(mockSend).toHaveBeenCalledOnce();
+        });
+    });
+
+    describe('listOpenKeys', () => {
+        it('collects the keys of every open session', async () => {
+            mockSend.mockResolvedValue({
+                Uploads: [
+                    { Key: 'user/a.zip', UploadId: 'u1' },
+                    { Key: 'user/b.zip', UploadId: 'u2' },
+                ],
+            });
+
+            await expect(listOpenKeys()).resolves.toEqual(
+                new Set(['user/a.zip', 'user/b.zip'])
+            );
+        });
+
+        it('returns an empty set when nothing is open', async () => {
+            mockSend.mockResolvedValue({});
+
+            await expect(listOpenKeys()).resolves.toEqual(new Set());
+        });
+
+        // The reaper treats "not in this set" as "safe to delete", so stopping
+        // at page one would strand a live upload's row.
+        it('walks every page before answering', async () => {
+            mockSend
+                .mockResolvedValueOnce({
+                    Uploads: [{ Key: 'user/a.zip', UploadId: 'u1' }],
+                    IsTruncated: true,
+                    NextKeyMarker: 'user/a.zip',
+                    NextUploadIdMarker: 'u1',
+                })
+                .mockResolvedValueOnce({
+                    Uploads: [{ Key: 'user/b.zip', UploadId: 'u2' }],
+                });
+
+            await expect(listOpenKeys()).resolves.toEqual(
+                new Set(['user/a.zip', 'user/b.zip'])
+            );
+            expect(mockSend).toHaveBeenCalledTimes(2);
+        });
+
+        // One multipart upload can have several sessions on the same key; the
+        // reaper only asks "is anything open here", so they collapse to one.
+        it('dedupes repeated keys', async () => {
+            mockSend.mockResolvedValue({
+                Uploads: [
+                    { Key: 'user/a.zip', UploadId: 'u1' },
+                    { Key: 'user/a.zip', UploadId: 'u2' },
+                ],
+            });
+
+            await expect(listOpenKeys()).resolves.toEqual(
+                new Set(['user/a.zip'])
+            );
         });
     });
 });

@@ -1,7 +1,7 @@
-import type { SQSEvent } from 'aws-lambda';
 import { createDb, type DB } from '@nexus/db';
 import { createJobRepo, type SqsMessageBody } from '@nexus/db/repo/jobs';
 import { getHandler } from './registry';
+import type { SQSEvent } from 'aws-lambda';
 
 // Register all job handlers
 import './handlers/index';

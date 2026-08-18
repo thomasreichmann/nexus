@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
+import { REPO_ROOT } from './paths';
 import type { ChildProcess } from 'node:child_process';
 
-import { REPO_ROOT } from './paths';
 
 export interface ServerHandle {
     baseUrl: string;
