@@ -1,9 +1,10 @@
 'use client';
 
 import type React from 'react';
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
     Upload,
     X,
@@ -27,8 +28,10 @@ import {
     pickFilesWithHandles,
     pickedFilesFromDataTransfer,
 } from '@/lib/upload/fileSystemAccess';
+import { waveProgress } from '@/lib/upload/parts';
+import { getImagePreviewUrl } from '@/lib/upload/thumbnails';
 import { MiddleTruncateName } from './MiddleTruncateName';
-import { useUpload, type UploadStatus } from './useUpload';
+import { useUpload, type UploadFile, type UploadStatus } from './useUpload';
 
 // Formats the browser can decode natively — RAW files (NEF/CR3/ARW/…) carry
 // an empty or opaque mime type and fall through to the plain icon tile; their
@@ -114,6 +117,29 @@ export function UploadZone() {
         (f) => f.status === 'resumable' && f.isQuickResumable
     );
 
+    // The aggregate header's view of the wave — at 50+ rows the per-row bars
+    // scroll out of sight, so the wave needs one bar that means something.
+    // One row set feeds both the bar and the "X of Y" caption, so they can
+    // never describe different waves (paused rows are in: a row parked by a
+    // connection drop is still the wave's work).
+    const waveRows = files.filter(
+        (f) => f.status !== 'pending' && f.status !== 'resumable'
+    );
+    const wavePercent = waveProgress(waveRows);
+
+    // The queue list is contained and virtualized: page scroll must not grow
+    // with the selection (#390), and neither may the DOM — reconciling 500
+    // mounted rows is what melted this page. Overscan is generous so small
+    // selections (a dozen rows) render fully.
+    const listScrollRef = useRef<HTMLDivElement>(null);
+    const rowVirtualizer = useVirtualizer({
+        count: files.length,
+        getScrollElement: () => listScrollRef.current,
+        estimateSize: () => 78,
+        overscan: 12,
+        getItemKey: (index) => files[index].id,
+    });
+
     return (
         <div className="space-y-6">
             <Card
@@ -183,6 +209,34 @@ export function UploadZone() {
                                 </Button>
                             )}
                         </div>
+                        {hasActiveWave && (
+                            <div className="mb-4 space-y-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
+                                <div className="flex items-center justify-between gap-3 text-sm">
+                                    <p>
+                                        <span className="text-muted-foreground">
+                                            Uploading —{' '}
+                                        </span>
+                                        <span className="font-medium">
+                                            {completedCount} of{' '}
+                                            {waveRows.length} files
+                                        </span>
+                                        {errorCount > 0 && (
+                                            <span className="text-destructive">
+                                                {' '}
+                                                · {errorCount} failed
+                                            </span>
+                                        )}
+                                    </p>
+                                    <span className="font-medium tabular-nums">
+                                        {wavePercent}%
+                                    </span>
+                                </div>
+                                <Progress
+                                    value={wavePercent}
+                                    className="h-1.5"
+                                />
+                            </div>
+                        )}
                         {quickResumable.length > 0 && (
                             <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
                                 <div className="flex items-center gap-2 text-sm">
@@ -208,119 +262,50 @@ export function UploadZone() {
                                 </Button>
                             </div>
                         )}
-                        <div className="space-y-3">
-                            {files.map((file) => (
-                                <div
-                                    key={file.id}
-                                    className="flex items-center gap-3 rounded-lg border border-border p-3"
-                                >
-                                    <UploadPreviewTile
-                                        blob={file.previewFile}
-                                        status={file.status}
-                                    />
-                                    <div className="flex-1 min-w-0">
-                                        <MiddleTruncateName
-                                            name={file.name}
-                                            className="font-medium"
-                                        />
-                                        <p className="text-sm text-muted-foreground">
-                                            {formatBytes(file.size)}
-                                        </p>
-                                        {(file.status === 'uploading' ||
-                                            file.status === 'paused' ||
-                                            file.status === 'resumable') && (
-                                            <Progress
-                                                value={file.progress}
-                                                className="mt-2 h-1"
-                                            />
-                                        )}
-                                        {file.status === 'queued' && (
-                                            <p className="mt-1 text-xs text-muted-foreground">
-                                                Waiting to upload
-                                            </p>
-                                        )}
-                                        {file.status === 'paused' && (
-                                            <p className="mt-1 text-xs text-amber-600">
-                                                Paused — waiting for your
-                                                connection
-                                            </p>
-                                        )}
-                                        {file.status === 'resumable' && (
-                                            <p className="mt-1 text-xs text-amber-600">
-                                                {file.isQuickResumable
-                                                    ? 'Interrupted — resume in one click'
-                                                    : 'Interrupted — re-add this file to resume'}
-                                            </p>
-                                        )}
-                                        {file.status === 'error' &&
-                                            file.error && (
-                                                <p className="mt-1 text-xs text-destructive">
-                                                    {file.error}
-                                                </p>
-                                            )}
-                                    </div>
-                                    {/* Removable while queued too: the pool
-                                        re-reads the row at start time, so a
-                                        removed row is simply skipped. */}
-                                    {(file.status === 'pending' ||
-                                        file.status === 'queued') && (
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => removeFile(file.id)}
-                                        >
-                                            <X className="h-4 w-4" />
-                                            <span className="sr-only">
-                                                Remove
-                                            </span>
-                                        </Button>
-                                    )}
-                                    {file.status === 'resumable' &&
-                                        file.isQuickResumable && (
-                                            <Button
-                                                size="sm"
-                                                onClick={() =>
-                                                    resumeWithHandle(file.id)
+                        {/* Contained scroll: the page must not grow with the
+                            selection. Rows are absolutely positioned by the
+                            virtualizer and measured (heights vary by status),
+                            with pb-3 standing in for the old space-y-3. */}
+                        <div
+                            ref={listScrollRef}
+                            data-testid="upload-queue"
+                            className="max-h-[min(24rem,55dvh)] overflow-y-auto overscroll-contain"
+                        >
+                            <div
+                                className="relative"
+                                style={{
+                                    height: rowVirtualizer.getTotalSize(),
+                                }}
+                            >
+                                {rowVirtualizer
+                                    .getVirtualItems()
+                                    .map((virtualRow) => {
+                                        const file = files[virtualRow.index];
+                                        return (
+                                            <div
+                                                key={file.id}
+                                                ref={
+                                                    rowVirtualizer.measureElement
                                                 }
-                                                disabled={isUploading}
+                                                data-index={virtualRow.index}
+                                                data-testid="upload-queue-row"
+                                                className="absolute inset-x-0 top-0 pb-3"
+                                                style={{
+                                                    transform: `translateY(${virtualRow.start}px)`,
+                                                }}
                                             >
-                                                <Play className="mr-2 h-4 w-4" />
-                                                Resume
-                                            </Button>
-                                        )}
-                                    {(file.status === 'uploading' ||
-                                        file.status === 'paused' ||
-                                        file.status === 'resumable') && (
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => cancelFile(file.id)}
-                                        >
-                                            <X className="h-4 w-4" />
-                                            <span className="sr-only">
-                                                Cancel upload
-                                            </span>
-                                        </Button>
-                                    )}
-                                    {file.status === 'error' && (
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => retryFile(file.id)}
-                                        >
-                                            <RotateCcw className="h-4 w-4" />
-                                            <span className="sr-only">
-                                                Retry upload
-                                            </span>
-                                        </Button>
-                                    )}
-                                    {file.status === 'complete' && (
-                                        <span className="text-xs font-medium text-green-500">
-                                            Uploaded
-                                        </span>
-                                    )}
-                                </div>
-                            ))}
+                                                <UploadQueueRow
+                                                    file={file}
+                                                    isUploading={isUploading}
+                                                    onRemove={removeFile}
+                                                    onCancel={cancelFile}
+                                                    onRetry={retryFile}
+                                                    onResume={resumeWithHandle}
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                            </div>
                         </div>
                         <div className="mt-6 flex flex-col gap-4 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
                             <div className="space-y-1">
@@ -345,17 +330,6 @@ export function UploadZone() {
                                                     0
                                                 )
                                             )}
-                                        </span>
-                                    </p>
-                                )}
-                                {hasActiveWave && (
-                                    <p className="text-sm">
-                                        <span className="text-muted-foreground">
-                                            Uploaded:
-                                        </span>{' '}
-                                        <span className="font-medium">
-                                            {completedCount} of{' '}
-                                            {activeCount + attemptedCount} files
                                         </span>
                                     </p>
                                 )}
@@ -411,6 +385,118 @@ export function UploadZone() {
     );
 }
 
+interface UploadQueueRowProps {
+    file: UploadFile;
+    isUploading: boolean;
+    onRemove: (id: string) => void;
+    onCancel: (id: string) => void;
+    onRetry: (id: string) => void;
+    onResume: (id: string) => void;
+}
+
+/**
+ * One queue row, memoized: a progress tick re-renders only the row it moved.
+ * That only holds because `useUpload` hands out identity-stable row objects
+ * (unchanged rows project to the same reference) and stable callbacks — the
+ * memo is the last link in that chain, not a local optimization.
+ */
+const UploadQueueRow = memo(function UploadQueueRow({
+    file,
+    isUploading,
+    onRemove,
+    onCancel,
+    onRetry,
+    onResume,
+}: UploadQueueRowProps) {
+    return (
+        <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+            <UploadPreviewTile blob={file.previewFile} status={file.status} />
+            <div className="flex-1 min-w-0">
+                <MiddleTruncateName name={file.name} className="font-medium" />
+                <p className="text-sm text-muted-foreground">
+                    {formatBytes(file.size)}
+                </p>
+                {(file.status === 'uploading' ||
+                    file.status === 'paused' ||
+                    file.status === 'resumable') && (
+                    <Progress value={file.progress} className="mt-2 h-1" />
+                )}
+                {file.status === 'queued' && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        Waiting to upload
+                    </p>
+                )}
+                {file.status === 'paused' && (
+                    <p className="mt-1 text-xs text-amber-600">
+                        Paused — waiting for your connection
+                    </p>
+                )}
+                {file.status === 'resumable' && (
+                    <p className="mt-1 text-xs text-amber-600">
+                        {file.isQuickResumable
+                            ? 'Interrupted — resume in one click'
+                            : 'Interrupted — re-add this file to resume'}
+                    </p>
+                )}
+                {file.status === 'error' && file.error && (
+                    <p className="mt-1 text-xs text-destructive">
+                        {file.error}
+                    </p>
+                )}
+            </div>
+            {/* Removable while queued too: the pool re-reads the row at start
+                time, so a removed row is simply skipped. */}
+            {(file.status === 'pending' || file.status === 'queued') && (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => onRemove(file.id)}
+                >
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">Remove</span>
+                </Button>
+            )}
+            {file.status === 'resumable' && file.isQuickResumable && (
+                <Button
+                    size="sm"
+                    onClick={() => onResume(file.id)}
+                    disabled={isUploading}
+                >
+                    <Play className="mr-2 h-4 w-4" />
+                    Resume
+                </Button>
+            )}
+            {(file.status === 'uploading' ||
+                file.status === 'paused' ||
+                file.status === 'resumable') && (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => onCancel(file.id)}
+                >
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">Cancel upload</span>
+                </Button>
+            )}
+            {file.status === 'error' && (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => onRetry(file.id)}
+                >
+                    <RotateCcw className="h-4 w-4" />
+                    <span className="sr-only">Retry upload</span>
+                </Button>
+            )}
+            {file.status === 'complete' && (
+                <span className="text-xs font-medium text-green-500">
+                    Uploaded
+                </span>
+            )}
+        </div>
+    );
+});
+
 /**
  * The row's 10x10 leading tile. Browser-decodable files get a local blob
  * preview in the same fixed box (no reflow, no server round-trip); the
@@ -433,14 +519,22 @@ function UploadPreviewTile({
             ? ('video' as const)
             : null;
 
-    const previewUrl = useMemo(
-        () => (blob && kind ? URL.createObjectURL(blob) : null),
+    // Images render a tile-sized thumbnail (decoded once, cached per File in
+    // lib/upload/thumbnails) — never the raw file, whose full-size decode is
+    // what buried the page under a 50-photo selection (#390).
+    const imageUrl = useImagePreviewUrl(blob && kind === 'image' ? blob : null);
+    // Videos keep a per-mount object URL: metadata preload paints the first
+    // frame without a retained decode, and virtualization bounds how many
+    // <video> elements exist at once.
+    const videoUrl = useMemo(
+        () => (blob && kind === 'video' ? URL.createObjectURL(blob) : null),
         [blob, kind]
     );
     useEffect(() => {
-        if (!previewUrl) return;
-        return () => URL.revokeObjectURL(previewUrl);
-    }, [previewUrl]);
+        if (!videoUrl) return;
+        return () => URL.revokeObjectURL(videoUrl);
+    }, [videoUrl]);
+    const previewUrl = imageUrl ?? videoUrl;
 
     // Pending and queued rows keep a clean preview — the scrim + icon only
     // takes over once the row has a state worth signalling.
@@ -494,4 +588,26 @@ function UploadPreviewTile({
             )}
         </div>
     );
+}
+
+/* Resolves a file's cached tile thumbnail. Starts null (the tile shows its
+   icon) and stays null for files that can't be decoded. The resolved URL is
+   stored with the blob it belongs to and matched on read, so a row whose blob
+   changes can't flash the previous file's thumbnail. */
+function useImagePreviewUrl(blob: File | null): string | null {
+    const [preview, setPreview] = useState<{
+        blob: File;
+        url: string | null;
+    } | null>(null);
+    useEffect(() => {
+        if (!blob) return;
+        let isActive = true;
+        void getImagePreviewUrl(blob).then((url) => {
+            if (isActive) setPreview({ blob, url });
+        });
+        return () => {
+            isActive = false;
+        };
+    }, [blob]);
+    return blob && preview?.blob === blob ? preview.url : null;
 }

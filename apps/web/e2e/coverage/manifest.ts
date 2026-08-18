@@ -353,6 +353,18 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-large-selection-contained',
+        title: 'A 50-file selection stays contained: bounded page scroll, virtualized rows',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
+        id: 'upload-wave-progress',
+        title: 'Aggregate wave progress (byte-weighted bar + counts) shown while a wave runs',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-clear-keeps-resumable',
         title: 'Clear all empties the queue without destroying resumable uploads',
         area: 'upload',

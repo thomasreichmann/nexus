@@ -24,6 +24,7 @@ import { fileName } from '../helpers/table';
 import { interceptTrpcCalls } from '../helpers/trpc';
 import { seedResumableUpload } from '../helpers/uploadStore';
 import {
+    makePngFile,
     makeTextFiles,
     stubS3Puts,
     writeLargeFiles,
@@ -102,6 +103,72 @@ test(
         await page.getByRole('button', { name: 'Clear all' }).click();
 
         await expect(page.getByText(/Selected Files/)).toBeHidden();
+    }
+);
+
+// A 50-file selection used to render 50 heavy rows into the page flow (#390):
+// kilometric scroll, and every progress tick reconciled all of them. The list
+// is now contained and virtualized — the page and the DOM stay bounded no
+// matter how many files are queued.
+test(
+    'a 50-file selection stays contained — bounded page scroll, virtualized rows',
+    {
+        tag: [
+            '@page:/dashboard/upload',
+            '@uc:upload-large-selection-contained',
+        ],
+    },
+    async ({ page, consoleErrors }) => {
+        // One real image among the text files, so the tile's decode → resize →
+        // cache pipeline runs in this tier and not only in a manual check.
+        const image = makePngFile('queue-large-photo.png');
+        const files = [image, ...makeTextFiles(49, 'queue-large')];
+
+        await page.goto(PAGE_URL);
+        await page.setInputFiles('input[type="file"]', files);
+
+        await expect(page.getByText('Selected Files (50)')).toBeVisible();
+        await expect(
+            page.getByRole('button', { name: 'Upload 50 files' })
+        ).toBeVisible();
+
+        // The image row's tile resolves to a generated thumbnail (a blob URL,
+        // never the raw file).
+        await expect(
+            page
+                .getByTestId('upload-queue-row')
+                .filter({ hasText: image.name })
+                .locator('img')
+        ).toBeVisible();
+
+        // The queue scrolls inside its own container, not the page…
+        const queue = page.getByTestId('upload-queue');
+        await expect(queue).toBeVisible();
+        expect(
+            await queue.evaluate((el) => el.scrollHeight > el.clientHeight)
+        ).toBe(true);
+        // …so the page stays within a few screens, where rendering every row
+        // into the page flow grew it by a row-height per file.
+        const viewportHeight = page.viewportSize()!.height;
+        expect(
+            await page.evaluate(() => document.documentElement.scrollHeight)
+        ).toBeLessThan(viewportHeight * 3);
+
+        // Virtualized: the DOM holds the visible window plus overscan, never
+        // every row — DOM size scaling with the selection is what melted the
+        // page.
+        const renderedRows = await page.getByTestId('upload-queue-row').count();
+        expect(renderedRows).toBeGreaterThan(0);
+        expect(renderedRows).toBeLessThan(files.length);
+
+        // Rows past the window really exist: scrolling the container to the
+        // bottom materializes the last file.
+        await queue.evaluate((el) => {
+            el.scrollTop = el.scrollHeight;
+        });
+        await expect(fileName(page, 'queue-large-48.txt')).toBeVisible();
+
+        expect(consoleErrors).toEqual([]);
     }
 );
 
@@ -406,7 +473,13 @@ test(
 // added while it runs queue as pending and a click folds them in.
 test(
     'files added mid-wave join the running wave',
-    { tag: ['@page:/dashboard/upload', '@uc:upload-add-mid-wave'] },
+    {
+        tag: [
+            '@page:/dashboard/upload',
+            '@uc:upload-add-mid-wave',
+            '@uc:upload-wave-progress',
+        ],
+    },
     async ({ page }) => {
         const puts = await stubS3Puts(page, { holdMs: 2000 });
         const first = makeTextFiles(MAX_CONCURRENT_FILES + 2, 'queue-first');
@@ -423,6 +496,16 @@ test(
         await expect(page.getByText('Waiting to upload').first()).toBeVisible({
             timeout: 15_000,
         });
+        // The wave is guaranteed live here (2s holds), so this is where the
+        // aggregate header is assertable without racing the wave's end: the
+        // per-row bars are useless at 50+ rows, the header is the summary.
+        // Full phrase, so only the header line matches (its inner spans and
+        // the "Uploading..." button each hold fragments).
+        await expect(
+            page.getByText(
+                new RegExp(`Uploading — \\d+ of ${first.length} files`)
+            )
+        ).toBeVisible();
         await expect(
             page.getByRole('button', { name: 'Remove' }).first()
         ).toBeVisible();

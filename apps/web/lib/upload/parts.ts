@@ -69,6 +69,23 @@ export function partsProgress(completed: number, total: number): number {
     return Math.round((completed / total) * 100);
 }
 
+/**
+ * Aggregate progress of an upload wave as a 0-100 integer, byte-weighted:
+ * one 80GB video outweighs a folder of JPEGs. Callers pass the rows that
+ * belong to the wave; this doesn't know about statuses.
+ */
+export function waveProgress(
+    rows: { size: number; progress: number }[]
+): number {
+    const totalBytes = rows.reduce((acc, row) => acc + row.size, 0);
+    if (totalBytes <= 0) return 0;
+    const doneBytes = rows.reduce(
+        (acc, row) => acc + (row.size * row.progress) / 100,
+        0
+    );
+    return Math.round((doneBytes / totalBytes) * 100);
+}
+
 /** Snapshot the fields a re-added file must match against a persisted record. */
 export function toFileIdentity(file: File): FileIdentity {
     return {
