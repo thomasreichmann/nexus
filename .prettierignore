@@ -1,2 +1,13 @@
-apps/web/server/db/migrations/meta/*.json
+# Drizzle-generated migration snapshots
+packages/db/src/migrations/meta/*.json
 pnpm-lock.yaml
+
+# Prettier only reads the root .gitignore, so artifacts covered by nested
+# or user-global git ignores must be listed here explicitly.
+.local/
+.claude/settings.local.json
+apps/web/e2e/.auth/
+apps/web/test-results/
+next-env.d.ts
+**/.terraform/
+*.tfstate

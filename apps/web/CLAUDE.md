@@ -23,6 +23,11 @@ Pick the smallest tier that covers your change:
 | `pnpm -F web test:e2e`             | all of the above                   | cross-cutting changes (auth, tRPC client, layout) |
 | `pnpm -F web e2e:coverage --check` | coverage gate (no browsers)        | added a page, use-case, or test                   |
 
+**One run per tier.** A tier subsumes every spec inside it — if the full tier
+is required anyway, don't run a single spec first "to check": that doubles
+the build+boot cost for no extra signal. Single-spec runs are for iterating
+on a spec you're actively writing.
+
 Do NOT run `test:e2e:validate` unless explicitly asked — it's destructive
 (real S3 objects, mutates the dev user's quota).
 

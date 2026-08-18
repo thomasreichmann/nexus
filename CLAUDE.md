@@ -6,7 +6,7 @@ Nexus is a deep storage solution using AWS S3 tiers (Standard → Glacier) for c
 
 ## Commands
 
-**REQUIRED before committing:** `pnpm check` (runs lint + build + test via Turborepo).
+**REQUIRED before committing:** `pnpm check` (runs prettier check + lint + build + test).
 **REQUIRED after modifying pages/components:** `pnpm -F web test:e2e:smoke`.
 **REQUIRED after adding a page, use-case, or e2e test:** `pnpm -F web e2e:coverage --check`.
 Run these bare — never pipe through `tail`/`grep`/`head`. Output is already
