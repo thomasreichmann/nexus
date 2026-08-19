@@ -72,3 +72,21 @@ pnpm -F web e2e:coverage --check  # coverage gate — run after adding a page or
 ```
 
 E2E tests run against a production build on an ephemeral port, so they coexist with `pnpm dev`. Tier selection and test-data conventions: [`docs/guides/e2e-testing-guidelines.md`](../../docs/guides/e2e-testing-guidelines.md).
+
+## Deployment
+
+Vercel deploys this workspace with `apps/web` as the project root, so
+`vercel.json` here is the project config. It sets an
+[Ignored Build Step](https://vercel.com/docs/deployments/configure-a-build#ignored-build-step)
+of `npx --yes turbo-ignore`, which asks Turborepo whether `@nexus/web` or
+anything it depends on changed since the last deployment on this branch, and
+cancels the build when nothing did. Commits confined to `docs/`, `infra/`,
+`.github/`, `.claude/`, `apps/worker/`, or `tooling/` are skipped — twice over,
+since `main` and the `dev` mirror both deploy every commit
+(`.github/workflows/post-merge.yml`).
+
+turbo-ignore builds whenever it cannot prove the change is irrelevant: a branch
+with no previous deployment, a root-level change (`package.json`, `turbo.json`,
+`pnpm-lock.yaml`), or any failure resolving the previous SHA. Failing open is
+the point — a wrongly skipped build leaves the alias serving stale code, which
+is far worse than a build nobody needed.
