@@ -38,11 +38,11 @@ Turn a draft issue (`needs-details`) into an implementation-ready one (`ready`):
 
     Judge before drafting: every criterion candidate has evidence attached, obsolete claims are dropped rather than paraphrased, decisions are genuine forks. Gaps get a targeted follow-up to the same researcher via SendMessage — never respawn (respawning loses its context and re-bills the reading).
 
-5. **Decide.** Put the real forks to the user in one AskUserQuestion round, your lean listed first. If the user isn't reachable (autonomous run), take the researched lean, state the decision and its rationale in the body, and add `ai-drafted` in step 6 so a human audits it later.
+5. **Decide.** Put the real forks to the user in one AskUserQuestion round, your lean listed first. If the user isn't reachable (autonomous run), take the researched lean and state the decision and its rationale in the body.
 
 6. **Rewrite & apply.** Draft the new body in the task-template shape — `## Description` (what and why, decisions inline with their rationale), `## Acceptance Criteria` (testable checkboxes), `## Out of Scope`. The body must stand alone: `/work`'s explorer reads it without the comments. Fold in only what survives from the comments — verified refs, the reasoning behind decisions; drop what's stale or delegated to other issues. Present per issue: the new body, label changes, comments to delete. On approval (in an autonomous run, step 5's decision rule already applies — proceed and report):
     - `gh issue edit <n> --body-file <scratchpad file>`
-    - `gh issue edit <n> --remove-label needs-details --add-label ready` — plus `ai-drafted` unless the user reviewed the decisions live; suggest a `priority: *` label if none is set.
+    - `gh issue edit <n> --remove-label needs-details --add-label ready` — suggest a `priority: *` label if none is set.
     - Delete investigation comments the rewrite folded in or obsoleted: `gh api -X DELETE repos/{owner}/{repo}/issues/comments/<numeric-id>`. A groomed issue carries one source of truth, not a body plus a stale comment disputing it.
 
 7. **Follow-ups.** Work discovered but out of scope becomes new draft issues (`needs-details`), created only with user approval and linked per `docs/ai/github-workflow.md`. Close with one line per issue: what changed, decisions made, link.
