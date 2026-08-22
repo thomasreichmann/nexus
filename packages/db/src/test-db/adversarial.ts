@@ -10,7 +10,7 @@
  * sessions hand-rolled one-off: long unbreakable filenames (underscores and
  * separator-free runs give CSS no break opportunity), unicode/emoji/CJK
  * names, enough rows to scroll, zero-byte / no-extension / multi-TB sizes,
- * every storage tier and file status (including one soft-deleted row that
+ * every file status (including one soft-deleted row that
  * must NOT render), null mimeType, duplicate names across batches, and
  * retrievals in each active state.
  *
@@ -19,6 +19,7 @@
  * edge-case coverage. Idempotent: clears the user's data first, so a re-run
  * never doubles up.
  */
+import { daysAgo, hoursAgo } from '../seed/constants';
 import { insertFile, insertStorageUsage, insertUploadBatch } from './inserts';
 import { deleteUserData } from './queries';
 import { insertRetrievalSpecs, type RetrievalSpec } from './scenarios';
@@ -29,14 +30,11 @@ import type { UploadBatch } from '../repositories/uploadBatches';
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
 const TB = 1024 * GB;
-const daysAgo = (d: number): Date => new Date(Date.now() - d * 86_400_000);
-const hoursAgo = (h: number): Date => new Date(Date.now() - h * 3_600_000);
 
 interface AdversarialFile {
     name: string;
     mime: string | null;
     size: number;
-    tier: 'standard' | 'glacier' | 'deep_archive';
     status?: 'uploading' | 'available' | 'restoring' | 'deleted';
 }
 
@@ -62,53 +60,45 @@ const BATCHES: AdversarialBatch[] = [
                 name: LONG_UNBREAKABLE_NAME,
                 mime: 'image/jpeg',
                 size: 48 * MB,
-                tier: 'standard',
             },
             {
                 // Separator-free run — not even an underscore to hint at.
                 name: 'IMG20260613140000BURST000123456789COVERTOPENHANCEDSTABILIZED.CR2',
                 mime: 'image/x-canon-cr2',
                 size: 41 * MB,
-                tier: 'standard',
             },
             {
                 name: 'Ensaio_Pré-Wedding_São_Paulo_—_Fernanda_&_João_Fotos_Selecionadas_Alta_Resolução_0234.NEF',
                 mime: 'image/x-nikon-nef',
                 size: 39 * MB,
-                tier: 'glacier',
             },
             {
                 name: '東京タワー夜景撮影会2026年6月13日完全版パノラマ合成最終書き出し.tiff',
                 mime: 'image/tiff',
                 size: 141 * MB,
-                tier: 'glacier',
             },
             {
                 name: "🎞️📷 Hawai'i — dia 3 (RAW) ✨.dng",
                 mime: 'image/x-adobe-dng',
                 size: 27 * MB,
-                tier: 'standard',
             },
             {
                 name: 'full-ceremony-4k-master.mp4',
                 mime: 'video/mp4',
                 size: 1.2 * TB,
-                tier: 'deep_archive',
             },
-            { name: 'notes.txt', mime: null, size: 0, tier: 'standard' },
-            { name: 'clipboard', mime: null, size: 1, tier: 'standard' },
+            { name: 'notes.txt', mime: null, size: 0 },
+            { name: 'clipboard', mime: null, size: 1 },
             {
                 name: 'preview_export_temp.jpg',
                 mime: 'image/jpeg',
                 size: 3 * MB,
-                tier: 'standard',
                 status: 'uploading',
             },
             {
                 name: 'ceremony-0148.NEF',
                 mime: 'image/x-nikon-nef',
                 size: 38 * MB,
-                tier: 'glacier',
             },
         ],
     },
@@ -123,7 +113,6 @@ const BATCHES: AdversarialBatch[] = [
                     name: `_MG_${frame}.CR2`,
                     mime: 'image/x-canon-cr2',
                     size: (30 + (i % 12)) * MB,
-                    tier: 'glacier',
                     status: i === 3 ? 'restoring' : 'available',
                 };
             }),
@@ -132,7 +121,6 @@ const BATCHES: AdversarialBatch[] = [
                 name: 'ceremony-0148.NEF',
                 mime: 'image/x-nikon-nef',
                 size: 37 * MB,
-                tier: 'glacier',
             },
         ],
     },
@@ -144,20 +132,17 @@ const BATCHES: AdversarialBatch[] = [
                 name: 'backup-hd-seagate-2019-full.img',
                 mime: 'application/octet-stream',
                 size: 2 * TB,
-                tier: 'deep_archive',
             },
             {
                 name: 'aurora-jokulsarlon-007.CR2',
                 mime: 'image/x-canon-cr2',
                 size: 34 * MB,
-                tier: 'deep_archive',
                 status: 'restoring',
             },
             {
                 name: 'lightroom-catalog-2021.lrcat',
                 mime: null,
                 size: 4 * GB,
-                tier: 'deep_archive',
             },
             {
                 // Soft-deleted: must not render anywhere; a list that shows
@@ -165,7 +150,6 @@ const BATCHES: AdversarialBatch[] = [
                 name: 'DELETED_should_never_render.raw',
                 mime: null,
                 size: 9 * MB,
-                tier: 'deep_archive',
                 status: 'deleted',
             },
         ],
@@ -179,13 +163,11 @@ const UNGROUPED: AdversarialFile[] = [
         name: 'contrato-assinado-marquez.pdf',
         mime: 'application/pdf',
         size: 1.4 * MB,
-        tier: 'standard',
     },
     {
         name: 'invoice — final (1) (1) copy FINAL v2 [aprovado].pdf',
         mime: 'application/pdf',
         size: 800 * 1024,
-        tier: 'standard',
     },
 ];
 
@@ -252,7 +234,6 @@ export async function seedAdversarialLibrary(
             name: f.name,
             size,
             mimeType: f.mime,
-            storageTier: f.tier,
             status,
             createdAt,
             updatedAt: createdAt,

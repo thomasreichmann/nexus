@@ -27,8 +27,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "files" {
   # run picks them up — in practice ~24-48h after upload, not literally day 0.
   # The size floor makes S3's implicit 128KB transition minimum explicit:
   # sub-128KB objects never transition (Deep Archive's minimum billable size
-  # would make them cost more cold than warm), and their rows stay 'standard'
-  # (see handleLifecycleTransition in apps/web/server/services/s3-restore.ts).
+  # would make them cost more cold than warm). Nothing in the DB mirrors the
+  # result: this rule is the policy `isProbablyCold` derives its guess from,
+  # and the real answer is read from S3 with a HEAD (#416).
   rule {
     id     = "glacier-deep-archive-immediate"
     status = "Enabled"
@@ -83,22 +84,4 @@ resource "aws_s3_bucket_cors_configuration" "files" {
     # Multipart uploads: the browser must read each part's ETag from the response.
     expose_headers = ["ETag"]
   }
-}
-
-# Restore + lifecycle-transition events -> SNS -> /api/webhooks/s3-restore.
-# The topic policy must exist first: S3 validates publish permission on save.
-resource "aws_s3_bucket_notification" "files" {
-  bucket = aws_s3_bucket.files.id
-
-  topic {
-    topic_arn = aws_sns_topic.s3_restore_events.arn
-    events = [
-      "s3:ObjectRestore:Post",
-      "s3:ObjectRestore:Completed",
-      "s3:ObjectRestore:Delete",
-      "s3:LifecycleTransition",
-    ]
-  }
-
-  depends_on = [aws_sns_topic_policy.s3_restore_events]
 }

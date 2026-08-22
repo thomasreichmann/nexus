@@ -19,9 +19,17 @@ resource "aws_iam_role_policy" "worker_sqs" {
 
   policy = jsonencode({
     Version = "2012-10-17"
+    # SendMessage as well as receive: the retrieval poll re-enqueues a
+    # thumbnail whose original was cold when it first ran (#416), so the
+    # worker publishes to the same queue it consumes.
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
+      Effect = "Allow"
+      Action = [
+        "sqs:ReceiveMessage",
+        "sqs:DeleteMessage",
+        "sqs:GetQueueAttributes",
+        "sqs:SendMessage",
+      ]
       Resource = aws_sqs_queue.jobs.arn
     }]
   })
@@ -121,6 +129,7 @@ resource "aws_lambda_function" "worker" {
       # AWS_REGION is reserved and set by the Lambda runtime itself.
       S3_BUCKET         = aws_s3_bucket.files.bucket
       S3_DERIVED_BUCKET = aws_s3_bucket.derived.bucket
+      SQS_QUEUE_URL     = aws_sqs_queue.jobs.url
     }
   }
 

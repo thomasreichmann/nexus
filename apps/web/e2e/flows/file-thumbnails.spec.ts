@@ -44,7 +44,6 @@ const test = base.extend<
                 userId,
                 name: 'ceremony-highlights.mp4',
                 size: 4_000_000,
-                storageTier: 'deep_archive',
                 status: 'available',
                 thumbnailStatus: 'ready',
                 thumbnailWidth: 512,
@@ -55,7 +54,6 @@ const test = base.extend<
                 userId,
                 name: 'processing-photo.nef',
                 size: 2_000_000,
-                storageTier: 'standard',
                 status: 'available',
                 thumbnailStatus: 'pending',
             });

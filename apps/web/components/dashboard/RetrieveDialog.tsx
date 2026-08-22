@@ -10,7 +10,6 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { DEFAULT_RESTORE_DAYS_TO_KEEP } from '@/lib/storage/types';
-import type { StorageTier } from '@/lib/storage/types';
 
 export interface RetrievalEstimate {
     speed: 'fast' | 'slow';
@@ -18,17 +17,21 @@ export interface RetrievalEstimate {
 }
 
 /**
- * Honest per-batch time estimate from the items' actual storage tiers:
- * all-standard batches complete in the fast path (#257), anything colder is
- * paced by its slowest item. Glacier folds into the slow bucket — "up to 12
- * hours" under-promises for its 3-5h restores rather than adding a third
- * estimate. An empty list is conservatively slow; callers gate on a
+ * Per-batch time estimate, paced by the slowest item: a batch we expect to be
+ * entirely warm completes in the fast path (#257), anything else is quoted at
+ * the Deep Archive worst case.
+ *
+ * The input is a guess, not a fact — S3 owns object state, and the real
+ * warm/cold answer is only known once the request reaches the server and HEADs
+ * each object (#416). Erring slow is the honest direction: a batch that turns
+ * out warm beats its estimate, and nobody is promised minutes for something
+ * that takes hours. An empty list is conservatively slow; callers gate on a
  * non-empty selection before opening the dialog.
  */
-export function getRetrievalEstimate(tiers: StorageTier[]): RetrievalEstimate {
-    const isAllStandard =
-        tiers.length > 0 && tiers.every((tier) => tier === 'standard');
-    return isAllStandard
+export function getRetrievalEstimate(coldness: boolean[]): RetrievalEstimate {
+    const isAllWarm =
+        coldness.length > 0 && coldness.every((isCold) => !isCold);
+    return isAllWarm
         ? { speed: 'fast', label: 'Ready in ~minutes' }
         : { speed: 'slow', label: 'Ready in up to 12 hours' };
 }
@@ -36,8 +39,11 @@ export function getRetrievalEstimate(tiers: StorageTier[]): RetrievalEstimate {
 interface RetrieveDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    /** Storage tiers of the items being retrieved; drives the estimate. */
-    tiers: StorageTier[];
+    /**
+     * Per-item `isProbablyCold` hints for the selection; drives the estimate.
+     * A policy expectation, not a claim — see `getRetrievalEstimate`.
+     */
+    coldness: boolean[];
     fileCount: number;
     onConfirm: () => void;
 }
@@ -50,11 +56,11 @@ interface RetrieveDialogProps {
 export function RetrieveDialog({
     open,
     onOpenChange,
-    tiers,
+    coldness,
     fileCount,
     onConfirm,
 }: RetrieveDialogProps) {
-    const estimate = getRetrievalEstimate(tiers);
+    const estimate = getRetrievalEstimate(coldness);
     const EstimateIcon = estimate.speed === 'fast' ? Zap : Clock;
 
     return (

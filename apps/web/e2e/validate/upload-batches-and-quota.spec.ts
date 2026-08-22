@@ -20,7 +20,7 @@
  *    upload through the UI surfaces an error and creates no DB row.
  *
  * Not covered (intentional): old-format s3Key downloads. Every s3Key consumer
- * (`retrieval.ts`, `files.ts` multipart, `s3-restore.ts`) treats the value as
+ * (`retrieval.ts`, `files.ts` multipart) treats the value as
  * opaque, so legacy keys can't regress through code changes here.
  */
 import {

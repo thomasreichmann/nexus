@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { ChevronRight, RotateCw } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
+import { isProbablyCold } from '@nexus/db/object-state';
 import { Button } from '@/components/ui/button';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
@@ -164,7 +165,7 @@ function BatchRestoreSlot({ batchId, files }: BatchRestoreSlotProps) {
             <RetrieveDialog
                 open={isDialogOpen}
                 onOpenChange={setIsDialogOpen}
-                tiers={eligibleFiles.map((f) => f.storageTier)}
+                coldness={eligibleFiles.map(isProbablyCold)}
                 fileCount={eligibleFiles.length}
                 onConfirm={() => mutation.mutate({ batchId, tier: 'standard' })}
             />

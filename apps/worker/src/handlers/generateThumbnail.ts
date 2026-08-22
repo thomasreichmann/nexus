@@ -5,14 +5,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
-import {
-    GetObjectCommand,
-    PutObjectCommand,
-    S3Client,
-} from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { classifyMedia } from '@nexus/db/media';
 import { createFileRepo, thumbnailKey, type File } from '@nexus/db/repo/files';
+import { getS3, requireEnv } from '../aws';
 import type { Readable } from 'node:stream';
 import type { HandlerContext } from '../registry';
 
@@ -41,24 +38,6 @@ const VIDEO_POSTER_SEEK_SECONDS = 3;
 // Scale to fit within 512x512 without upscaling smaller sources.
 const SCALE_FILTER = `scale=w='min(${THUMBNAIL_MAX_EDGE},iw)':h='min(${THUMBNAIL_MAX_EDGE},ih)':force_original_aspect_ratio=decrease`;
 
-// Lazily constructed so importing the handler never requires env/AWS setup
-// (mirrors getDb in ../handler.ts). Region comes from the Lambda runtime.
-let s3Client: S3Client | undefined;
-function getS3(): S3Client {
-    s3Client ??= new S3Client({});
-    return s3Client;
-}
-
-function getBucket(name: 'S3_BUCKET' | 'S3_DERIVED_BUCKET'): string {
-    const value = process.env[name];
-    if (!value) {
-        throw new Error(
-            `${name} is not set. Configure it on the Lambda function (infra/terraform/lambda.tf).`
-        );
-    }
-    return value;
-}
-
 /** S3's "this object is archived" error — the failed_cold trigger. */
 function isInvalidObjectState(error: unknown): boolean {
     return error instanceof Error && error.name === 'InvalidObjectState';
@@ -71,7 +50,7 @@ async function downloadObject(
 ): Promise<void> {
     const response = await getS3().send(
         new GetObjectCommand({
-            Bucket: getBucket('S3_BUCKET'),
+            Bucket: requireEnv('S3_BUCKET'),
             Key: s3Key,
             Range: range,
         })
@@ -278,7 +257,7 @@ async function generateVideoPoster(
     const url = await getSignedUrl(
         getS3(),
         new GetObjectCommand({
-            Bucket: getBucket('S3_BUCKET'),
+            Bucket: requireEnv('S3_BUCKET'),
             Key: file.s3Key,
         }),
         { expiresIn: PRESIGN_EXPIRY_SECONDS }
@@ -348,7 +327,7 @@ export async function generateThumbnail(
         // 'ready' row always has a readable object behind it.
         await getS3().send(
             new PutObjectCommand({
-                Bucket: getBucket('S3_DERIVED_BUCKET'),
+                Bucket: requireEnv('S3_DERIVED_BUCKET'),
                 Key: thumbnailKey(file),
                 Body: await readFile(outcome.webpPath),
                 ContentType: 'image/webp',

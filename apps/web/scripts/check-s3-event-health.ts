@@ -1,11 +1,14 @@
 /**
- * Health check for the S3 event pipeline (SNS webhook → DB side effects), plus
- * the Stripe webhook strand of the same `webhook_events` table.
+ * Health check for the webhook rails that share the `webhook_events` table —
+ * CloudWatch alarms and Stripe — plus the retrieval and upload sweeps.
+ *
+ * The S3 lifecycle/restore strand is gone with the rail itself (#416); the
+ * retrieval sweep below is now the thing that catches a restore going
+ * unobserved, since the worker's poll — not a webhook — marks rows ready.
  *
  * Fails (exit 1) when:
- *   - any SNS webhook event landed in status 'failed' or 'unhandled' in the
- *     last 7 days (allowlisted expected events stay 'processed', so routine
- *     ObjectRestore:Post deliveries don't trip this)
+ *   - any CloudWatch webhook event landed in status 'failed' or 'unhandled' in
+ *     the last 7 days
  *   - any Stripe webhook event landed in 'failed', 'unhandled', or 'noop' in
  *     the same window (#332). Request-time alerts fire once and are
  *     best-effort; this is what makes a stranded billing event stay visible —
@@ -19,19 +22,11 @@
  *     abandoned it without calling cleanup, so the row is invisible to every
  *     list and whatever bytes reached S3 are billed but untracked
  *
- * Tier drift is covered separately by `backfill:storage-tier --check`; the
- * two together are the post-deploy watch for #278 (see #285).
- *
  * Usage:
  *   pnpm -F web check:s3-event-health
- *   pnpm -F web check:s3-event-health -- --since 2026-07-05T00:00:00Z
- *
- * With --since, prints `handled_events_since=<n>` — the count of processed
- * handled-type S3 events after that time. CI uses it to detect that the
- * first real post-deploy event arrived and post the success comment.
  */
 
-import { and, count, eq, gte, inArray, lt } from 'drizzle-orm';
+import { and, inArray, lt } from 'drizzle-orm';
 
 import { createFileRepo, STALE_UPLOAD_HOURS } from '@nexus/db/repo/files';
 import {
@@ -40,10 +35,9 @@ import {
     type WebhookEvent,
     type WebhookRepo,
 } from '@nexus/db/repo/webhooks';
-import { retrievals, webhookEvents } from '@nexus/db/schema';
+import { retrievals } from '@nexus/db/schema';
 import { alerts, getWorkflowRunUrl } from '@/lib/alerts';
 import { db } from '@/server/db';
-import { s3RestoreService } from '@/server/services/s3-restore';
 
 /**
  * How far back the failed/unhandled leg looks. Those rows are history: they
@@ -62,17 +56,23 @@ const STUCK_RECEIVED_MINUTES = 60;
 const STUCK_RETRIEVAL_HOURS = 48;
 
 // Statuses that need a human: the event did not complete cleanly. 'noop' only
-// ever applies to Stripe (#332) — the SNS handlers don't produce it.
-const STRANDED_SNS_STATUSES: WebhookEvent['status'][] = ['failed', 'unhandled'];
+// ever applies to Stripe (#332) — the alarm handler doesn't produce it.
+const STRANDED_ALARM_STATUSES: WebhookEvent['status'][] = [
+    'failed',
+    'unhandled',
+];
 const STRANDED_STRIPE_STATUSES: WebhookEvent['status'][] = [
-    ...STRANDED_SNS_STATUSES,
+    ...STRANDED_ALARM_STATUSES,
     'noop',
 ];
 
-/** How each source reads in prose — `sns` is an acronym, `stripe` a name. */
+/** How each source reads in prose. */
 const SOURCE_LABELS: Record<WebhookEvent['source'], string> = {
-    sns: 'SNS',
+    cloudwatch: 'CloudWatch',
     stripe: 'Stripe',
+    // Retired with the S3 rail (#416); no row has been written since. Kept
+    // only because the enum value survives for the historical rows.
+    sns: 'SNS',
 };
 
 /**
@@ -111,19 +111,7 @@ async function sweepStrandedWebhooks(
     return rows;
 }
 
-function parseSinceArg(): Date | null {
-    const index = process.argv.indexOf('--since');
-    if (index === -1) return null;
-    const raw = process.argv[index + 1];
-    const since = raw ? new Date(raw) : null;
-    if (!since || Number.isNaN(since.getTime())) {
-        throw new Error(`--since requires a valid ISO date, got: ${raw}`);
-    }
-    return since;
-}
-
 async function main(): Promise<void> {
-    const since = parseSinceArg();
     let hasFailure = false;
 
     const failedAfter = new Date(
@@ -131,13 +119,13 @@ async function main(): Promise<void> {
     );
     const webhookRepo = createWebhookRepo(db);
 
-    const strandedSnsWebhooks = await sweepStrandedWebhooks(
+    const strandedAlarmWebhooks = await sweepStrandedWebhooks(
         webhookRepo,
-        'sns',
-        STRANDED_SNS_STATUSES,
+        'cloudwatch',
+        STRANDED_ALARM_STATUSES,
         failedAfter
     );
-    if (strandedSnsWebhooks.length > 0) hasFailure = true;
+    if (strandedAlarmWebhooks.length > 0) hasFailure = true;
 
     const strandedStripeWebhooks = await sweepStrandedWebhooks(
         webhookRepo,
@@ -215,27 +203,6 @@ async function main(): Promise<void> {
     }
     if (staleUploads.length > 0) hasFailure = true;
 
-    if (since) {
-        const [handled] = await db
-            .select({ count: count() })
-            .from(webhookEvents)
-            .where(
-                and(
-                    eq(webhookEvents.source, 'sns'),
-                    eq(webhookEvents.status, 'processed'),
-                    inArray(
-                        webhookEvents.eventType,
-                        s3RestoreService.handledEventTypes
-                    ),
-                    gte(webhookEvents.createdAt, since)
-                )
-            );
-        console.log(
-            `Handled-type events processed since ${since.toISOString()}: ${handled?.count ?? 0}`
-        );
-        console.log(`handled_events_since=${handled?.count ?? 0}`);
-    }
-
     if (hasFailure) {
         console.log('\nCheck failed: event pipeline needs attention.');
         process.exitCode = 1;
@@ -246,9 +213,10 @@ async function main(): Promise<void> {
         const runUrl = getWorkflowRunUrl();
         await alerts.send({
             severity: 'error',
-            // Titled for what it covers; the filename still says S3 (#375).
+            // Titled for what it covers; the filename still says S3, and now
+            // covers even less of it. #375 owns the rename.
             title: 'Event pipeline health check failed',
-            message: `${strandedSnsWebhooks.length} ${formatStrandedLabel('sns', STRANDED_SNS_STATUSES)}; ${strandedStripeWebhooks.length} ${formatStrandedLabel('stripe', STRANDED_STRIPE_STATUSES)}; ${stuckReceivedWebhooks.length} webhook event(s) stranded at 'received' >${STUCK_RECEIVED_MINUTES}m; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h; ${staleUploads.length} upload(s) stuck >${STALE_UPLOAD_HOURS}h.`,
+            message: `${strandedAlarmWebhooks.length} ${formatStrandedLabel('cloudwatch', STRANDED_ALARM_STATUSES)}; ${strandedStripeWebhooks.length} ${formatStrandedLabel('stripe', STRANDED_STRIPE_STATUSES)}; ${stuckReceivedWebhooks.length} webhook event(s) stranded at 'received' >${STUCK_RECEIVED_MINUTES}m; ${stuckRetrievals.length} retrieval(s) stuck >${STUCK_RETRIEVAL_HOURS}h; ${staleUploads.length} upload(s) stuck >${STALE_UPLOAD_HOURS}h.`,
             context: {
                 source: 'check-s3-event-health',
                 ...(runUrl && { workflowRun: runUrl }),

@@ -91,7 +91,6 @@ async function seedArchivedFile(db: Connection, userId: string): Promise<File> {
         size: body.length,
         mimeType: 'text/plain',
         s3Key,
-        storageTier: 'deep_archive',
         status: 'available',
     });
 }

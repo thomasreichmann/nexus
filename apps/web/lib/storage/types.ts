@@ -5,32 +5,9 @@ export {
     type RestoreTier,
 } from '@nexus/db/schema';
 
-import type { storageTierEnum } from '@nexus/db/schema';
-
-export type StorageTier = (typeof storageTierEnum.enumValues)[number];
-
-/**
- * Maps S3 StorageClass values (from event notifications and ListObjectsV2)
- * to the files.storageTier enum. Classes Nexus never uses are intentionally
- * unmapped — callers treat a miss as "log and skip", not an error.
- */
-const S3_STORAGE_CLASS_TO_TIER: Record<string, StorageTier> = {
-    STANDARD: 'standard',
-    GLACIER: 'glacier',
-    DEEP_ARCHIVE: 'deep_archive',
-};
-
-export function resolveStorageTier(
-    storageClass: string | undefined
-): StorageTier | undefined {
-    return storageClass ? S3_STORAGE_CLASS_TO_TIER[storageClass] : undefined;
-}
-
-export interface RestoreStatus {
-    status: 'not-started' | 'in-progress' | 'completed';
-    /** Present only when status === 'completed' */
-    expiresAt?: Date;
-}
+// Object-state semantics are shared with the worker's retrieval poll, so they
+// live in @nexus/db — see that module's docblock.
+export type { ObjectState, ObjectAvailability } from '@nexus/db/object-state';
 
 export interface PutPresignOptions {
     contentType?: string;

@@ -44,7 +44,7 @@ The database schema and migrations are not here — they live in [`packages/db`]
 
 ## Stack
 
-Next.js 16 (App Router, React 19) · tRPC v11 for the API · Drizzle ORM against Postgres via `@nexus/db` · BetterAuth for sessions · AWS S3 for storage (every file goes to Glacier) with SNS webhooks driving restore status · Stripe for subscriptions.
+Next.js 16 (App Router, React 19) · tRPC v11 for the API · Drizzle ORM against Postgres via `@nexus/db` · BetterAuth for sessions · AWS S3 for storage (every file goes to Glacier), with restore status observed by the worker's scheduled poll · Stripe for subscriptions.
 
 ## Development workflow
 

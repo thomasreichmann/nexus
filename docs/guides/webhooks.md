@@ -17,14 +17,14 @@ ai_summary: 'Webhook handler architecture: signature verification, idempotency, 
 
 # Webhook Handling
 
-Patterns and conventions for handling inbound webhooks from external providers (Stripe, AWS SNS).
+Patterns and conventions for handling inbound webhooks from external providers (Stripe, and CloudWatch alarms over SNS).
 
 ## Architecture Overview
 
 ```
 External Provider                Nexus (Next.js / Vercel)
 ┌─────────────────┐    ┌────────────────────────────────────────────┐
-│ Stripe / SNS     │    │  POST /api/webhooks/stripe                 │
+│ Stripe / alarms  │    │  POST /api/webhooks/stripe                 │
 │   event fires    │───▶│    ↓                                       │
 │                  │    │  Verify signature (raw body)               │
 │  retries on 5xx  │    │    ↓                                       │
@@ -53,7 +53,7 @@ External Provider                Nexus (Next.js / Vercel)
 apps/web/
 ├── app/api/webhooks/
 │   ├── stripe/route.ts          # Stripe webhook endpoint
-│   └── s3-restore/route.ts      # AWS SNS S3 restore endpoint (future)
+│   └── cloudwatch-alarm/route.ts # CloudWatch alarm state changes, via SNS
 ├── lib/stripe/
 │   ├── client.ts                # Stripe SDK singleton
 │   ├── webhooks.ts              # Signature verification + event construction
@@ -222,7 +222,7 @@ See `packages/db/src/schema/webhooks.ts` for the full schema. Key columns:
 | Column       | Purpose                                               |
 | ------------ | ----------------------------------------------------- |
 | `externalId` | Provider's event ID (e.g., `evt_1234` from Stripe)    |
-| `source`     | Provider name (`stripe`, `sns`)                       |
+| `source`     | Producer (`stripe`, `cloudwatch`; `sns` is retired)   |
 | `eventType`  | Event type string (e.g., `invoice.paid`)              |
 | `payload`    | Full event payload as JSONB (for debugging)           |
 | `status`     | Processing status — see the table below               |
@@ -516,40 +516,41 @@ describe('POST /api/webhooks/stripe', () => {
 
 ### Manual SNS Testing
 
-Fire SNS-shaped payloads to test the SNS endpoint locally:
+Fire SNS-shaped payloads at the CloudWatch alarm endpoint locally:
 
 ```bash
 # Subscription confirmation (one-time)
-curl -X POST http://localhost:3000/api/webhooks/s3-restore \
+curl -X POST http://localhost:3000/api/webhooks/cloudwatch-alarm \
   -H 'Content-Type: application/json' \
   -H 'x-amz-sns-message-type: SubscriptionConfirmation' \
   -d '{
     "Type": "SubscriptionConfirmation",
     "MessageId": "test-123",
-    "TopicArn": "arn:aws:sns:us-east-1:123456789:nexus-events",
+    "TopicArn": "arn:aws:sns:us-east-1:123456789:nexus-ops-alerts-dev",
     "Message": "You have chosen to subscribe...",
     "SubscribeURL": "https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&..."
   }'
 
-# S3 event notification via SNS
-curl -X POST http://localhost:3000/api/webhooks/s3-restore \
+# Alarm state change
+curl -X POST http://localhost:3000/api/webhooks/cloudwatch-alarm \
   -H 'Content-Type: application/json' \
   -H 'x-amz-sns-message-type: Notification' \
   -d '{
     "Type": "Notification",
     "MessageId": "msg-456",
-    "TopicArn": "arn:aws:sns:us-east-1:123456789:nexus-events",
-    "Subject": "Amazon S3 Notification",
-    "Message": "{\"Records\":[{\"eventName\":\"ObjectRestore:Completed\",\"s3\":{\"bucket\":{\"name\":\"nexus-storage-files-dev\"},\"object\":{\"key\":\"user-123/file-456/document.pdf\"}}}]}"
+    "TopicArn": "arn:aws:sns:us-east-1:123456789:nexus-ops-alerts-dev",
+    "Message": "{\"AlarmName\":\"nexus-jobs-dlq-depth-dev\",\"NewStateValue\":\"ALARM\",\"NewStateReason\":\"Threshold Crossed\"}"
   }'
 ```
 
-> **Wire format:** the delivered `eventName` is **unprefixed**
-> (`ObjectRestore:Completed`, `LifecycleTransition`) even though the bucket
-> notification config subscribes with `s3:`-prefixed event types. Payloads
-> replayed with the prefix will silently match no handler (#271).
+> **Note:** These manual tests skip signature verification, which the route
+> bypasses only on a local dev machine (`isLocalDevelopment`). Every deployed
+> environment always verifies.
 
-> **Note:** These manual tests skip signature verification. In the SNS route handler, you can bypass verification in development by checking `NODE_ENV` — but never skip it in production.
+> **Removed (#416):** there was also an `/api/webhooks/s3-restore` endpoint
+> taking S3 lifecycle and restore events. That rail is gone — S3 owns object
+> state, and restore completion is observed by the worker's poll rather than
+> delivered. See `docs/ai/context.md`.
 
 ### Unit Tests
 

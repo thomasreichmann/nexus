@@ -14,7 +14,7 @@ variable "region" {
 }
 
 variable "app_domain" {
-  description = "Domain of the deployed web app for this environment. Feeds the SNS webhook subscription endpoint (sns.tf) only; CORS origins come from cors_allowed_origins."
+  description = "Domain of the deployed web app for this environment. Feeds the ops-alerts webhook subscription endpoint (alarms.tf) only; CORS origins come from cors_allowed_origins."
   type        = string
 }
 

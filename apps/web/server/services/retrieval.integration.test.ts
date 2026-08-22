@@ -23,11 +23,17 @@ import { InvalidStateError } from '@/server/errors';
 const s3Mocks = vi.hoisted(() => ({
     restore: vi.fn(),
     presignedGet: vi.fn(),
+    // Objects default to archived — the case that needs a restore. Tests
+    // about warm objects override this per-test.
+    getObjectState: vi.fn(async () => ({ availability: 'archived' as const })),
 }));
 
 vi.mock('@/lib/storage', () => ({
     s3: {
-        glacier: { restore: s3Mocks.restore },
+        glacier: {
+            restore: s3Mocks.restore,
+            getObjectState: s3Mocks.getObjectState,
+        },
         presigned: { get: s3Mocks.presignedGet },
     },
 }));
@@ -35,8 +41,8 @@ vi.mock('@/lib/storage', () => ({
 import { retrievalService } from './retrieval';
 
 // Exercises the active-retrieval predicate against a real database: `ready`
-// rows past `expiresAt` are expired by query, not by stored status — no S3
-// expiry event ever fires for standard-tier fast-path rows. Also exercises
+// rows past `expiresAt` are expired by query, not by stored status — nothing
+// tells us when a restored copy lapses. Also exercises
 // the partial unique index guaranteeing one active retrieval per file (#266).
 
 const db: Connection = createDb(process.env.DATABASE_URL!);
@@ -64,7 +70,7 @@ afterEach(() => {
 
 describe('active-retrieval expiry predicate', () => {
     it('a lapsed ready retrieval no longer blocks a fresh request', async () => {
-        const file = await insertFile(db, { userId, storageTier: 'standard' });
+        const file = await insertFile(db, { userId });
         const lapsed = await insertRetrieval(db, {
             userId,
             fileId: file.id,
@@ -89,7 +95,7 @@ describe('active-retrieval expiry predicate', () => {
     });
 
     it('getDownloadUrl rejects a lapsed ready retrieval', async () => {
-        const file = await insertFile(db, { userId, storageTier: 'standard' });
+        const file = await insertFile(db, { userId });
         await insertRetrieval(db, {
             userId,
             fileId: file.id,
@@ -164,7 +170,7 @@ describe('active-retrieval expiry predicate', () => {
 
 describe('one active retrieval per file (#266)', () => {
     it('two concurrent retrieval requests yield exactly one active row', async () => {
-        const file = await insertFile(db, { userId, storageTier: 'standard' });
+        const file = await insertFile(db, { userId });
 
         const [first, second] = await Promise.all([
             retrievalService.requestRetrieval(db, userId, file.id),
@@ -206,8 +212,8 @@ describe('one active retrieval per file (#266)', () => {
 describe('partial S3 restore failure (#329)', () => {
     it('records every file first, then fails only the file AWS rejected', async () => {
         const [restored, rejected] = await Promise.all([
-            insertFile(db, { userId, storageTier: 'deep_archive' }),
-            insertFile(db, { userId, storageTier: 'deep_archive' }),
+            insertFile(db, { userId }),
+            insertFile(db, { userId }),
         ]);
         s3Mocks.restore.mockImplementation(async (key: string) => {
             if (key === rejected.s3Key) throw new Error('AWS throttled');

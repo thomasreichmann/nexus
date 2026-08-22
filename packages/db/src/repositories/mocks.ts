@@ -39,7 +39,28 @@ export function createMockDb() {
         where: leftJoinWhere,
         orderBy,
     }));
-    const from: AnyMock = vi.fn(() => ({ where, groupBy, leftJoin }));
+    // innerJoin chains (the retrieval-with-file reads) end one step later
+    // than leftJoin ones, at `.limit()`. They get their own terminals so a
+    // `mocks.orderBy.mockResolvedValue(...)` for a leftJoin chain can't be
+    // consumed by an innerJoin one. To stop a chain at `.orderBy()` instead,
+    // override `mocks.innerJoinOrderBy` directly.
+    const limit: AnyMock = vi.fn().mockResolvedValue([]);
+    const innerJoinOrderBy: AnyMock = vi.fn(() => ({ limit }));
+    const innerJoinWhere: AnyMock = vi.fn(() => ({
+        orderBy: innerJoinOrderBy,
+        groupBy,
+    }));
+    const innerJoin: AnyMock = vi.fn(() => ({
+        innerJoin,
+        where: innerJoinWhere,
+        orderBy: innerJoinOrderBy,
+    }));
+    const from: AnyMock = vi.fn(() => ({
+        where,
+        groupBy,
+        leftJoin,
+        innerJoin,
+    }));
     const select: AnyMock = vi.fn(() => ({ from }));
     const insert: AnyMock = vi.fn(() => ({ values }));
     const update: AnyMock = vi.fn(() => ({ set }));
@@ -83,6 +104,10 @@ export function createMockDb() {
             from,
             leftJoin,
             leftJoinWhere,
+            innerJoin,
+            innerJoinWhere,
+            innerJoinOrderBy,
+            limit,
             where,
             insert,
             values,

@@ -3,32 +3,25 @@ import { getRetrievalEstimate } from './RetrieveDialog';
 
 // The dialog itself is presentational and covered by the files-browser e2e
 // flows (@uc:files-retrieve-dialog-estimate); only the estimate logic is
-// unit-tested here.
+// unit-tested here. `true` means "probably cold" — the derived hint, not a
+// storage class we claim to know (#416).
 describe('getRetrievalEstimate', () => {
-    it('is fast for an all-standard batch', () => {
-        expect(getRetrievalEstimate(['standard', 'standard'])).toEqual({
+    it('is fast when every item is expected to be warm', () => {
+        expect(getRetrievalEstimate([false, false])).toEqual({
             speed: 'fast',
             label: 'Ready in ~minutes',
         });
     });
 
-    it('is slow when any item is deep_archive', () => {
-        expect(
-            getRetrievalEstimate(['standard', 'standard', 'deep_archive']).speed
-        ).toBe('slow');
+    it('is slow when any item is expected to be cold', () => {
+        expect(getRetrievalEstimate([false, false, true]).speed).toBe('slow');
     });
 
-    it('is slow for an all-deep_archive batch', () => {
-        expect(getRetrievalEstimate(['deep_archive', 'deep_archive'])).toEqual({
+    it('is slow for an all-cold batch', () => {
+        expect(getRetrievalEstimate([true, true])).toEqual({
             speed: 'slow',
             label: 'Ready in up to 12 hours',
         });
-    });
-
-    it('folds glacier into the slow bucket', () => {
-        expect(getRetrievalEstimate(['standard', 'glacier']).speed).toBe(
-            'slow'
-        );
     });
 
     it('is conservatively slow for an empty selection', () => {

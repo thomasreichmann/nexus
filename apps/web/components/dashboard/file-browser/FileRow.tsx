@@ -1,5 +1,6 @@
 'use client';
 
+import { isProbablyCold } from '@nexus/db/object-state';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDate } from '@/lib/format';
@@ -24,6 +25,7 @@ export function FileRow({
 }: FileItemProps) {
     const status = deriveStatus(file);
     const actions = useFileActions(file);
+    const isCold = isProbablyCold(file);
     const ext = getFileExtension(file.name);
     const downloadWindow = getDownloadWindowLabel(file);
 
@@ -71,7 +73,7 @@ export function FileRow({
                 {formatDate(file.createdAt)}
             </TableCell>
             <TableCell>
-                <StatusDot status={status} />
+                <StatusDot status={status} isCold={isCold} />
                 {downloadWindow && (
                     <p className="mt-0.5 text-xs text-muted-foreground">
                         {downloadWindow}
@@ -79,11 +81,7 @@ export function FileRow({
                 )}
             </TableCell>
             <TableCell onClick={(e) => e.stopPropagation()}>
-                <FileActions
-                    status={status}
-                    storageTier={file.storageTier}
-                    {...actions}
-                />
+                <FileActions status={status} isCold={isCold} {...actions} />
             </TableCell>
         </TableRow>
     );

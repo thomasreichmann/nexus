@@ -1,9 +1,13 @@
-name: S3 Event Health
+name: Event Health
 
-# Post-deploy watch for the S3 event pipeline (#285): tier drift, failed SNS
-# webhooks, stuck retrievals. A failed run is the alert. Also posts a one-time
-# success comment on PR #278 once the first real post-deploy event lands —
-# that step is temporary (#286 tracks the generalized pattern).
+# Nightly watch over the webhook rails that share `webhook_events` (CloudWatch
+# alarms, Stripe) plus stuck retrievals and stale uploads. A failed run is the
+# alert.
+#
+# The S3 lifecycle/restore leg and the storage-tier drift check went with the
+# rail itself (#416): there is no cached S3 state left to drift, and restore
+# completion is now observed by the worker's poll. The stuck-retrieval leg is
+# what catches that poll failing to make progress.
 
 on:
     schedule:
@@ -32,15 +36,14 @@ jobs:
                       aws-key-id-secret: AWS_ACCESS_KEY_ID_PROD
                       aws-secret-key-secret: AWS_SECRET_ACCESS_KEY_PROD
                       bucket-secret: S3_BUCKET_PROD
-        # The DB and the bucket must come from the same environment or the
-        # storage-tier check compares prod rows against the dev bucket and
-        # reports every one as missing — which used to exit 0, so the prod leg
-        # was permanently green while checking nothing (#318).
+        # The DB must be the environment's own, or the prod leg reports on dev
+        # rows (#318). The bucket and AWS credentials are no longer read by the
+        # check — the last S3-touching leg went with #416 — but @/lib/env
+        # validates the whole server schema at import, so they still have to be
+        # present and well-formed. Same reason the Stripe/Resend/SQS/auth vars
+        # below stay: inert, but required to load.
         #
-        # AWS_REGION is genuinely shared (us-east-1 both). The rest below stays
-        # dev-scoped and is inert: neither script reads Stripe, Resend, SQS or
-        # auth, but @/lib/env validates the whole server schema at import, so
-        # each var still has to be present and well-formed.
+        # AWS_REGION is genuinely shared (us-east-1 both).
         env:
             DATABASE_URL: ${{ secrets[matrix.db-secret] }}
             AWS_ACCESS_KEY_ID: ${{ secrets[matrix.aws-key-id-secret] }}
@@ -87,51 +90,5 @@ jobs:
             - name: Create empty env file
               run: touch apps/web/.env.local
 
-            - name: Check storage-tier drift
-              run: pnpm -F web backfill:storage-tier --check
-
-            - name: Resolve PR 278 merge time
-              if: matrix.env == 'dev'
-              id: merge
-              env:
-                  GH_TOKEN: ${{ github.token }}
-              run: |
-                  echo "merged_at=$(gh pr view 278 --repo "$GITHUB_REPOSITORY" --json mergedAt -q '.mergedAt // empty')" >> "$GITHUB_OUTPUT"
-
             - name: Check webhook & retrieval health
-              id: health
-              run: |
-                  set -o pipefail
-                  ARGS=()
-                  if [ -n "${{ steps.merge.outputs.merged_at }}" ]; then
-                      ARGS=(--since "${{ steps.merge.outputs.merged_at }}")
-                  fi
-                  pnpm -F web check:s3-event-health "${ARGS[@]}" | tee health.log
-                  echo "handled_since=$(sed -n 's/^handled_events_since=//p' health.log)" >> "$GITHUB_OUTPUT"
-
-            # Temporary (#286 generalizes this): tick the post-deploy box on
-            # PR #278 once the first real event has been processed end-to-end.
-            # Remove this step after the comment lands.
-            - name: Post one-time verification comment on PR 278
-              if: matrix.env == 'dev' && steps.merge.outputs.merged_at != '' && steps.health.outputs.handled_since != '' && steps.health.outputs.handled_since != '0'
-              env:
-                  GH_TOKEN: ${{ github.token }}
-                  HANDLED_SINCE: ${{ steps.health.outputs.handled_since }}
-                  MERGED_AT: ${{ steps.merge.outputs.merged_at }}
-              run: |
-                  MARKER="<!-- post-deploy-verified-278 -->"
-                  if gh pr view 278 --repo "$GITHUB_REPOSITORY" --json comments -q '.comments[].body' | grep -qF "$MARKER"; then
-                      echo "Verification comment already posted — skipping."
-                      exit 0
-                  fi
-                  cat > comment.md <<EOF
-                  $MARKER
-                  ✅ **Post-deploy verification passed** (automated by the s3-event-health workflow, #285)
-
-                  - $HANDLED_SINCE handled-type S3 event(s) processed since merge ($MERGED_AT)
-                  - \`backfill:storage-tier --check\`: no drift
-                  - No failed SNS webhook events, no stuck retrievals
-
-                  The remaining post-deploy test-plan item can be ticked.
-                  EOF
-                  gh pr comment 278 --repo "$GITHUB_REPOSITORY" --body-file comment.md
+              run: pnpm -F web check:s3-event-health

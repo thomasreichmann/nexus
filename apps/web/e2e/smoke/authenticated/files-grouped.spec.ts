@@ -19,14 +19,14 @@ const test = base.extend<{ groupedFiles: { batchName: string } }>({
             userId: seedUserId,
             name: `E2E Test Batch ${Date.now()}`,
         });
-        // Two files in the batch, both archived (so Restore batch button shows),
-        // summing to 300 bytes for the metadata-line assertion.
+        // Two files in the batch, neither with an active retrieval — so both
+        // derive as archived and the Restore batch button shows. They sum to
+        // 300 bytes for the metadata-line assertion.
         await insertFile(db, {
             userId: seedUserId,
             batchId: batch.id,
             name: 'batched-a.txt',
             size: 100,
-            storageTier: 'glacier',
             status: 'available',
         });
         await insertFile(db, {
@@ -34,7 +34,6 @@ const test = base.extend<{ groupedFiles: { batchName: string } }>({
             batchId: batch.id,
             name: 'batched-b.txt',
             size: 200,
-            storageTier: 'glacier',
             status: 'available',
         });
         // One legacy file with no batch_id → renders under "Ungrouped".
@@ -42,7 +41,6 @@ const test = base.extend<{ groupedFiles: { batchName: string } }>({
             userId: seedUserId,
             name: 'legacy-orphan.txt',
             size: 50,
-            storageTier: 'standard',
             status: 'available',
         });
 

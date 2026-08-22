@@ -1,5 +1,6 @@
 'use client';
 
+import { isProbablyCold } from '@nexus/db/object-state';
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDate } from '@/lib/format';
 import { StackedListRow } from '@/components/ui/stacked-list';
@@ -25,6 +26,7 @@ export function MobileFileRow({
 }: FileItemProps) {
     const status = deriveStatus(file);
     const actions = useFileActions(file);
+    const isCold = isProbablyCold(file);
     const downloadWindow = getDownloadWindowLabel(file);
 
     return (
@@ -60,11 +62,11 @@ export function MobileFileRow({
             ]}
             trailing={
                 <>
-                    <StatusDot status={status} />
+                    <StatusDot status={status} isCold={isCold} />
                     <div onClick={(e) => e.stopPropagation()}>
                         <FileActions
                             status={status}
-                            storageTier={file.storageTier}
+                            isCold={isCold}
                             {...actions}
                         />
                     </div>
