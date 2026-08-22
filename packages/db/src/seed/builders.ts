@@ -27,7 +27,6 @@ import type {
     Retrieval,
     FileBuilderOptions,
     RetrievalBuilderOptions,
-    StorageTier,
     RetrievalStatus,
 } from './types';
 
@@ -60,12 +59,6 @@ export async function buildUser(
 
 // File builder
 
-const DEFAULT_TIER_DISTRIBUTION: Record<StorageTier, number> = {
-    standard: 0.1,
-    glacier: 0.6,
-    deep_archive: 0.3,
-};
-
 const DEFAULT_SIZE_RANGE = { min: 100_000, max: 500_000_000 };
 
 export async function buildFiles(
@@ -75,16 +68,11 @@ export async function buildFiles(
 ): Promise<File[]> {
     const {
         count: fileCount = 10,
-        storageTierDistribution,
         sizeRange = DEFAULT_SIZE_RANGE,
         createdAtRange,
     } = options;
 
     if (fileCount === 0) return [];
-
-    const tiers = storageTierDistribution
-        ? { ...DEFAULT_TIER_DISTRIBUTION, ...storageTierDistribution }
-        : DEFAULT_TIER_DISTRIBUTION;
 
     const defaultFrom = new Date();
     defaultFrom.setDate(defaultFrom.getDate() - 90);
@@ -112,7 +100,6 @@ export async function buildFiles(
             : baseName;
         const name = `${stem}-${String(i + 1).padStart(3, '0')}${ext}`;
 
-        const tier = pickTier(tiers, i, fileCount);
         const createdAt = randomDate(dateRange.from, dateRange.to);
 
         return {
@@ -123,7 +110,6 @@ export async function buildFiles(
             mimeType: mime,
             // Prefixed, not `originalKey()` — see that function's docblock.
             s3Key: `seed/${userId}/${id}`,
-            storageTier: tier,
             status: 'available' as const,
             createdAt,
             updatedAt: createdAt,
@@ -132,28 +118,6 @@ export async function buildFiles(
 
     const files = await db.insert(schema.files).values(values).returning();
     return files;
-}
-
-/** Deterministically assign tiers based on distribution ratios */
-function pickTier(
-    distribution: Record<StorageTier, number>,
-    index: number,
-    total: number
-): StorageTier {
-    const normalizedTotal =
-        distribution.standard +
-        distribution.glacier +
-        distribution.deep_archive;
-    const standardEnd = Math.round(
-        (distribution.standard / normalizedTotal) * total
-    );
-    const glacierEnd =
-        standardEnd +
-        Math.round((distribution.glacier / normalizedTotal) * total);
-
-    if (index < standardEnd) return 'standard';
-    if (index < glacierEnd) return 'glacier';
-    return 'deep_archive';
 }
 
 // Subscription builder

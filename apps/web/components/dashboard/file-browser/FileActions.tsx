@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { isProbablyCold } from '@nexus/db/object-state';
 import { useTRPC } from '@/lib/trpc/client';
 import {
     DropdownMenu,
@@ -50,7 +51,7 @@ export function useFileActions(file: FileWithRetrieval) {
                 invalidateFileList();
                 captureEvent(PostHogEvent.RetrievalRequested, {
                     fileCount: 1,
-                    storageTier: file.storageTier,
+                    isProbablyCold: isProbablyCold(file),
                 });
                 toastRetrievalResult(result, 'Retrieval request submitted');
             },
@@ -65,7 +66,7 @@ export function useFileActions(file: FileWithRetrieval) {
             captureEvent(PostHogEvent.FileDownloaded, {
                 fileId: file.id,
                 sizeBytes: file.size,
-                storageTier: file.storageTier,
+                isProbablyCold: isProbablyCold(file),
             });
             window.open(url, '_blank');
         } catch {
@@ -84,7 +85,8 @@ export function useFileActions(file: FileWithRetrieval) {
 
 interface FileActionsProps {
     status: DerivedStatus;
-    storageTier: FileWithRetrieval['storageTier'];
+    /** `isProbablyCold` for this file; drives the retrieve-time estimate. */
+    isCold: boolean;
     onDelete: () => void;
     onRetrieval: () => void;
     onDownload: () => void;
@@ -94,7 +96,7 @@ interface FileActionsProps {
 
 export function FileActions({
     status,
-    storageTier,
+    isCold,
     onDelete,
     onRetrieval,
     onDownload,
@@ -109,7 +111,7 @@ export function FileActions({
             <RetrieveDialog
                 open={isRetrieveDialogOpen}
                 onOpenChange={setIsRetrieveDialogOpen}
-                tiers={[storageTier]}
+                coldness={[isCold]}
                 fileCount={1}
                 onConfirm={onRetrieval}
             />

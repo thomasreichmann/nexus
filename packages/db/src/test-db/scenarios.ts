@@ -30,7 +30,6 @@ export async function readyRetrieval(
 ): Promise<ReadyRetrievalResult> {
     const file = await insertFile(db, {
         userId: opts.userId,
-        storageTier: 'glacier',
         status: 'available',
         ...opts.file,
     });

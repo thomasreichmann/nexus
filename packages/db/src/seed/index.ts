@@ -46,5 +46,4 @@ export type {
     CustomSeedOptions,
     FileBuilderOptions,
     RetrievalBuilderOptions,
-    StorageTierDistribution,
 } from './types';

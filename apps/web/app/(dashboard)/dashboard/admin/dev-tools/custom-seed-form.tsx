@@ -6,8 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { cn } from '@/lib/cn';
-import { TierBar } from './TierBar';
 import { useSeedTools } from './useSeedTools';
 
 interface CustomSeedFormProps {
@@ -17,24 +15,11 @@ interface CustomSeedFormProps {
 export function CustomSeedForm({ targetUser }: CustomSeedFormProps) {
     const { seed, isPending, isSuccess, lastData } = useSeedTools();
     const [fileCount, setFileCount] = useState(50);
-    const [standard, setStandard] = useState(10);
-    const [glacier, setGlacier] = useState(60);
-    const [deepArchive, setDeepArchive] = useState(30);
     const [retrievalCount, setRetrievalCount] = useState(0);
-
-    const tierTotal = standard + glacier + deepArchive || 1;
 
     function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
-        seed(targetUser, {
-            fileCount,
-            storageTierDistribution: {
-                standard: standard / tierTotal,
-                glacier: glacier / tierTotal,
-                deep_archive: deepArchive / tierTotal,
-            },
-            retrievalCount,
-        });
+        seed(targetUser, { fileCount, retrievalCount });
     }
 
     return (
@@ -86,68 +71,6 @@ export function CustomSeedForm({ targetUser }: CustomSeedFormProps) {
                             />
                         </div>
                     </div>
-
-                    <fieldset className="space-y-1.5">
-                        <legend className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                            Tier distribution
-                        </legend>
-                        <div className="grid grid-cols-3 gap-1.5">
-                            {[
-                                {
-                                    id: 'tier-standard',
-                                    label: 'Standard',
-                                    value: standard,
-                                    set: setStandard,
-                                    color: 'text-emerald-400',
-                                },
-                                {
-                                    id: 'tier-glacier',
-                                    label: 'Glacier',
-                                    value: glacier,
-                                    set: setGlacier,
-                                    color: 'text-cyan-400',
-                                },
-                                {
-                                    id: 'tier-deep-archive',
-                                    label: 'Deep Archive',
-                                    value: deepArchive,
-                                    set: setDeepArchive,
-                                    color: 'text-violet-400',
-                                },
-                            ].map((tier) => (
-                                <div key={tier.label} className="space-y-0.5">
-                                    <label
-                                        htmlFor={tier.id}
-                                        className={cn(
-                                            'font-mono text-xs tracking-wider',
-                                            tier.color
-                                        )}
-                                    >
-                                        {tier.label}
-                                    </label>
-                                    <Input
-                                        id={tier.id}
-                                        type="number"
-                                        min={0}
-                                        max={100}
-                                        value={tier.value}
-                                        onChange={(e) =>
-                                            tier.set(Number(e.target.value))
-                                        }
-                                        className="h-7 bg-zinc-950/50 font-mono text-xs tabular-nums"
-                                    />
-                                </div>
-                            ))}
-                        </div>
-                        <TierBar
-                            distribution={{
-                                standard: standard / tierTotal,
-                                glacier: glacier / tierTotal,
-                                deep_archive: deepArchive / tierTotal,
-                            }}
-                            className="h-1.5"
-                        />
-                    </fieldset>
 
                     <Button
                         type="submit"

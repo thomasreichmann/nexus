@@ -198,7 +198,6 @@ async function confirmUpload(
         captureServerEvent(userId, PostHogEvent.UploadConfirmed, {
             fileId: file.id,
             sizeBytes: file.size,
-            storageTier: file.storageTier,
             batchId: file.batchId,
         });
         await enqueueThumbnailGeneration(db, file.id);

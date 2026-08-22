@@ -20,30 +20,8 @@ export interface SnsSubscriptionConfirmation extends SnsMessageBase {
 export interface SnsNotification extends SnsMessageBase {
     Type: 'Notification';
     Subject?: string;
-    Message: string; // JSON string containing S3 event records
+    /** JSON string; its shape is the publisher's, not SNS's. */
+    Message: string;
 }
 
 export type SnsMessage = SnsSubscriptionConfirmation | SnsNotification;
-
-export interface S3EventRecord {
-    eventName: string;
-    s3: {
-        bucket: { name: string };
-        object: { key: string; size?: number };
-    };
-    glacierEventData?: {
-        restoreEventData: {
-            lifecycleRestorationExpiryTime: string;
-        };
-    };
-    // Present on LifecycleTransition events
-    lifecycleEventData?: {
-        transitionEventData: {
-            destinationStorageClass: string;
-        };
-    };
-}
-
-export interface S3EventNotification {
-    Records: S3EventRecord[];
-}

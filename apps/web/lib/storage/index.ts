@@ -17,7 +17,7 @@ import * as multipart from './multipart';
  *
  * // Glacier operations
  * await s3.glacier.restore(key, 'standard');
- * const status = await s3.glacier.checkStatus(key);
+ * const state = await s3.glacier.getObjectState(key);
  *
  * // Object operations
  * await s3.objects.remove(key);
@@ -34,7 +34,8 @@ export const s3 = {
 // Re-export types for convenience
 export type {
     RestoreTier,
-    RestoreStatus,
+    ObjectState,
+    ObjectAvailability,
     PutPresignOptions,
     GetPresignOptions,
 } from './types';

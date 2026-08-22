@@ -1,7 +1,7 @@
 ---
 title: Project Context
 created: 2025-12-29
-updated: 2026-03-07
+updated: 2026-08-22
 status: active
 tags:
     - ai
@@ -53,14 +53,26 @@ Subscription-based pricing, tiers based on storage amount.
 
 ```
 User { id, email, subscription (stripe), files[] }
-File { id, user_id, name, size, mime_type, s3_key, storage_tier, retrieval_status }
+File { id, user_id, name, size, mime_type, s3_key, retrieval_status }
 ```
+
+**S3 owns object state.** The DB records intent and actions — what we did,
+when, under what policy. Object state is read from S3 at the moment it
+matters. Nothing in the DB claims to know what S3 did.
+
+In practice: storage class comes from a `HeadObject` on download and retrieve
+(`interpretObjectState`), never from a column; the file list's cold marker is
+a guess derived from the lifecycle policy and openly labelled one
+(`isProbablyCold`); storage metrics belong to CloudWatch `BucketSizeBytes`.
+A `files.storage_tier` column existed until #416 and drifted the moment its
+invalidation path failed — a column mirroring S3 is unreliable by
+construction, and a column definition has no way to say "probably".
 
 ## Key Flows
 
 **Upload:** User selects files → tRPC initiates chunked upload → S3 (Glacier) → metadata saved → visible in dashboard.
 
-**Retrieval:** User requests download → Glacier restore (3-12 hours) → notification → presigned download URL → time-limited access.
+**Retrieval:** User requests download → `HeadObject` decides warm vs cold → Glacier restore (12-48 hours) → the worker's 15-minute poll observes completion → presigned download URL → time-limited access.
 
 ## File Locations
 

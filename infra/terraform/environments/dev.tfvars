@@ -2,7 +2,7 @@
 # CORS, and the webhook endpoint differ. app_domain is dev.nexus.thomasar.dev:
 # a Cloudflare CNAME → Vercel custom domain pinned to the long-lived `dev`
 # branch (post-merge keeps it synced with main), which serves the Preview tier
-# — dev Supabase + dev AWS env vars. The SNS subscription reaches this endpoint
+# — dev Supabase + dev AWS env vars. The ops-alerts subscription reaches it
 # with no bypass token because Vercel Authentication is OFF on the nexus-web
 # project: pinning a custom domain to a preview branch does NOT exempt it (only
 # the production domain is exempt), and the Hobby plan has no per-domain

@@ -19,7 +19,7 @@ export interface SendRetrievalReadyEmailOptions extends RetrievalReadyEmailProps
 
 // Notification failures shouldn't fail the work that triggered them (e.g. a
 // completed S3 restore) — mirrors the warn-and-skip contract in
-// s3-restore.ts's resolveRetrieval.
+// the retrieval poll.
 async function sendRetrievalReadyEmail(
     db: DB,
     opts: SendRetrievalReadyEmailOptions

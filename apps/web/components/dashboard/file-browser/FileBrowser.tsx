@@ -12,6 +12,7 @@ import {
     Snowflake,
 } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { isProbablyCold } from '@nexus/db/object-state';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -673,8 +674,8 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                         <RetrieveDialog
                             open={isRetrieveDialogOpen}
                             onOpenChange={setIsRetrieveDialogOpen}
-                            tiers={retrievableSelectedFiles.map(
-                                (f) => f.storageTier
+                            coldness={retrievableSelectedFiles.map(
+                                isProbablyCold
                             )}
                             fileCount={retrievableSelectedFiles.length}
                             onConfirm={handleBulkRetrieval}

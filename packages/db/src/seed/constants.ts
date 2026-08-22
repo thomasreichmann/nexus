@@ -97,6 +97,16 @@ export function randomPick<T>(arr: readonly T[]): T {
     return arr[Math.floor(Math.random() * arr.length)]!;
 }
 
+/** A date `days` before now — the usual way seeds place a file in the past. */
+export function daysAgo(days: number): Date {
+    return new Date(Date.now() - days * 86_400_000);
+}
+
+/** As `daysAgo`, at the resolution the lifecycle window is expressed in. */
+export function hoursAgo(hours: number): Date {
+    return new Date(Date.now() - hours * 3_600_000);
+}
+
 export function randomDate(from: Date, to: Date): Date {
     const fromMs = from.getTime();
     const toMs = to.getTime();

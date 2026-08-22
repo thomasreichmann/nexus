@@ -18,9 +18,10 @@ export type NewRetrieval = typeof schema.retrievals.$inferInsert;
 
 // A retrieval is active while it's queued, restoring, or ready with an
 // unexpired download window. `ready` rows past `expiresAt` are expired by
-// predicate rather than by stored status: standard-tier fast-path rows never
-// get an S3 expiry event, and Deep Archive rows can miss theirs. A lapsed row
-// no longer blocks a fresh retrieval of the same file.
+// predicate rather than by stored status: nothing tells us when a restored
+// copy lapses, and asking S3 per row would be a HEAD to learn something the
+// clock already knows. A lapsed row no longer blocks a fresh retrieval of the
+// same file.
 // Exported for the files repo, which joins the active retrieval per file so
 // the file list can render ready/retrieving state from the same predicate.
 export function activeRetrievalFilter() {
@@ -30,10 +31,11 @@ export function activeRetrievalFilter() {
     );
 }
 
-// The download window on a `ready` row is open while `expiresAt` is unset (a
-// malformed restore-completed event: better a stale entry than a download cut
-// off early) or still in the future. Shared with expireLapsedByFileIds so the
-// active predicate and the expiry transition can't drift apart.
+// The download window on a `ready` row is open while `expiresAt` is unset (S3
+// returned no `expiry-date` in the restore header: better a stale entry than a
+// download cut off early) or still in the future. Shared with
+// expireLapsedByFileIds so the active predicate and the expiry transition
+// can't drift apart.
 function readyWindowOpen(): SQL {
     // or() is only `undefined` when called with no arguments
     return or(
@@ -61,9 +63,9 @@ function findByFileIds(db: DB, fileIds: string[]): Promise<Retrieval[]> {
     });
 }
 
-// Unfiltered lookup for S3 webhook resolution: the ObjectRestore:Delete
-// event arrives at/after `expiresAt`, when the row is already invisible to
-// the active-filtered queries — it must still be found to record `expired`.
+// Unfiltered lookup for reconciling a race: a row that has already lapsed (or
+// been expired) is invisible to the active-filtered queries, but a caller that
+// just lost an insert to the unique index still needs to find it.
 function findLatestByFileId(
     db: DB,
     fileId: string
@@ -118,6 +120,40 @@ async function findActiveByUserWithFiles(
         .orderBy(schema.retrievals.createdAt);
 
     return rows;
+}
+
+export interface PendingRetrievalWithFile {
+    id: string;
+    fileId: string;
+    s3Key: string;
+    thumbnailStatus: (typeof schema.files.$inferSelect)['thumbnailStatus'];
+}
+
+/**
+ * Every retrieval still waiting on S3, with the file fields the poller needs
+ * to finish one off. This is the poll's whole work list: the worker HEADs
+ * exactly these keys, so the request volume is bounded by our own pending set
+ * rather than by S3's event rate (#416).
+ *
+ * Ordered oldest-first so a pending set larger than one run's budget drains
+ * fairly instead of starving the earliest requests.
+ */
+async function findPendingWithFiles(
+    db: DB,
+    limit: number
+): Promise<PendingRetrievalWithFile[]> {
+    return db
+        .select({
+            id: schema.retrievals.id,
+            fileId: schema.retrievals.fileId,
+            s3Key: schema.files.s3Key,
+            thumbnailStatus: schema.files.thumbnailStatus,
+        })
+        .from(schema.retrievals)
+        .innerJoin(schema.files, eq(schema.retrievals.fileId, schema.files.id))
+        .where(inArray(schema.retrievals.status, ['pending', 'in_progress']))
+        .orderBy(schema.retrievals.createdAt)
+        .limit(limit);
 }
 
 async function insert(db: DB, data: NewRetrieval): Promise<Retrieval> {
@@ -185,6 +221,7 @@ export const createRetrievalRepo = createRepository({
     findLatestByFileId,
     findByUser,
     findActiveByUserWithFiles,
+    findPendingWithFiles,
     insert,
     insertMany,
     expireLapsedByFileIds,

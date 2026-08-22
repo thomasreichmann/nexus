@@ -35,7 +35,6 @@ export function createFileFixture(overrides: Partial<File> = {}): File {
         size: 1024000,
         mimeType: 'application/pdf',
         s3Key: `${TEST_USER_ID}/${TEST_FILE_ID}`,
-        storageTier: 'glacier',
         status: 'available',
         thumbnailStatus: 'pending',
         thumbnailWidth: null,

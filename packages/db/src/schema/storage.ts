@@ -41,12 +41,6 @@ export const DEFAULT_RESTORE_DAYS_TO_KEEP = 7;
 
 // Nexus domain tables
 
-export const storageTierEnum = pgEnum('storage_tier', [
-    'standard',
-    'glacier',
-    'deep_archive',
-]);
-
 export const fileStatusEnum = pgEnum('file_status', [
     'uploading',
     'available',
@@ -105,12 +99,6 @@ export const files = pgTable(
         size: bigint('size', { mode: 'number' }).notNull(),
         mimeType: text('mime_type'),
         s3Key: text('s3_key').notNull().unique(),
-        // Defaults to 'standard' because that's where every upload lands in
-        // S3; the bucket lifecycle rule transitions objects to Deep Archive
-        // and the LifecycleTransition webhook flips this column to match.
-        storageTier: storageTierEnum('storage_tier')
-            .notNull()
-            .default('standard'),
         status: fileStatusEnum('status').notNull().default('uploading'),
         // Thumbnail lifecycle for the derived-bucket WebP. No key column:
         // the derived key is a pure function of immutable row fields
@@ -132,7 +120,6 @@ export const files = pgTable(
     (table) => [
         index('files_user_id_idx').on(table.userId),
         index('files_status_idx').on(table.status),
-        index('files_storage_tier_idx').on(table.storageTier),
         index('files_batch_id_idx').on(table.batchId),
         index('files_user_id_created_at_idx').on(
             table.userId,

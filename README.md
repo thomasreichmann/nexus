@@ -44,12 +44,12 @@ flowchart LR
     API -->|enqueue async jobs| SQS[SQS]
     SQS --> W[Lambda worker]
     W --> DB
-    API -->|RestoreObjectCommand| S3
-    S3 -->|restore complete| SNS[SNS]
-    SNS -->|signed, idempotent webhook| API
+    API -->|HeadObject / RestoreObjectCommand| S3
+    EB[EventBridge · every 15m] --> W
+    W -->|HeadObject on pending retrievals| S3
 ```
 
-Upload is a presigned `PUT` (or multipart for large files) straight to S3, with file metadata tracked in Postgres. **Every uploaded file is stored in Glacier by default.** The storage layer and the data model support any S3 tier (`standard` / `glacier` / `deep_archive`), but the product sends everything to Glacier today and will for the foreseeable future. Files are grouped by upload batch (a photographer's natural unit is "a shoot"), and a restore in flight shows as `Retrieving`:
+Upload is a presigned `PUT` (or multipart for large files) straight to S3, with file metadata tracked in Postgres. **Every uploaded file is stored in Glacier by default** — a bucket lifecycle rule sweeps anything over 128 KB into Deep Archive. Nothing in the database mirrors an object's storage class: S3 owns that, and it is read with a `HeadObject` at the moment it matters. Files are grouped by upload batch (a photographer's natural unit is "a shoot"), and a restore in flight shows as `Retrieving`:
 
 <div align="center">
 
@@ -63,36 +63,36 @@ Retrieval runs through a state machine:
 stateDiagram-v2
     [*] --> pending: user requests file
     pending --> in_progress: RestoreObjectCommand sent
-    in_progress --> ready: SNS restore-complete webhook
+    in_progress --> ready: worker poll observes the restore
     ready --> expired: temporary restore window passes
     ready --> [*]: presigned download
     in_progress --> failed: AWS error
 ```
 
-A download URL is only ever issued once the retrieval is `ready`. The SNS webhook that drives the `ready` transition is signature-verified and idempotent on the message ID, so AWS retries can't double-process. Retrieval speed is a tier the user picks: expedited (minutes), standard (3–5 hours), or bulk (cheapest, up to ~12 hours).
+A download URL is only ever issued once S3 says the bytes are readable — the check is a `HeadObject` at request time, not a database column. The `ready` transition is made by a scheduled worker run that HEADs the objects behind its own pending retrievals, so the work is bounded by that set rather than by S3's event rate. Retrieval speed is a tier the user picks: expedited (minutes), standard (3–5 hours), or bulk (cheapest, up to ~12 hours).
 
 ## Engineering highlights
 
-- **Event-driven Glacier restore** — a `pending → in_progress → ready → expired` state machine ([`server/services/s3-restore.ts`](apps/web/server/services/s3-restore.ts)) driven by a signature-verified, message-ID-idempotent SNS webhook ([`app/api/webhooks/s3-restore/route.ts`](apps/web/app/api/webhooks/s3-restore/route.ts)). Presigned download only when `ready`.
-- **Idempotent billing & event webhooks** — Stripe and SNS events are deduped through a shared `webhooks` table. Signature verification, unique-violation handling for redelivery races, and terminal-state guards keep replayed or out-of-order events from double-processing. Prices resolve by Stripe metadata, so the same code runs in test and live ([`lib/stripe/`](apps/web/lib/stripe)).
+- **Observed Glacier restore** — a `pending → ready → expired` state machine driven by a scheduled worker poll ([`apps/worker/src/pollRetrievals.ts`](apps/worker/src/pollRetrievals.ts)) that HEADs only the objects behind its own pending rows. Replaced an S3→SNS→webhook rail that fell over under a lifecycle sweep: the DB records intent, S3 owns object state. Presigned download gates on a live `HeadObject`.
+- **Idempotent billing & alarm webhooks** — Stripe and CloudWatch events are deduped through a shared `webhooks` table. Signature verification, unique-violation handling for redelivery races, and terminal-state guards keep replayed or out-of-order events from double-processing. Prices resolve by Stripe metadata, so the same code runs in test and live ([`lib/stripe/`](apps/web/lib/stripe)).
 - **A real E2E coverage gate** — [`apps/web/scripts/e2e-coverage.ts`](apps/web/scripts/e2e-coverage.ts) derives routes from the `app/` tree, so "100% covered" can't be hollow. It fails the build on a page that's missing from the manifest, a typo'd `@page`/`@uc` tag, or a validate-only case with no `manual:` reason.
 - **Published tooling** — [`packages/trpc-devtools`](packages/trpc-devtools) is a standalone tRPC devtools panel shipped to npm (MIT, with build provenance) and consumed by the web app.
 - **A typed monorepo** — [`@nexus/db`](packages/db) is the single source of truth for schema, migrations, and repositories. It also exports typed test-seeding helpers (`@nexus/db/test-db`) shared by unit and E2E tests.
 
 ## Tech stack
 
-| Layer     | Technology                            |
-| --------- | ------------------------------------- |
-| Framework | Next.js 16, React 19, TypeScript      |
-| API       | tRPC v11 (end-to-end typesafe)        |
-| Database  | Supabase (PostgreSQL), Drizzle ORM    |
-| Storage   | AWS S3 Glacier (presigned uploads)    |
-| Async     | AWS SQS + Lambda worker, SNS webhooks |
-| Auth      | BetterAuth                            |
-| Payments  | Stripe (subscriptions + webhooks)     |
-| UI        | Tailwind, shadcn/ui                   |
-| Monorepo  | pnpm workspaces, Turborepo            |
-| Testing   | Vitest, Playwright                    |
+| Layer     | Technology                                    |
+| --------- | --------------------------------------------- |
+| Framework | Next.js 16, React 19, TypeScript              |
+| API       | tRPC v11 (end-to-end typesafe)                |
+| Database  | Supabase (PostgreSQL), Drizzle ORM            |
+| Storage   | AWS S3 Glacier (presigned uploads)            |
+| Async     | AWS SQS + Lambda worker, EventBridge schedule |
+| Auth      | BetterAuth                                    |
+| Payments  | Stripe (subscriptions + webhooks)             |
+| UI        | Tailwind, shadcn/ui                           |
+| Monorepo  | pnpm workspaces, Turborepo                    |
+| Testing   | Vitest, Playwright                            |
 
 ## Project structure
 
@@ -102,7 +102,7 @@ nexus/
 │   ├── web/                 # Next.js 16 app — App Router UI, tRPC API, S3 + Stripe
 │   │   ├── app/             # Routes, server actions, webhook handlers
 │   │   ├── server/          # tRPC routers + services (restore state machine, billing)
-│   │   ├── lib/             # storage (S3/Glacier), env validation, Stripe, SNS
+│   │   ├── lib/             # storage (S3/Glacier), env validation, Stripe, SNS envelopes
 │   │   ├── components/      # UI (Tailwind + shadcn/ui)
 │   │   └── e2e/             # Playwright suites + coverage gate
 │   └── worker/              # AWS Lambda SQS consumer — typed async-job registry
@@ -120,7 +120,7 @@ nexus/
 - Node.js 24 (`.nvmrc` pins the version)
 - pnpm 10.26+
 - A Supabase project (PostgreSQL)
-- An AWS account with an S3 bucket, plus SQS/SNS for the async flow
+- An AWS account with an S3 bucket, plus SQS and a Lambda worker for the async flow
 - A Stripe account (test mode is fine)
 
 ### Quick start
@@ -190,7 +190,7 @@ CI ([`.github/workflows/`](.github/workflows)) runs lint/build/test/e2e on every
 
 - **Working** — single + multipart uploads to Glacier, the async retrieval flow with status tracking, Stripe subscriptions and webhooks, a file browser grouped by upload batch, and admin tooling.
 - **In progress** — the Lambda worker. The SQS dispatch and a typed, tested job registry are wired end to end; the first concrete job handler (account deletion) is landing now.
-- **Working** — infrastructure as code. Both AWS environments (bucket, lifecycle, SNS/SQS, Lambda, IAM) are stamped from one Terraform module set in [`infra/terraform/`](infra/terraform/README.md).
+- **Working** — infrastructure as code. Both AWS environments (bucket, lifecycle, SQS/SNS, Lambda, EventBridge, IAM) are stamped from one Terraform module set in [`infra/terraform/`](infra/terraform/README.md).
 
 ## Documentation
 

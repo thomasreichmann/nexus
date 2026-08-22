@@ -23,6 +23,10 @@ import {
     insertRetrieval,
     deleteUserData,
 } from '@nexus/db/test-db';
+import {
+    LIFECYCLE_TRANSITION_LAG_HOURS,
+    LIFECYCLE_TRANSITION_MIN_BYTES,
+} from '@nexus/db/object-state';
 import { test as base, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
 import { interceptTrpcCalls } from '../helpers/trpc';
@@ -55,38 +59,45 @@ const test = base.extend<
                 userId,
                 name: `Browser Batch ${Date.now()}`,
             });
-            // Two archived files in the batch. B seeded first with an earlier
+            // Two archived files in the batch. B seeded with an earlier
             // createdAt: the list sorts uploadedAt DESC, so A renders as the
             // batch's first row — the shift-click range test anchors on it.
+            //
+            // "Archived" is no longer a column (#416): it is derived from the
+            // lifecycle policy, so these two have to be genuinely past the
+            // window and over the 128KB floor to read as cold. The other two
+            // stay warm on size alone, whatever their age.
             const now = Date.now();
+            const daysAgo = (days: number) => new Date(now - days * 86_400_000);
+            // Derived from the thresholds themselves so the fixture can't
+            // drift from the policy it is standing in for.
+            const COLD_SIZE = LIFECYCLE_TRANSITION_MIN_BYTES * 10;
+            const COLD_DAYS = (LIFECYCLE_TRANSITION_LAG_HOURS / 24) * 4;
             const archivedB = await insertFile(db, {
                 userId,
                 batchId: batch.id,
                 name: 'arch-video-bbb.mp4',
-                size: 2000,
-                storageTier: 'deep_archive',
+                size: COLD_SIZE,
                 status: 'available',
-                createdAt: new Date(now - 2000),
-                updatedAt: new Date(now - 2000),
+                createdAt: daysAgo(COLD_DAYS + 1),
+                updatedAt: daysAgo(COLD_DAYS + 1),
             });
             const archivedA = await insertFile(db, {
                 userId,
                 batchId: batch.id,
                 name: 'arch-photo-aaa.jpg',
-                size: 1000,
-                storageTier: 'glacier',
+                size: COLD_SIZE,
                 status: 'available',
-                createdAt: new Date(now - 1000),
-                updatedAt: new Date(now - 1000),
+                createdAt: daysAgo(COLD_DAYS),
+                updatedAt: daysAgo(COLD_DAYS),
             });
-            // One ungrouped standard-tier file with a ready retrieval (#257
-            // fast path): renders "available" with a download window, exactly
-            // like a restored deep_archive copy would (#259).
+            // One ungrouped warm file with a ready retrieval (#257 fast path):
+            // renders "available" with a download window, exactly like a
+            // restored Deep Archive copy would (#259). Sorts newest.
             const readyDoc = await insertFile(db, {
                 userId,
                 name: 'ready-doc-ccc.pdf',
                 size: 3000,
-                storageTier: 'standard',
                 status: 'available',
                 createdAt: new Date(now - 100),
                 updatedAt: new Date(now - 100),
@@ -96,18 +107,18 @@ const test = base.extend<
                 fileId: readyDoc.id,
                 status: 'ready',
             });
-            // One ungrouped standard-tier file with no retrieval: archived
-            // with Retrieve only (#256), and the all-standard estimate case.
-            // Seeded older than readyDoc so it sorts last — the shift-click
-            // range test anchors on flat row order.
+            // One ungrouped warm file with no retrieval: archived with
+            // Retrieve only (#256), and the all-warm estimate case. Under the
+            // 128KB floor, so it stays warm despite being the oldest row —
+            // seeded oldest so it sorts last, which the shift-click range
+            // test anchors on.
             const standardDoc = await insertFile(db, {
                 userId,
                 name: 'plain-doc-ddd.txt',
                 size: 500,
-                storageTier: 'standard',
                 status: 'available',
-                createdAt: new Date(now - 3000),
-                updatedAt: new Date(now - 3000),
+                createdAt: daysAgo(COLD_DAYS + 2),
+                updatedAt: daysAgo(COLD_DAYS + 2),
             });
 
             await use({ batch, archivedA, archivedB, readyDoc, standardDoc });
@@ -330,7 +341,7 @@ test.describe('with a seeded library', () => {
                 .click();
             await page.getByRole('button', { name: 'Retrieve' }).click();
 
-            // glacier + deep_archive selection → slow estimate.
+            // Both selected files read as cold → slow estimate.
             const dialog = page.getByRole('alertdialog');
             await expect(dialog.getByText('Retrieve 2 files?')).toBeVisible();
             await expect(
@@ -365,7 +376,7 @@ test.describe('with a seeded library', () => {
                 .getByRole('menuitem', { name: 'Request retrieval' })
                 .click();
 
-            // Single deep_archive file → slow estimate.
+            // A single cold-looking file → slow estimate.
             const dialog = page.getByRole('alertdialog');
             await expect(dialog.getByText('Retrieve 1 file?')).toBeVisible();
             await expect(

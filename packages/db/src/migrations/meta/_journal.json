@@ -127,6 +127,13 @@
       "when": 1786650635677,
       "tag": "0017_misty_prodigy",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787419764437,
+      "tag": "0018_small_gamma_corps",
+      "breakpoints": true
     }
   ]
 }

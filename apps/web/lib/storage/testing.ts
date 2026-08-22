@@ -24,6 +24,8 @@
  * ```
  */
 
+import type { ObjectState } from './types';
+
 const MOCK_BUCKET = 'test-bucket';
 const MOCK_HOST = 'https://mock-s3.test';
 
@@ -44,9 +46,12 @@ const derivedMocks = {
 
 const glacierMocks = {
     restore: async (): Promise<void> => {},
-    checkStatus: async (): Promise<{
-        status: 'available' | 'restoring' | 'archived';
-    }> => ({ status: 'available' }),
+    // Defaults to warm: the cheap path, so a test that cares about cold
+    // objects has to say so. Mirrors the real `ObjectState` shape — the old
+    // mock invented its own union, which is how it drifted unnoticed.
+    getObjectState: async (): Promise<ObjectState> => ({
+        availability: 'warm',
+    }),
 };
 
 const objectsMocks = {

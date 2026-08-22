@@ -15,13 +15,10 @@ const GB = 1024 * MB;
 const daysAgo = (d: number): Date => new Date(Date.now() - d * 86_400_000);
 const hoursAgo = (h: number): Date => new Date(Date.now() - h * 3_600_000);
 
-type Tier = 'standard' | 'glacier' | 'deep_archive';
-
 interface DemoFile {
     name: string;
     mime: string;
     size: number;
-    tier: Tier;
     /** A file in mid-restore renders the `Retrieving` state. */
     status?: 'available' | 'restoring';
 }
@@ -32,10 +29,9 @@ interface Shoot {
     files: DemoFile[];
 }
 
-// Curated marketing data: a photographer's archive, grouped by shoot. Names,
-// sizes, and tiers are hand-picked so the walkthrough reads as a real library
-// (a mix of Glacier / Deep Archive, a few mid-restore). Batch order in the UI is
-// newest-first, so the most recent shoots sit at the top of the list.
+// Curated marketing data: a photographer's archive, grouped by shoot. Names
+// and sizes are hand-picked so the walkthrough reads as a real library, and
+// shoots are listed newest-first so the most recent sit at the top.
 const SHOOTS: Shoot[] = [
     {
         name: 'Client Deliverables — Q2 2026',
@@ -45,25 +41,21 @@ const SHOOTS: Shoot[] = [
                 name: 'smith-wedding-gallery.zip',
                 mime: 'application/zip',
                 size: 4.2 * GB,
-                tier: 'standard',
             },
             {
                 name: 'raw-export-batch-04.7z',
                 mime: 'application/x-7z-compressed',
                 size: 18 * GB,
-                tier: 'glacier',
             },
             {
                 name: 'print-ready-tiffs.zip',
                 mime: 'application/zip',
                 size: 1.1 * GB,
-                tier: 'standard',
             },
             {
                 name: 'contract-marquez-signed.pdf',
                 mime: 'application/pdf',
                 size: 1.4 * MB,
-                tier: 'standard',
             },
         ],
     },
@@ -75,50 +67,42 @@ const SHOOTS: Shoot[] = [
                 name: 'ceremony-0148.NEF',
                 mime: 'image/x-nikon-nef',
                 size: 38 * MB,
-                tier: 'glacier',
             },
             {
                 name: 'ceremony-0212.NEF',
                 mime: 'image/x-nikon-nef',
                 size: 41 * MB,
-                tier: 'glacier',
             },
             {
                 name: 'first-dance.NEF',
                 mime: 'image/x-nikon-nef',
                 size: 36 * MB,
-                tier: 'glacier',
                 status: 'restoring',
             },
             {
                 name: 'couple-golden-hour.CR2',
                 mime: 'image/x-canon-cr2',
                 size: 32 * MB,
-                tier: 'glacier',
             },
             {
                 name: 'reception-toast.NEF',
                 mime: 'image/x-nikon-nef',
                 size: 39 * MB,
-                tier: 'glacier',
             },
             {
                 name: 'bridal-party.CR2',
                 mime: 'image/x-canon-cr2',
                 size: 30 * MB,
-                tier: 'glacier',
             },
             {
                 name: 'highlights-reel.mov',
                 mime: 'video/quicktime',
                 size: 1.4 * GB,
-                tier: 'glacier',
             },
             {
                 name: 'full-ceremony-4k.mp4',
                 mime: 'video/mp4',
                 size: 38 * GB,
-                tier: 'glacier',
             },
         ],
     },
@@ -130,31 +114,26 @@ const SHOOTS: Shoot[] = [
                 name: 'headshot-final-01.png',
                 mime: 'image/png',
                 size: 18 * MB,
-                tier: 'glacier',
             },
             {
                 name: 'headshot-final-02.png',
                 mime: 'image/png',
                 size: 19 * MB,
-                tier: 'glacier',
             },
             {
                 name: 'headshot-final-03.png',
                 mime: 'image/png',
                 size: 21 * MB,
-                tier: 'glacier',
             },
             {
                 name: 'editorial-bw-04.tiff',
                 mime: 'image/tiff',
                 size: 96 * MB,
-                tier: 'glacier',
             },
             {
                 name: 'studio-setup-bts.jpg',
                 mime: 'image/jpeg',
                 size: 8 * MB,
-                tier: 'standard',
             },
         ],
     },
@@ -166,38 +145,32 @@ const SHOOTS: Shoot[] = [
                 name: 'aurora-jokulsarlon-007.CR2',
                 mime: 'image/x-canon-cr2',
                 size: 34 * MB,
-                tier: 'deep_archive',
                 status: 'restoring',
             },
             {
                 name: 'glacier-lagoon-pano.tiff',
                 mime: 'image/tiff',
                 size: 142 * MB,
-                tier: 'deep_archive',
             },
             {
                 name: 'vestrahorn-dawn.NEF',
                 mime: 'image/x-nikon-nef',
                 size: 40 * MB,
-                tier: 'deep_archive',
             },
             {
                 name: 'diamond-beach-longexp.CR2',
                 mime: 'image/x-canon-cr2',
                 size: 33 * MB,
-                tier: 'deep_archive',
             },
             {
                 name: 'highlands-aerial.tiff',
                 mime: 'image/tiff',
                 size: 118 * MB,
-                tier: 'deep_archive',
             },
             {
                 name: 'northern-lights-timelapse.mp4',
                 mime: 'video/mp4',
                 size: 54 * GB,
-                tier: 'deep_archive',
             },
         ],
     },
@@ -209,25 +182,21 @@ const SHOOTS: Shoot[] = [
                 name: 'bigsur-coast-4k-01.mp4',
                 mime: 'video/mp4',
                 size: 14 * GB,
-                tier: 'deep_archive',
             },
             {
                 name: 'bixby-bridge-sunset.mp4',
                 mime: 'video/mp4',
                 size: 6.2 * GB,
-                tier: 'deep_archive',
             },
             {
                 name: 'cliffs-aerial-raw.mp4',
                 mime: 'video/mp4',
                 size: 24 * GB,
-                tier: 'deep_archive',
             },
             {
                 name: 'coastline-pano.tiff',
                 mime: 'image/tiff',
                 size: 134 * MB,
-                tier: 'deep_archive',
             },
         ],
     },
@@ -281,7 +250,6 @@ export async function seedDemoLibrary(
                 name: f.name,
                 size,
                 mimeType: f.mime,
-                storageTier: f.tier,
                 status: f.status ?? 'available',
                 createdAt,
                 updatedAt: createdAt,

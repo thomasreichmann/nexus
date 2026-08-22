@@ -26,6 +26,7 @@ vi.mock('@/lib/storage', () => ({
 }));
 
 import { retrievalService } from './retrieval';
+import type { ObjectAvailability } from '@nexus/db/object-state';
 
 describe('retrieval service', () => {
     let db: MockDb;
@@ -36,11 +37,27 @@ describe('retrieval service', () => {
         const mockDb = createMockDb();
         db = mockDb.db;
         mocks = mockDb.mocks;
+        // Objects default to archived — the case that needs a RestoreObject,
+        // and what the old `storageTier: 'glacier'` fixtures stood for. Tests
+        // about warm or already-restored objects override this.
+        setObjectState('archived');
     });
+
+    /** Point the S3 mock at one availability for every key, or per-key. */
+    function setObjectState(
+        availability: ObjectAvailability,
+        byKey: Record<string, ObjectAvailability> = {}
+    ) {
+        vi.spyOn(mockS3.glacier, 'getObjectState').mockImplementation(
+            async (key: string) => ({
+                availability: byKey[key] ?? availability,
+            })
+        );
+    }
 
     describe('requestRetrieval', () => {
         it('creates retrieval for Glacier file', async () => {
-            const file = createFileFixture({ storageTier: 'glacier' });
+            const file = createFileFixture();
             const retrieval = createRetrievalFixture();
 
             // requestRetrieval delegates to requestBulkRetrieval:
@@ -61,7 +78,7 @@ describe('retrieval service', () => {
         });
 
         it('creates retrieval for deep_archive file', async () => {
-            const file = createFileFixture({ storageTier: 'deep_archive' });
+            const file = createFileFixture();
             const retrieval = createRetrievalFixture({ tier: 'bulk' });
 
             mocks.files.findMany.mockResolvedValue([file]);
@@ -79,7 +96,7 @@ describe('retrieval service', () => {
         });
 
         it('returns existing active retrieval (idempotent)', async () => {
-            const file = createFileFixture({ storageTier: 'glacier' });
+            const file = createFileFixture();
             const existing = createRetrievalFixture({ status: 'pending' });
 
             mocks.files.findMany.mockResolvedValue([file]);
@@ -107,9 +124,10 @@ describe('retrieval service', () => {
             ).rejects.toThrow(NotFoundError);
         });
 
-        it('marks standard-tier file ready immediately without calling RestoreObject', async () => {
+        it('marks a warm file ready immediately without calling RestoreObject', async () => {
+            setObjectState('warm');
             const restoreSpy = vi.spyOn(mockS3.glacier, 'restore');
-            const file = createFileFixture({ storageTier: 'standard' });
+            const file = createFileFixture();
             const retrieval = createRetrievalFixture({ status: 'ready' });
 
             mocks.files.findMany.mockResolvedValue([file]);
@@ -149,7 +167,8 @@ describe('retrieval service', () => {
         });
 
         it('expires lapsed ready rows before inserting', async () => {
-            const file = createFileFixture({ storageTier: 'standard' });
+            setObjectState('warm');
+            const file = createFileFixture();
             const retrieval = createRetrievalFixture({ status: 'ready' });
 
             mocks.files.findMany.mockResolvedValue([file]);
@@ -167,7 +186,8 @@ describe('retrieval service', () => {
         });
 
         it('returns the surviving row when a concurrent request wins the insert race', async () => {
-            const file = createFileFixture({ storageTier: 'standard' });
+            setObjectState('warm');
+            const file = createFileFixture();
             const survivor = createRetrievalFixture({ status: 'ready' });
 
             mocks.files.findMany.mockResolvedValue([file]);
@@ -197,12 +217,10 @@ describe('retrieval service', () => {
                 createFileFixture({
                     id: 'file1',
                     s3Key: 'user/file1',
-                    storageTier: 'glacier',
                 }),
                 createFileFixture({
                     id: 'file2',
                     s3Key: 'user/file2',
-                    storageTier: 'glacier',
                 }),
             ];
             const newRetrievals = [
@@ -231,12 +249,10 @@ describe('retrieval service', () => {
                 createFileFixture({
                     id: 'file1',
                     s3Key: 'user/file1',
-                    storageTier: 'glacier',
                 }),
                 createFileFixture({
                     id: 'file2',
                     s3Key: 'user/file2',
-                    storageTier: 'glacier',
                 }),
             ];
             const existingRetrieval = createRetrievalFixture({
@@ -274,18 +290,17 @@ describe('retrieval service', () => {
             ).rejects.toThrow(NotFoundError);
         });
 
-        it('restores only archived files in a mixed-tier request; standard files are ready immediately', async () => {
+        it('restores only archived objects in a mixed request; warm ones are ready immediately', async () => {
+            setObjectState('archived', { 'user/file2': 'warm' });
             const restoreSpy = vi.spyOn(mockS3.glacier, 'restore');
             const files = [
                 createFileFixture({
                     id: 'file1',
                     s3Key: 'user/file1',
-                    storageTier: 'glacier',
                 }),
                 createFileFixture({
                     id: 'file2',
                     s3Key: 'user/file2',
-                    storageTier: 'standard',
                 }),
             ];
             const newRetrievals = [
@@ -333,7 +348,6 @@ describe('retrieval service', () => {
             const files = [
                 createFileFixture({
                     id: 'file1',
-                    storageTier: 'glacier',
                 }),
                 createFileFixture({
                     id: 'file2',
@@ -353,9 +367,7 @@ describe('retrieval service', () => {
         });
 
         it('returns only existing retrievals when all files already have active retrievals', async () => {
-            const files = [
-                createFileFixture({ id: 'file1', storageTier: 'glacier' }),
-            ];
+            const files = [createFileFixture({ id: 'file1' })];
             const existingRetrieval = createRetrievalFixture({
                 id: 'r1',
                 fileId: 'file1',
@@ -381,7 +393,7 @@ describe('retrieval service', () => {
 
     describe('S3 restore failure', () => {
         it('marks the row failed, reports it, and strips the raw error from the payload', async () => {
-            const file = createFileFixture({ storageTier: 'deep_archive' });
+            const file = createFileFixture();
             const inserted = createRetrievalFixture();
             const failedRow = createRetrievalFixture({
                 status: 'failed',
@@ -420,7 +432,7 @@ describe('retrieval service', () => {
         });
 
         it('still resolves the batch when writing the failed status itself fails', async () => {
-            const file = createFileFixture({ storageTier: 'deep_archive' });
+            const file = createFileFixture();
             const inserted = createRetrievalFixture();
 
             vi.spyOn(mockS3.glacier, 'restore').mockRejectedValueOnce(
@@ -450,7 +462,7 @@ describe('retrieval service', () => {
 
         it('reports a conflict-skipped file as failed when the winning request already failed its restore', async () => {
             const restoreSpy = vi.spyOn(mockS3.glacier, 'restore');
-            const file = createFileFixture({ storageTier: 'deep_archive' });
+            const file = createFileFixture();
             const winnersFailedRow = createRetrievalFixture({
                 status: 'failed',
                 failedAt: new Date(),
@@ -491,12 +503,10 @@ describe('retrieval service', () => {
                 createFileFixture({
                     id: 'f1',
                     batchId: batch.id,
-                    storageTier: 'glacier',
                 }),
                 createFileFixture({
                     id: 'f2',
                     batchId: batch.id,
-                    storageTier: 'glacier',
                 }),
             ];
             const newRetrievals = [
@@ -562,19 +572,18 @@ describe('retrieval service', () => {
             ).rejects.toThrow(InvalidStateError);
         });
 
-        it('marks an all-standard batch ready immediately without calling RestoreObject', async () => {
+        it('marks an all-warm batch ready immediately without calling RestoreObject', async () => {
+            setObjectState('warm');
             const restoreSpy = vi.spyOn(mockS3.glacier, 'restore');
             const batch = createUploadBatchFixture();
             const files = [
                 createFileFixture({
                     id: 'f1',
                     batchId: batch.id,
-                    storageTier: 'standard',
                 }),
                 createFileFixture({
                     id: 'f2',
                     batchId: batch.id,
-                    storageTier: 'standard',
                 }),
             ];
             const newRetrievals = [
@@ -726,7 +735,8 @@ describe('retrieval service', () => {
     });
 
     describe('getDownloadUrl', () => {
-        it('returns presigned URL when retrieval is ready', async () => {
+        it('returns presigned URL when the object is readable', async () => {
+            setObjectState('warm');
             const file = createFileFixture();
             const retrieval = createRetrievalFixture({ status: 'ready' });
 
@@ -753,23 +763,57 @@ describe('retrieval service', () => {
             ).rejects.toThrow(NotFoundError);
         });
 
-        it('throws InvalidStateError when no retrieval exists', async () => {
+        it('serves an already-restored object', async () => {
+            setObjectState('restored');
+            const file = createFileFixture();
+
+            mocks.files.findFirst.mockResolvedValue(file);
+
+            const result = await retrievalService.getDownloadUrl(
+                db,
+                TEST_USER_ID,
+                TEST_FILE_ID
+            );
+
+            expect(result.url).toContain('https://mock-s3.test/test-bucket/');
+        });
+
+        // S3 owns object state (#416): a readable object downloads whether or
+        // not a row says so, and the row can't authorize a cold one.
+        it('serves a warm object with no retrieval row at all', async () => {
+            setObjectState('warm');
             const file = createFileFixture();
 
             mocks.files.findFirst.mockResolvedValue(file);
             mocks.retrievals.findFirst.mockResolvedValue(undefined);
+
+            const result = await retrievalService.getDownloadUrl(
+                db,
+                TEST_USER_ID,
+                TEST_FILE_ID
+            );
+
+            expect(result.url).toContain('https://mock-s3.test/test-bucket/');
+        });
+
+        it('throws InvalidStateError when the object is still archived', async () => {
+            const file = createFileFixture();
+            const retrieval = createRetrievalFixture({ status: 'ready' });
+
+            mocks.files.findFirst.mockResolvedValue(file);
+            // A `ready` row does not make an archived object downloadable.
+            mocks.retrievals.findFirst.mockResolvedValue(retrieval);
 
             await expect(
                 retrievalService.getDownloadUrl(db, TEST_USER_ID, TEST_FILE_ID)
             ).rejects.toThrow(InvalidStateError);
         });
 
-        it('throws InvalidStateError when retrieval is not ready', async () => {
+        it('throws InvalidStateError while a restore is still in flight', async () => {
+            setObjectState('restoring');
             const file = createFileFixture();
-            const retrieval = createRetrievalFixture({ status: 'pending' });
 
             mocks.files.findFirst.mockResolvedValue(file);
-            mocks.retrievals.findFirst.mockResolvedValue(retrieval);
 
             await expect(
                 retrievalService.getDownloadUrl(db, TEST_USER_ID, TEST_FILE_ID)

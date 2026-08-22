@@ -12,6 +12,7 @@ import {
     cleanupFiles,
     cleanupSeedDataForUser,
 } from '@nexus/db/seed';
+import { isProbablyCold } from '@nexus/db/object-state';
 import { TrialExpiredError } from '@/server/errors';
 import { devToolsProcedure, router } from '../init';
 import type { DB } from '@nexus/db';
@@ -21,39 +22,25 @@ const scenarioNames = Object.keys(SCENARIO_DEFINITIONS) as [
     ...string[],
 ];
 
-const storageTierDistributionSchema = z
-    .object({
-        standard: z.number().min(0).max(1).default(0.1),
-        glacier: z.number().min(0).max(1).default(0.6),
-        deep_archive: z.number().min(0).max(1).default(0.3),
-    })
-    .optional();
-
 async function seedUserFiles(
     db: DB,
     userId: string,
     input: {
         fileCount: number;
-        storageTierDistribution?: {
-            standard: number;
-            glacier: number;
-            deep_archive: number;
-        };
         retrievalCount: number;
     }
 ): Promise<{ files: number; retrievals: number }> {
     const files = await buildFiles(db, userId, {
         count: input.fileCount,
-        storageTierDistribution: input.storageTierDistribution,
     });
 
     let retrievalCount = 0;
     if (input.retrievalCount > 0) {
-        const glacierFiles = files.filter((f) => f.storageTier !== 'standard');
+        const coldFiles = files.filter(isProbablyCold);
         const retrievals = await buildRetrievals(
             db,
             userId,
-            glacierFiles.slice(0, input.retrievalCount).map((f) => f.id),
+            coldFiles.slice(0, input.retrievalCount).map((f) => f.id),
             { count: input.retrievalCount }
         );
         retrievalCount = retrievals.length;
@@ -70,7 +57,6 @@ export const devToolsRouter = router({
         .input(
             z.object({
                 fileCount: z.number().min(1).max(1000).default(50),
-                storageTierDistribution: storageTierDistributionSchema,
                 retrievalCount: z.number().min(0).max(50).default(0),
             })
         )
@@ -84,7 +70,6 @@ export const devToolsRouter = router({
             z.object({
                 userId: z.string().uuid(),
                 fileCount: z.number().min(1).max(1000).default(50),
-                storageTierDistribution: storageTierDistributionSchema,
                 retrievalCount: z.number().min(0).max(50).default(0),
             })
         )
@@ -168,7 +153,6 @@ export const devToolsRouter = router({
                         'incomplete',
                     ])
                     .default('active'),
-                storageTierDistribution: storageTierDistributionSchema,
                 retrievalCount: z.number().min(0).max(50).default(0),
             })
         )
