@@ -1,5 +1,9 @@
 import * as Sentry from '@sentry/nextjs';
-import { createFileRepo, type File } from '@nexus/db/repo/files';
+import {
+    createFileRepo,
+    HIDDEN_STATUSES,
+    type File,
+} from '@nexus/db/repo/files';
 import {
     createRetrievalRepo,
     type Retrieval,
@@ -376,7 +380,11 @@ async function getDownloadUrl(
     const fileRepo = createFileRepo(db);
 
     const file = await fileRepo.findByUserAndId(userId, fileId);
-    if (!file) {
+    // S3 owns warm/cold, but `uploading` and `deleted` are DB-owned intent:
+    // the bytes may sit warm in the bucket (soft delete never removes them;
+    // sub-lifecycle-floor objects never go cold) while the file doesn't exist
+    // as far as the user can see. Same not-found as every list that hides them.
+    if (!file || HIDDEN_STATUSES.includes(file.status)) {
         throw new NotFoundError('File', fileId);
     }
 

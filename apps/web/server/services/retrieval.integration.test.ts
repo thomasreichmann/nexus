@@ -25,7 +25,9 @@ const s3Mocks = vi.hoisted(() => ({
     presignedGet: vi.fn(),
     // Objects default to archived — the case that needs a restore. Tests
     // about warm objects override this per-test.
-    getObjectState: vi.fn(async () => ({ availability: 'archived' as const })),
+    getObjectState: vi.fn(
+        async (): Promise<ObjectState> => ({ availability: 'archived' })
+    ),
 }));
 
 vi.mock('@/lib/storage', () => ({
@@ -39,6 +41,7 @@ vi.mock('@/lib/storage', () => ({
 }));
 
 import { retrievalService } from './retrieval';
+import type { ObjectState } from '@nexus/db/object-state';
 
 // Exercises the active-retrieval predicate against a real database: `ready`
 // rows past `expiresAt` are expired by query, not by stored status — nothing
@@ -79,11 +82,15 @@ describe('active-retrieval expiry predicate', () => {
             expiresAt: past(),
         });
 
+        // The restored copy lapsed but the object is still warm, so the
+        // fresh request should observe that and go straight to `ready`.
+        s3Mocks.getObjectState.mockResolvedValueOnce({ availability: 'warm' });
+
         const {
             started: [retrieval],
         } = await retrievalService.requestRetrieval(db, userId, file.id);
 
-        // Fresh row, ready immediately via the standard-tier fast path
+        // Fresh row, ready immediately — the object was observed readable
         expect(retrieval.id).not.toBe(lapsed.id);
         expect(retrieval.status).toBe('ready');
         expect(retrieval.expiresAt!.getTime()).toBeGreaterThan(Date.now());

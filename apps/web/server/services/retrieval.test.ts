@@ -796,6 +796,33 @@ describe('retrieval service', () => {
             expect(result.url).toContain('https://mock-s3.test/test-bucket/');
         });
 
+        // S3 owning warm/cold doesn't extend to lifecycle intent: a soft
+        // delete leaves the object in the bucket (warm forever below the
+        // lifecycle floor), and an unconfirmed upload's bytes may land before
+        // confirmUpload runs. Neither may download, however readable S3 says
+        // the object is.
+        it('throws NotFoundError for a soft-deleted file even when warm', async () => {
+            setObjectState('warm');
+            const file = createFileFixture({ status: 'deleted' });
+
+            mocks.files.findFirst.mockResolvedValue(file);
+
+            await expect(
+                retrievalService.getDownloadUrl(db, TEST_USER_ID, TEST_FILE_ID)
+            ).rejects.toThrow(NotFoundError);
+        });
+
+        it('throws NotFoundError for an unconfirmed upload even when warm', async () => {
+            setObjectState('warm');
+            const file = createFileFixture({ status: 'uploading' });
+
+            mocks.files.findFirst.mockResolvedValue(file);
+
+            await expect(
+                retrievalService.getDownloadUrl(db, TEST_USER_ID, TEST_FILE_ID)
+            ).rejects.toThrow(NotFoundError);
+        });
+
         it('throws InvalidStateError when the object is still archived', async () => {
             const file = createFileFixture();
             const retrieval = createRetrievalFixture({ status: 'ready' });
