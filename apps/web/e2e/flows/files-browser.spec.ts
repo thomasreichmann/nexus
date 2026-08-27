@@ -26,7 +26,8 @@ import {
 import {
     LIFECYCLE_TRANSITION_LAG_HOURS,
     LIFECYCLE_TRANSITION_MIN_BYTES,
-} from '@nexus/db/object-state';
+} from '@nexus/db/objectState';
+import { daysAgo } from '@nexus/db/seed';
 import { test as base, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
 import { interceptTrpcCalls } from '../helpers/trpc';
@@ -67,8 +68,6 @@ const test = base.extend<
             // lifecycle policy, so these two have to be genuinely past the
             // window and over the 128KB floor to read as cold. The other two
             // stay warm on size alone, whatever their age.
-            const now = Date.now();
-            const daysAgo = (days: number) => new Date(now - days * 86_400_000);
             // Derived from the thresholds themselves so the fixture can't
             // drift from the policy it is standing in for.
             const COLD_SIZE = LIFECYCLE_TRANSITION_MIN_BYTES * 10;
@@ -99,8 +98,8 @@ const test = base.extend<
                 name: 'ready-doc-ccc.pdf',
                 size: 3000,
                 status: 'available',
-                createdAt: new Date(now - 100),
-                updatedAt: new Date(now - 100),
+                createdAt: new Date(Date.now() - 100),
+                updatedAt: new Date(Date.now() - 100),
             });
             await insertRetrieval(db, {
                 userId,

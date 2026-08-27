@@ -41,7 +41,7 @@ vi.mock('@/lib/storage', () => ({
 }));
 
 import { retrievalService } from './retrieval';
-import type { ObjectState } from '@nexus/db/object-state';
+import type { ObjectState } from '@nexus/db/objectState';
 
 // Exercises the active-retrieval predicate against a real database: `ready`
 // rows past `expiresAt` are expired by query, not by stored status — nothing

@@ -72,6 +72,7 @@ async function powerUser(db: DB): Promise<SeedResult> {
     });
     const files = await buildFiles(db, user.id, {
         count: 200,
+        coldCount: 5,
     });
     const coldFiles = files.filter(isProbablyCold);
     const retrievals = await buildRetrievals(
@@ -327,6 +328,7 @@ export async function customSeed(
         if (fileCount > 0) {
             const files = await buildFiles(tx, userId, {
                 count: fileCount,
+                coldCount: retrievalCount,
             });
             results.files = files;
 

@@ -1,5 +1,3 @@
-import { DEFAULT_RESTORE_DAYS_TO_KEEP } from './schema/storage';
-
 /**
  * What we are allowed to believe about an S3 object.
  *
@@ -12,7 +10,39 @@ import { DEFAULT_RESTORE_DAYS_TO_KEEP } from './schema/storage';
  * retrieval poll needs the same reading of the same headers, and it can't
  * import from the app (#364). Only the transport differs between the two —
  * the policy is here, once.
+ *
+ * **This module imports nothing, and that is load-bearing.** Client
+ * components call `isProbablyCold` per row, so anything reachable from here
+ * ships to the browser. It used to reach `./schema/storage` for one number,
+ * which dragged all of drizzle and every table definition into the
+ * `/dashboard/files` bundle — the table names were greppable in the built
+ * chunk. The retrieval-policy constants below therefore live here and the
+ * schema imports *them*, not the other way round.
  */
+
+/**
+ * Glacier restore tier values — determines retrieval speed and cost.
+ *
+ * For Deep Archive (MVP default):
+ * - expedited: Not available for Deep Archive
+ * - standard: 12-48 hours
+ * - bulk: 48 hours (cheapest)
+ *
+ * For Glacier Flexible Retrieval:
+ * - expedited: 1-5 minutes (most expensive)
+ * - standard: 3-5 hours
+ * - bulk: 5-12 hours
+ */
+export const RESTORE_TIERS = ['standard', 'bulk', 'expedited'] as const;
+export type RestoreTier = (typeof RESTORE_TIERS)[number];
+
+/**
+ * Days a restored Glacier copy stays accessible. Also the length of the
+ * synthetic download window for an object that was already warm, which skips
+ * S3 restore entirely — keep the two in lockstep so both present the same
+ * window.
+ */
+export const DEFAULT_RESTORE_DAYS_TO_KEEP = 7;
 
 /**
  * What an object can actually do right now, as S3 reports it.
@@ -72,6 +102,33 @@ export function interpretObjectState({
         storageClass,
         expiresAt: expiryMatch ? new Date(expiryMatch[1]) : undefined,
     };
+}
+
+/**
+ * Whether a failed HeadObject means the object is gone rather than that the
+ * request itself failed.
+ *
+ * The distinction is the one both callers act on: a vanished object is a
+ * settled answer — a 404 to the user, a `failed` retrieval for the poll —
+ * while anything else is a transient we retry. S3 answers a missing key with
+ * `NotFound` and a denied one with 403, so a lost IAM role never reads as a
+ * lost object.
+ *
+ * Duck-typed rather than `instanceof NotFound` so this module keeps importing
+ * nothing (see the file docblock) and so it survives the two S3 clients in
+ * play — the app's and the worker's — being separate SDK instances.
+ */
+export function isObjectMissing(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null) return false;
+    const { name, $metadata } = error as {
+        name?: unknown;
+        $metadata?: { httpStatusCode?: number };
+    };
+    return (
+        name === 'NotFound' ||
+        name === 'NoSuchKey' ||
+        $metadata?.httpStatusCode === 404
+    );
 }
 
 /**

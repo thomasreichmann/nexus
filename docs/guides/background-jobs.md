@@ -125,6 +125,31 @@ aws sqs send-message \
 
 > **Note:** The worker expects a matching `background_jobs` record in the database. Sending a message without a DB record will cause the job to fail with a "not found" error.
 
+## Run the Retrieval Poll On Demand
+
+EventBridge invokes the worker every 15 minutes (`scheduler.tf`), but you rarely
+want to wait a tick to see whether a restore has landed. The schedule's payload
+is just `{}` — the handler branches on the _absence_ of a `Records` key — so any
+empty invoke exercises exactly the scheduled path:
+
+```bash
+aws lambda invoke \
+    --function-name nexus-worker-dev \
+    --payload '{}' --cli-binary-format raw-in-base64-out \
+    --region us-east-1 \
+    /dev/stdout
+```
+
+The response body is the poll's summary — `checked`, `ready`, `waiting`,
+`missing`, `errored`, `capped` — which is also logged to the function's log
+group (see [View Lambda Logs](#view-lambda-logs)). It is idempotent and bounded
+by the pending-retrieval set, so running it back to back is safe.
+
+`missing` counts rows whose object is no longer in the bucket; those are marked
+`failed` rather than re-checked forever. A run where **every** row errors throws,
+which is what surfaces a total S3/IAM outage on the `nexus-worker-errors` alarm —
+the scheduled path has no DLQ to catch it.
+
 ## View Lambda Logs
 
 ```bash

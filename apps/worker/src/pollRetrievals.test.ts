@@ -57,6 +57,14 @@ const RESTORED = headResponse(
 );
 const STILL_ARCHIVED = headResponse('DEEP_ARCHIVE');
 
+/** What the SDK throws when HeadObject is pointed at a key that isn't there. */
+function notFound(): Error {
+    return Object.assign(new Error('NotFound'), {
+        name: 'NotFound',
+        $metadata: { httpStatusCode: 404 },
+    });
+}
+
 describe('pollRetrievals', () => {
     let db: MockDb;
     let mocks: MockDbMocks;
@@ -141,16 +149,74 @@ describe('pollRetrievals', () => {
     // it, and the 48h stuck-retrieval check escalates if it never clears.
     it('counts a failed HEAD and keeps going', async () => {
         givenPending([
-            pendingRow({ id: 'r1', s3Key: 'gone' }),
+            pendingRow({ id: 'r1', s3Key: 'broken' }),
             pendingRow({ id: 'r2', s3Key: 'here' }),
         ]);
         hoisted.send
-            .mockRejectedValueOnce(new Error('NoSuchKey'))
+            .mockRejectedValueOnce(new Error('boom'))
             .mockResolvedValueOnce(RESTORED);
 
         const summary = await pollRetrievals(db);
 
         expect(summary).toMatchObject({ checked: 2, ready: 1, errored: 1 });
+    });
+
+    // Nothing will ever restore an object that isn't there, so the row is
+    // settled rather than re-HEADed every 15 minutes until the 48h check.
+    it('fails a retrieval whose object is gone from the bucket', async () => {
+        givenPending([pendingRow({ s3Key: 'gone' })]);
+        hoisted.send.mockRejectedValue(notFound());
+
+        const summary = await pollRetrievals(db);
+
+        expect(summary).toMatchObject({ checked: 1, missing: 1, errored: 0 });
+        expect(mocks.set).toHaveBeenCalledWith(
+            expect.objectContaining({
+                status: 'failed',
+                failedAt: expect.any(Date),
+                errorMessage: 'Object no longer exists in S3',
+            })
+        );
+    });
+
+    // A missing object is a settled answer, so it must not read as a total
+    // outage — otherwise one deleted file would alarm forever.
+    it('does not throw when every row is merely missing', async () => {
+        givenPending([pendingRow({ id: 'r1' }), pendingRow({ id: 'r2' })]);
+        hoisted.send.mockRejectedValue(notFound());
+
+        await expect(pollRetrievals(db)).resolves.toMatchObject({
+            checked: 2,
+            missing: 2,
+        });
+    });
+
+    // The scheduled path has no DLQ: `nexus-worker-errors` watches the Lambda
+    // Errors metric, which only ever sees a whole-invocation throw. Swallowing
+    // a total S3/IAM failure would leave that alarm green through the exact
+    // outage it exists to catch.
+    it('throws when every row errors, so the Lambda error metric sees it', async () => {
+        givenPending([pendingRow({ id: 'r1' }), pendingRow({ id: 'r2' })]);
+        hoisted.send.mockRejectedValue(new Error('AccessDenied'));
+
+        await expect(pollRetrievals(db)).rejects.toThrow(
+            'failed for all 2 pending rows'
+        );
+    });
+
+    it('does not throw when at least one row succeeds', async () => {
+        givenPending([
+            pendingRow({ id: 'r1', s3Key: 'broken' }),
+            pendingRow({ id: 'r2', s3Key: 'here' }),
+        ]);
+        hoisted.send
+            .mockRejectedValueOnce(new Error('AccessDenied'))
+            .mockResolvedValueOnce(STILL_ARCHIVED);
+
+        await expect(pollRetrievals(db)).resolves.toMatchObject({
+            errored: 1,
+            waiting: 1,
+        });
     });
 
     it('reports nothing to do on an empty pending set', async () => {

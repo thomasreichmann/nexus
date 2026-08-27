@@ -69,7 +69,7 @@
             "import": "./src/media.ts",
             "default": "./src/media.ts"
         },
-        "./object-state": {
+        "./objectState": {
             "types": "./src/objectState.ts",
             "import": "./src/objectState.ts",
             "default": "./src/objectState.ts"

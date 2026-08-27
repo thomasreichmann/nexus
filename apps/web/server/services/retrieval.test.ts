@@ -26,7 +26,7 @@ vi.mock('@/lib/storage', () => ({
 }));
 
 import { retrievalService } from './retrieval';
-import type { ObjectAvailability } from '@nexus/db/object-state';
+import type { ObjectAvailability } from '@nexus/db/objectState';
 
 describe('retrieval service', () => {
     let db: MockDb;
@@ -845,6 +845,41 @@ describe('retrieval service', () => {
             await expect(
                 retrievalService.getDownloadUrl(db, TEST_USER_ID, TEST_FILE_ID)
             ).rejects.toThrow(InvalidStateError);
+        });
+
+        // A row pointing at an object that isn't in the bucket is a 404, not a
+        // 500: only a DomainError survives errorHandlerMiddleware as anything
+        // other than INTERNAL_SERVER_ERROR.
+        it('throws NotFoundError when the object is gone from the bucket', async () => {
+            const file = createFileFixture();
+            mocks.files.findFirst.mockResolvedValue(file);
+            vi.spyOn(mockS3.glacier, 'getObjectState').mockRejectedValue(
+                Object.assign(new Error('NotFound'), {
+                    name: 'NotFound',
+                    $metadata: { httpStatusCode: 404 },
+                })
+            );
+
+            await expect(
+                retrievalService.getDownloadUrl(db, TEST_USER_ID, TEST_FILE_ID)
+            ).rejects.toThrow(NotFoundError);
+        });
+
+        // Only a missing object maps: an outage or a lost IAM role must not be
+        // reported to the user as "your file does not exist".
+        it('rethrows a non-404 HeadObject failure untouched', async () => {
+            const file = createFileFixture();
+            mocks.files.findFirst.mockResolvedValue(file);
+            vi.spyOn(mockS3.glacier, 'getObjectState').mockRejectedValue(
+                Object.assign(new Error('AccessDenied'), {
+                    name: 'AccessDenied',
+                    $metadata: { httpStatusCode: 403 },
+                })
+            );
+
+            await expect(
+                retrievalService.getDownloadUrl(db, TEST_USER_ID, TEST_FILE_ID)
+            ).rejects.toThrow('AccessDenied');
         });
     });
 });

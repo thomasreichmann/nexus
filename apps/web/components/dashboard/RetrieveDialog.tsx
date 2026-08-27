@@ -1,6 +1,7 @@
 'use client';
 
 import { Clock, Zap } from 'lucide-react';
+import { isProbablyCold } from '@nexus/db/objectState';
 import {
     AlertDialog,
     AlertDialogAction,
@@ -16,21 +17,33 @@ export interface RetrievalEstimate {
     label: string;
 }
 
+/** What the estimate needs from a file — `isProbablyCold`'s inputs, no more. */
+export interface RetrievableFile {
+    size: number;
+    createdAt: Date;
+}
+
 /**
  * Per-batch time estimate, paced by the slowest item: a batch we expect to be
  * entirely warm completes in the fast path (#257), anything else is quoted at
  * the Deep Archive worst case.
  *
- * The input is a guess, not a fact — S3 owns object state, and the real
- * warm/cold answer is only known once the request reaches the server and HEADs
+ * Takes the files and applies `isProbablyCold` itself rather than taking the
+ * verdicts, so the policy is read in exactly one place — every call site used
+ * to map the files through it on the way in, which is three chances to use a
+ * different rule.
+ *
+ * The answer is a guess, not a fact — S3 owns object state, and the real
+ * warm/cold split is only known once the request reaches the server and HEADs
  * each object (#416). Erring slow is the honest direction: a batch that turns
  * out warm beats its estimate, and nobody is promised minutes for something
  * that takes hours. An empty list is conservatively slow; callers gate on a
  * non-empty selection before opening the dialog.
  */
-export function getRetrievalEstimate(coldness: boolean[]): RetrievalEstimate {
-    const isAllWarm =
-        coldness.length > 0 && coldness.every((isCold) => !isCold);
+export function getRetrievalEstimate(
+    files: RetrievableFile[]
+): RetrievalEstimate {
+    const isAllWarm = files.length > 0 && !files.some((f) => isProbablyCold(f));
     return isAllWarm
         ? { speed: 'fast', label: 'Ready in ~minutes' }
         : { speed: 'slow', label: 'Ready in up to 12 hours' };
@@ -39,11 +52,8 @@ export function getRetrievalEstimate(coldness: boolean[]): RetrievalEstimate {
 interface RetrieveDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    /**
-     * Per-item `isProbablyCold` hints for the selection; drives the estimate.
-     * A policy expectation, not a claim — see `getRetrievalEstimate`.
-     */
-    coldness: boolean[];
+    /** The files being retrieved; the estimate is derived from these. */
+    files: RetrievableFile[];
     fileCount: number;
     onConfirm: () => void;
 }
@@ -56,11 +66,11 @@ interface RetrieveDialogProps {
 export function RetrieveDialog({
     open,
     onOpenChange,
-    coldness,
+    files,
     fileCount,
     onConfirm,
 }: RetrieveDialogProps) {
-    const estimate = getRetrievalEstimate(coldness);
+    const estimate = getRetrievalEstimate(files);
     const EstimateIcon = estimate.speed === 'fast' ? Zap : Clock;
 
     return (

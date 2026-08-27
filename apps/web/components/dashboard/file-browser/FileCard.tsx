@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { isProbablyCold } from '@nexus/db/object-state';
+import { isProbablyCold } from '@nexus/db/objectState';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDuration } from '@/lib/format';
@@ -63,11 +63,7 @@ export function FileCard({
                         )}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <FileActions
-                            status={status}
-                            isCold={isCold}
-                            {...actions}
-                        />
+                        <FileActions status={status} file={file} {...actions} />
                     </div>
                 </div>
                 <CardMedia

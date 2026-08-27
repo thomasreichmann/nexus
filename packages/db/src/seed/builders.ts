@@ -1,6 +1,10 @@
 import { and, eq, notInArray, sum, count } from 'drizzle-orm';
 import * as schema from '../schema';
-import { DEFAULT_RESTORE_DAYS_TO_KEEP } from '../schema';
+import {
+    DEFAULT_RESTORE_DAYS_TO_KEEP,
+    LIFECYCLE_TRANSITION_LAG_HOURS,
+    LIFECYCLE_TRANSITION_MIN_BYTES,
+} from '../objectState';
 import { HIDDEN_STATUSES } from '../repositories/files';
 import {
     SEED_USER_PREFIX,
@@ -15,6 +19,7 @@ import {
     randomInt,
     randomPick,
     randomDate,
+    hoursAgo,
 } from './constants';
 import type { DB } from '../connection';
 import type {
@@ -59,7 +64,25 @@ export async function buildUser(
 
 // File builder
 
-const DEFAULT_SIZE_RANGE = { min: 100_000, max: 500_000_000 };
+// Above the lifecycle floor by construction: a seeded file smaller than it can
+// never read as cold however old it is, and pinning the floor here rather than
+// repeating a literal means moving `object_size_greater_than` moves the seeds
+// with it.
+const DEFAULT_SIZE_RANGE = {
+    min: LIFECYCLE_TRANSITION_MIN_BYTES + 1,
+    max: 500_000_000,
+};
+
+/**
+ * A creation date far enough back that `isProbablyCold` is certain to say yes,
+ * spread over the week before the cutoff so a guaranteed-cold batch doesn't
+ * render as N identical timestamps. Deliberately ignores `createdAtRange` —
+ * the guarantee is the point, and a caller that wants a specific window
+ * shouldn't also be asking for cold files.
+ */
+function coldCreatedAt(): Date {
+    return hoursAgo(LIFECYCLE_TRANSITION_LAG_HOURS + randomInt(1, 168));
+}
 
 export async function buildFiles(
     db: DB,
@@ -70,6 +93,7 @@ export async function buildFiles(
         count: fileCount = 10,
         sizeRange = DEFAULT_SIZE_RANGE,
         createdAtRange,
+        coldCount = 0,
     } = options;
 
     if (fileCount === 0) return [];
@@ -86,10 +110,19 @@ export async function buildFiles(
         // Use template size range if it overlaps with requested range, else use requested
         const effectiveMin = Math.max(sizeRange.min, templateMin);
         const effectiveMax = Math.min(sizeRange.max, templateMax);
-        const size =
+        const drawnSize =
             effectiveMin <= effectiveMax
                 ? randomInt(effectiveMin, effectiveMax)
                 : randomInt(sizeRange.min, sizeRange.max);
+
+        // The first `coldCount` files are cold by construction — size above the
+        // lifecycle floor, age past the lag — so a caller that needs N
+        // retrievable files gets N, rather than however many a random draw
+        // happened to age past the cutoff.
+        const isGuaranteedCold = i < coldCount;
+        const size = isGuaranteedCold
+            ? Math.max(drawnSize, LIFECYCLE_TRANSITION_MIN_BYTES + 1)
+            : drawnSize;
 
         // Add index suffix to avoid duplicate names
         const ext = baseName.includes('.')
@@ -100,7 +133,9 @@ export async function buildFiles(
             : baseName;
         const name = `${stem}-${String(i + 1).padStart(3, '0')}${ext}`;
 
-        const createdAt = randomDate(dateRange.from, dateRange.to);
+        const createdAt = isGuaranteedCold
+            ? coldCreatedAt()
+            : randomDate(dateRange.from, dateRange.to);
 
         return {
             id,

@@ -1,5 +1,5 @@
 import { RestoreObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
-import { interpretObjectState } from '@nexus/db/object-state';
+import { interpretObjectState } from '@nexus/db/objectState';
 import { client, bucket } from './client';
 import { DEFAULT_RESTORE_DAYS_TO_KEEP } from './types';
 import type { RestoreTier, ObjectState } from './types';

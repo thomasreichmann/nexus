@@ -28,6 +28,12 @@ is required anyway, don't run a single spec first "to check": that doubles
 the build+boot cost for no extra signal. Single-spec runs are for iterating
 on a spec you're actively writing.
 
+**Known red: `test:e2e` in one go fails `admin/jobs.spec.ts` (#419).** Each
+tier is green on its own. The `flows` tier's upload specs enqueue real
+`generate-thumbnail` rows that nothing cleans up, and they crowd the admin
+jobs table ahead of the admin tier's seeded rows. Not your change — clear the
+leftover jobs and admin passes. Prefer the per-tier commands above.
+
 Do NOT run `test:e2e:validate` unless explicitly asked — it's destructive
 (real S3 objects, mutates the dev user's quota).
 

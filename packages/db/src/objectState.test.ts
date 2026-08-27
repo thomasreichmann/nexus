@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
     interpretObjectState,
+    isObjectMissing,
     isProbablyCold,
     isReadable,
     LIFECYCLE_TRANSITION_LAG_HOURS,
     LIFECYCLE_TRANSITION_MIN_BYTES,
 } from './objectState';
-
-const hoursAgo = (h: number): Date => new Date(Date.now() - h * 3_600_000);
+import { hoursAgo } from './seed/constants';
 
 describe('interpretObjectState', () => {
     // S3 omits StorageClass for STANDARD rather than sending it, so an absent
@@ -98,5 +98,49 @@ describe('isProbablyCold', () => {
                 createdAt: old,
             })
         ).toBe(false);
+    });
+});
+
+// The app maps this to a 404 and the poll settles the retrieval on it, so a
+// false positive would tell a user their file is gone over a transient.
+describe('isObjectMissing', () => {
+    it('recognises the SDK NotFound error', () => {
+        expect(
+            isObjectMissing(
+                Object.assign(new Error('NotFound'), {
+                    name: 'NotFound',
+                    $metadata: { httpStatusCode: 404 },
+                })
+            )
+        ).toBe(true);
+    });
+
+    it('recognises a bare 404 whatever the error is named', () => {
+        expect(
+            isObjectMissing(
+                Object.assign(new Error('nope'), {
+                    $metadata: { httpStatusCode: 404 },
+                })
+            )
+        ).toBe(true);
+    });
+
+    // HeadObject answers a denied key with 403, so a lost IAM role must never
+    // read as a lost object.
+    it('is false for a permission failure', () => {
+        expect(
+            isObjectMissing(
+                Object.assign(new Error('AccessDenied'), {
+                    name: 'AccessDenied',
+                    $metadata: { httpStatusCode: 403 },
+                })
+            )
+        ).toBe(false);
+    });
+
+    it('is false for a plain error and for non-objects', () => {
+        expect(isObjectMissing(new Error('socket hang up'))).toBe(false);
+        expect(isObjectMissing(undefined)).toBe(false);
+        expect(isObjectMissing('NotFound')).toBe(false);
     });
 });

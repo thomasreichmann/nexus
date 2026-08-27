@@ -24,6 +24,15 @@ export interface FileBuilderOptions {
     sizeRange?: { min: number; max: number };
     /** Spread file creation dates over this range for realistic upload history */
     createdAtRange?: { from: Date; to: Date };
+    /**
+     * Guarantee that at least this many of the seeded files read as
+     * `isProbablyCold` — use it whenever the caller goes on to attach N
+     * retrievals, so `files.filter(isProbablyCold)` can't come back short.
+     * These files are sized above the lifecycle floor and dated past the lag
+     * regardless of `sizeRange`/`createdAtRange`; the rest stay random, so a
+     * seed still contains warm files to exercise the direct-download path.
+     */
+    coldCount?: number;
 }
 
 export interface RetrievalBuilderOptions {

@@ -1,13 +1,14 @@
-// Re-export from canonical source in @nexus/db
+// Re-export from the canonical source in @nexus/db. Everything here comes from
+// `@nexus/db/objectState`, never `@nexus/db/schema`: `RetrieveDialog` imports
+// `DEFAULT_RESTORE_DAYS_TO_KEEP` from this file, so reaching for the schema
+// barrel would ship drizzle and every table definition to the browser.
 export {
     DEFAULT_RESTORE_DAYS_TO_KEEP,
     RESTORE_TIERS,
     type RestoreTier,
-} from '@nexus/db/schema';
-
-// Object-state semantics are shared with the worker's retrieval poll, so they
-// live in @nexus/db — see that module's docblock.
-export type { ObjectState, ObjectAvailability } from '@nexus/db/object-state';
+    type ObjectState,
+    type ObjectAvailability,
+} from '@nexus/db/objectState';
 
 export interface PutPresignOptions {
     contentType?: string;

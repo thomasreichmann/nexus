@@ -12,7 +12,7 @@ import {
     cleanupFiles,
     cleanupSeedDataForUser,
 } from '@nexus/db/seed';
-import { isProbablyCold } from '@nexus/db/object-state';
+import { isProbablyCold } from '@nexus/db/objectState';
 import { TrialExpiredError } from '@/server/errors';
 import { devToolsProcedure, router } from '../init';
 import type { DB } from '@nexus/db';
@@ -32,6 +32,7 @@ async function seedUserFiles(
 ): Promise<{ files: number; retrievals: number }> {
     const files = await buildFiles(db, userId, {
         count: input.fileCount,
+        coldCount: input.retrievalCount,
     });
 
     let retrievalCount = 0;

@@ -17,9 +17,14 @@ export type DerivedStatus = 'archived' | 'retrieving' | 'available';
 // counts must match the per-row status dots derived here.
 export function deriveStatus(file: FileWithRetrieval): DerivedStatus {
     // The active retrieval wins, uniformly across tiers (#259): a ready row
-    // is downloadable within its window, a queued/restoring row is in
-    // flight. Without one the file sits archived — never Download, since
-    // getDownloadUrl can't serve without a ready retrieval (#256).
+    // is downloadable within its window, a queued/restoring row is in flight.
+    //
+    // Without one the file reads as archived. That is a deliberate floor, not
+    // a claim: since #416 `getDownloadUrl` gates on a live HeadObject, so a
+    // warm object *would* download with no retrieval row at all — but only S3
+    // can say which objects those are, and this runs per row in the browser
+    // with nothing but `files`. Offering Download on the strength of
+    // `isProbablyCold` would promise a download we can't keep.
     if (file.activeRetrieval) {
         return file.activeRetrieval.status === 'ready'
             ? 'available'

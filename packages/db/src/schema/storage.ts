@@ -9,35 +9,19 @@ import {
     index,
     uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { RESTORE_TIERS } from '../objectState';
 import { user } from './auth';
 import { timestamps } from './helpers';
 
-/**
- * Glacier restore tier values - determines retrieval speed and cost
- *
- * For Deep Archive (MVP default):
- * - expedited: Not available for Deep Archive
- * - standard: 12-48 hours
- * - bulk: 48 hours (cheapest)
- *
- * For Glacier Flexible Retrieval:
- * - expedited: 1-5 minutes (most expensive)
- * - standard: 3-5 hours
- * - bulk: 5-12 hours
- */
-export const RESTORE_TIERS = ['standard', 'bulk', 'expedited'] as const;
-export type RestoreTier = (typeof RESTORE_TIERS)[number];
-
-/**
- * Days a restored Glacier copy stays accessible. Also the length of the
- * synthetic download window for standard-tier retrievals, which skip S3
- * restore entirely — keep the two in lockstep so both tiers present the
- * same window.
- *
- * Lives here beside `RESTORE_TIERS` rather than in `apps/web` so seeds and
- * test-db helpers can reach it — they can't import from the app (#364).
- */
-export const DEFAULT_RESTORE_DAYS_TO_KEEP = 7;
+// The retrieval-policy constants are defined in `../objectState`, not here:
+// client components import them, and reaching them through this file would
+// ship drizzle and every table below to the browser. Re-exported so
+// `@nexus/db/schema` consumers still find them where they always were.
+export {
+    RESTORE_TIERS,
+    DEFAULT_RESTORE_DAYS_TO_KEEP,
+    type RestoreTier,
+} from '../objectState';
 
 // Nexus domain tables
 

@@ -47,6 +47,12 @@ pnpm -F worker test         # Run tests
 pnpm -F worker lint         # Lint
 ```
 
+There is no local runner: the worker only ever executes as a Lambda. To
+exercise the retrieval poll without waiting up to 15 minutes for the schedule,
+invoke the deployed function with an empty payload — the same shape EventBridge
+sends. Recipe in the
+[Background Jobs Runbook](../../docs/guides/background-jobs.md#run-the-retrieval-poll-on-demand).
+
 ## Environment
 
 The worker does not read `.env` files or Vercel env, and does not use the web

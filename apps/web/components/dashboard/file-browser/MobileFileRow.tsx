@@ -1,6 +1,6 @@
 'use client';
 
-import { isProbablyCold } from '@nexus/db/object-state';
+import { isProbablyCold } from '@nexus/db/objectState';
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDate } from '@/lib/format';
 import { StackedListRow } from '@/components/ui/stacked-list';
@@ -64,11 +64,7 @@ export function MobileFileRow({
                 <>
                     <StatusDot status={status} isCold={isCold} />
                     <div onClick={(e) => e.stopPropagation()}>
-                        <FileActions
-                            status={status}
-                            isCold={isCold}
-                            {...actions}
-                        />
+                        <FileActions status={status} file={file} {...actions} />
                     </div>
                 </>
             }

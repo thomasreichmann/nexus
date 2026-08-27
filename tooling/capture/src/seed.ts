@@ -6,14 +6,13 @@ import {
     insertUploadBatch,
     type RetrievalSpec,
 } from '@nexus/db/test-db';
+import { daysAgo, hoursAgo } from '@nexus/db/seed';
 
 import type { Db } from './db';
 import type { CaptureUser } from './scene';
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
-const daysAgo = (d: number): Date => new Date(Date.now() - d * 86_400_000);
-const hoursAgo = (h: number): Date => new Date(Date.now() - h * 3_600_000);
 
 interface DemoFile {
     name: string;

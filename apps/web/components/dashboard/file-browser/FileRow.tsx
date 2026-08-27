@@ -1,6 +1,6 @@
 'use client';
 
-import { isProbablyCold } from '@nexus/db/object-state';
+import { isProbablyCold } from '@nexus/db/objectState';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDate } from '@/lib/format';
@@ -81,7 +81,7 @@ export function FileRow({
                 )}
             </TableCell>
             <TableCell onClick={(e) => e.stopPropagation()}>
-                <FileActions status={status} isCold={isCold} {...actions} />
+                <FileActions status={status} file={file} {...actions} />
             </TableCell>
         </TableRow>
     );

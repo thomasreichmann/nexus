@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { isProbablyCold } from '@nexus/db/object-state';
+import { isProbablyCold } from '@nexus/db/objectState';
 import { useTRPC } from '@/lib/trpc/client';
 import {
     DropdownMenu,
@@ -27,6 +27,7 @@ import { captureEvent } from '@/lib/posthog/client';
 import { PostHogEvent } from '@/lib/posthog/events';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
 import { toastContext } from '@/lib/trpc/error-link';
+import type { RetrievableFile } from '@/components/dashboard/RetrieveDialog';
 import { toastRetrievalResult } from './retrievalFeedback';
 import type { FileWithRetrieval } from '@nexus/db/repo/files';
 import type { DerivedStatus } from './status';
@@ -85,8 +86,8 @@ export function useFileActions(file: FileWithRetrieval) {
 
 interface FileActionsProps {
     status: DerivedStatus;
-    /** `isProbablyCold` for this file; drives the retrieve-time estimate. */
-    isCold: boolean;
+    /** The file this menu acts on; the retrieve dialog estimates from it. */
+    file: RetrievableFile;
     onDelete: () => void;
     onRetrieval: () => void;
     onDownload: () => void;
@@ -96,7 +97,7 @@ interface FileActionsProps {
 
 export function FileActions({
     status,
-    isCold,
+    file,
     onDelete,
     onRetrieval,
     onDownload,
@@ -111,7 +112,7 @@ export function FileActions({
             <RetrieveDialog
                 open={isRetrieveDialogOpen}
                 onOpenChange={setIsRetrieveDialogOpen}
-                coldness={[isCold]}
+                files={[file]}
                 fileCount={1}
                 onConfirm={onRetrieval}
             />

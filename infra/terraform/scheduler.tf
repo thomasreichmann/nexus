@@ -62,9 +62,15 @@ resource "aws_iam_role_policy" "retrieval_poll_invoke" {
 }
 
 # The scheduled path has no DLQ — an SQS-shaped failure story does not fit a
-# timer — so a poll that throws every run would otherwise be silent. This is
+# timer — so a poll that fails every run would otherwise be silent. This is
 # the detector: the function's own error metric, scoped by the same ops-alerts
 # rail as the DLQ alarms.
+#
+# This only works because the poll throws when every pending row fails
+# (`pollRetrievals.ts`). Errors is a whole-invocation metric: a run that
+# swallows per-row failures and returns a summary is a *success* to CloudWatch,
+# however many rows it lost. Keep the two in step — going back to counting
+# errors without rethrowing re-opens exactly the blind spot this alarm covers.
 resource "aws_cloudwatch_metric_alarm" "worker_errors" {
   alarm_name          = "nexus-worker-errors-${var.environment}"
   alarm_description   = "The worker Lambda is throwing; the retrieval poll may not be marking restores ready (#416)"

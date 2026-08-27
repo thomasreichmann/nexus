@@ -10,7 +10,11 @@ import {
     type RetrievalRepo,
 } from '@nexus/db/repo/retrievals';
 import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
-import { isReadable, restoreWindowEnd } from '@nexus/db/object-state';
+import {
+    isObjectMissing,
+    isReadable,
+    restoreWindowEnd,
+} from '@nexus/db/objectState';
 import { createSemaphore } from '@/lib/async/semaphore';
 import { toErrorMessage } from '@/lib/errors';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
@@ -391,7 +395,18 @@ async function getDownloadUrl(
     // Whether the bytes can be served is a question for S3, not for a row
     // that hopes to know (#416). A warm or already-restored object downloads
     // directly; a cold one does not, however `ready` its retrieval looks.
-    const state = await s3.glacier.getObjectState(file.s3Key);
+    let state: ObjectState;
+    try {
+        state = await s3.glacier.getObjectState(file.s3Key);
+    } catch (err) {
+        // The object is gone while the row still says otherwise — a delete
+        // outside the app, a lifecycle expiry, or seed data whose keys were
+        // never in the bucket. That is the same not-found the caller gets for
+        // a missing row: only a DomainError reaches the client as anything
+        // other than INTERNAL_SERVER_ERROR (see errorHandlerMiddleware).
+        if (isObjectMissing(err)) throw new NotFoundError('File', fileId);
+        throw err;
+    }
     if (!isReadable(state)) {
         throw new InvalidStateError('File retrieval is not ready for download');
     }
