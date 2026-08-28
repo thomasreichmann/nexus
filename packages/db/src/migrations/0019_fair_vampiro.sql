@@ -4,9 +4,9 @@
 -- `retrievals_active_file_id_idx` allows only one active retrieval per file),
 -- and `retrieval_artifacts` the 1..N zips it is delivered as (#424 builds them).
 --
--- Purely additive. `retrievals.batch_id` is deprecated by this change but not
--- dropped: the bundle still deployed when this migration lands writes it, so
--- the DROP COLUMN ships alone in a later PR (expand/contract, conventions.md).
+-- Purely additive. `retrievals.batch_id` is deprecated by this change but left
+-- in place: the bundle still deployed when this migration lands writes it, so
+-- removing the column ships alone in #428 (expand/contract, conventions.md).
 CREATE TYPE "public"."retrieval_artifact_status" AS ENUM('pending', 'building', 'ready', 'failed');--> statement-breakpoint
 CREATE TABLE "retrieval_artifacts" (
 	"id" text PRIMARY KEY NOT NULL,
