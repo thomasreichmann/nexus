@@ -66,6 +66,38 @@ resource "aws_iam_user" "ci" {
   name = "nexus-ci-${var.environment}"
 }
 
+# Worker-deploy IAM user (#417 follow-up)
+#
+# post-merge.yml ships the worker bundle on every merge (apps/worker/scripts/
+# deploy.sh) so the Lambda code plane moves with the schema plane instead of
+# waiting on a human. Scoped to exactly that: update + read the worker
+# function's code. Access keys are created manually, like the app user's
+# (README.md), and land in GitHub Actions secrets
+# DEPLOY_AWS_ACCESS_KEY_ID[_PROD] / DEPLOY_AWS_SECRET_ACCESS_KEY[_PROD].
+resource "aws_iam_user" "deploy" {
+  name = "nexus-deploy-${var.environment}"
+}
+
+resource "aws_iam_user_policy" "deploy_worker_code" {
+  name = "nexus-deploy-worker-code-${var.environment}"
+  user = aws_iam_user.deploy.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "lambda:UpdateFunctionCode",
+        # get-function backs both the post-update waiter and the CodeSha256
+        # verification in deploy.sh.
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+      ]
+      Resource = aws_lambda_function.worker.arn
+    }]
+  })
+}
+
 resource "aws_iam_user_policy" "ci_s3_read" {
   name = "nexus-ci-s3-read-${var.environment}"
   user = aws_iam_user.ci.name

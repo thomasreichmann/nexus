@@ -121,6 +121,27 @@ See [[../guides/server-architecture|Server Architecture Guide]] for the full lay
 - The proxy is **not** real protection: a forged cookie gets past it, sees an empty shell, and 401s. Real enforcement is tRPC's `protectedProcedure`.
 - Any dashboard page that fetches data in a **server component** must do its own `auth.api.getSession` check (precedent: `app/(dashboard)/dashboard/admin/layout.tsx`) — the proxy does not cover it.
 
+## DB Migrations (Expand/Contract)
+
+Learned from #417: a PR dropped `files.storage_tier` and shipped the worker
+code that stopped reading it — in the same merge. `post-merge.yml` migrated
+dev and prod within ~1 minute, while the worker bundle (then a manual deploy)
+still SELECTed the dropped column for another ~7 minutes on prod.
+
+- **Every migration must be compatible with the bundle deployed both before
+  and after its merge.** Migrations are the fastest deploy plane (dev + prod
+  within ~1 minute of merge); Vercel and the worker deploy follow later.
+- **Destructive DDL ships alone** (`DROP TABLE`/`DROP COLUMN`, `RENAME`,
+  `SET DATA TYPE`): first merge the code that stops referencing the object
+  and wait until it is fully deployed on every plane (web + worker), then
+  merge the migration in its own PR.
+- The same sequencing applies to infra rails: don't remove the old path
+  (webhook route, queue, schedule) in the same merge that requires the new
+  one — provision the new path first, remove the old one in a follow-up.
+- `pr-check.yml` fails on destructive DDL unless the PR carries the
+  `migration:destructive` label — the author's acknowledgment that every
+  consumer is already deployed without references.
+
 ## Issue-Driven Development
 
 All non-trivial work requires a GitHub Issue with scope, acceptance criteria, and out-of-scope.

@@ -40,26 +40,20 @@ The examples below use dev (`nexus-worker-dev`, `nexus-jobs-dev`, …); substitu
 
 ## Deploy Updated Worker Code
 
+Worker code deploys **automatically on every merge to main**: `post-merge.yml`
+runs `apps/worker/scripts/deploy.sh` against dev after the dev migration, then
+against prod after the prod migration (as `nexus-deploy-<env>`, an IAM user
+scoped to `UpdateFunctionCode` on the worker function).
+
+Run the same script manually for a first deploy, rollback, or hotfix:
+
 ```bash
-# 1. Build the worker
-pnpm -F worker build
-
-# 2. Create deployment zip (include package.json for ESM)
-cd apps/worker/dist
-echo '{"type":"module"}' > package.json
-zip -r ../worker.zip .
-cd ..
-
-# 3. Update Lambda function code
-aws lambda update-function-code \
-    --function-name nexus-worker-dev \
-    --zip-file fileb://worker.zip \
-    --region us-east-1
-
-# 4. Verify deployment
-aws lambda get-function --function-name nexus-worker-dev --region us-east-1 \
-    --query 'Configuration.{State:State,LastModified:LastModified,CodeSize:CodeSize}'
+pnpm -F worker deploy:dev   # or: deploy:prod
 ```
+
+It builds, zips (with the ESM `package.json`), calls
+`aws lambda update-function-code`, waits for the update to settle, and
+verifies the deployed `CodeSha256` matches the local zip.
 
 ## Lambda Environment Variables
 

@@ -1,8 +1,10 @@
 name: PR Check
 
+# labeled/unlabeled: the destructive-migration gate passes via the
+# migration:destructive label, so toggling it must re-run the check.
 on:
     pull_request:
-        types: [opened, edited, synchronize, reopened]
+        types: [opened, edited, synchronize, reopened, labeled, unlabeled]
 
 jobs:
     check-issue-reference:
@@ -24,6 +26,86 @@ jobs:
 
                       Valid no-issue reasons: typo, docs only, ci config, deps, hotfix`);
                       }
+
+    # Expand/contract tripwire (#417 follow-up): post-merge.yml applies
+    # migrations to dev AND prod within ~1 minute of merge, while Vercel and
+    # the worker deploy follow later — so a migration that drops or reshapes
+    # something the deployed bundles still reference opens a breakage window
+    # no deploy speed can close. Destructive DDL must ship alone, in a PR
+    # merged only after every consumer already runs code that no longer
+    # touches the object (docs/ai/conventions.md → DB Migrations). The
+    # migration:destructive label is the author's acknowledgment that the
+    # sequencing is satisfied.
+    check-destructive-migrations:
+        name: Check destructive migrations
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Fail on unacknowledged destructive DDL
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      const { execSync } = require('child_process');
+                      const fs = require('fs');
+
+                      const base = context.payload.pull_request.base.sha;
+                      const head = context.payload.pull_request.head.sha;
+                      const diff = execSync(
+                        `git diff --name-only --diff-filter=AM ${base}...${head} -- 'packages/db/src/migrations/*.sql'`,
+                        { encoding: 'utf8' }
+                      ).trim();
+                      if (!diff) return;
+
+                      // Statements that break a bundle still referencing the
+                      // old shape. DROP INDEX et al. are perf-only and pass.
+                      const destructive = [
+                        /\bDROP\s+TABLE\b/i,
+                        /\bDROP\s+COLUMN\b/i,
+                        /\bRENAME\s+COLUMN\b/i,
+                        /\bRENAME\s+TO\b/i,
+                        /\bSET\s+DATA\s+TYPE\b/i,
+                      ];
+
+                      const hits = [];
+                      for (const file of diff.split('\n')) {
+                        const lines = fs.readFileSync(file, 'utf8').split('\n');
+                        lines.forEach((line, i) => {
+                          if (destructive.some(re => re.test(line))) {
+                            hits.push(`${file}:${i + 1}: ${line.trim()}`);
+                          }
+                        });
+                      }
+                      if (hits.length === 0) {
+                        console.log('Migrations present, no destructive DDL.');
+                        return;
+                      }
+
+                      const labels = context.payload.pull_request.labels.map(l => l.name);
+                      if (labels.includes('migration:destructive')) {
+                        console.log('Destructive DDL acknowledged via migration:destructive label:');
+                        hits.forEach(h => console.log(`  ${h}`));
+                        return;
+                      }
+
+                      core.setFailed([
+                        'This PR contains destructive DDL:',
+                        ...hits.map(h => `  ${h}`),
+                        '',
+                        'post-merge.yml applies migrations to dev AND prod within ~1 minute of',
+                        'merge, before Vercel and the worker deploy finish — a bundle still',
+                        'referencing the dropped/renamed object breaks for that window.',
+                        '',
+                        'Destructive migrations must ship alone (expand/contract): merge the code',
+                        'that stops referencing the object first, wait until it is fully deployed',
+                        'on every plane (web + worker), then merge the migration in its own PR.',
+                        '',
+                        'If that sequencing is satisfied, add the migration:destructive label to',
+                        'this PR to acknowledge and re-run this check.',
+                      ].join('\n'));
 
     flag-migrations:
         name: Flag migrations
@@ -92,12 +174,12 @@ jobs:
                         MARKER,
                         '## :warning: This PR contains DB migration(s)',
                         '',
-                        'On merge, `post-merge.yml` applies these to the dev database, then to prod once the dev apply succeeds; smoke tests run against dev. If either apply fails, the workflow fails loudly.',
+                        'On merge, `post-merge.yml` applies these to the dev database, then to prod once the dev apply succeeds; the worker bundle deploys after each apply, and smoke tests run against dev. If any step fails, the workflow fails loudly.',
                         '',
                         sqlBlocks,
                         '',
                         '**Reviewer checklist:**',
-                        '- [ ] Migration is additive, or paired with a code change that tolerates pre-migration state',
+                        '- [ ] Migration is additive, or ships alone per the expand/contract rule (`migration:destructive` label — see the destructive-migrations check)',
                         '- [ ] No `ALTER TABLE ... ADD COLUMN ... NOT NULL` without a default or backfill',
                         '- [ ] Indexes use `CONCURRENTLY` if the table has meaningful row count',
                         '- [ ] If perf-only, justify with a query plan in the PR description',
