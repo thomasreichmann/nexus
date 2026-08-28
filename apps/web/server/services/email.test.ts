@@ -6,14 +6,14 @@ import {
     createUserFixture,
     TEST_USER_ID,
 } from '@nexus/db/testing';
-import { mockEmail } from '@/lib/email/testing';
+import { mockEmail } from '@nexus/email/testing';
 
 const hoisted = await vi.hoisted(async () => {
     const { createMockLogger } = await import('@/server/lib/logger/testing');
     return { logger: createMockLogger(), alertsSend: vi.fn() };
 });
 
-vi.mock('@/lib/email', () => ({
+vi.mock('@nexus/email', () => ({
     email: mockEmail,
 }));
 

@@ -75,6 +75,16 @@ const ASYMMETRY_ALLOWLIST: Record<
         missingFrom: ['development'],
         reason: 'production+preview only by design',
     },
+    // The server-side capture switch that replaced `process.env.VERCEL`
+    // (#425). Production+preview for the same reason as the key above: in the
+    // development tier it would reach .env.local via env:pull and turn capture
+    // on for local runs and the e2e production builds. Listed here so the
+    // asymmetry is intentional — its absence from *production* still fails,
+    // which is what catches server analytics silently going dark.
+    ANALYTICS_ENABLED: {
+        missingFrom: ['development'],
+        reason: 'production+preview only by design',
+    },
 };
 
 const DEFAULT_PROJECT_ID = 'prj_RuKjFko6iKwbyyIy55HYL5S5AabG';

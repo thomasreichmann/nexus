@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
-import { resendClient, fromEmail } from './client';
+
+import { getFromEmail, getResendClient } from './client';
 
 export interface SendEmailOptions {
     to: string;
@@ -13,8 +14,8 @@ export interface SendEmailOptions {
  * decide how to handle it (the Resend SDK returns errors instead of throwing).
  */
 export async function send(options: SendEmailOptions): Promise<void> {
-    const { error } = await resendClient.emails.send({
-        from: fromEmail,
+    const { error } = await getResendClient().emails.send({
+        from: getFromEmail(),
         to: options.to,
         subject: options.subject,
         react: options.react,

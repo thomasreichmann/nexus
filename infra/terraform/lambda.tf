@@ -131,6 +131,28 @@ resource "aws_lambda_function" "worker" {
       S3_BUCKET         = aws_s3_bucket.files.bucket
       S3_DERIVED_BUCKET = aws_s3_bucket.derived.bucket
       SQS_QUEUE_URL     = aws_sqs_queue.jobs.url
+
+      # Notification plumbing (#425). The worker owns retrieval completion
+      # since #416 moved it off the SNS webhook, so it owns the "your restore
+      # is ready" email too. APP_URL is the link target: the email points at
+      # the app (sign in -> file focused -> Download), never a presigned S3
+      # URL, which expires in an hour while the restore stays downloadable for
+      # days. Same host the ops-alerts subscription uses.
+      APP_URL           = "https://${var.app_domain}"
+      RESEND_API_KEY    = var.resend_api_key
+      RESEND_FROM_EMAIL = var.resend_from_email
+
+      # Server-side analytics is opt-in per runtime. The app used to gate on
+      # `process.env.VERCEL`, which Lambda never sets — so this flag is what
+      # lets the worker report at all. An empty posthog_key still disables it:
+      # @nexus/analytics never constructs a client without a key.
+      ANALYTICS_ENABLED = "true"
+      POSTHOG_KEY       = var.posthog_key
+      # The vocabulary the app reports (VERCEL_ENV), not Terraform's dev/prod
+      # names: PostHog's "filter out internal and test users" toggle is
+      # configured against this property, so a value it doesn't recognise
+      # would quietly leak dev traffic into production insights.
+      ANALYTICS_ENVIRONMENT = var.environment == "prod" ? "production" : "development"
     }
   }
 

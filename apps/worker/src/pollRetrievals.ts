@@ -49,12 +49,6 @@ type RowOutcome = 'ready' | 'waiting' | 'missing' | 'errored';
  *
  * Rows are processed serially, so exactly one query is ever in flight and the
  * pool never opens a second connection.
- *
- * Deliberately does NOT send the "your file is ready" email or capture the
- * PostHog `RetrievalReady` event, which the deleted webhook used to do: both
- * need Resend/PostHog credentials and templates the worker bundle does not
- * carry. Deferred to #418 — until that lands, a completed retrieval is
- * visible in the UI but nothing notifies the user.
  */
 export async function pollRetrievals(db: DB): Promise<PollSummary> {
     const retrievalRepo = createRetrievalRepo(db);

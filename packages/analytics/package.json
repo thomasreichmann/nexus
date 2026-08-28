@@ -1,0 +1,42 @@
+{
+    "name": "@nexus/analytics",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "exports": {
+        "./events": {
+            "types": "./src/events.ts",
+            "import": "./src/events.ts",
+            "default": "./src/events.ts"
+        },
+        "./hosts": {
+            "types": "./src/hosts.ts",
+            "import": "./src/hosts.ts",
+            "default": "./src/hosts.ts"
+        },
+        "./server": {
+            "types": "./src/server.ts",
+            "import": "./src/server.ts",
+            "default": "./src/server.ts"
+        }
+    },
+    "scripts": {
+        "test": "vitest",
+        "test:run": "vitest run",
+        "test:coverage": "vitest run --coverage",
+        "typecheck": "tsc --noEmit",
+        "lint": "eslint src/"
+    },
+    "dependencies": {
+        "posthog-node": "^5.46.1"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.39.2",
+        "@types/node": "^20",
+        "@vitest/coverage-v8": "^4.0.18",
+        "eslint": "^9.39.2",
+        "typescript": "^5",
+        "typescript-eslint": "^8.67.0",
+        "vitest": "^4.0.18"
+    }
+}

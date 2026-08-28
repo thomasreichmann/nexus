@@ -1,15 +1,15 @@
 /**
  * Testing utilities for mocking transactional email
  *
- * Provides a deterministic mock for `@/lib/email`'s `email` export so unit
+ * Provides a deterministic mock for `@nexus/email`'s `email` export so unit
  * tests can assert on send calls without hitting Resend or needing an API key.
  *
  * @example
  * ```typescript
  * import { vi } from 'vitest';
- * import { mockEmail } from '@/lib/email/testing';
+ * import { mockEmail } from '@nexus/email/testing';
  *
- * vi.mock('@/lib/email', () => ({ email: mockEmail }));
+ * vi.mock('@nexus/email', () => ({ email: mockEmail }));
  *
  * // mockEmail.send is a vi.fn() — assert it was called with the right args.
  * ```

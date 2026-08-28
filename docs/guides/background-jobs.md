@@ -19,7 +19,7 @@ ai_summary: 'Worker deployment, DLQ inspection, test jobs, logs, and integration
 Operational guide for the SQS + Lambda background job infrastructure. For development patterns and conventions, see [[lambda-development|Lambda Development]].
 
 > [!important] Provisioning lives in Terraform — this doc is operations only.
-> Both environments' queues, Lambdas, and IAM come from [`infra/terraform/`](../../infra/terraform/README.md) (prod #53, dev #127) — queue/Lambda definitions in `sqs.tf` and `lambda.tf`. Resource changes go through Terraform, including Lambda env vars (`DATABASE_URL`, `SQS_QUEUE_URL`) — never `aws lambda update-function-configuration`. Only worker **code** deploys via the CLI (below); Terraform ignores the code package on later applies.
+> Both environments' queues, Lambdas, and IAM come from [`infra/terraform/`](../../infra/terraform/README.md) (prod #53, dev #127) — queue/Lambda definitions in `sqs.tf` and `lambda.tf`. Resource changes go through Terraform, including Lambda env vars (`DATABASE_URL`, `SQS_QUEUE_URL`, and the notification vars added in #425) — never `aws lambda update-function-configuration`. Only worker **code** deploys via the CLI (below); Terraform ignores the code package on later applies.
 
 ## Provisioned Resources
 
@@ -57,7 +57,7 @@ verifies the deployed `CodeSha256` matches the local zip.
 
 ## Lambda Environment Variables
 
-The Lambda environment (`DATABASE_URL`, `S3_BUCKET`, `S3_DERIVED_BUCKET`) is Terraform-managed — change it with a `terraform apply` (`TF_VAR_database_url`), never `aws lambda update-function-configuration`, which Terraform would revert on the next apply.
+The Lambda environment (full table in `apps/worker/README.md`) is Terraform-managed — change it with a `terraform apply` (`TF_VAR_database_url`, `TF_VAR_resend_api_key`; the rest come from the committed tfvars), never `aws lambda update-function-configuration`, which Terraform would revert on the next apply.
 
 ## Lambda Layers (ffmpeg, perl/exiftool)
 
