@@ -12,11 +12,14 @@ import {
     insertUser,
     insertFile,
     insertRetrieval,
+    insertRetrievalRequest,
+    insertRetrievalArtifact,
     deleteUserData,
     type Connection,
 } from '@nexus/db/test-db';
 import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
-import { InvalidStateError } from '@/server/errors';
+import { createRetrievalRequestRepo } from '@nexus/db/repo/retrievalRequests';
+import { InvalidStateError, NotFoundError } from '@/server/errors';
 
 // The database is real; only AWS is faked, so the restore-failure test below
 // exercises the actual unique index and status columns.
@@ -213,6 +216,191 @@ describe('one active retrieval per file (#266)', () => {
         expect(skipped).toEqual([]);
         const active = await repo.findByFileIds([file.id]);
         expect(active.map((r) => r.id)).toEqual([winner.id]);
+    });
+});
+
+// Request-level readiness against real SQL. The unit tests can only pin the
+// all-or-nothing rule on top of a mocked aggregate; the counting itself — and
+// the adoption case that made a join table necessary — needs the database.
+describe('a restore is one request (#422)', () => {
+    const readyNow = () => ({ readyAt: new Date(), expiresAt: future() });
+
+    it('counts every requested file and only flips ready on the last one', async () => {
+        const [first, second] = await Promise.all([
+            insertFile(db, { userId }),
+            insertFile(db, { userId }),
+        ]);
+
+        const { requestId, started } =
+            await retrievalService.requestBulkRetrieval(
+                db,
+                userId,
+                [first.id, second.id],
+                'bulk'
+            );
+
+        const requestRepo = createRetrievalRequestRepo(db);
+        expect(await requestRepo.findReadiness(requestId)).toEqual({
+            totalFiles: 2,
+            readyFiles: 0,
+            isReady: false,
+        });
+
+        const retrievalRepo = createRetrievalRepo(db);
+        const retrievalIdByFileId = new Map(
+            started.map((r) => [r.fileId, r.id])
+        );
+        await retrievalRepo.updateStatus(
+            retrievalIdByFileId.get(first.id)!,
+            'ready',
+            readyNow()
+        );
+        expect(await requestRepo.findReadiness(requestId)).toEqual({
+            totalFiles: 2,
+            readyFiles: 1,
+            isReady: false,
+        });
+
+        await retrievalRepo.updateStatus(
+            retrievalIdByFileId.get(second.id)!,
+            'ready',
+            readyNow()
+        );
+        expect(await requestRepo.findReadiness(requestId)).toEqual({
+            totalFiles: 2,
+            readyFiles: 2,
+            isReady: true,
+        });
+    });
+
+    it('two overlapping requests share one retrieval row and both count it', async () => {
+        const [shared, onlyFirst, onlySecond] = await Promise.all([
+            insertFile(db, { userId }),
+            insertFile(db, { userId }),
+            insertFile(db, { userId }),
+        ]);
+
+        const first = await retrievalService.requestBulkRetrieval(
+            db,
+            userId,
+            [shared.id, onlyFirst.id],
+            'bulk'
+        );
+        const second = await retrievalService.requestBulkRetrieval(
+            db,
+            userId,
+            [shared.id, onlySecond.id],
+            'bulk'
+        );
+
+        expect(second.requestId).not.toBe(first.requestId);
+
+        // The unique index allows one active retrieval per file, so the second
+        // request adopted the first's row instead of starting a second restore.
+        const retrievalRepo = createRetrievalRepo(db);
+        const [sharedRetrieval] = await retrievalRepo.findByFileIds([
+            shared.id,
+        ]);
+        expect(sharedRetrieval).toBeDefined();
+
+        // Both requests still own the shared file — the case a `request_id`
+        // column on `retrievals` could not have expressed, since that one row
+        // can only name a single request.
+        const requestRepo = createRetrievalRequestRepo(db);
+        expect(await requestRepo.findReadiness(first.requestId)).toMatchObject({
+            totalFiles: 2,
+            readyFiles: 0,
+        });
+        expect(await requestRepo.findReadiness(second.requestId)).toMatchObject(
+            {
+                totalFiles: 2,
+                readyFiles: 0,
+            }
+        );
+
+        await retrievalRepo.updateStatus(
+            sharedRetrieval.id,
+            'ready',
+            readyNow()
+        );
+        expect(
+            (await requestRepo.findReadiness(first.requestId)).readyFiles
+        ).toBe(1);
+        expect(
+            (await requestRepo.findReadiness(second.requestId)).readyFiles
+        ).toBe(1);
+    });
+
+    it('a lapsed ready retrieval stops counting toward its request', async () => {
+        const file = await insertFile(db, { userId });
+        s3Mocks.getObjectState.mockResolvedValueOnce({ availability: 'warm' });
+
+        const { requestId } = await retrievalService.requestRetrieval(
+            db,
+            userId,
+            file.id
+        );
+
+        const requestRepo = createRetrievalRequestRepo(db);
+        expect(await requestRepo.findReadiness(requestId)).toEqual({
+            totalFiles: 1,
+            readyFiles: 1,
+            isReady: true,
+        });
+
+        // Same rule the active-retrieval predicate uses: `ready` past its
+        // window is not downloadable, so the request is not ready either.
+        const retrievalRepo = createRetrievalRepo(db);
+        const [row] = await retrievalRepo.findByFileIds([file.id]);
+        await retrievalRepo.updateStatus(row.id, 'ready', {
+            expiresAt: past(),
+        });
+
+        expect(await requestRepo.findReadiness(requestId)).toEqual({
+            totalFiles: 1,
+            readyFiles: 0,
+            isReady: false,
+        });
+    });
+
+    it('getRequestStatus hides another user’s request behind NotFound', async () => {
+        const request = await insertRetrievalRequest(db, { userId });
+
+        await expect(
+            retrievalService.getRequestStatus(db, 'someone-else', request.id)
+        ).rejects.toThrow(NotFoundError);
+    });
+});
+
+describe('retrieval artifacts (#422)', () => {
+    it('a request holds positioned artifacts, one per chunk', async () => {
+        const request = await insertRetrievalRequest(db, { userId });
+
+        await insertRetrievalArtifact(db, {
+            requestId: request.id,
+            position: 0,
+        });
+        const built = await insertRetrievalArtifact(db, {
+            requestId: request.id,
+            position: 1,
+            status: 'ready',
+            s3Key: `${userId}/${request.id}/1.zip`,
+            sizeBytes: 4 * 1024 ** 3,
+        });
+
+        // A chunk sits at the 4 GB cap, past what a 32-bit int holds: the
+        // column reads back as a number, not the string a bigint otherwise
+        // arrives as.
+        expect(built.sizeBytes).toBe(4 * 1024 ** 3);
+
+        // Position is unique per request: re-running a partition after a crash
+        // mid-enqueue must not produce a second chunk 0.
+        await expect(
+            insertRetrievalArtifact(db, {
+                requestId: request.id,
+                position: 0,
+            })
+        ).rejects.toThrow();
     });
 });
 

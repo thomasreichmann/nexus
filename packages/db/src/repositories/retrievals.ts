@@ -27,8 +27,19 @@ export type NewRetrieval = typeof schema.retrievals.$inferInsert;
 export function activeRetrievalFilter() {
     return or(
         inArray(schema.retrievals.status, ['pending', 'in_progress']),
-        and(eq(schema.retrievals.status, 'ready'), readyWindowOpen())
+        readyAndDownloadable()
     );
+}
+
+// A `ready` row whose bytes can actually be fetched right now. Split out of
+// activeRetrievalFilter and exported so the retrieval-request repo counts a
+// request's ready files by the identical rule rather than a second copy of it
+// — a lapsed `ready` row must not make a request look downloadable.
+// Build it per query, never hoist it: it stamps `new Date()` at call time, so
+// a shared fragment would freeze the window at module load.
+export function readyAndDownloadable(): SQL {
+    // and() is only `undefined` when called with no arguments
+    return and(eq(schema.retrievals.status, 'ready'), readyWindowOpen())!;
 }
 
 // The download window on a `ready` row is open while `expiresAt` is unset (S3

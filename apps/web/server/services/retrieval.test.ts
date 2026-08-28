@@ -5,11 +5,14 @@ import {
     type MockDbMocks,
     createFileFixture,
     createRetrievalFixture,
+    createRetrievalRequestFixture,
     createUploadBatchFixture,
     TEST_BATCH_ID,
+    TEST_RETRIEVAL_REQUEST_ID,
     TEST_USER_ID,
     TEST_FILE_ID,
 } from '@nexus/db/testing';
+import { retrievals as retrievalsTable } from '@nexus/db/schema';
 import { mockS3 } from '@/lib/storage/testing';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 
@@ -73,8 +76,12 @@ describe('retrieval service', () => {
                 'standard'
             );
 
-            expect(result).toEqual({ started: [retrieval], failed: [] });
-            expect(mocks.insert).toHaveBeenCalledOnce();
+            expect(result).toEqual({
+                requestId: expect.any(String),
+                started: [retrieval],
+                failed: [],
+            });
+            expect(mocks.countInsertsInto(retrievalsTable)).toBe(1);
         });
 
         it('creates retrieval for deep_archive file', async () => {
@@ -92,7 +99,11 @@ describe('retrieval service', () => {
                 'bulk'
             );
 
-            expect(result).toEqual({ started: [retrieval], failed: [] });
+            expect(result).toEqual({
+                requestId: expect.any(String),
+                started: [retrieval],
+                failed: [],
+            });
         });
 
         it('returns existing active retrieval (idempotent)', async () => {
@@ -108,8 +119,12 @@ describe('retrieval service', () => {
                 TEST_FILE_ID
             );
 
-            expect(result).toEqual({ started: [existing], failed: [] });
-            expect(mocks.insert).not.toHaveBeenCalled();
+            expect(result).toEqual({
+                requestId: expect.any(String),
+                started: [existing],
+                failed: [],
+            });
+            expect(mocks.countInsertsInto(retrievalsTable)).toBe(0);
         });
 
         it('throws NotFoundError when file does not exist', async () => {
@@ -140,7 +155,11 @@ describe('retrieval service', () => {
                 TEST_FILE_ID
             );
 
-            expect(result).toEqual({ started: [retrieval], failed: [] });
+            expect(result).toEqual({
+                requestId: expect.any(String),
+                started: [retrieval],
+                failed: [],
+            });
             expect(restoreSpy).not.toHaveBeenCalled();
             expect(mocks.values).toHaveBeenCalledWith([
                 expect.objectContaining({
@@ -206,7 +225,11 @@ describe('retrieval service', () => {
                 TEST_FILE_ID
             );
 
-            expect(result).toEqual({ started: [survivor], failed: [] });
+            expect(result).toEqual({
+                requestId: expect.any(String),
+                started: [survivor],
+                failed: [],
+            });
             expect(mocks.retrievals.findMany).toHaveBeenCalledTimes(2);
         });
     });
@@ -241,7 +264,7 @@ describe('retrieval service', () => {
 
             expect(result.started).toHaveLength(2);
             expect(result.failed).toEqual([]);
-            expect(mocks.insert).toHaveBeenCalledOnce();
+            expect(mocks.countInsertsInto(retrievalsTable)).toBe(1);
         });
 
         it('returns existing retrievals for files with active retrievals', async () => {
@@ -384,10 +407,11 @@ describe('retrieval service', () => {
             );
 
             expect(result).toEqual({
+                requestId: expect.any(String),
                 started: [existingRetrieval],
                 failed: [],
             });
-            expect(mocks.insert).not.toHaveBeenCalled();
+            expect(mocks.countInsertsInto(retrievalsTable)).toBe(0);
         });
     });
 
@@ -422,6 +446,7 @@ describe('retrieval service', () => {
             // The DB row keeps the raw AWS text; the mutation payload (no
             // output schema) must not carry ARNs/account ids to the client.
             expect(result).toEqual({
+                requestId: expect.any(String),
                 started: [],
                 failed: [{ ...failedRow, errorMessage: null }],
             });
@@ -454,6 +479,7 @@ describe('retrieval service', () => {
             // A rejected updateStatus must not reject the Promise.all and
             // discard sibling restores; the caller still hears `failed`.
             expect(result).toEqual({
+                requestId: expect.any(String),
                 started: [],
                 failed: [{ ...inserted, errorMessage: null }],
             });
@@ -489,6 +515,7 @@ describe('retrieval service', () => {
             // Not `{started: [], failed: []}` — that would toast success for
             // a file with no restore in flight.
             expect(result).toEqual({
+                requestId: expect.any(String),
                 started: [],
                 failed: [{ ...winnersFailedRow, errorMessage: null }],
             });
@@ -497,39 +524,46 @@ describe('retrieval service', () => {
     });
 
     describe('requestBatchRetrieval', () => {
-        it('creates retrievals for all files in the batch with shared batchId', async () => {
+        /**
+         * A two-file batch with no retrievals yet, wired through the mock DB.
+         * `retrievalStatus` is what the inserted rows come back as — the only
+         * thing the restore tests below differ on.
+         */
+        function arrangeBatchRestore(
+            retrievalStatus: 'pending' | 'ready' = 'pending'
+        ) {
             const batch = createUploadBatchFixture();
             const files = [
-                createFileFixture({
-                    id: 'f1',
-                    batchId: batch.id,
-                }),
-                createFileFixture({
-                    id: 'f2',
-                    batchId: batch.id,
-                }),
+                createFileFixture({ id: 'f1', batchId: batch.id }),
+                createFileFixture({ id: 'f2', batchId: batch.id }),
             ];
             const newRetrievals = [
                 createRetrievalFixture({
                     id: 'r1',
                     fileId: 'f1',
-                    batchId: batch.id,
+                    status: retrievalStatus,
                 }),
                 createRetrievalFixture({
                     id: 'r2',
                     fileId: 'f2',
-                    batchId: batch.id,
+                    status: retrievalStatus,
                 }),
             ];
 
             mocks.uploadBatches.findFirst.mockResolvedValue(batch);
+            // First call is findByUserAndBatch; any later one is a different
+            // lookup that must not see the batch again.
             mocks.files.findMany
-                // First call: findByUserAndBatch
                 .mockResolvedValueOnce(files)
-                // Second call (if any): retrievalRepo.findByFileIds is on retrievals, not files
                 .mockResolvedValue([]);
             mocks.retrievals.findMany.mockResolvedValue([]);
             mocks.returning.mockResolvedValue(newRetrievals);
+
+            return { batch, files, newRetrievals };
+        }
+
+        it('records the upload batch on the request, not on the retrieval rows', async () => {
+            const { batch } = arrangeBatchRestore();
 
             const result = await retrievalService.requestBatchRetrieval(
                 db,
@@ -539,11 +573,44 @@ describe('retrieval service', () => {
             );
 
             expect(result.started).toHaveLength(2);
+            // A whole upload batch is one way of selecting files, so it is
+            // provenance on the request — the restore's identity is the
+            // request itself (#422).
             expect(mocks.values).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    id: result.requestId,
+                    uploadBatchId: batch.id,
+                    tier: 'standard',
+                })
+            );
+            expect(mocks.values).not.toHaveBeenCalledWith(
                 expect.arrayContaining([
                     expect.objectContaining({ batchId: batch.id }),
                 ])
             );
+        });
+
+        it('records one request item per file, pointing at its retrieval', async () => {
+            const { batch } = arrangeBatchRestore();
+
+            const result = await retrievalService.requestBatchRetrieval(
+                db,
+                TEST_USER_ID,
+                batch.id
+            );
+
+            expect(mocks.values).toHaveBeenCalledWith([
+                expect.objectContaining({
+                    requestId: result.requestId,
+                    fileId: 'f1',
+                    retrievalId: 'r1',
+                }),
+                expect.objectContaining({
+                    requestId: result.requestId,
+                    fileId: 'f2',
+                    retrievalId: 'r2',
+                }),
+            ]);
         });
 
         it('throws NotFoundError when batch missing or not owned', async () => {
@@ -575,36 +642,7 @@ describe('retrieval service', () => {
         it('marks an all-warm batch ready immediately without calling RestoreObject', async () => {
             setObjectState('warm');
             const restoreSpy = vi.spyOn(mockS3.glacier, 'restore');
-            const batch = createUploadBatchFixture();
-            const files = [
-                createFileFixture({
-                    id: 'f1',
-                    batchId: batch.id,
-                }),
-                createFileFixture({
-                    id: 'f2',
-                    batchId: batch.id,
-                }),
-            ];
-            const newRetrievals = [
-                createRetrievalFixture({
-                    id: 'r1',
-                    fileId: 'f1',
-                    batchId: batch.id,
-                    status: 'ready',
-                }),
-                createRetrievalFixture({
-                    id: 'r2',
-                    fileId: 'f2',
-                    batchId: batch.id,
-                    status: 'ready',
-                }),
-            ];
-
-            mocks.uploadBatches.findFirst.mockResolvedValue(batch);
-            mocks.files.findMany.mockResolvedValue(files);
-            mocks.retrievals.findMany.mockResolvedValue([]);
-            mocks.returning.mockResolvedValue(newRetrievals);
+            const { batch } = arrangeBatchRestore('ready');
 
             const result = await retrievalService.requestBatchRetrieval(
                 db,
@@ -621,36 +659,23 @@ describe('retrieval service', () => {
         });
     });
 
-    describe('getBatchRetrievalStatus', () => {
-        it('is not ready while any file in the batch is still restoring', async () => {
-            const batch = createUploadBatchFixture();
-            const files = [
-                createFileFixture({ id: 'f1', batchId: batch.id }),
-                createFileFixture({ id: 'f2', batchId: batch.id }),
-            ];
-            const retrievals = [
-                createRetrievalFixture({
-                    id: 'r1',
-                    fileId: 'f1',
-                    batchId: batch.id,
-                    status: 'ready',
-                }),
-                createRetrievalFixture({
-                    id: 'r2',
-                    fileId: 'f2',
-                    batchId: batch.id,
-                    status: 'in_progress',
-                }),
-            ];
+    // The counts themselves are produced by SQL over the request's items —
+    // that half is exercised against a real database in
+    // retrieval.integration.test.ts, including the adoption case a mocked
+    // aggregate cannot show. What's left to pin down here is the
+    // all-or-nothing rule and the ownership check.
+    describe('getRequestStatus', () => {
+        it('is not ready while any file in the request is still restoring', async () => {
+            const request = createRetrievalRequestFixture();
+            mocks.retrievalRequests.findFirst.mockResolvedValue(request);
+            mocks.leftJoinRows.mockResolvedValue([
+                { totalFiles: 2, readyFiles: 1 },
+            ]);
 
-            mocks.uploadBatches.findFirst.mockResolvedValue(batch);
-            mocks.files.findMany.mockResolvedValue(files);
-            mocks.retrievals.findMany.mockResolvedValue(retrievals);
-
-            const result = await retrievalService.getBatchRetrievalStatus(
+            const result = await retrievalService.getRequestStatus(
                 db,
                 TEST_USER_ID,
-                batch.id
+                request.id
             );
 
             expect(result).toEqual({
@@ -660,37 +685,17 @@ describe('retrieval service', () => {
             });
         });
 
-        it('is ready when every file in the batch has a ready retrieval', async () => {
-            const batch = createUploadBatchFixture();
-            const files = [
-                createFileFixture({ id: 'f1', batchId: batch.id }),
-                createFileFixture({ id: 'f2', batchId: batch.id }),
-            ];
-            // f1 was retrieved individually before the batch request — its
-            // row has no batchId but must still count toward readiness.
-            const retrievals = [
-                createRetrievalFixture({
-                    id: 'r1',
-                    fileId: 'f1',
-                    batchId: null,
-                    status: 'ready',
-                }),
-                createRetrievalFixture({
-                    id: 'r2',
-                    fileId: 'f2',
-                    batchId: batch.id,
-                    status: 'ready',
-                }),
-            ];
+        it('is ready when every file in the request is ready', async () => {
+            const request = createRetrievalRequestFixture();
+            mocks.retrievalRequests.findFirst.mockResolvedValue(request);
+            mocks.leftJoinRows.mockResolvedValue([
+                { totalFiles: 2, readyFiles: 2 },
+            ]);
 
-            mocks.uploadBatches.findFirst.mockResolvedValue(batch);
-            mocks.files.findMany.mockResolvedValue(files);
-            mocks.retrievals.findMany.mockResolvedValue(retrievals);
-
-            const result = await retrievalService.getBatchRetrievalStatus(
+            const result = await retrievalService.getRequestStatus(
                 db,
                 TEST_USER_ID,
-                batch.id
+                request.id
             );
 
             expect(result).toEqual({
@@ -700,18 +705,17 @@ describe('retrieval service', () => {
             });
         });
 
-        it('is not ready when no retrievals were requested', async () => {
-            const batch = createUploadBatchFixture();
-            const files = [createFileFixture({ id: 'f1', batchId: batch.id })];
+        it('is not ready when nothing in the request has thawed yet', async () => {
+            const request = createRetrievalRequestFixture();
+            mocks.retrievalRequests.findFirst.mockResolvedValue(request);
+            mocks.leftJoinRows.mockResolvedValue([
+                { totalFiles: 1, readyFiles: 0 },
+            ]);
 
-            mocks.uploadBatches.findFirst.mockResolvedValue(batch);
-            mocks.files.findMany.mockResolvedValue(files);
-            mocks.retrievals.findMany.mockResolvedValue([]);
-
-            const result = await retrievalService.getBatchRetrievalStatus(
+            const result = await retrievalService.getRequestStatus(
                 db,
                 TEST_USER_ID,
-                batch.id
+                request.id
             );
 
             expect(result).toEqual({
@@ -721,14 +725,14 @@ describe('retrieval service', () => {
             });
         });
 
-        it('throws NotFoundError when batch missing or not owned', async () => {
-            mocks.uploadBatches.findFirst.mockResolvedValue(undefined);
+        it('throws NotFoundError when the request is missing or not owned', async () => {
+            mocks.retrievalRequests.findFirst.mockResolvedValue(undefined);
 
             await expect(
-                retrievalService.getBatchRetrievalStatus(
+                retrievalService.getRequestStatus(
                     db,
                     TEST_USER_ID,
-                    TEST_BATCH_ID
+                    TEST_RETRIEVAL_REQUEST_ID
                 )
             ).rejects.toThrow(NotFoundError);
         });

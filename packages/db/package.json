@@ -29,6 +29,11 @@
             "import": "./src/repositories/jobs.ts",
             "default": "./src/repositories/jobs.ts"
         },
+        "./repo/retrievalRequests": {
+            "types": "./src/repositories/retrievalRequests.ts",
+            "import": "./src/repositories/retrievalRequests.ts",
+            "default": "./src/repositories/retrievalRequests.ts"
+        },
         "./repo/retrievals": {
             "types": "./src/repositories/retrievals.ts",
             "import": "./src/repositories/retrievals.ts",

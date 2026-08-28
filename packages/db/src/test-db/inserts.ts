@@ -22,6 +22,8 @@ import {
     createUploadBatchFixture,
     createUserFixture,
     createRetrievalFixture,
+    createRetrievalRequestFixture,
+    createRetrievalArtifactFixture,
     createSubscriptionFixture,
     createStorageUsageFixture,
     createJobFixture,
@@ -33,6 +35,10 @@ import type { DB } from '../connection';
 import type { File } from '../repositories/files';
 import type { UploadBatch } from '../repositories/uploadBatches';
 import type { Retrieval } from '../repositories/retrievals';
+import type {
+    RetrievalArtifact,
+    RetrievalRequest,
+} from '../repositories/retrievalRequests';
 import type { Subscription } from '../repositories/subscriptions';
 import type { Job } from '../repositories/jobs';
 import type { Invite } from '../repositories/invites';
@@ -105,6 +111,37 @@ export async function insertRetrieval(
         .values(row)
         .returning();
     return retrieval!;
+}
+
+/**
+ * Seeds a bare retrieval request — no items. The production path always writes
+ * a request with its file set in one go (`restoreFiles`), so reach for this
+ * only to hang artifacts off something, or to assert on an empty request.
+ */
+export async function insertRetrievalRequest(
+    db: DB,
+    overrides: Partial<RetrievalRequest> = {}
+): Promise<RetrievalRequest> {
+    const row = createRetrievalRequestFixture(overrides);
+    if (overrides.id === undefined) row.id = crypto.randomUUID();
+    const [request] = await db
+        .insert(schema.retrievalRequests)
+        .values(row)
+        .returning();
+    return request!;
+}
+
+export async function insertRetrievalArtifact(
+    db: DB,
+    overrides: Partial<RetrievalArtifact> = {}
+): Promise<RetrievalArtifact> {
+    const row = createRetrievalArtifactFixture(overrides);
+    if (overrides.id === undefined) row.id = crypto.randomUUID();
+    const [artifact] = await db
+        .insert(schema.retrievalArtifacts)
+        .values(row)
+        .returning();
+    return artifact!;
 }
 
 export async function insertSubscription(
