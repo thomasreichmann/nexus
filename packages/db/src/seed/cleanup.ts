@@ -79,10 +79,19 @@ export async function listAllUsers(
 }
 
 // Cleanup functions
-// Delete order respects FK constraints: retrievals → files → storageUsage → subscriptions → users
+// Delete order respects FK constraints: retrievalRequests → retrievals → files
+// → storageUsage → subscriptions → users. Requests go first because their
+// items and artifacts cascade off them; dropping a retrieval or a file out
+// from under a surviving request would only null the item's link instead.
+// Not counted in CleanupResult: no seed builder creates requests today, so a
+// non-zero count would only ever come from data the seeder didn't make.
 
 export async function cleanupAll(db: DB): Promise<CleanupResult> {
     return withTransaction(db, async (tx) => {
+        await tx
+            .delete(schema.retrievalRequests)
+            .where(like(schema.retrievalRequests.id, `${SEED_PREFIX}%`));
+
         const deletedRetrievals = await tx
             .delete(schema.retrievals)
             .where(like(schema.retrievals.id, `${SEED_PREFIX}%`))
@@ -161,6 +170,15 @@ export async function cleanupSeedDataForUser(
     userId: string
 ): Promise<CleanupResult> {
     return withTransaction(db, async (tx) => {
+        await tx
+            .delete(schema.retrievalRequests)
+            .where(
+                and(
+                    eq(schema.retrievalRequests.userId, userId),
+                    like(schema.retrievalRequests.id, `${SEED_PREFIX}%`)
+                )
+            );
+
         const deletedRetrievals = await tx
             .delete(schema.retrievals)
             .where(
@@ -206,6 +224,10 @@ export async function cleanupByUser(
     }
 
     return withTransaction(db, async (tx) => {
+        await tx
+            .delete(schema.retrievalRequests)
+            .where(eq(schema.retrievalRequests.userId, userId));
+
         const deletedRetrievals = await tx
             .delete(schema.retrievals)
             .where(eq(schema.retrievals.userId, userId))

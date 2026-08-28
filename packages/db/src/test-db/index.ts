@@ -25,6 +25,11 @@ export * from '../repositories/fixtures';
 export type { File, NewFile } from '../repositories/files';
 export type { UploadBatch } from '../repositories/uploadBatches';
 export type { Retrieval } from '../repositories/retrievals';
+export type {
+    RetrievalRequest,
+    RetrievalRequestItem,
+    RetrievalArtifact,
+} from '../repositories/retrievalRequests';
 export type { Subscription } from '../repositories/subscriptions';
 export type { Job, NewJob } from '../repositories/jobs';
 export type { Invite } from '../repositories/invites';

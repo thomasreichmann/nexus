@@ -4,6 +4,7 @@ import type { File, NewFile } from './files';
 import type { Invite } from './invites';
 import type { Job, NewJob } from './jobs';
 import type { Retrieval } from './retrievals';
+import type { RetrievalArtifact, RetrievalRequest } from './retrievalRequests';
 import type { Subscription } from './subscriptions';
 import type { UploadBatch } from './uploadBatches';
 import type { User } from './users';
@@ -14,6 +15,8 @@ export const TEST_FILE_ID = 'file_test456';
 export const TEST_STORAGE_USAGE_ID = 'storage_test789';
 export const TEST_JOB_ID = 'job_test101';
 export const TEST_RETRIEVAL_ID = 'retrieval_test202';
+export const TEST_RETRIEVAL_REQUEST_ID = 'retrieval_request_test808';
+export const TEST_RETRIEVAL_ARTIFACT_ID = 'retrieval_artifact_test909';
 export const TEST_SUBSCRIPTION_ID = 'sub_test303';
 export const TEST_STRIPE_CUSTOMER_ID = 'cus_test303';
 export const TEST_WEBHOOK_EVENT_ID = 'wh_test404';
@@ -210,6 +213,42 @@ export function createRetrievalFixture(
         expiresAt: null,
         failedAt: null,
         errorMessage: null,
+        createdAt: now,
+        updatedAt: now,
+        ...overrides,
+    };
+}
+
+export function createRetrievalRequestFixture(
+    overrides: Partial<RetrievalRequest> = {}
+): RetrievalRequest {
+    const now = new Date();
+    return {
+        id: TEST_RETRIEVAL_REQUEST_ID,
+        userId: TEST_USER_ID,
+        uploadBatchId: null,
+        tier: 'standard',
+        createdAt: now,
+        updatedAt: now,
+        ...overrides,
+    };
+}
+
+export function createRetrievalArtifactFixture(
+    overrides: Partial<RetrievalArtifact> = {}
+): RetrievalArtifact {
+    const now = new Date();
+    return {
+        id: TEST_RETRIEVAL_ARTIFACT_ID,
+        requestId: TEST_RETRIEVAL_REQUEST_ID,
+        position: 0,
+        status: 'pending',
+        s3Key: null,
+        sizeBytes: null,
+        attempts: 0,
+        error: null,
+        startedAt: null,
+        completedAt: null,
         createdAt: now,
         updatedAt: now,
         ...overrides,

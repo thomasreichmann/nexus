@@ -14,13 +14,13 @@ export const retrievalsRouter = router({
         return retrievalRepo.findActiveByUserWithFiles(ctx.session.user.id);
     }),
 
-    batchStatus: protectedProcedure
-        .input(z.object({ batchId: z.string().uuid() }))
+    requestStatus: protectedProcedure
+        .input(z.object({ requestId: z.string().uuid() }))
         .query(({ ctx, input }) =>
-            retrievalService.getBatchRetrievalStatus(
+            retrievalService.getRequestStatus(
                 ctx.db,
                 ctx.session.user.id,
-                input.batchId
+                input.requestId
             )
         ),
 });

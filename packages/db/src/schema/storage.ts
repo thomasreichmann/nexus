@@ -43,6 +43,13 @@ export const retrievalStatusEnum = pgEnum('retrieval_status', [
 
 export const retrievalTierEnum = pgEnum('retrieval_tier', RESTORE_TIERS);
 
+export const retrievalArtifactStatusEnum = pgEnum('retrieval_artifact_status', [
+    'pending', // Chunk assigned, no build job has claimed it yet
+    'building', // A zip job holds it; `startedAt` says since when
+    'ready', // Zip exists at `s3Key` and can be handed to the user
+    'failed', // Build failed; `attempts`/`error` carry the retry history
+]);
+
 export const thumbnailStatusEnum = pgEnum('thumbnail_status', [
     'pending', // Set at insert; generate-thumbnail job not yet completed
     'ready', // WebP exists in the derived bucket (worker writes S3 first)
@@ -139,8 +146,11 @@ export const retrievals = pgTable(
         userId: text('user_id')
             .notNull()
             .references(() => user.id, { onDelete: 'cascade' }),
-        // Set when the retrieval was initiated as part of a batch restore.
-        // `set null` so deleting a batch row doesn't wipe retrieval history.
+        // DEPRECATED (#422): the grouping key for a restore is now
+        // `retrieval_requests`, and an upload batch is recorded there as the
+        // selection mechanism it always was. Nothing reads or writes this
+        // column any more; it survives only because dropping it is destructive
+        // DDL, which ships alone once every plane is deployed without it.
         batchId: text('batch_id').references(() => uploadBatches.id, {
             onDelete: 'set null',
         }),
@@ -166,5 +176,129 @@ export const retrievals = pgTable(
         uniqueIndex('retrievals_active_file_id_idx')
             .on(table.fileId)
             .where(sql`status IN ('pending', 'in_progress', 'ready')`),
+    ]
+);
+
+// The identity of one restore (#422). Every restore creates one, whatever
+// selected its files — a multi-select in the browser, a whole upload batch, or
+// a single file. It is what the zip artifacts hang off and what "is my restore
+// ready?" is asked about; readiness itself is not stored here but computed
+// from the request's items, so a stored answer can never drift from the
+// retrieval rows that produce it.
+export const retrievalRequests = pgTable(
+    'retrieval_requests',
+    {
+        id: text('id').primaryKey(),
+        userId: text('user_id')
+            .notNull()
+            .references(() => user.id, { onDelete: 'cascade' }),
+        // How the file set was chosen, when that was an upload batch. Null for
+        // an ad-hoc selection or a single file — a batch is one selection
+        // mechanism among several, not the request's identity. `set null` so
+        // deleting the batch doesn't wipe the restore's provenance.
+        uploadBatchId: text('upload_batch_id').references(
+            () => uploadBatches.id,
+            { onDelete: 'set null' }
+        ),
+        // The tier every retrieval in the request was initiated at. Stored on
+        // the request because it is a property of what the user asked for, not
+        // of an individual file.
+        tier: retrievalTierEnum('tier').notNull().default('standard'),
+        ...timestamps(),
+    },
+    (table) => [
+        index('retrieval_requests_user_id_created_at_idx').on(
+            table.userId,
+            table.createdAt.desc()
+        ),
+        index('retrieval_requests_upload_batch_id_idx').on(table.uploadBatchId),
+    ]
+);
+
+// One zip of a request. A request has 1..N: the ready file set is partitioned
+// into chunks so no single archive gets too large to download or open (#424
+// builds them; this table is what it builds into). Each row carries its own
+// build lifecycle so one chunk can be retried or rebuilt without touching its
+// siblings.
+export const retrievalArtifacts = pgTable(
+    'retrieval_artifacts',
+    {
+        id: text('id').primaryKey(),
+        requestId: text('request_id')
+            .notNull()
+            .references(() => retrievalRequests.id, { onDelete: 'cascade' }),
+        // Ordinal within the request — the "part 2 of 5" the user sees. Stable
+        // across a rebuild, which is why it is stored rather than derived from
+        // row order.
+        position: integer('position').notNull(),
+        status: retrievalArtifactStatusEnum('status')
+            .notNull()
+            .default('pending'),
+        // Stored, not derived from the row's ids: a rebuild writes a new object
+        // so an in-flight download can't resolve to a half-written zip. A
+        // computed key has no way to express that (cf. `thumbnailKey`).
+        s3Key: text('s3_key'),
+        sizeBytes: bigint('size_bytes', { mode: 'number' }),
+        // Retry bookkeeping, mirroring background_jobs: the count is what a
+        // rebuild decides against, the message is what an operator reads.
+        attempts: integer('attempts').notNull().default(0),
+        error: text('error'),
+        startedAt: timestamp('started_at'),
+        completedAt: timestamp('completed_at'),
+        ...timestamps(),
+    },
+    (table) => [
+        // One chunk per position per request — the guard that makes an
+        // idempotent partition safe to re-run after a crash mid-enqueue.
+        uniqueIndex('retrieval_artifacts_request_id_position_idx').on(
+            table.requestId,
+            table.position
+        ),
+        index('retrieval_artifacts_status_created_at_idx').on(
+            table.status,
+            table.createdAt
+        ),
+    ]
+);
+
+// What a request asked for, one row per file. A join table rather than a
+// `request_id` column on `retrievals`, because `retrievals_active_file_id_idx`
+// allows only one active retrieval per file: two overlapping requests adopt
+// the same retrieval row, and a single FK could only ever name one of them.
+export const retrievalRequestItems = pgTable(
+    'retrieval_request_items',
+    {
+        id: text('id').primaryKey(),
+        requestId: text('request_id')
+            .notNull()
+            .references(() => retrievalRequests.id, { onDelete: 'cascade' }),
+        fileId: text('file_id')
+            .notNull()
+            .references(() => files.id, { onDelete: 'cascade' }),
+        // The retrieval covering this file, whether this request started it or
+        // adopted one already in flight. Nullable because a restore can fail
+        // before any row exists — the item still records what was asked for.
+        // `set null` for the same reason: losing the retrieval must not lose
+        // the request's membership.
+        retrievalId: text('retrieval_id').references(() => retrievals.id, {
+            onDelete: 'set null',
+        }),
+        // The zip this file lands in, assigned when the ready set is
+        // partitioned (#424). Null until then, and null again after the
+        // artifact is dropped for a rebuild — which is what makes a rebuild
+        // able to find its own file set.
+        artifactId: text('artifact_id').references(
+            () => retrievalArtifacts.id,
+            { onDelete: 'set null' }
+        ),
+        ...timestamps(),
+    },
+    (table) => [
+        uniqueIndex('retrieval_request_items_request_id_file_id_idx').on(
+            table.requestId,
+            table.fileId
+        ),
+        index('retrieval_request_items_retrieval_id_idx').on(table.retrievalId),
+        index('retrieval_request_items_artifact_id_idx').on(table.artifactId),
     ]
 );

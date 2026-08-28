@@ -34,13 +34,20 @@ export async function updateUserRole(
 }
 
 /**
- * Removes ALL of a user's domain data (retrievals → files → upload_batches) in
- * FK-safe order, without deleting the user. The single reset for specs that
- * seed file data. Sequential deletes (no transaction) on purpose: e2e runs
- * against Supabase's transaction-mode pooler, where multi-statement
- * transactions can be intermittently lost (see `connection.ts`).
+ * Removes ALL of a user's domain data (retrieval_requests → retrievals → files
+ * → upload_batches) in FK-safe order, without deleting the user. The single
+ * reset for specs that seed file data. Sequential deletes (no transaction) on
+ * purpose: e2e runs against Supabase's transaction-mode pooler, where
+ * multi-statement transactions can be intermittently lost (see
+ * `connection.ts`).
+ *
+ * Requests go first: their items and artifacts cascade, which is what lets the
+ * retrieval and file deletes below stay single statements.
  */
 export async function deleteUserData(db: DB, userId: string): Promise<void> {
+    await db
+        .delete(schema.retrievalRequests)
+        .where(eq(schema.retrievalRequests.userId, userId));
     await db
         .delete(schema.retrievals)
         .where(eq(schema.retrievals.userId, userId));

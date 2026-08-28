@@ -33,7 +33,18 @@ export function createMockDb() {
     // .groupBy()` terminals here don't collide with the awaitable `where`
     // used by simpler chains. leftJoin returns itself so chains may stack
     // any number of joins.
-    const leftJoinWhere: AnyMock = vi.fn(() => ({ orderBy, groupBy }));
+    // Its result is a promise carrying those two terminals as properties, so
+    // one shape covers both a chain that ends at the WHERE (an ungrouped
+    // aggregate) and one that continues. Tests override `mocks.leftJoinRows`
+    // for the first, `mocks.orderBy`/`mocks.groupBy` for the rest.
+    // Typed rather than AnyMock because this one is called here, not just
+    // handed to the caller: `Mock<any>` isn't callable.
+    const leftJoinRows: Mock<() => Promise<unknown[]>> = vi.fn(
+        async () => [] as unknown[]
+    );
+    const leftJoinWhere: AnyMock = vi.fn(() =>
+        Object.assign(leftJoinRows(), { orderBy, groupBy })
+    );
     const leftJoin: AnyMock = vi.fn(() => ({
         leftJoin,
         where: leftJoinWhere,
@@ -70,11 +81,23 @@ export function createMockDb() {
     const invites = createQueryMock();
     const backgroundJobs = createQueryMock();
     const retrievals = createQueryMock();
+    const retrievalRequests = createQueryMock();
+    const retrievalRequestItems = createQueryMock();
+    const retrievalArtifacts = createQueryMock();
     const storageUsage = createQueryMock();
     const subscriptions = createQueryMock();
     const uploadBatches = createQueryMock();
     const webhookEvents = createQueryMock();
     const user = createQueryMock();
+
+    /**
+     * How many INSERTs targeted one table. A bare `mocks.insert` call count
+     * says nothing once a single code path writes to several tables, and the
+     * drizzle table is the first argument the mock records.
+     */
+    function countInsertsInto(table: unknown): number {
+        return insert.mock.calls.filter(([target]) => target === table).length;
+    }
 
     const db = {
         query: {
@@ -82,6 +105,9 @@ export function createMockDb() {
             invites,
             backgroundJobs,
             retrievals,
+            retrievalRequests,
+            retrievalRequestItems,
+            retrievalArtifacts,
             storageUsage,
             subscriptions,
             uploadBatches,
@@ -104,6 +130,7 @@ export function createMockDb() {
             from,
             leftJoin,
             leftJoinWhere,
+            leftJoinRows,
             innerJoin,
             innerJoinWhere,
             innerJoinOrderBy,
@@ -119,11 +146,15 @@ export function createMockDb() {
             returning,
             groupBy,
             orderBy,
+            countInsertsInto,
             // Per-table query mocks (db.query.<table>.findFirst/findMany)
             files,
             invites,
             backgroundJobs,
             retrievals,
+            retrievalRequests,
+            retrievalRequestItems,
+            retrievalArtifacts,
             storageUsage,
             subscriptions,
             uploadBatches,

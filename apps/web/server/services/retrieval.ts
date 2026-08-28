@@ -9,6 +9,12 @@ import {
     type Retrieval,
     type RetrievalRepo,
 } from '@nexus/db/repo/retrievals';
+import {
+    createRetrievalRequestRepo,
+    type NewRetrievalRequest,
+    type RetrievalRequestReadiness,
+    type RetrievalRequestRepo,
+} from '@nexus/db/repo/retrievalRequests';
 import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
 import {
     isObjectMissing,
@@ -39,22 +45,63 @@ const HEAD_CONCURRENCY = 12;
  * way they could a flat row array with `failed` statuses buried inside.
  * `started` holds every row now tracking an active restore, including rows
  * that already existed or that a concurrent request inserted first.
+ *
+ * `requestId` identifies the restore itself (#422) — the handle everything
+ * downstream (readiness, zips, notification) hangs off, and the only one that
+ * survives the per-row detail above.
  */
 export interface RetrievalRequestResult {
+    requestId: string;
     started: Retrieval[];
     failed: Retrieval[];
 }
 
-// `batchId` is stamped on every new row so batch-level progress can be
-// queried later; bulk callers pass null.
+/**
+ * Writes the request together with its file set, once the outcome of every
+ * requested file is known. Deliberately last: a restore that throws part-way
+ * leaves no empty request behind, and the retrieval rows it did create are
+ * adopted by the next request over those files.
+ *
+ * One item per requested file, whatever became of it — a row this call
+ * inserted, one it adopted from a restore already in flight, one whose restore
+ * failed, or none at all. The item set is what the user asked for and never
+ * changes, which is what makes request readiness countable: the retrieval row
+ * behind a file can be shared with another request, lapse, or be re-created.
+ */
+async function recordRequest(
+    requestRepo: RetrievalRequestRepo,
+    request: NewRetrievalRequest,
+    files: File[],
+    retrievals: Retrieval[]
+): Promise<void> {
+    await requestRepo.insert(request);
+
+    const retrievalIdByFileId = new Map(
+        retrievals.map((r) => [r.fileId, r.id])
+    );
+    await requestRepo.insertItems(
+        files.map((file) => ({
+            id: crypto.randomUUID(),
+            requestId: request.id,
+            fileId: file.id,
+            retrievalId: retrievalIdByFileId.get(file.id) ?? null,
+        }))
+    );
+}
+
+// `uploadBatchId` records how the file set was selected, when that was a whole
+// upload batch; ad-hoc selections pass null. It lands on the request, not on
+// the retrieval rows — a batch is a selection mechanism, never the identity of
+// the restore (#422).
 async function restoreFiles(
     db: DB,
     userId: string,
     files: File[],
     tier: RestoreTier,
-    batchId: string | null
+    uploadBatchId: string | null
 ): Promise<RetrievalRequestResult> {
     const retrievalRepo = createRetrievalRepo(db);
+    const requestRepo = createRetrievalRequestRepo(db);
     const fileIds = files.map((f) => f.id);
 
     const existingRetrievals = await retrievalRepo.findByFileIds(fileIds);
@@ -70,8 +117,24 @@ async function restoreFiles(
         );
     }
 
+    // The identity of this restore. Minted here so both exits below name the
+    // same request, but only written once their outcome is known — including
+    // for rows this call merely adopts, which is the case the upload-batch
+    // stamp could never express.
+    const request: NewRetrievalRequest = {
+        id: crypto.randomUUID(),
+        userId,
+        uploadBatchId,
+        tier,
+    };
+
     if (filesToRestore.length === 0) {
-        return { started: existingRetrievals, failed: [] };
+        await recordRequest(requestRepo, request, files, existingRetrievals);
+        return {
+            requestId: request.id,
+            started: existingRetrievals,
+            failed: [],
+        };
     }
 
     // A lapsed `ready` row is invisible to findByFileIds but still holds the
@@ -127,7 +190,6 @@ async function restoreFiles(
                 id: crypto.randomUUID(),
                 fileId: file.id,
                 userId,
-                batchId,
                 tier,
                 initiatedAt: now,
             };
@@ -196,7 +258,20 @@ async function restoreFiles(
         tier
     );
 
+    // Every bucket, not just the successful ones: only the ids matter here,
+    // and taking the failed rows from the raw arrays — rather than from the
+    // `errorMessage`-stripped copies the return builds — keeps every requested
+    // file covered by an item.
+    await recordRequest(requestRepo, request, files, [
+        ...existingRetrievals,
+        ...started,
+        ...survivors,
+        ...failed,
+        ...failedSurvivors,
+    ]);
+
     return {
+        requestId: request.id,
         started: [...existingRetrievals, ...started, ...survivors],
         // `errorMessage` holds raw AWS SDK text (ARNs, account ids, bucket
         // names) for operators; it stays in the DB but must not reach the
@@ -219,7 +294,7 @@ async function restoreInserted(
     newRetrievals: Retrieval[],
     keysToRestore: Map<string, string>,
     tier: RestoreTier
-): Promise<RetrievalRequestResult> {
+): Promise<Omit<RetrievalRequestResult, 'requestId'>> {
     const outcomes = await Promise.all(
         newRetrievals.map(async (retrieval) => {
             const s3Key = keysToRestore.get(retrieval.fileId);
@@ -336,39 +411,29 @@ async function requestBatchRetrieval(
     return restoreFiles(db, userId, files, tier, batchId);
 }
 
-export interface BatchRetrievalStatus {
-    totalFiles: number;
-    readyFiles: number;
-    isReady: boolean;
-}
-
-// A batch is ready only when every file in it has a ready retrieval —
-// all-or-nothing, paced by the slowest item. Readiness is computed over the
-// batch's files rather than batch-stamped retrieval rows: a file retrieved
-// individually before the batch request keeps its existing row (batchId
-// null), and it must still count.
-async function getBatchRetrievalStatus(
+/**
+ * Readiness of one restore, keyed on the request the user actually made.
+ *
+ * Replaces the upload-batch-keyed predecessor (#371, #422): a batch is one way
+ * of selecting files, and keying readiness on it could describe neither a
+ * multi-select restore nor two restores over the same batch. The all-or-nothing
+ * rule is unchanged — the request is ready when its last file thaws.
+ */
+async function getRequestStatus(
     db: DB,
     userId: string,
-    batchId: string
-): Promise<BatchRetrievalStatus> {
-    const files = await findOwnedBatchFiles(db, userId, batchId);
+    requestId: string
+): Promise<RetrievalRequestReadiness> {
+    const requestRepo = createRetrievalRequestRepo(db);
 
-    const retrievalRepo = createRetrievalRepo(db);
-    const retrievals = await retrievalRepo.findByFileIds(
-        files.map((f) => f.id)
-    );
-    const readyFileIds = new Set(
-        retrievals.filter((r) => r.status === 'ready').map((r) => r.fileId)
-    );
+    // Ownership first: the readiness count itself is not user-scoped, so
+    // another user's request has to be indistinguishable from a missing one.
+    const request = await requestRepo.findByUserAndId(userId, requestId);
+    if (!request) {
+        throw new NotFoundError('RetrievalRequest', requestId);
+    }
 
-    const readyFiles = files.filter((f) => readyFileIds.has(f.id)).length;
-
-    return {
-        totalFiles: files.length,
-        readyFiles,
-        isReady: files.length > 0 && readyFiles === files.length,
-    };
+    return requestRepo.findReadiness(requestId);
 }
 
 interface DownloadUrlResult {
@@ -425,6 +490,6 @@ export const retrievalService = {
     requestRetrieval,
     requestBulkRetrieval,
     requestBatchRetrieval,
-    getBatchRetrievalStatus,
+    getRequestStatus,
     getDownloadUrl,
 } as const;
