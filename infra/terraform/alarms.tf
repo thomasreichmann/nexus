@@ -69,6 +69,15 @@ locals {
       description = "Background-jobs DLQ has parked messages; redrive within 24h to beat the Deep Archive transition (#350)"
     }
 
+    # Zip builds (#424). A parked job here means a restore the user was
+    # promised never becomes downloadable, and the redrive window is hard: the
+    # thawed originals the build reads lapse after ZIP_BUILD_RESTORE_DAYS, so
+    # this is the alarm that has to reach someone before they do.
+    zip-jobs = {
+      queue_name  = aws_sqs_queue.zip_jobs_dlq.name
+      description = "Zip-build DLQ has parked messages; redrive before the thawed originals lapse (#424)"
+    }
+
     # Watches the alerting rail itself: if the Discord webhook endpoint is
     # unreachable, the alarms above park here and nothing else notices. In prod
     # the email subscription still delivers when the HTTPS endpoint is the

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as schema from '@nexus/db/schema';
 import { createMockDb, type MockDb, type MockDbMocks } from '@nexus/db/testing';
 
 const hoisted = vi.hoisted(() => ({
@@ -6,14 +7,12 @@ const hoisted = vi.hoisted(() => ({
     enqueueJob: vi.fn(),
 }));
 
+// The helper is imported inside the factory, not at the top of the file:
+// `vi.mock` is hoisted above every import, so a module-scope binding it closed
+// over would not be initialised yet.
 vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('@aws-sdk/client-s3')>();
-    return {
-        ...actual,
-        S3Client: class {
-            send = hoisted.send;
-        },
-    };
+    const { mockS3Module } = await import('./testing/mockS3');
+    return mockS3Module(importOriginal, hoisted.send);
 });
 
 vi.mock('./jobs', () => ({ enqueueJob: hoisted.enqueueJob }));
@@ -226,5 +225,150 @@ describe('pollRetrievals', () => {
 
         expect(summary).toMatchObject({ checked: 0, ready: 0, capped: false });
         expect(hoisted.send).not.toHaveBeenCalled();
+    });
+
+    // The zip trigger is a reconciling scan, not a reaction to this run's
+    // flips: a retrieval that goes `ready` leaves the pending work list for
+    // good, so anything keyed to "what changed this run" could never retry.
+    describe('zip build trigger', () => {
+        /** findBuildable ends at its own .limit(), separate from the poll's. */
+        function givenBuildable(requestIds: string[]) {
+            mocks.whereLimit.mockResolvedValue(
+                requestIds.map((id) => ({ id }))
+            );
+        }
+
+        function givenFiles(files: { fileId: string; size: number }[]): void {
+            mocks.innerJoinOrderByRows.mockResolvedValue(
+                files.map((f) => ({
+                    ...f,
+                    s3Key: `key/${f.fileId}`,
+                    name: `${f.fileId}.cr2`,
+                    createdAt: new Date(),
+                }))
+            );
+        }
+
+        function artifact(id: string, position: number, status = 'pending') {
+            return { id, position, status, requestId: 'req-1' };
+        }
+
+        /** findArtifacts answers both the "partitioned yet?" and enqueue reads. */
+        function givenArtifacts(rows: ReturnType<typeof artifact>[]) {
+            mocks.retrievalArtifacts.findMany.mockResolvedValue(rows);
+            mocks.returning.mockResolvedValue(rows);
+        }
+
+        it('partitions a ready request and enqueues one job per chunk', async () => {
+            givenPending([]);
+            givenBuildable(['req-1']);
+            givenFiles([
+                { fileId: 'f1', size: 3_000_000_000 },
+                { fileId: 'f2', size: 3_000_000_000 },
+            ]);
+            const chunks = [artifact('a1', 0), artifact('a2', 1)];
+            // Empty before the partition, both chunks after it.
+            mocks.retrievalArtifacts.findMany
+                .mockResolvedValueOnce([])
+                .mockResolvedValueOnce(chunks);
+            mocks.returning.mockResolvedValue(chunks);
+
+            const summary = await pollRetrievals(db);
+
+            expect(summary).toMatchObject({
+                requestsPartitioned: 1,
+                zipJobsEnqueued: 2,
+                zipErrored: 0,
+            });
+            expect(hoisted.enqueueJob).toHaveBeenCalledWith(db, {
+                type: 'build-retrieval-zip',
+                payload: { artifactId: 'a1' },
+            });
+            expect(hoisted.enqueueJob).toHaveBeenCalledWith(db, {
+                type: 'build-retrieval-zip',
+                payload: { artifactId: 'a2' },
+            });
+        });
+
+        // The crash-mid-enqueue case: the artifacts exist, so the insert
+        // conflicts away and returns nothing, but the jobs were never sent.
+        it('re-enqueues artifacts a previous run wrote but never published', async () => {
+            givenPending([]);
+            givenBuildable(['req-1']);
+            givenArtifacts([artifact('a1', 0)]);
+
+            const summary = await pollRetrievals(db);
+
+            expect(summary.zipJobsEnqueued).toBe(1);
+            // No partition: the existing artifacts short-circuit it.
+            expect(mocks.countInsertsInto(schema.retrievalArtifacts)).toBe(0);
+        });
+
+        // findBuildable keeps offering a request until it completes, so the
+        // partition must be keyed on "has artifacts", not "has pending ones".
+        it('leaves a request whose chunks are mid-build alone', async () => {
+            givenPending([]);
+            givenBuildable(['req-1']);
+            givenArtifacts([
+                artifact('a1', 0, 'ready'),
+                artifact('a2', 1, 'building'),
+            ]);
+
+            const summary = await pollRetrievals(db);
+
+            expect(summary.zipJobsEnqueued).toBe(0);
+            expect(hoisted.enqueueJob).not.toHaveBeenCalled();
+            expect(mocks.countInsertsInto(schema.retrievalArtifacts)).toBe(0);
+        });
+
+        it('does nothing when no request is ready to build', async () => {
+            givenPending([]);
+            givenBuildable([]);
+
+            const summary = await pollRetrievals(db);
+
+            expect(summary).toMatchObject({
+                requestsPartitioned: 0,
+                zipJobsEnqueued: 0,
+            });
+            expect(hoisted.enqueueJob).not.toHaveBeenCalled();
+        });
+
+        // The retrievals this run flipped are correctly `ready` either way, and
+        // findBuildable re-offers the request next run — so a zip failure costs
+        // 15 minutes rather than the whole invocation.
+        it('counts a failed request without failing the poll', async () => {
+            givenPending([]);
+            givenBuildable(['req-1', 'req-2']);
+            givenArtifacts([artifact('a1', 0)]);
+            hoisted.enqueueJob
+                .mockRejectedValueOnce(new Error('SQS unavailable'))
+                .mockResolvedValue({ id: 'job-1' });
+
+            const summary = await pollRetrievals(db);
+
+            expect(summary).toMatchObject({
+                zipErrored: 1,
+                // Neither request needed partitioning — both already had
+                // artifacts, so only the enqueue ran.
+                requestsPartitioned: 0,
+                zipJobsEnqueued: 1,
+            });
+        });
+
+        // No request was even named, so counting it as one failed request
+        // would misreport the scale in the line an operator reads.
+        it('flags a failed lookup separately from a failed request', async () => {
+            givenPending([]);
+            mocks.whereLimit.mockRejectedValue(new Error('pooler down'));
+
+            const summary = await pollRetrievals(db);
+
+            expect(summary).toMatchObject({
+                zipLookupFailed: true,
+                zipErrored: 0,
+                requestsPartitioned: 0,
+            });
+        });
     });
 });

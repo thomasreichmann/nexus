@@ -28,7 +28,11 @@ import { logger } from '@/server/lib/logger';
 import { s3 } from '@/lib/storage';
 // Value import from ./types (not the package root) so unit tests that mock
 // '@/lib/storage' don't erase the constant.
-import { DEFAULT_RESTORE_DAYS_TO_KEEP } from '@/lib/storage/types';
+import {
+    DEFAULT_RESTORE_DAYS_TO_KEEP,
+    ZIP_BUILD_RESTORE_DAYS,
+    isDeliveredAsZip,
+} from '@/lib/storage/types';
 import type { ObjectState, RestoreTier } from '@/lib/storage';
 import type { DB } from '@nexus/db';
 
@@ -182,8 +186,19 @@ async function restoreFiles(
     // synthetic window the same length as a real restore window so both
     // present one download-window state to the UI; an already-restored object
     // uses the expiry S3 actually reported.
+    // A multi-file restore is delivered as zip artifacts whose own lifecycle
+    // rule owns how long the user can download them, so the thawed originals
+    // only have to outlive the build (#424). One file is downloaded directly
+    // from the restored copy, so that window is the user-facing one.
+    const daysToKeep = isDeliveredAsZip(files.length)
+        ? ZIP_BUILD_RESTORE_DAYS
+        : DEFAULT_RESTORE_DAYS_TO_KEEP;
+
     const now = new Date();
-    const syntheticWindowEnd = restoreWindowEnd(now);
+    // The whole request shares one window, warm files included: a mixed set
+    // would let some rows lapse out of the ready predicate while their
+    // siblings are still readable, and the zip needs all of them at once.
+    const syntheticWindowEnd = restoreWindowEnd(now, daysToKeep);
     const newRetrievals = await retrievalRepo.insertMany(
         plans.map(({ file, state }) => {
             const base = {
@@ -192,6 +207,7 @@ async function restoreFiles(
                 userId,
                 tier,
                 initiatedAt: now,
+                restoreDaysToKeep: daysToKeep,
             };
             if (isReadable(state)) {
                 return {
@@ -255,7 +271,8 @@ async function restoreFiles(
         retrievalRepo,
         newRetrievals,
         keysToRestore,
-        tier
+        tier,
+        daysToKeep
     );
 
     // Every bucket, not just the successful ones: only the ids matter here,
@@ -293,7 +310,8 @@ async function restoreInserted(
     retrievalRepo: RetrievalRepo,
     newRetrievals: Retrieval[],
     keysToRestore: Map<string, string>,
-    tier: RestoreTier
+    tier: RestoreTier,
+    daysToKeep: number
 ): Promise<Omit<RetrievalRequestResult, 'requestId'>> {
     const outcomes = await Promise.all(
         newRetrievals.map(async (retrieval) => {
@@ -302,11 +320,7 @@ async function restoreInserted(
             if (!s3Key) return { ok: true, row: retrieval };
 
             try {
-                await s3.glacier.restore(
-                    s3Key,
-                    tier,
-                    DEFAULT_RESTORE_DAYS_TO_KEEP
-                );
+                await s3.glacier.restore(s3Key, tier, daysToKeep);
                 return { ok: true, row: retrieval };
             } catch (err) {
                 // The pre-#329 batch-wide throw surfaced restore failures

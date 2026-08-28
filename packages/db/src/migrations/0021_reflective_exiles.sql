@@ -1,0 +1,1 @@
+ALTER TABLE "retrievals" ADD COLUMN "restore_days_to_keep" integer;

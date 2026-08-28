@@ -37,12 +37,55 @@ export const RESTORE_TIERS = ['standard', 'bulk', 'expedited'] as const;
 export type RestoreTier = (typeof RESTORE_TIERS)[number];
 
 /**
- * Days a restored Glacier copy stays accessible. Also the length of the
- * synthetic download window for an object that was already warm, which skips
- * S3 restore entirely — keep the two in lockstep so both present the same
- * window.
+ * Days a restored Glacier copy stays accessible, when that copy is what the
+ * user downloads — a single-file restore. Also the length of the synthetic
+ * download window for an object that was already warm, which skips S3 restore
+ * entirely: keep the two in lockstep so both present the same window.
+ *
+ * A multi-file restore is delivered as a zip instead and uses
+ * `ZIP_BUILD_RESTORE_DAYS`.
  */
 export const DEFAULT_RESTORE_DAYS_TO_KEEP = 7;
+
+/**
+ * Whether a restore of this many files is delivered as zip artifacts rather
+ * than as a direct download of the restored copy (#406).
+ *
+ * The whole zip pipeline hangs off this one predicate, and two halves that
+ * cannot see each other both need it: the request path, to decide which restore
+ * window to buy, and the worker poll, to decide which requests to build. A
+ * second copy of `length > 1` in either place is a single-file restore that
+ * either pays for a zip nobody downloads or promises one that never arrives.
+ */
+export function isDeliveredAsZip(fileCount: number): boolean {
+    return fileCount >= ZIP_DELIVERY_MIN_FILES;
+}
+
+/**
+ * The threshold behind `isDeliveredAsZip`, exported separately because the
+ * worker's buildable-request scan has to express the same rule in SQL, where a
+ * TypeScript predicate cannot reach.
+ */
+export const ZIP_DELIVERY_MIN_FILES = 2;
+
+/**
+ * Days a restored copy stays accessible when the restore only exists to feed a
+ * zip build (#424).
+ *
+ * A multi-file restore is delivered as zip artifacts, and the artifacts' own
+ * lifecycle rule owns how long the user can download them
+ * (`infra/terraform/s3.tf`). The thawed originals behind them are machinery:
+ * they only have to outlive the build, which the poll starts within 15 minutes
+ * of the last file thawing and which finishes in minutes. Deep Archive charges
+ * for the restored copy for the whole window, so the seven days the direct
+ * download path needs are seven days of double storage nobody reads here.
+ *
+ * Two rather than one because it is a redrive budget, not a build budget: a zip
+ * job that exhausts its SQS attempts parks on the DLQ, and the depth alarm has
+ * to reach a human who can redrive it before the originals lapse and the
+ * rebuild has nothing to read.
+ */
+export const ZIP_BUILD_RESTORE_DAYS = 2;
 
 /**
  * What an object can actually do right now, as S3 reports it.
@@ -136,10 +179,11 @@ export function isObjectMissing(error: unknown): boolean {
  * of its own — a warm object, or a restore whose header carried no
  * `expiry-date`. Keeps the request path and the poll quoting one window.
  */
-export function restoreWindowEnd(from: Date = new Date()): Date {
-    return new Date(
-        from.getTime() + DEFAULT_RESTORE_DAYS_TO_KEEP * 24 * 60 * 60 * 1000
-    );
+export function restoreWindowEnd(
+    from: Date = new Date(),
+    days: number = DEFAULT_RESTORE_DAYS_TO_KEEP
+): Date {
+    return new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
 /** Whether S3 will serve this object's bytes right now, without a restore. */

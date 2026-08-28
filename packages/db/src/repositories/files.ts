@@ -68,6 +68,28 @@ export function originalKey(file: {
     return `${file.userId}/${file.batchId}/${file.id}/${file.name}`;
 }
 
+/**
+ * Key of one zip artifact of a retrieval request, in the artifacts bucket
+ * (#424). Lives beside the other key builders so the delivery path (#426) hands
+ * out the same names the worker wrote rather than restating the convention.
+ *
+ * The artifact id is a path segment rather than part of the filename: a rebuild
+ * writes a fresh object under a fresh id, so an in-flight download still
+ * resolves to the archive it started on. That is also why
+ * `retrieval_artifacts.s3_key` is stored — this function says where a *new*
+ * object goes, never where an existing one is.
+ *
+ * The part number is 1-based: it is the only piece of this key a user sees.
+ */
+export function retrievalArtifactKey(artifact: {
+    userId: string;
+    requestId: string;
+    id: string;
+    position: number;
+}): string {
+    return `${artifact.userId}/${artifact.requestId}/${artifact.id}/nexus-part-${artifact.position + 1}.zip`;
+}
+
 // Re-exported so a caller that already has this module doesn't need a second
 // import. Defined in `../media` so client components can classify a file
 // without pulling drizzle into the bundle (#364).

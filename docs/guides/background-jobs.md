@@ -19,22 +19,29 @@ ai_summary: 'Worker deployment, DLQ inspection, test jobs, logs, and integration
 Operational guide for the SQS + Lambda background job infrastructure. For development patterns and conventions, see [[lambda-development|Lambda Development]].
 
 > [!important] Provisioning lives in Terraform — this doc is operations only.
-> Both environments' queues, Lambdas, and IAM come from [`infra/terraform/`](../../infra/terraform/README.md) (prod #53, dev #127) — queue/Lambda definitions in `sqs.tf` and `lambda.tf`. Resource changes go through Terraform, including Lambda env vars (`DATABASE_URL`, `SQS_QUEUE_URL`, and the notification vars added in #425) — never `aws lambda update-function-configuration`. Only worker **code** deploys via the CLI (below); Terraform ignores the code package on later applies.
+> Both environments' queues, Lambdas, and IAM come from [`infra/terraform/`](../../infra/terraform/README.md) (prod #53, dev #127) — queue/Lambda definitions in `sqs.tf` and `lambda.tf`. Resource changes go through Terraform, including Lambda env vars (`DATABASE_URL`, `SQS_QUEUE_URL`, the zip-pipeline vars added in #424, and the notification vars added in #425) — never `aws lambda update-function-configuration`. Only worker **code** deploys via the CLI (below); Terraform ignores the code package on later applies.
 
 ## Provisioned Resources
 
 One set per environment, in `us-east-1`, account `391615358272`, suffixed `-dev` / `-prod` (exact definitions: `infra/terraform/sqs.tf`, `lambda.tf`, `scheduler.tf`):
 
-| Resource              | Name pattern                                                                                     |
-| --------------------- | ------------------------------------------------------------------------------------------------ |
-| SQS Queue             | `nexus-jobs-<env>` (visibility timeout 720s, 3 retries → DLQ)                                    |
-| SQS Dead Letter Queue | `nexus-jobs-dlq-<env>` (depth > 0 alarms → Discord, plus email in prod, `alarms.tf`)             |
-| Lambda Function       | `nexus-worker-<env>` (Node 22, 120s timeout, 1 GB, batch size 1, ffmpeg + exiftool layers)       |
-| Lambda Layers         | `nexus-ffmpeg-<env>`, `nexus-exiftool-<env>` (`layers.tf`; built by `lambda-layers.yml` CI)      |
-| IAM Role (Lambda)     | `nexus-worker-role-<env>` (SQS consume + send, S3 CRUD, derived-bucket Put/Get, CloudWatch Logs) |
-| EventBridge Schedule  | `nexus-retrieval-poll-<env>` (every 15 min → the same Lambda; `scheduler.tf`)                    |
-| Lambda Errors Alarm   | `nexus-worker-errors-<env>` (>3 errors/hour → Discord; the scheduled path has no DLQ)            |
-| IAM Policy (SQS user) | `nexus-sqs-access-<env>` (inline on the `nexus-app-<env>` user)                                  |
+| Resource              | Name pattern                                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| SQS Queue             | `nexus-jobs-<env>` (visibility timeout 720s, 3 retries → DLQ)                                           |
+| SQS Dead Letter Queue | `nexus-jobs-dlq-<env>` (depth > 0 alarms → Discord, plus email in prod, `alarms.tf`)                    |
+| SQS Zip Queue         | `nexus-zip-jobs-<env>` (visibility timeout 5400s, 3 retries → DLQ)                                      |
+| SQS Zip DLQ           | `nexus-zip-jobs-dlq-<env>` (depth > 0 alarms; redrive before the thawed originals lapse)                |
+| Lambda Function       | `nexus-worker-<env>` (Node 22, 120s timeout, 1 GB, batch size 1, ffmpeg + exiftool layers)              |
+| Lambda Function (zip) | `nexus-worker-zip-<env>` (Node 22, 900s timeout, 2 GB, batch size 1, reserved concurrency 5, no layers) |
+| Lambda Layers         | `nexus-ffmpeg-<env>`, `nexus-exiftool-<env>` (`layers.tf`; built by `lambda-layers.yml` CI)             |
+| IAM Role (Lambda)     | `nexus-worker-role-<env>` (SQS consume + send, S3 CRUD, derived-bucket Put/Get, CloudWatch Logs)        |
+| EventBridge Schedule  | `nexus-retrieval-poll-<env>` (every 15 min → the general Lambda; `scheduler.tf`)                        |
+| Lambda Errors Alarm   | `nexus-worker-errors-<env>` (>3 errors/hour → Discord; the scheduled path has no DLQ)                   |
+| IAM Policy (SQS user) | `nexus-sqs-access-<env>` (inline on the `nexus-app-<env>` user)                                         |
+
+Both Lambdas run the same bundle and register the same handlers; the queue a
+job is published to decides which one runs it (`queueUrlFor` in
+`apps/worker/src/jobs.ts`). `deploy.sh` therefore updates both functions.
 
 The examples below use dev (`nexus-worker-dev`, `nexus-jobs-dev`, …); substitute `-prod` to operate on prod.
 

@@ -5,9 +5,12 @@ import {
     isReadable,
     restoreWindowEnd,
 } from '@nexus/db/objectState';
+import { createRetrievalRequestRepo } from '@nexus/db/repo/retrievalRequests';
 import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
 import { getS3, requireEnv } from './aws';
 import { enqueueJob } from './jobs';
+import { partitionIntoChunks } from './partition';
+import type { RetrievalRequestRepo } from '@nexus/db/repo/retrievalRequests';
 import type { PendingRetrievalWithFile } from '@nexus/db/repo/retrievals';
 import type { DB } from '@nexus/db';
 
@@ -19,6 +22,14 @@ import type { DB } from '@nexus/db';
  * overflow drains in request order rather than starving the earliest rows.
  */
 const MAX_ROWS_PER_RUN = 400;
+
+/**
+ * Cap on requests whose zip builds are started per run, for the same reason as
+ * `MAX_ROWS_PER_RUN`: bound the invocation. Lower because each one costs a
+ * partition and a handful of writes rather than a single HEAD, and because a
+ * leftover waits 15 minutes against restores measured in days.
+ */
+const MAX_REQUESTS_PER_RUN = 25;
 
 export interface PollSummary {
     /** Rows HEADed this run. */
@@ -33,6 +44,14 @@ export interface PollSummary {
     errored: number;
     /** More pending rows existed than the per-run cap. */
     capped: boolean;
+    /** Requests partitioned into zip chunks by *this* run. */
+    requestsPartitioned: number;
+    /** `build-retrieval-zip` jobs published this run. */
+    zipJobsEnqueued: number;
+    /** Requests whose zip build could not be started — retried next run. */
+    zipErrored: number;
+    /** True when the buildable-request lookup itself failed. */
+    zipLookupFailed: boolean;
 }
 
 /** What one pending row turned into. Keyed to match `PollSummary`'s counters. */
@@ -66,12 +85,21 @@ export async function pollRetrievals(db: DB): Promise<PollSummary> {
         missing: 0,
         errored: 0,
         capped,
+        requestsPartitioned: 0,
+        zipJobsEnqueued: 0,
+        zipErrored: 0,
+        zipLookupFailed: false,
     };
 
     for (const row of rows) {
         summary.checked++;
         summary[await pollRow(db, retrievalRepo, row)]++;
     }
+
+    // After the flips, not interleaved with them: a request is only buildable
+    // once every one of its files is `ready`, and the row that completes it may
+    // be anywhere in this loop.
+    await startZipBuilds(db, summary);
 
     if (capped) {
         console.warn(
@@ -127,7 +155,13 @@ async function pollRow(
         const now = new Date();
         await retrievalRepo.updateStatus(row.id, 'ready', {
             readyAt: now,
-            expiresAt: state.expiresAt ?? restoreWindowEnd(now),
+            // The synthetic window quotes the `Days` this restore was actually
+            // requested with, not the default: a zip-delivered restore buys two
+            // days, and claiming seven would keep `readyAndDownloadable` true
+            // for five days after the copy is gone.
+            expiresAt:
+                state.expiresAt ??
+                restoreWindowEnd(now, row.restoreDaysToKeep ?? undefined),
         });
 
         // A thumbnail that failed because its original was already cold
@@ -180,6 +214,119 @@ async function failMissing(
         );
         return 'errored';
     }
+}
+
+/**
+ * Start the zip build for every request whose last file has thawed (#424).
+ *
+ * Failures are counted, not thrown: the retrievals this run flipped are
+ * correctly `ready` either way, and `findBuildable` re-offers an unbuilt
+ * request on every subsequent run, so a transient DB or SQS problem costs 15
+ * minutes rather than the whole invocation. A persistent one shows up as a
+ * `zipErrored` count in the logged summary and as a request that never
+ * completes.
+ */
+async function startZipBuilds(db: DB, summary: PollSummary): Promise<void> {
+    const requestRepo = createRetrievalRequestRepo(db);
+
+    let requestIds: string[];
+    try {
+        requestIds = await requestRepo.findBuildable(MAX_REQUESTS_PER_RUN);
+    } catch (error) {
+        // Its own flag rather than a `zipErrored` bump: no request was even
+        // named here, so counting it as one failed request would misreport the
+        // scale of the problem in the line an operator reads.
+        console.warn('Failed to look up requests ready to zip:', error);
+        summary.zipLookupFailed = true;
+        return;
+    }
+
+    for (const requestId of requestIds) {
+        try {
+            const { partitioned, enqueued } = await startZipBuild(
+                db,
+                requestRepo,
+                requestId
+            );
+            if (partitioned) summary.requestsPartitioned++;
+            summary.zipJobsEnqueued += enqueued;
+        } catch (error) {
+            console.warn(
+                `Failed to start the zip build for retrieval request ${requestId}:`,
+                error
+            );
+            summary.zipErrored++;
+        }
+    }
+}
+
+/**
+ * Partition one request into chunks and publish a build job per chunk.
+ *
+ * Both halves are idempotent, which is what lets the reconciling scan re-offer
+ * a half-finished request: the artifact insert conflicts away against the
+ * (request, position) unique index, and the enqueue list is read back from the
+ * `pending` rows rather than taken from the insert's result, so chunks a
+ * previous run wrote but never published still get a job.
+ *
+ * The partition writes artifacts and their file assignments in one transaction
+ * because the job only knows its file set through `items.artifact_id`: an
+ * artifact that exists with nothing assigned to it would be a build that can
+ * only fail.
+ */
+async function startZipBuild(
+    db: DB,
+    requestRepo: RetrievalRequestRepo,
+    requestId: string
+): Promise<{ partitioned: boolean; enqueued: number }> {
+    let artifacts = await requestRepo.findArtifacts(requestId);
+    const partitioned = artifacts.length === 0;
+
+    // Any artifact at all means the partition has run. Keying off `pending`
+    // instead would re-partition a request whose chunks are mid-build on every
+    // one of the 15-minute runs it takes to finish them.
+    if (partitioned) {
+        const chunks = partitionIntoChunks(
+            await requestRepo.findFiles(requestId)
+        );
+
+        await db.transaction(async (tx) => {
+            const txRepo = createRetrievalRequestRepo(tx);
+            const inserted = await txRepo.insertArtifacts(
+                chunks.map((_, position) => ({
+                    id: crypto.randomUUID(),
+                    requestId,
+                    position,
+                }))
+            );
+
+            // Only assign for chunks this call actually created. A conflicted
+            // position belongs to a concurrent run whose own assignment covers
+            // it, and re-pointing its items here could split a chunk across
+            // two artifacts.
+            for (const artifact of inserted) {
+                await txRepo.assignItemsToArtifact(
+                    requestId,
+                    artifact.id,
+                    chunks[artifact.position].map((file) => file.fileId)
+                );
+            }
+        });
+
+        artifacts = await requestRepo.findArtifacts(requestId);
+    }
+
+    const pending = artifacts.filter(
+        (artifact) => artifact.status === 'pending'
+    );
+    for (const artifact of pending) {
+        await enqueueJob(db, {
+            type: 'build-retrieval-zip',
+            payload: { artifactId: artifact.id },
+        });
+    }
+
+    return { partitioned, enqueued: pending.length };
 }
 
 // A thumbnail re-enqueue must not undo a retrieval that is genuinely ready —

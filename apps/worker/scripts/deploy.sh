@@ -24,7 +24,10 @@ ENV="$1"
 case "$ENV" in dev | prod) ;; *) usage ;; esac
 
 REGION="us-east-1"
-FUNCTION="nexus-worker-$ENV"
+# One bundle, two functions: zip builds run on their own Lambda for the 15-minute
+# timeout (infra/terraform/lambda.tf), but share this code. Both must be updated
+# together — a half-deployed pair runs two versions of the same handler registry.
+FUNCTIONS=("nexus-worker-$ENV" "nexus-worker-zip-$ENV")
 
 # Run from the package root regardless of caller cwd.
 cd "$(dirname "$0")/.."
@@ -36,26 +39,29 @@ pnpm build
 rm -f worker.zip
 (cd dist && echo '{"type":"module"}' >package.json && zip -qr ../worker.zip .)
 
-echo "Deploying worker.zip to $FUNCTION ($REGION)..."
-aws lambda update-function-code \
-    --function-name "$FUNCTION" \
-    --zip-file fileb://worker.zip \
-    --region "$REGION" \
-    --no-cli-pager \
-    --query '{CodeSha256:CodeSha256,CodeSize:CodeSize,LastModified:LastModified}' \
-    --output table
-
-# Blocks until LastUpdateStatus leaves InProgress; exits non-zero on Failed.
-aws lambda wait function-updated-v2 --function-name "$FUNCTION" --region "$REGION"
-
 # The update call returns the hash of what S3 accepted; compare against the
 # local zip so a truncated upload can't pass silently.
 local_sha=$(openssl dgst -sha256 -binary worker.zip | openssl base64)
-remote_sha=$(aws lambda get-function --function-name "$FUNCTION" --region "$REGION" \
-    --query 'Configuration.CodeSha256' --output text)
-if [ "$local_sha" != "$remote_sha" ]; then
-    echo "CodeSha256 mismatch: local $local_sha vs deployed $remote_sha" >&2
-    exit 1
-fi
 
-echo "Deployed $FUNCTION (CodeSha256 $remote_sha)"
+for FUNCTION in "${FUNCTIONS[@]}"; do
+    echo "Deploying worker.zip to $FUNCTION ($REGION)..."
+    aws lambda update-function-code \
+        --function-name "$FUNCTION" \
+        --zip-file fileb://worker.zip \
+        --region "$REGION" \
+        --no-cli-pager \
+        --query '{CodeSha256:CodeSha256,CodeSize:CodeSize,LastModified:LastModified}' \
+        --output table
+
+    # Blocks until LastUpdateStatus leaves InProgress; exits non-zero on Failed.
+    aws lambda wait function-updated-v2 --function-name "$FUNCTION" --region "$REGION"
+
+    remote_sha=$(aws lambda get-function --function-name "$FUNCTION" --region "$REGION" \
+        --query 'Configuration.CodeSha256' --output text)
+    if [ "$local_sha" != "$remote_sha" ]; then
+        echo "CodeSha256 mismatch on $FUNCTION: local $local_sha vs deployed $remote_sha" >&2
+        exit 1
+    fi
+
+    echo "Deployed $FUNCTION (CodeSha256 $remote_sha)"
+done

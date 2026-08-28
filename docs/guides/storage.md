@@ -119,6 +119,12 @@ Start a restore operation for an object in Glacier Deep Archive.
 | `tier`       | `RestoreTier` | -       | Restore speed (see table below)   |
 | `daysToKeep` | `number`      | 7       | Days to keep restored copy active |
 
+The default (`DEFAULT_RESTORE_DAYS_TO_KEEP`) is the window a single-file
+restore is downloaded from directly. A multi-file restore is delivered as zip
+artifacts whose own lifecycle rule owns the user-facing window, so it passes
+`ZIP_BUILD_RESTORE_DAYS` instead — the thawed copies only have to outlive the
+build (#424).
+
 **Restore Tiers:**
 
 | Tier        | Time     | Cost     | Use Case              |

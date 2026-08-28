@@ -1,0 +1,1 @@
+ALTER TABLE "retrieval_requests" ADD COLUMN "completed_at" timestamp;

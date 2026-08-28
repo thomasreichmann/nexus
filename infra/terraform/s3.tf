@@ -74,6 +74,61 @@ resource "aws_s3_bucket_public_access_block" "derived" {
   restrict_public_buckets = true
 }
 
+# Retrieval artifacts: the zip archives the worker builds when a multi-file
+# restore's last file thaws (#424). Keys are
+# `${userId}/${requestId}/${artifactId}/nexus-part-N.zip` — see artifactKey() in
+# apps/worker/src/handlers/buildRetrievalZip.ts.
+#
+# A separate bucket rather than a prefix on `files` because the transition rule
+# above is filtered only by object size: a staged zip over 128KB would be swept
+# into Deep Archive on the next lifecycle run, and S3 lifecycle filters cannot
+# express "every object except this prefix". Separate from `derived` too, whose
+# contents are permanent while these are disposable.
+resource "aws_s3_bucket" "retrieval_artifacts" {
+  bucket = "nexus-retrieval-artifacts-${var.environment}"
+}
+
+resource "aws_s3_bucket_public_access_block" "retrieval_artifacts" {
+  bucket = aws_s3_bucket.retrieval_artifacts.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "retrieval_artifacts" {
+  bucket = aws_s3_bucket.retrieval_artifacts.id
+
+  # This rule owns how long a restore stays downloadable — it is the number the
+  # user experiences, and the reason the thawed originals behind it only need
+  # ZIP_BUILD_RESTORE_DAYS (packages/db/src/objectState.ts). Seven days to match
+  # what the direct single-file download has always promised.
+  rule {
+    id     = "expire-retrieval-artifacts"
+    status = "Enabled"
+    filter {}
+
+    expiration {
+      days = 7
+    }
+  }
+
+  # One day, not the files bucket's seven: these uploads are machine-paced and
+  # finish in minutes, so anything still incomplete the next day is debris from
+  # a Lambda that died mid-stream. A 4GB abandoned upload bills for its parts
+  # until something reaps them.
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+    filter {}
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
+  }
+}
+
 resource "aws_s3_bucket_cors_configuration" "files" {
   bucket = aws_s3_bucket.files.id
 

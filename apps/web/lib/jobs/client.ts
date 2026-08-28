@@ -10,3 +10,4 @@ export const client = new SQSClient({
 });
 
 export const queueUrl = env.SQS_QUEUE_URL;
+export const zipQueueUrl = env.SQS_ZIP_QUEUE_URL;

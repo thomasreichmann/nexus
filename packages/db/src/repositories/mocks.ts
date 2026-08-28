@@ -20,7 +20,17 @@ export function createMockDb() {
     const returning: AnyMock = vi.fn().mockResolvedValue([]);
     const groupBy: AnyMock = vi.fn();
     const orderBy: AnyMock = vi.fn();
-    const where: AnyMock = vi.fn(() => ({ returning, groupBy }));
+    // `select().from().where().orderBy().limit()` — an unjoined scan whose
+    // predicates are raw SQL (findBuildable). Its own terminal so it can't be
+    // answered by, or steal from, the innerJoin chains' `mocks.limit`.
+    const whereLimit: AnyMock = vi.fn().mockResolvedValue([]);
+    const whereOrderBy: AnyMock = vi.fn(() => ({ limit: whereLimit }));
+    const where: AnyMock = vi.fn(() => ({
+        returning,
+        groupBy,
+        orderBy: whereOrderBy,
+        limit: whereLimit,
+    }));
     const set: AnyMock = vi.fn(() => ({ where }));
     const onConflictDoUpdate: AnyMock = vi.fn(() => ({ returning }));
     const onConflictDoNothing: AnyMock = vi.fn(() => ({ returning }));
@@ -50,13 +60,21 @@ export function createMockDb() {
         where: leftJoinWhere,
         orderBy,
     }));
-    // innerJoin chains (the retrieval-with-file reads) end one step later
-    // than leftJoin ones, at `.limit()`. They get their own terminals so a
-    // `mocks.orderBy.mockResolvedValue(...)` for a leftJoin chain can't be
-    // consumed by an innerJoin one. To stop a chain at `.orderBy()` instead,
-    // override `mocks.innerJoinOrderBy` directly.
+    // innerJoin chains (the retrieval-with-file reads) get their own terminals
+    // so a `mocks.orderBy.mockResolvedValue(...)` for a leftJoin chain can't be
+    // consumed by an innerJoin one.
+    // Some end at `.limit()` (the poll's work list) and some at `.orderBy()`
+    // (a request's file set), and one code path runs both — so `.orderBy()`
+    // returns a promise carrying `limit` as a property, the same trick
+    // leftJoinWhere uses. Override `mocks.innerJoinOrderByRows` for a chain
+    // that stops at the ORDER BY, `mocks.limit` for one that continues.
     const limit: AnyMock = vi.fn().mockResolvedValue([]);
-    const innerJoinOrderBy: AnyMock = vi.fn(() => ({ limit }));
+    const innerJoinOrderByRows: Mock<() => Promise<unknown[]>> = vi.fn(
+        async () => [] as unknown[]
+    );
+    const innerJoinOrderBy: AnyMock = vi.fn(() =>
+        Object.assign(innerJoinOrderByRows(), { limit })
+    );
     const innerJoinWhere: AnyMock = vi.fn(() => ({
         orderBy: innerJoinOrderBy,
         groupBy,
@@ -134,8 +152,11 @@ export function createMockDb() {
             innerJoin,
             innerJoinWhere,
             innerJoinOrderBy,
+            innerJoinOrderByRows,
             limit,
             where,
+            whereOrderBy,
+            whereLimit,
             insert,
             values,
             onConflictDoUpdate,
