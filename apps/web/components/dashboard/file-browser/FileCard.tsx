@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { isProbablyCold } from '@nexus/db/objectState';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
 import { formatBytes, formatDuration } from '@/lib/format';
@@ -26,6 +27,7 @@ export function FileCard({
 }: FileItemProps) {
     const status = deriveStatus(file);
     const actions = useFileActions(file);
+    const isCold = isProbablyCold(file);
     const ext = getFileExtension(file.name);
     const downloadWindow = getDownloadWindowLabel(file);
 
@@ -61,11 +63,7 @@ export function FileCard({
                         )}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <FileActions
-                            status={status}
-                            storageTier={file.storageTier}
-                            {...actions}
-                        />
+                        <FileActions status={status} file={file} {...actions} />
                     </div>
                 </div>
                 <CardMedia
@@ -88,7 +86,7 @@ export function FileCard({
                         )}
                     </span>
                     <div className="flex flex-col items-end gap-0.5">
-                        <StatusDot status={status} />
+                        <StatusDot status={status} isCold={isCold} />
                         {downloadWindow && (
                             <p className="text-xs text-muted-foreground">
                                 {downloadWindow}

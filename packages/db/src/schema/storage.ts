@@ -9,43 +9,21 @@ import {
     index,
     uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { RESTORE_TIERS } from '../objectState';
 import { user } from './auth';
 import { timestamps } from './helpers';
 
-/**
- * Glacier restore tier values - determines retrieval speed and cost
- *
- * For Deep Archive (MVP default):
- * - expedited: Not available for Deep Archive
- * - standard: 12-48 hours
- * - bulk: 48 hours (cheapest)
- *
- * For Glacier Flexible Retrieval:
- * - expedited: 1-5 minutes (most expensive)
- * - standard: 3-5 hours
- * - bulk: 5-12 hours
- */
-export const RESTORE_TIERS = ['standard', 'bulk', 'expedited'] as const;
-export type RestoreTier = (typeof RESTORE_TIERS)[number];
-
-/**
- * Days a restored Glacier copy stays accessible. Also the length of the
- * synthetic download window for standard-tier retrievals, which skip S3
- * restore entirely — keep the two in lockstep so both tiers present the
- * same window.
- *
- * Lives here beside `RESTORE_TIERS` rather than in `apps/web` so seeds and
- * test-db helpers can reach it — they can't import from the app (#364).
- */
-export const DEFAULT_RESTORE_DAYS_TO_KEEP = 7;
+// The retrieval-policy constants are defined in `../objectState`, not here:
+// client components import them, and reaching them through this file would
+// ship drizzle and every table below to the browser. Re-exported so
+// `@nexus/db/schema` consumers still find them where they always were.
+export {
+    RESTORE_TIERS,
+    DEFAULT_RESTORE_DAYS_TO_KEEP,
+    type RestoreTier,
+} from '../objectState';
 
 // Nexus domain tables
-
-export const storageTierEnum = pgEnum('storage_tier', [
-    'standard',
-    'glacier',
-    'deep_archive',
-]);
 
 export const fileStatusEnum = pgEnum('file_status', [
     'uploading',
@@ -105,12 +83,6 @@ export const files = pgTable(
         size: bigint('size', { mode: 'number' }).notNull(),
         mimeType: text('mime_type'),
         s3Key: text('s3_key').notNull().unique(),
-        // Defaults to 'standard' because that's where every upload lands in
-        // S3; the bucket lifecycle rule transitions objects to Deep Archive
-        // and the LifecycleTransition webhook flips this column to match.
-        storageTier: storageTierEnum('storage_tier')
-            .notNull()
-            .default('standard'),
         status: fileStatusEnum('status').notNull().default('uploading'),
         // Thumbnail lifecycle for the derived-bucket WebP. No key column:
         // the derived key is a pure function of immutable row fields
@@ -132,7 +104,6 @@ export const files = pgTable(
     (table) => [
         index('files_user_id_idx').on(table.userId),
         index('files_status_idx').on(table.status),
-        index('files_storage_tier_idx').on(table.storageTier),
         index('files_batch_id_idx').on(table.batchId),
         index('files_user_id_created_at_idx').on(
             table.userId,

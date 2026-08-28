@@ -11,8 +11,9 @@ concurrency:
 
 jobs:
     # The long-lived `dev` branch backs the stable Vercel Preview deployment
-    # that receives dev SNS webhooks (infra/terraform/README.md, #127). Keep
-    # it pointing at main so that deployment always runs production code.
+    # that receives dev webhooks — CloudWatch alarms and Stripe
+    # (infra/terraform/README.md, #127). Keep it pointing at main so that
+    # deployment always runs production code.
     sync-dev-branch:
         name: Sync dev branch to main
         runs-on: ubuntu-latest

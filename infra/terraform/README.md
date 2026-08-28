@@ -1,9 +1,9 @@
 # Nexus Terraform
 
-Provisions one full Nexus AWS environment (S3 files bucket, SNS restore-events
-topic + webhook subscription, SQS jobs queues, worker Lambda, app IAM user,
-ops-alerts topic + DLQ-depth alarms), parameterized by `environment` and
-`region`. **Both environments are managed here and this is the source of
+Provisions one full Nexus AWS environment (S3 files bucket, SQS jobs queues,
+worker Lambda, the EventBridge retrieval-poll schedule, app IAM user,
+ops-alerts topic + webhook subscription + DLQ-depth alarms), parameterized by
+`environment` and `region`. **Both environments are managed here and this is the source of
 truth**: prod since #53, dev since #127 (the hand-built dev resources were
 decommissioned and recreated from these files, which closed the main drift
 vector between environments).
@@ -51,9 +51,9 @@ terraform plan -var-file=environments/prod.tfvars    # or dev.tfvars
 terraform apply -var-file=environments/prod.tfvars   # or dev.tfvars
 ```
 
-The SNS subscription only confirms if the app is already deployed and serving
-`https://<app_domain>/api/webhooks/s3-restore` — the route auto-confirms by
-fetching `SubscribeURL`, and Terraform waits for that. For dev, `app_domain`
+The ops-alerts SNS subscription only confirms if the app is already deployed
+and serving `https://<app_domain>/api/webhooks/cloudwatch-alarm` — the route
+auto-confirms by fetching `SubscribeURL`, and Terraform waits for that. For dev, `app_domain`
 is `dev.nexus.thomasar.dev` (a Cloudflare CNAME → Vercel custom domain pinned
 to the long-lived `dev` branch; Preview tier = dev Supabase + dev AWS). It
 confirms without a bypass token because Vercel Authentication is disabled on the
@@ -127,8 +127,11 @@ production code.
 `aws_s3_bucket.files` carries `lifecycle { prevent_destroy = true }`, so
 `terraform destroy` on this stack fails at plan time, before any resource is
 removed. That one guard covers everything: the rest of the stack (SQS, SNS,
-Lambda, IAM) is reconstructible from these files, so losing it is an outage,
-not data loss.
+Lambda, EventBridge, IAM) is reconstructible from these files, so losing it is
+an outage, not data loss.
+
+Because of that guard, removing resources here is a targeted **apply** after
+deleting them from the config — never a `terraform destroy`.
 
 Decommissioning an environment for real means deleting the bucket contents and
 removing the guard in a commit first. Then:

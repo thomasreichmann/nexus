@@ -12,23 +12,27 @@ export type NewStorageUsage = typeof schema.storageUsage.$inferInsert;
 export type Retrieval = typeof schema.retrievals.$inferSelect;
 export type NewRetrieval = typeof schema.retrievals.$inferInsert;
 
-export type StorageTier = File['storageTier'];
 export type PlanTier = Subscription['planTier'];
 export type SubscriptionStatus = Subscription['status'];
 export type RetrievalStatus = Retrieval['status'];
 
-export interface StorageTierDistribution {
-    standard?: number;
-    glacier?: number;
-    deep_archive?: number;
-}
-
+// No storage-tier knob: S3 owns object state, so how cold a seeded file looks
+// falls out of `sizeRange` and `createdAtRange` via `isProbablyCold` (#416).
+// Seed files large and old to get cold ones, small or fresh to get warm ones.
 export interface FileBuilderOptions {
     count?: number;
-    storageTierDistribution?: StorageTierDistribution;
     sizeRange?: { min: number; max: number };
     /** Spread file creation dates over this range for realistic upload history */
     createdAtRange?: { from: Date; to: Date };
+    /**
+     * Guarantee that at least this many of the seeded files read as
+     * `isProbablyCold` — use it whenever the caller goes on to attach N
+     * retrievals, so `files.filter(isProbablyCold)` can't come back short.
+     * These files are sized above the lifecycle floor and dated past the lag
+     * regardless of `sizeRange`/`createdAtRange`; the rest stay random, so a
+     * seed still contains warm files to exercise the direct-download path.
+     */
+    coldCount?: number;
 }
 
 export interface RetrievalBuilderOptions {
@@ -43,7 +47,6 @@ export interface CustomSeedOptions {
     fileCount?: number;
     planTier?: PlanTier;
     subscriptionStatus?: SubscriptionStatus;
-    storageTierDistribution?: StorageTierDistribution;
     retrievalCount?: number;
 }
 

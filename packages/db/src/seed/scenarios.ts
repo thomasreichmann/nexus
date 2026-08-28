@@ -5,7 +5,13 @@ import {
     buildStorageUsage,
     buildRetrievals,
 } from './builders';
-import { PLAN_LIMITS, getTrialEnd, withTransaction } from './constants';
+import {
+    PLAN_LIMITS,
+    getTrialEnd,
+    withTransaction,
+    daysAgo,
+} from './constants';
+import { isProbablyCold } from '../objectState';
 import type { DB } from '../connection';
 import type {
     SeedResult,
@@ -31,9 +37,9 @@ export const SCENARIO_DEFINITIONS: Record<string, ScenarioDefinition> = {
         description: 'Starter plan user at 95%+ storage capacity',
         estimates: { users: 1, files: 30, subscriptions: 1, retrievals: 0 },
     },
-    mixedTiers: {
-        name: 'Mixed Storage Tiers',
-        description: 'Files distributed across all storage tiers',
+    mixedAges: {
+        name: 'Mixed Ages',
+        description: '50 files spread either side of the lifecycle window',
         estimates: { users: 1, files: 50, subscriptions: 1, retrievals: 0 },
     },
     activeRetrievals: {
@@ -66,17 +72,13 @@ async function powerUser(db: DB): Promise<SeedResult> {
     });
     const files = await buildFiles(db, user.id, {
         count: 200,
-        storageTierDistribution: {
-            standard: 0.1,
-            glacier: 0.6,
-            deep_archive: 0.3,
-        },
+        coldCount: 5,
     });
-    const glacierFiles = files.filter((f) => f.storageTier !== 'standard');
+    const coldFiles = files.filter(isProbablyCold);
     const retrievals = await buildRetrievals(
         db,
         user.id,
-        glacierFiles.slice(0, 5).map((f) => f.id)
+        coldFiles.slice(0, 5).map((f) => f.id)
     );
     const usage = await buildStorageUsage(db, user.id);
 
@@ -136,19 +138,17 @@ async function quotaNearLimit(db: DB): Promise<SeedResult> {
     };
 }
 
-async function mixedTiers(db: DB): Promise<SeedResult> {
-    const user = await buildUser(db, { name: 'Mixed Tier User' });
+async function mixedAges(db: DB): Promise<SeedResult> {
+    const user = await buildUser(db, { name: 'Mixed Age User' });
     const sub = await buildSubscription(db, user.id, {
         planTier: 'pro',
         status: 'active',
     });
     const files = await buildFiles(db, user.id, {
+        // A spread of ages either side of the lifecycle window, so the list
+        // shows both warm and probably-cold rows.
         count: 50,
-        storageTierDistribution: {
-            standard: 0.3,
-            glacier: 0.5,
-            deep_archive: 0.2,
-        },
+        createdAtRange: { from: daysAgo(90), to: new Date() },
     });
     const usage = await buildStorageUsage(db, user.id);
 
@@ -168,12 +168,10 @@ async function activeRetrievals(db: DB): Promise<SeedResult> {
         status: 'active',
     });
     const files = await buildFiles(db, user.id, {
+        // All past the lifecycle window: every file reads as cold, which is
+        // the precondition for a retrieval being worth requesting.
         count: 30,
-        storageTierDistribution: {
-            standard: 0.0,
-            glacier: 0.7,
-            deep_archive: 0.3,
-        },
+        createdAtRange: { from: daysAgo(90), to: daysAgo(7) },
     });
     const retrievals = await buildRetrievals(
         db,
@@ -299,7 +297,6 @@ export async function customSeed(
             fileCount = 50,
             planTier = 'starter',
             subscriptionStatus = 'active',
-            storageTierDistribution,
             retrievalCount = 0,
         } = options;
 
@@ -331,18 +328,16 @@ export async function customSeed(
         if (fileCount > 0) {
             const files = await buildFiles(tx, userId, {
                 count: fileCount,
-                storageTierDistribution,
+                coldCount: retrievalCount,
             });
             results.files = files;
 
             if (retrievalCount > 0) {
-                const glacierFiles = files.filter(
-                    (f) => f.storageTier !== 'standard'
-                );
+                const coldFiles = files.filter(isProbablyCold);
                 const retrievals = await buildRetrievals(
                     tx,
                     userId,
-                    glacierFiles.slice(0, retrievalCount).map((f) => f.id),
+                    coldFiles.slice(0, retrievalCount).map((f) => f.id),
                     { count: retrievalCount }
                 );
                 results.retrievals = retrievals;
@@ -362,7 +357,7 @@ const SCENARIO_RUNNERS: Record<string, (db: DB) => Promise<SeedResult>> = {
     powerUser,
     emptyUser,
     quotaNearLimit,
-    mixedTiers,
+    mixedAges,
     activeRetrievals,
     multiUser,
     fullDemo,

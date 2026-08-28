@@ -1,5 +1,6 @@
 import { createDb, type DB } from '@nexus/db';
 import { createJobRepo, type SqsMessageBody } from '@nexus/db/repo/jobs';
+import { pollRetrievals } from './pollRetrievals';
 import { getHandler } from './registry';
 import type { SQSEvent } from 'aws-lambda';
 
@@ -55,7 +56,33 @@ export async function processRecord(
     }
 }
 
-export async function handler(event: SQSEvent): Promise<void> {
+/**
+ * The scheduled retrieval poll has no payload, so EventBridge delivers a bare
+ * object with no `Records` (see infra/terraform/scheduler.tf).
+ */
+function isSqsEvent(event: WorkerEvent): event is SQSEvent {
+    return Array.isArray((event as SQSEvent).Records);
+}
+
+/** Anything EventBridge sends on the schedule; the payload is unused. */
+type ScheduledEvent = Record<string, unknown>;
+
+export type WorkerEvent = SQSEvent | ScheduledEvent;
+
+/**
+ * One Lambda, two triggers: SQS jobs and the 15-minute retrieval poll.
+ *
+ * They share a function because they share a warm container and its single DB
+ * connection, and because the split that would matter — isolating the queue's
+ * concurrency — is #385's, not this one's.
+ */
+export async function handler(event: WorkerEvent): Promise<void> {
+    if (!isSqsEvent(event)) {
+        const summary = await pollRetrievals(getDb());
+        console.log('Retrieval poll complete:', JSON.stringify(summary));
+        return;
+    }
+
     for (const record of event.Records) {
         await processRecord(getDb(), record);
     }

@@ -164,7 +164,7 @@ function BatchRestoreSlot({ batchId, files }: BatchRestoreSlotProps) {
             <RetrieveDialog
                 open={isDialogOpen}
                 onOpenChange={setIsDialogOpen}
-                tiers={eligibleFiles.map((f) => f.storageTier)}
+                files={eligibleFiles}
                 fileCount={eligibleFiles.length}
                 onConfirm={() => mutation.mutate({ batchId, tier: 'standard' })}
             />

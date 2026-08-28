@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { isProbablyCold } from '@nexus/db/objectState';
 import { useTRPC } from '@/lib/trpc/client';
 import {
     DropdownMenu,
@@ -26,6 +27,7 @@ import { captureEvent } from '@/lib/posthog/client';
 import { PostHogEvent } from '@/lib/posthog/events';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
 import { toastContext } from '@/lib/trpc/error-link';
+import type { RetrievableFile } from '@/components/dashboard/RetrieveDialog';
 import { toastRetrievalResult } from './retrievalFeedback';
 import type { FileWithRetrieval } from '@nexus/db/repo/files';
 import type { DerivedStatus } from './status';
@@ -50,7 +52,7 @@ export function useFileActions(file: FileWithRetrieval) {
                 invalidateFileList();
                 captureEvent(PostHogEvent.RetrievalRequested, {
                     fileCount: 1,
-                    storageTier: file.storageTier,
+                    isProbablyCold: isProbablyCold(file),
                 });
                 toastRetrievalResult(result, 'Retrieval request submitted');
             },
@@ -65,7 +67,7 @@ export function useFileActions(file: FileWithRetrieval) {
             captureEvent(PostHogEvent.FileDownloaded, {
                 fileId: file.id,
                 sizeBytes: file.size,
-                storageTier: file.storageTier,
+                isProbablyCold: isProbablyCold(file),
             });
             window.open(url, '_blank');
         } catch {
@@ -84,7 +86,8 @@ export function useFileActions(file: FileWithRetrieval) {
 
 interface FileActionsProps {
     status: DerivedStatus;
-    storageTier: FileWithRetrieval['storageTier'];
+    /** The file this menu acts on; the retrieve dialog estimates from it. */
+    file: RetrievableFile;
     onDelete: () => void;
     onRetrieval: () => void;
     onDownload: () => void;
@@ -94,7 +97,7 @@ interface FileActionsProps {
 
 export function FileActions({
     status,
-    storageTier,
+    file,
     onDelete,
     onRetrieval,
     onDownload,
@@ -109,7 +112,7 @@ export function FileActions({
             <RetrieveDialog
                 open={isRetrieveDialogOpen}
                 onOpenChange={setIsRetrieveDialogOpen}
-                tiers={[storageTier]}
+                files={[file]}
                 fileCount={1}
                 onConfirm={onRetrieval}
             />

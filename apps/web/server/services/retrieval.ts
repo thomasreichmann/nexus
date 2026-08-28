@@ -1,11 +1,21 @@
 import * as Sentry from '@sentry/nextjs';
-import { createFileRepo, type File } from '@nexus/db/repo/files';
+import {
+    createFileRepo,
+    HIDDEN_STATUSES,
+    type File,
+} from '@nexus/db/repo/files';
 import {
     createRetrievalRepo,
     type Retrieval,
     type RetrievalRepo,
 } from '@nexus/db/repo/retrievals';
 import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
+import {
+    isObjectMissing,
+    isReadable,
+    restoreWindowEnd,
+} from '@nexus/db/objectState';
+import { createSemaphore } from '@/lib/async/semaphore';
 import { toErrorMessage } from '@/lib/errors';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { logger } from '@/server/lib/logger';
@@ -13,12 +23,15 @@ import { s3 } from '@/lib/storage';
 // Value import from ./types (not the package root) so unit tests that mock
 // '@/lib/storage' don't erase the constant.
 import { DEFAULT_RESTORE_DAYS_TO_KEEP } from '@/lib/storage/types';
-import type { RestoreTier } from '@/lib/storage';
+import type { ObjectState, RestoreTier } from '@/lib/storage';
 import type { DB } from '@nexus/db';
 
 const log = logger.child({ service: 'retrieval' });
 
 const DOWNLOAD_URL_EXPIRY_SECONDS = 3600; // 1 hour
+
+/** Parallel HeadObject calls per retrieval request. */
+const HEAD_CONCURRENCY = 12;
 
 /**
  * A retrieval request that reaches S3 can come back partly failed (#329),
@@ -67,51 +80,77 @@ async function restoreFiles(
     const fileIdsToRestore = filesToRestore.map((f) => f.id);
     await retrievalRepo.expireLapsedByFileIds(fileIdsToRestore);
 
-    // Standard-class objects are downloadable as-is — RestoreObject would
-    // fail with InvalidObjectState — so they skip S3 and become ready
-    // immediately, entering the same download-window state as completed
-    // Deep Archive restores.
-    const archivedFiles = filesToRestore.filter(
-        (f) => f.storageTier !== 'standard'
-    );
-    const standardFiles = filesToRestore.filter(
-        (f) => f.storageTier === 'standard'
+    // One HeadObject per file: S3 owns object state, so the warm/cold split is
+    // read at request time rather than from a column that mirrors it (#416).
+    // A HEAD has no side effects, so asking before the inserts preserves
+    // #329's rule that no RestoreObject fires without a row already behind it.
+    // Bounded: a batch retrieve is a whole shoot, not the 100-file cap the
+    // bulk endpoint enforces, and an unbounded fan-out from one serverless
+    // invocation is the shape this issue exists to stop doing.
+    const heads = createSemaphore(HEAD_CONCURRENCY);
+    const plans = await Promise.all(
+        filesToRestore.map(async (file) => {
+            let state: ObjectState;
+            try {
+                state = await heads.run(() =>
+                    s3.glacier.getObjectState(file.s3Key)
+                );
+            } catch (err) {
+                // Fall through as archived rather than failing the request
+                // here: the RestoreObject below will hit the same problem and
+                // record it per-row, instead of inventing a second failure
+                // path that reports the same outage differently.
+                log.warn(
+                    { err, fileId: file.id },
+                    'HeadObject failed; treating object as archived'
+                );
+                state = { availability: 'archived' };
+            }
+            return { file, state };
+        })
     );
 
     // Rows are written before any RestoreObject call (#329): a restore that
-    // succeeds without a row is a paid, invisible restore — its completion
-    // event finds nothing to update and gets dropped. `initiatedAt` therefore
-    // marks when the request was accepted, a moment before AWS hears about it.
+    // succeeds without a row is a paid, invisible restore that nothing will
+    // ever reconcile. `initiatedAt` therefore marks when the request was
+    // accepted, a moment before AWS hears about it.
     //
-    // Standard items get a synthetic window the same length as the real S3
-    // restore window, so both tiers present the same ready/expiry state. It
-    // is a UI concept for them — no S3 expiry event will ever fire.
+    // A readable object gets a `ready` row straight away. Warm objects take a
+    // synthetic window the same length as a real restore window so both
+    // present one download-window state to the UI; an already-restored object
+    // uses the expiry S3 actually reported.
     const now = new Date();
-    const readyWindowEnd = new Date(
-        now.getTime() + DEFAULT_RESTORE_DAYS_TO_KEEP * 24 * 60 * 60 * 1000
+    const syntheticWindowEnd = restoreWindowEnd(now);
+    const newRetrievals = await retrievalRepo.insertMany(
+        plans.map(({ file, state }) => {
+            const base = {
+                id: crypto.randomUUID(),
+                fileId: file.id,
+                userId,
+                batchId,
+                tier,
+                initiatedAt: now,
+            };
+            if (isReadable(state)) {
+                return {
+                    ...base,
+                    status: 'ready' as const,
+                    readyAt: now,
+                    expiresAt: state.expiresAt ?? syntheticWindowEnd,
+                };
+            }
+            return { ...base, status: 'pending' as const };
+        })
     );
-    const newRetrievals = await retrievalRepo.insertMany([
-        ...archivedFiles.map((f) => ({
-            id: crypto.randomUUID(),
-            fileId: f.id,
-            userId,
-            batchId,
-            tier,
-            status: 'pending' as const,
-            initiatedAt: now,
-        })),
-        ...standardFiles.map((f) => ({
-            id: crypto.randomUUID(),
-            fileId: f.id,
-            userId,
-            batchId,
-            tier,
-            status: 'ready' as const,
-            initiatedAt: now,
-            readyAt: now,
-            expiresAt: readyWindowEnd,
-        })),
-    ]);
+
+    // Only genuinely archived objects get a RestoreObject. A restore already
+    // in flight is left alone — S3 rejects a duplicate request for one, and
+    // the worker's poll observes its completion either way.
+    const keysToRestore = new Map(
+        plans
+            .filter(({ state }) => state.availability === 'archived')
+            .map(({ file }) => [file.id, file.s3Key])
+    );
 
     // A concurrent request may have won the insert for some files (the
     // unique index skips them via ON CONFLICT DO NOTHING); fetch the
@@ -153,7 +192,7 @@ async function restoreFiles(
     const { started, failed } = await restoreInserted(
         retrievalRepo,
         newRetrievals,
-        archivedFiles,
+        keysToRestore,
         tier
     );
 
@@ -178,15 +217,13 @@ async function restoreFiles(
 async function restoreInserted(
     retrievalRepo: RetrievalRepo,
     newRetrievals: Retrieval[],
-    archivedFiles: File[],
+    keysToRestore: Map<string, string>,
     tier: RestoreTier
 ): Promise<RetrievalRequestResult> {
-    const s3KeysByFileId = new Map(archivedFiles.map((f) => [f.id, f.s3Key]));
-
     const outcomes = await Promise.all(
         newRetrievals.map(async (retrieval) => {
-            const s3Key = s3KeysByFileId.get(retrieval.fileId);
-            // Standard-tier rows are already `ready` and never hit S3.
+            const s3Key = keysToRestore.get(retrieval.fileId);
+            // Rows for readable or already-restoring objects never hit S3.
             if (!s3Key) return { ok: true, row: retrieval };
 
             try {
@@ -345,15 +382,32 @@ async function getDownloadUrl(
     fileId: string
 ): Promise<DownloadUrlResult> {
     const fileRepo = createFileRepo(db);
-    const retrievalRepo = createRetrievalRepo(db);
 
     const file = await fileRepo.findByUserAndId(userId, fileId);
-    if (!file) {
+    // S3 owns warm/cold, but `uploading` and `deleted` are DB-owned intent:
+    // the bytes may sit warm in the bucket (soft delete never removes them;
+    // sub-lifecycle-floor objects never go cold) while the file doesn't exist
+    // as far as the user can see. Same not-found as every list that hides them.
+    if (!file || HIDDEN_STATUSES.includes(file.status)) {
         throw new NotFoundError('File', fileId);
     }
 
-    const retrieval = await retrievalRepo.findByFileId(fileId);
-    if (!retrieval || retrieval.status !== 'ready') {
+    // Whether the bytes can be served is a question for S3, not for a row
+    // that hopes to know (#416). A warm or already-restored object downloads
+    // directly; a cold one does not, however `ready` its retrieval looks.
+    let state: ObjectState;
+    try {
+        state = await s3.glacier.getObjectState(file.s3Key);
+    } catch (err) {
+        // The object is gone while the row still says otherwise — a delete
+        // outside the app, a lifecycle expiry, or seed data whose keys were
+        // never in the bucket. That is the same not-found the caller gets for
+        // a missing row: only a DomainError reaches the client as anything
+        // other than INTERNAL_SERVER_ERROR (see errorHandlerMiddleware).
+        if (isObjectMissing(err)) throw new NotFoundError('File', fileId);
+        throw err;
+    }
+    if (!isReadable(state)) {
         throw new InvalidStateError('File retrieval is not ready for download');
     }
 

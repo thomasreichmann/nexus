@@ -1,7 +1,8 @@
 # Ops alarms -> SNS -> /api/webhooks/cloudwatch-alarm -> Discord.
-# Mirrors the s3-restore SNS rail (sns.tf): HTTPS subscription with the full
-# SNS envelope (raw delivery OFF — the route signature-checks it), the route
-# auto-confirms, failed deliveries land in a DLQ for inspection.
+# HTTPS subscription carrying the full SNS envelope (raw delivery OFF — the
+# route signature-checks it), the route auto-confirms, and failed deliveries
+# land in a DLQ for inspection. This is the last SNS rail in the stack: the
+# S3 restore-events one was removed with #416.
 
 resource "aws_sns_topic" "ops_alerts" {
   name = "nexus-ops-alerts-${var.environment}"
@@ -66,16 +67,6 @@ locals {
     jobs = {
       queue_name  = aws_sqs_queue.jobs_dlq.name
       description = "Background-jobs DLQ has parked messages; redrive within 24h to beat the Deep Archive transition (#350)"
-    }
-
-    # The only detector for a dead restore-webhook rail. The route returns 200
-    # on its own bugs, so this DLQ fills only on true delivery failure (app
-    # down, TLS/DNS) — and in that case no webhook_events row is written
-    # either, so the nightly DB check stays green while restores silently stop
-    # completing.
-    s3-restore-events = {
-      queue_name  = aws_sqs_queue.s3_restore_events_dlq.name
-      description = "S3 restore-events webhook deliveries are failing outright; check that the app is serving /api/webhooks/s3-restore"
     }
 
     # Watches the alerting rail itself: if the Discord webhook endpoint is

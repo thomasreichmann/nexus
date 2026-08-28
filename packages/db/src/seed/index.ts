@@ -35,6 +35,8 @@ export {
     SEED_STORAGE_PREFIX,
     SEED_EMAIL_DOMAIN,
     PLAN_LIMITS,
+    daysAgo,
+    hoursAgo,
 } from './constants';
 
 // Types
@@ -46,5 +48,4 @@ export type {
     CustomSeedOptions,
     FileBuilderOptions,
     RetrievalBuilderOptions,
-    StorageTierDistribution,
 } from './types';

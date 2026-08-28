@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createWebhookRepo } from '@nexus/db/repo/webhooks';
 import { alerts, type AlertSeverity } from '@/lib/alerts';
 import { isLocalDevelopment } from '@/lib/env/runtime';
-import { verifySnsMessage } from '@/lib/sns/webhooks';
+import { confirmSnsSubscription, verifySnsMessage } from '@/lib/sns/webhooks';
+import { resolveWebhookEvent } from '@/lib/webhooks/events';
 import type {
     SnsSubscriptionConfirmation,
     SnsNotification,
@@ -14,9 +15,12 @@ const log = logger.child({ handler: 'cloudwatch-alarm-webhook' });
 
 /**
  * CloudWatch alarm state changes -> Discord, via the ops-alerts SNS topic
- * (infra/terraform/alarms.tf). Same rail shape as /api/webhooks/s3-restore:
- * signature-verified envelope, auto-confirmed subscription, deduped and
- * audited through webhook_events.
+ * (infra/terraform/alarms.tf): signature-verified envelope, auto-confirmed
+ * subscription, deduped and audited through webhook_events.
+ *
+ * Recorded under `source: 'cloudwatch'` — the producer, not the transport.
+ * This was the last writer of the old `'sns'` source, which #416 retired with
+ * the S3 lifecycle rail.
  */
 
 /** The SNS Message payload of a CloudWatch alarm state change. */
@@ -60,9 +64,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const messageType = body.Type as string;
 
     if (messageType === 'SubscriptionConfirmation') {
-        return handleSubscriptionConfirmation(
+        await confirmSnsSubscription(
             body as unknown as SnsSubscriptionConfirmation
         );
+        return NextResponse.json({ received: true });
     }
 
     if (messageType !== 'Notification') {
@@ -76,15 +81,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const notification = body as unknown as SnsNotification;
     const webhookRepo = createWebhookRepo(db);
 
-    const existing = await webhookRepo.find('sns', notification.MessageId);
-    if (existing) {
-        log.debug(
-            { messageId: notification.MessageId, duplicate: true },
-            'Duplicate webhook event skipped'
-        );
-        return NextResponse.json({ received: true, duplicate: true });
-    }
-
     let alarm: CloudWatchAlarmMessage;
     try {
         alarm = JSON.parse(notification.Message) as CloudWatchAlarmMessage;
@@ -97,12 +93,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const state = alarm.NewStateValue ?? 'UNKNOWN';
-    const webhookEvent = await webhookRepo.insert({
-        source: 'sns',
+
+    // Shared with the Stripe rail: only a `processed` row is really a
+    // duplicate. A row left at `received` by a crash mid-dispatch has to be
+    // re-driven when SNS redelivers, or it strands forever (#331).
+    const lookup = await resolveWebhookEvent(webhookRepo, {
+        source: 'cloudwatch',
         externalId: notification.MessageId,
         eventType: `cloudwatch-alarm:${state}`,
         payload: body,
     });
+
+    if (lookup.outcome === 'duplicate') {
+        log.debug(
+            {
+                messageId: notification.MessageId,
+                duplicate: true,
+                reason: lookup.reason,
+            },
+            'Duplicate webhook event skipped'
+        );
+        return NextResponse.json({ received: true, duplicate: true });
+    }
+
+    const webhookEvent = lookup.event;
 
     log.info(
         { messageId: notification.MessageId, alarm: alarm.AlarmName, state },
@@ -130,24 +144,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         status: 'processed',
         error: null,
     });
-
-    return NextResponse.json({ received: true });
-}
-
-async function handleSubscriptionConfirmation(
-    message: SnsSubscriptionConfirmation
-): Promise<NextResponse> {
-    log.info({ topicArn: message.TopicArn }, 'Confirming SNS subscription');
-
-    try {
-        await fetch(message.SubscribeURL);
-        log.info({ topicArn: message.TopicArn }, 'SNS subscription confirmed');
-    } catch (err) {
-        log.error(
-            { err, topicArn: message.TopicArn },
-            'Failed to confirm SNS subscription'
-        );
-    }
 
     return NextResponse.json({ received: true });
 }

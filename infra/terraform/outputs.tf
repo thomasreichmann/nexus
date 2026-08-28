@@ -39,16 +39,6 @@ output "ci_iam_user" {
   value       = aws_iam_user.ci.name
 }
 
-output "sns_topic_arn" {
-  description = "S3 restore-events topic"
-  value       = aws_sns_topic.s3_restore_events.arn
-}
-
-output "sns_dlq_url" {
-  description = "DLQ for failed webhook deliveries"
-  value       = aws_sqs_queue.s3_restore_events_dlq.url
-}
-
 output "jobs_dlq_url" {
   description = "DLQ for failed background jobs"
   value       = aws_sqs_queue.jobs_dlq.url

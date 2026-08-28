@@ -760,15 +760,6 @@ export const USE_CASES: UseCaseEntry[] = [
      * page encoding one fact).
      * ---------------------------------------------------------------- */
 
-    /* ---------------------------------------------------------------- */
-    /* Server-side flows (documented, not browser-drivable)              */
-    /* ---------------------------------------------------------------- */
-    {
-        id: 's3-restore-webhook',
-        title: 'S3 restore-complete webhook flips retrieval to ready',
-        area: 'files',
-        routes: [],
-        excluded:
-            'SNS server-to-server webhook; covered by integration tests, not browser-drivable',
-    },
+    /* Restore completion has no browser surface: the worker's poll observes it
+     * (#416), covered by apps/worker/src/pollRetrievals.test.ts. */
 ];

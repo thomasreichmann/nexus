@@ -36,10 +36,10 @@ const downloadUrl = await s3.presigned.get('user/123/file.pdf', {
 // Start a Glacier restore
 await s3.glacier.restore('user/123/archive.zip', 'standard');
 
-// Check restore status
-const status = await s3.glacier.checkStatus('user/123/archive.zip');
-if (status.status === 'completed') {
-    console.log('Restored until:', status.expiresAt);
+// Ask S3 what the object can do right now
+const state = await s3.glacier.getObjectState('user/123/archive.zip');
+if (isReadable(state)) {
+    console.log('Downloadable until:', state.expiresAt);
 }
 
 // Delete an object
@@ -132,31 +132,45 @@ Start a restore operation for an object in Glacier Deep Archive.
 await s3.glacier.restore('archives/2024.zip', 'standard', 14);
 ```
 
-#### `s3.glacier.checkStatus(key)`
+#### `s3.glacier.getObjectState(key)`
 
-Check the restore status of a Glacier object.
+One `HeadObject`, answering both "what class is this in" and "is there a
+restored copy". **This is how object state is read** — S3 owns it, and nothing
+in the database mirrors it (#416, see `docs/ai/context.md`). Cheap enough to
+call per user action: HEAD bills as a GET-class request ($0.0004 per 1,000),
+is metadata-only, and costs the same for a Deep Archive object as a warm one.
 
-Returns a `RestoreStatus` object:
+Returns an `ObjectState`:
 
 ```typescript
-interface RestoreStatus {
-    status: 'not-started' | 'in-progress' | 'completed';
-    expiresAt?: Date; // Only present when status === 'completed'
+type ObjectAvailability = 'warm' | 'archived' | 'restoring' | 'restored';
+
+interface ObjectState {
+    availability: ObjectAvailability;
+    storageClass?: string; // Raw S3 value; absent for STANDARD
+    expiresAt?: Date; // Only ever set for 'restored'
 }
 ```
 
-```typescript
-const status = await s3.glacier.checkStatus('archives/2024.zip');
+The header parsing lives in `@nexus/db/object-state` (`interpretObjectState`)
+so the worker's retrieval poll reads the same headers the same way. Use
+`isReadable(state)` rather than comparing states by hand.
 
-switch (status.status) {
-    case 'not-started':
-        console.log('No restore in progress');
+```typescript
+const state = await s3.glacier.getObjectState('archives/2024.zip');
+
+switch (state.availability) {
+    case 'warm':
+        console.log('Readable as-is — no restore needed or possible');
         break;
-    case 'in-progress':
+    case 'archived':
+        console.log('Cold; call s3.glacier.restore() to start a retrieval');
+        break;
+    case 'restoring':
         console.log('Restore underway, check back later');
         break;
-    case 'completed':
-        console.log('Ready! Expires:', status.expiresAt);
+    case 'restored':
+        console.log('Ready! Expires:', state.expiresAt);
         break;
 }
 ```
@@ -226,7 +240,8 @@ All types are re-exported from the main module:
 ```typescript
 import type {
     RestoreTier,
-    RestoreStatus,
+    ObjectState,
+    ObjectAvailability,
     PutPresignOptions,
     GetPresignOptions,
 } from '@/lib/storage';
@@ -240,7 +255,7 @@ The module lets AWS SDK errors bubble up. Handle them in your service layer:
 import { S3ServiceException } from '@aws-sdk/client-s3';
 
 try {
-    await s3.glacier.checkStatus(key);
+    await s3.glacier.getObjectState(key);
 } catch (error) {
     if (error instanceof S3ServiceException) {
         if (error.name === 'NotFound') {

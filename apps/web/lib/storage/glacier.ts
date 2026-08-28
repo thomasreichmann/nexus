@@ -1,7 +1,8 @@
 import { RestoreObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { interpretObjectState } from '@nexus/db/objectState';
 import { client, bucket } from './client';
 import { DEFAULT_RESTORE_DAYS_TO_KEEP } from './types';
-import type { RestoreTier, RestoreStatus } from './types';
+import type { RestoreTier, ObjectState } from './types';
 
 const tierMapping: Record<RestoreTier, 'Expedited' | 'Standard' | 'Bulk'> = {
     expedited: 'Expedited',
@@ -32,28 +33,23 @@ export async function restore(
 }
 
 /**
- * Check the restore status of a Glacier object
+ * Ask S3 what an object can do right now — one HeadObject, both answers.
+ *
+ * S3 owns object state (see `docs/ai/context.md`); this is how we read it at
+ * the moment it matters, instead of trusting a column that mirrors it. Cheap
+ * enough to call per action: HEAD bills as a GET-class request ($0.0004 per
+ * 1,000) and is metadata-only, so it costs the same for a Deep Archive object
+ * as for a warm one and never triggers a retrieval.
+ *
  * @param key - S3 object key
- * @returns Status object with restore state and expiration (if completed)
  * @throws If the object doesn't exist
  */
-export async function checkStatus(key: string): Promise<RestoreStatus> {
+export async function getObjectState(key: string): Promise<ObjectState> {
     const command = new HeadObjectCommand({ Bucket: bucket, Key: key });
     const response = await client.send(command);
 
-    const restoreHeader = response.Restore;
-    if (!restoreHeader) {
-        return { status: 'not-started' };
-    }
-
-    if (restoreHeader.includes('ongoing-request="true"')) {
-        return { status: 'in-progress' };
-    }
-
-    // Parse expiry-date from: ongoing-request="false", expiry-date="..."
-    const expiryMatch = restoreHeader.match(/expiry-date="([^"]+)"/);
-    return {
-        status: 'completed',
-        expiresAt: expiryMatch ? new Date(expiryMatch[1]) : undefined,
-    };
+    return interpretObjectState({
+        storageClass: response.StorageClass,
+        restoreHeader: response.Restore,
+    });
 }

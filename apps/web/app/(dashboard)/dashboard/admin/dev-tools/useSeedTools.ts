@@ -28,11 +28,6 @@ export function useSeedTools() {
         params: {
             fileCount: number;
             retrievalCount: number;
-            storageTierDistribution?: {
-                standard: number;
-                glacier: number;
-                deep_archive: number;
-            };
         },
         callbacks?: {
             onSuccess?: (data: { files: number; retrievals: number }) => void;

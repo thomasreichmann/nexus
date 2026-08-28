@@ -69,6 +69,11 @@
             "import": "./src/media.ts",
             "default": "./src/media.ts"
         },
+        "./objectState": {
+            "types": "./src/objectState.ts",
+            "import": "./src/objectState.ts",
+            "default": "./src/objectState.ts"
+        },
         "./plans": {
             "types": "./src/plans.ts",
             "import": "./src/plans.ts",

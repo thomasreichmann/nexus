@@ -19,20 +19,22 @@ ai_summary: 'Worker deployment, DLQ inspection, test jobs, logs, and integration
 Operational guide for the SQS + Lambda background job infrastructure. For development patterns and conventions, see [[lambda-development|Lambda Development]].
 
 > [!important] Provisioning lives in Terraform — this doc is operations only.
-> Both environments' queues, Lambdas, and IAM come from [`infra/terraform/`](../../infra/terraform/README.md) (prod #53, dev #127) — queue/Lambda definitions in `sqs.tf` and `lambda.tf`. Resource changes go through Terraform, including Lambda env vars (`DATABASE_URL`) — never `aws lambda update-function-configuration`. Only worker **code** deploys via the CLI (below); Terraform ignores the code package on later applies.
+> Both environments' queues, Lambdas, and IAM come from [`infra/terraform/`](../../infra/terraform/README.md) (prod #53, dev #127) — queue/Lambda definitions in `sqs.tf` and `lambda.tf`. Resource changes go through Terraform, including Lambda env vars (`DATABASE_URL`, `SQS_QUEUE_URL`) — never `aws lambda update-function-configuration`. Only worker **code** deploys via the CLI (below); Terraform ignores the code package on later applies.
 
 ## Provisioned Resources
 
-One set per environment, in `us-east-1`, account `391615358272`, suffixed `-dev` / `-prod` (exact definitions: `infra/terraform/sqs.tf`, `lambda.tf`):
+One set per environment, in `us-east-1`, account `391615358272`, suffixed `-dev` / `-prod` (exact definitions: `infra/terraform/sqs.tf`, `lambda.tf`, `scheduler.tf`):
 
-| Resource              | Name pattern                                                                                |
-| --------------------- | ------------------------------------------------------------------------------------------- |
-| SQS Queue             | `nexus-jobs-<env>` (visibility timeout 720s, 3 retries → DLQ)                               |
-| SQS Dead Letter Queue | `nexus-jobs-dlq-<env>` (depth > 0 alarms → Discord, plus email in prod, `alarms.tf`)        |
-| Lambda Function       | `nexus-worker-<env>` (Node 22, 120s timeout, 1 GB, batch size 1, ffmpeg + exiftool layers)  |
-| Lambda Layers         | `nexus-ffmpeg-<env>`, `nexus-exiftool-<env>` (`layers.tf`; built by `lambda-layers.yml` CI) |
-| IAM Role (Lambda)     | `nexus-worker-role-<env>` (SQS consume, S3 CRUD, derived-bucket Put/Get, CloudWatch Logs)   |
-| IAM Policy (SQS user) | `nexus-sqs-access-<env>` (inline on the `nexus-app-<env>` user)                             |
+| Resource              | Name pattern                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| SQS Queue             | `nexus-jobs-<env>` (visibility timeout 720s, 3 retries → DLQ)                                    |
+| SQS Dead Letter Queue | `nexus-jobs-dlq-<env>` (depth > 0 alarms → Discord, plus email in prod, `alarms.tf`)             |
+| Lambda Function       | `nexus-worker-<env>` (Node 22, 120s timeout, 1 GB, batch size 1, ffmpeg + exiftool layers)       |
+| Lambda Layers         | `nexus-ffmpeg-<env>`, `nexus-exiftool-<env>` (`layers.tf`; built by `lambda-layers.yml` CI)      |
+| IAM Role (Lambda)     | `nexus-worker-role-<env>` (SQS consume + send, S3 CRUD, derived-bucket Put/Get, CloudWatch Logs) |
+| EventBridge Schedule  | `nexus-retrieval-poll-<env>` (every 15 min → the same Lambda; `scheduler.tf`)                    |
+| Lambda Errors Alarm   | `nexus-worker-errors-<env>` (>3 errors/hour → Discord; the scheduled path has no DLQ)            |
+| IAM Policy (SQS user) | `nexus-sqs-access-<env>` (inline on the `nexus-app-<env>` user)                                  |
 
 The examples below use dev (`nexus-worker-dev`, `nexus-jobs-dev`, …); substitute `-prod` to operate on prod.
 
@@ -122,6 +124,31 @@ aws sqs send-message \
 ```
 
 > **Note:** The worker expects a matching `background_jobs` record in the database. Sending a message without a DB record will cause the job to fail with a "not found" error.
+
+## Run the Retrieval Poll On Demand
+
+EventBridge invokes the worker every 15 minutes (`scheduler.tf`), but you rarely
+want to wait a tick to see whether a restore has landed. The schedule's payload
+is just `{}` — the handler branches on the _absence_ of a `Records` key — so any
+empty invoke exercises exactly the scheduled path:
+
+```bash
+aws lambda invoke \
+    --function-name nexus-worker-dev \
+    --payload '{}' --cli-binary-format raw-in-base64-out \
+    --region us-east-1 \
+    /dev/stdout
+```
+
+The response body is the poll's summary — `checked`, `ready`, `waiting`,
+`missing`, `errored`, `capped` — which is also logged to the function's log
+group (see [View Lambda Logs](#view-lambda-logs)). It is idempotent and bounded
+by the pending-retrieval set, so running it back to back is safe.
+
+`missing` counts rows whose object is no longer in the bucket; those are marked
+`failed` rather than re-checked forever. A run where **every** row errors throws,
+which is what surfaces a total S3/IAM outage on the `nexus-worker-errors` alarm —
+the scheduled path has no DLQ to catch it.
 
 ## View Lambda Logs
 

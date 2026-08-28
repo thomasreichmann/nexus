@@ -673,9 +673,7 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                         <RetrieveDialog
                             open={isRetrieveDialogOpen}
                             onOpenChange={setIsRetrieveDialogOpen}
-                            tiers={retrievableSelectedFiles.map(
-                                (f) => f.storageTier
-                            )}
+                            files={retrievableSelectedFiles}
                             fileCount={retrievableSelectedFiles.length}
                             onConfirm={handleBulkRetrieval}
                         />

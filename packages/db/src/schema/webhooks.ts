@@ -8,7 +8,15 @@ import {
 } from 'drizzle-orm/pg-core';
 import { timestamps } from './helpers';
 
-export const webhookSourceEnum = pgEnum('webhook_source', ['stripe', 'sns']);
+// `sns` is retired (#416): it named the transport, not the producer, and the
+// only rail that used it — S3 lifecycle/restore events — is gone. The value
+// stays in the type because Postgres cannot drop an enum value and the
+// historical rows are a real record of a rail that ran. Nothing writes it.
+export const webhookSourceEnum = pgEnum('webhook_source', [
+    'stripe',
+    'sns',
+    'cloudwatch',
+]);
 
 // `noop` (#332): a handler matched but the change didn't land. Distinct from
 // `processed` because it needs a human, from `failed` because nothing threw.

@@ -4,12 +4,7 @@ import { useState } from 'react';
 import { Check, Loader2, Play } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/cn';
-import {
-    DEFAULT_DISTRIBUTION,
-    SCENARIO_PRESETS,
-    type ScenarioPreset,
-} from './presets';
-import { TierBar } from './TierBar';
+import { SCENARIO_PRESETS, type ScenarioPreset } from './presets';
 import { useSeedTools } from './useSeedTools';
 
 interface ScenarioListProps {
@@ -35,7 +30,6 @@ export function ScenarioList({ targetUser, targetLabel }: ScenarioListProps) {
             {
                 fileCount: preset.fileCount,
                 retrievalCount: preset.retrievalCount,
-                storageTierDistribution: preset.storageTierDistribution,
             },
             {
                 onSuccess: (data) => {
@@ -62,9 +56,6 @@ export function ScenarioList({ targetUser, targetLabel }: ScenarioListProps) {
                 {Object.entries(SCENARIO_PRESETS).map(([key, preset]) => {
                     const isRunning = runningKey === key;
                     const isComplete = lastResult?.key === key;
-                    const dist =
-                        preset.storageTierDistribution ?? DEFAULT_DISTRIBUTION;
-
                     return (
                         <button
                             key={key}
@@ -111,10 +102,6 @@ export function ScenarioList({ targetUser, targetLabel }: ScenarioListProps) {
                                 <p className="truncate text-xs text-muted-foreground/60">
                                     {preset.description}
                                 </p>
-                            </div>
-
-                            <div className="hidden w-16 shrink-0 sm:block">
-                                <TierBar distribution={dist} />
                             </div>
 
                             <div className="flex shrink-0 items-center gap-1.5 font-mono text-xs tabular-nums text-muted-foreground">

@@ -1,10 +1,17 @@
 'use client';
 
+import { Snowflake } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/cn';
 import { getFileTypeInfo, type DerivedStatus } from './status';
 
-export function StatusDot({ status }: { status: DerivedStatus }) {
+interface StatusDotProps {
+    status: DerivedStatus;
+    /** `isProbablyCold` for the file; adds the cold marker beside the dot. */
+    isCold?: boolean;
+}
+
+export function StatusDot({ status, isCold }: StatusDotProps) {
     return (
         <span className="inline-flex items-center gap-1.5">
             <span
@@ -31,6 +38,35 @@ export function StatusDot({ status }: { status: DerivedStatus }) {
             >
                 {status}
             </span>
+            {isCold && <ColdHint />}
+        </span>
+    );
+}
+
+/**
+ * Marks a file the bucket's lifecycle policy has probably swept into Deep
+ * Archive — derived from age and size, never from S3 (`isProbablyCold`).
+ *
+ * Deliberately the quietest thing in the row: a glyph, no text, no colour of
+ * its own. It is the one signal on a row that is a guess rather than a fact,
+ * so it must not compete with the ones that aren't. It reads differently from
+ * the status dot beside it, too — the dot describes our records (is there an
+ * active retrieval?), this describes where the bytes probably sit.
+ */
+interface ColdHintProps {
+    className?: string;
+}
+
+export function ColdHint({ className }: ColdHintProps) {
+    const label = 'Probably in deep archive — retrieval takes hours';
+    return (
+        <span
+            role="img"
+            aria-label={label}
+            title={label}
+            className={cn('inline-flex text-muted-foreground/60', className)}
+        >
+            <Snowflake aria-hidden="true" className="size-3" />
         </span>
     );
 }

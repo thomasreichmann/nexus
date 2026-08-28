@@ -1,36 +1,14 @@
-// Re-export from canonical source in @nexus/db
+// Re-export from the canonical source in @nexus/db. Everything here comes from
+// `@nexus/db/objectState`, never `@nexus/db/schema`: `RetrieveDialog` imports
+// `DEFAULT_RESTORE_DAYS_TO_KEEP` from this file, so reaching for the schema
+// barrel would ship drizzle and every table definition to the browser.
 export {
     DEFAULT_RESTORE_DAYS_TO_KEEP,
     RESTORE_TIERS,
     type RestoreTier,
-} from '@nexus/db/schema';
-
-import type { storageTierEnum } from '@nexus/db/schema';
-
-export type StorageTier = (typeof storageTierEnum.enumValues)[number];
-
-/**
- * Maps S3 StorageClass values (from event notifications and ListObjectsV2)
- * to the files.storageTier enum. Classes Nexus never uses are intentionally
- * unmapped — callers treat a miss as "log and skip", not an error.
- */
-const S3_STORAGE_CLASS_TO_TIER: Record<string, StorageTier> = {
-    STANDARD: 'standard',
-    GLACIER: 'glacier',
-    DEEP_ARCHIVE: 'deep_archive',
-};
-
-export function resolveStorageTier(
-    storageClass: string | undefined
-): StorageTier | undefined {
-    return storageClass ? S3_STORAGE_CLASS_TO_TIER[storageClass] : undefined;
-}
-
-export interface RestoreStatus {
-    status: 'not-started' | 'in-progress' | 'completed';
-    /** Present only when status === 'completed' */
-    expiresAt?: Date;
-}
+    type ObjectState,
+    type ObjectAvailability,
+} from '@nexus/db/objectState';
 
 export interface PutPresignOptions {
     contentType?: string;
