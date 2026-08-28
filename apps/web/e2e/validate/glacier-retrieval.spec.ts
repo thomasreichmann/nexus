@@ -139,12 +139,15 @@ test.describe('glacier retrieval against real S3', () => {
                 '@page:/dashboard/files',
                 '@uc:files-request-retrieval-single',
             ],
+        },
+        async ({ page, db, seedUserId: userId }) => {
             // Past Playwright's 30s default: the restore now comes from the
             // deployed dev worker draining the queue, so the poll below waits
             // out an SQS delivery and a possible Lambda cold start (#423).
-            timeout: 150_000,
-        },
-        async ({ page, db, seedUserId: userId }) => {
+            // Set here rather than in the details object above, which only
+            // takes `tag`/`annotation`.
+            test.setTimeout(150_000);
+
             const file = await seedArchivedFile(db, userId);
             seededFile = file;
             expect(await getStorageClass(s3, file.s3Key)).toBe('DEEP_ARCHIVE');
