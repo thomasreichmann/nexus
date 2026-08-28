@@ -79,6 +79,68 @@ jobs:
               env:
                   DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
 
+    # Ship the worker bundle on every merge so the Lambda code plane moves
+    # with the schema plane (#417 follow-up: a column-dropping migration left
+    # the old bundle emitting SELECTs for a dropped column until a human ran
+    # update-function-code, ~7 minutes later on prod). Ordered after migrate
+    # so additive migrations land before the code that reads them; destructive
+    # migrations must ship alone — pr-check gates those behind the
+    # migration:destructive label.
+    deploy-worker:
+        name: Deploy worker (dev)
+        needs: migrate
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        env:
+            AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_AWS_ACCESS_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY: ${{ secrets.DEPLOY_AWS_SECRET_ACCESS_KEY }}
+            AWS_REGION: us-east-1
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Verify deploy credentials are configured
+              run: |
+                  if [ -z "$AWS_ACCESS_KEY_ID" ]; then
+                      echo "::error::secret DEPLOY_AWS_ACCESS_KEY_ID is not configured (see infra/terraform/README.md)"
+                      exit 1
+                  fi
+
+            - name: Setup Node and pnpm
+              uses: ./.github/actions/setup-node-pnpm
+
+            - name: Build and deploy
+              run: pnpm -F worker deploy:dev
+
+    # Gates on the dev deploy (same bundle, so a broken build or bad zip fails
+    # there first) and on the prod migration, mirroring migrate-prod's canary
+    # ordering. Like migrate-prod, deliberately NOT gated on smoke-tests.
+    deploy-worker-prod:
+        name: Deploy worker (prod)
+        needs: [migrate-prod, deploy-worker]
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        env:
+            AWS_ACCESS_KEY_ID: ${{ secrets.DEPLOY_AWS_ACCESS_KEY_ID_PROD }}
+            AWS_SECRET_ACCESS_KEY: ${{ secrets.DEPLOY_AWS_SECRET_ACCESS_KEY_PROD }}
+            AWS_REGION: us-east-1
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Verify deploy credentials are configured
+              run: |
+                  if [ -z "$AWS_ACCESS_KEY_ID" ]; then
+                      echo "::error::secret DEPLOY_AWS_ACCESS_KEY_ID_PROD is not configured (see infra/terraform/README.md)"
+                      exit 1
+                  fi
+
+            - name: Setup Node and pnpm
+              uses: ./.github/actions/setup-node-pnpm
+
+            - name: Build and deploy
+              run: pnpm -F worker deploy:prod
+
     smoke-tests:
         name: Smoke Tests
         needs: migrate

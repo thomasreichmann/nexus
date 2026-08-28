@@ -65,17 +65,24 @@ production code.
 
 ## After apply
 
-1. **App access key** (kept out of Terraform state on purpose):
+1. **Access keys** (kept out of Terraform state on purpose):
 
     ```bash
     aws iam create-access-key --user-name nexus-app-<env>
+    aws iam create-access-key --user-name nexus-deploy-<env>
     ```
 
+    The deploy user's key goes to GitHub Actions secrets so `post-merge.yml`
+    can ship worker code: `DEPLOY_AWS_ACCESS_KEY_ID` /
+    `DEPLOY_AWS_SECRET_ACCESS_KEY` for dev, the `_PROD`-suffixed pair for
+    prod (`gh secret set <name>`).
+
 2. **Worker code** — Terraform ships a stub that throws on every invocation
-   (so jobs retry into the DLQ instead of silently succeeding). Deploy the
-   real worker per `docs/guides/background-jobs.md`, with
-   `--function-name nexus-worker-<env> --region us-east-1`. Later applies
-   won't touch the deployed code (`ignore_changes` on the package), but the
+   (so jobs retry into the DLQ instead of silently succeeding). The real
+   worker deploys automatically on every merge to main (`post-merge.yml`,
+   once the deploy secrets from step 1 exist); for a first deploy before any
+   merge, run `pnpm -F worker deploy:<env>` yourself. Later applies won't
+   touch the deployed code (`ignore_changes` on the package), but the
    Lambda's environment (`DATABASE_URL`, `S3_BUCKET`, `S3_DERIVED_BUCKET`)
    **is** Terraform-managed — update it here, not with
    `aws lambda update-function-configuration`.

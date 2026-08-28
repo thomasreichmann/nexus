@@ -159,15 +159,10 @@ Key build settings:
 
 ## Deployment
 
-Terraform provisions the function but never ships worker code — `lambda.tf` creates it with a throwing stub and `ignore_changes` on the package, so a `terraform apply` will not deploy (or clobber) your build. Code deploys via the AWS CLI against the per-environment function name (`nexus-worker-dev` / `nexus-worker-prod`) — full recipe in [[background-jobs|Background Jobs Runbook]]:
+Terraform provisions the function but never ships worker code — `lambda.tf` creates it with a throwing stub and `ignore_changes` on the package, so a `terraform apply` will not deploy (or clobber) your build. Code ships automatically on merge: `post-merge.yml` runs the deploy script against dev, then prod, after each environment's migration. The same script serves manual deploys (first deploy, rollback, hotfix) — details in [[background-jobs|Background Jobs Runbook]]:
 
 ```bash
-pnpm -F worker build
-cd apps/worker/dist && echo '{"type":"module"}' > package.json && zip -r ../worker.zip .
-aws lambda update-function-code \
-    --function-name nexus-worker-dev \
-    --zip-file fileb://../worker.zip \
-    --region us-east-1
+pnpm -F worker deploy:dev   # or: deploy:prod
 ```
 
 ## Local Testing

@@ -80,8 +80,9 @@ resource "aws_iam_role_policy" "worker_logs" {
 }
 
 # Placeholder package so Terraform can create the function. Real worker code
-# deploys via `aws lambda update-function-code` (docs/guides/background-jobs.md);
-# ignore_changes below keeps Terraform from clobbering it on later applies.
+# deploys via post-merge.yml → apps/worker/scripts/deploy.sh on every merge
+# (docs/guides/background-jobs.md); ignore_changes below keeps Terraform from
+# clobbering it on later applies.
 data "archive_file" "worker_stub" {
   type        = "zip"
   output_path = "${path.module}/worker-stub.zip"

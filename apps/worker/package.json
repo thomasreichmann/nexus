@@ -5,6 +5,8 @@
     "type": "module",
     "scripts": {
         "build": "tsup",
+        "deploy:dev": "bash scripts/deploy.sh dev",
+        "deploy:prod": "bash scripts/deploy.sh prod",
         "lint": "eslint .",
         "test": "vitest",
         "test:run": "vitest run",

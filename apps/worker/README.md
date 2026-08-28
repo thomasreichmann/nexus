@@ -74,8 +74,10 @@ which Terraform would revert on the next apply.
 ## Deployment
 
 The build produces a single self-contained ES module (`dist/handler.js`) with
-all dependencies bundled. Deploy with `aws lambda update-function-code`
-against `nexus-worker-<env>` — full recipe in the
+all dependencies bundled. Code deploys automatically on every merge to main
+(`post-merge.yml` → `scripts/deploy.sh`, dev then prod, after each
+environment's migration). For a first deploy, rollback, or hotfix run the same
+script manually: `pnpm -F worker deploy:<env>` — details in the
 [Background Jobs Runbook](../../docs/guides/background-jobs.md#deploy-updated-worker-code).
 
 ## Key Details
