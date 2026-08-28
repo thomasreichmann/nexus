@@ -92,10 +92,11 @@ production code.
    is in `apps/worker/README.md`) — update it here, not with
    `aws lambda update-function-configuration`.
 
-    `posthog_key` in the tfvars file starts empty, which leaves worker
-    analytics off. Fill it with this environment's `NEXT_PUBLIC_POSTHOG_KEY`
-    (Vercel env — it is the public browser key, safe to commit) to turn the
-    worker's server-side events on.
+    `posthog_key` is committed in both tfvars — it is the public browser
+    ingestion key, readable straight out of the deployed page source, and one
+    PostHog project serves both environments. If it is ever rotated, take the
+    new value from PostHog project settings (Vercel stores this var as
+    `Sensitive`, so `vercel env pull` will not give it back).
 
 3. **Lambda layers** — `layers.tf` publishes the worker's ffmpeg and
    perl/exiftool layers from zips in the `nexus-lambda-artifacts-<env>`

@@ -28,12 +28,14 @@ cors_allowed_origins = [
 ]
 
 # Worker notifications (#425). Both values are public — the from-address is in
-# every email header, and a PostHog project key is the write-only ingestion key
-# the browser bundle already carries — so they live here rather than behind a
-# TF_VAR. posthog_key is the dev value of NEXT_PUBLIC_POSTHOG_KEY in Vercel;
-# left empty the worker simply never reports.
+# every email header, and posthog_key is the write-only ingestion key the
+# browser bundle already carries (it is literally readable from the deployed
+# page source) — so they live here rather than behind a TF_VAR. Same key as
+# prod on purpose: one PostHog project serves both, and ANALYTICS_ENVIRONMENT
+# in lambda.tf is what separates their events, the same way VERCEL_ENV does for
+# the app.
 resend_from_email = "noreply@nexus.thomasar.dev"
-posthog_key       = ""
+posthog_key       = "phc_zQAczyqqiupW6zDxQ6i28Ez4oWpKR6r9QMfo8SX3pxxE"
 
 # database_url and resend_api_key are intentionally absent: pass via
 # TF_VAR_database_url (the dev Supabase transaction-pooler URL, port 6543) and
