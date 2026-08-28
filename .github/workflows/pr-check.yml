@@ -70,11 +70,19 @@ jobs:
                         /\bSET\s+DATA\s+TYPE\b/i,
                       ];
 
+                      // Match against the statement only: our migrations carry
+                      // hand-written `--` headers explaining the change, and a
+                      // header saying a drop is deliberately NOT happening
+                      // would otherwise fail the gate that guards drops (#422).
+                      // Drizzle emits one statement per line and never quotes a
+                      // literal `--`, so trimming at the first one is safe.
+                      const statementOf = (line) => line.replace(/--.*$/, '');
+
                       const hits = [];
                       for (const file of diff.split('\n')) {
                         const lines = fs.readFileSync(file, 'utf8').split('\n');
                         lines.forEach((line, i) => {
-                          if (destructive.some(re => re.test(line))) {
+                          if (destructive.some(re => re.test(statementOf(line)))) {
                             hits.push(`${file}:${i + 1}: ${line.trim()}`);
                           }
                         });
