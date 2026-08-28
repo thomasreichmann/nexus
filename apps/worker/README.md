@@ -59,17 +59,27 @@ The worker does not read `.env` files or Vercel env, and does not use the web
 app's Zod schema. Its environment is set per-environment on the Lambda
 function configuration:
 
-| Variable            | Purpose                                                    |
-| ------------------- | ---------------------------------------------------------- |
-| `DATABASE_URL`      | Postgres connection string (pooled, port 6543 — PgBouncer) |
-| `S3_BUCKET`         | Files bucket — thumbnail sources and the retrieval poll    |
-| `S3_DERIVED_BUCKET` | Derived bucket — generated thumbnails                      |
-| `SQS_QUEUE_URL`     | Jobs queue, for the jobs the poll enqueues                 |
+| Variable                | Purpose                                                          |
+| ----------------------- | ---------------------------------------------------------------- |
+| `DATABASE_URL`          | Postgres connection string (pooled, port 6543 — PgBouncer)       |
+| `S3_BUCKET`             | Files bucket — thumbnail sources and the retrieval poll          |
+| `S3_DERIVED_BUCKET`     | Derived bucket — generated thumbnails                            |
+| `SQS_QUEUE_URL`         | Jobs queue, for the jobs the poll enqueues                       |
+| `APP_URL`               | Link target for worker-sent email — the app, not a presigned URL |
+| `RESEND_API_KEY`        | Read by `@nexus/email`; empty means the worker can't send        |
+| `RESEND_FROM_EMAIL`     | Read by `@nexus/email` — the visible From address                |
+| `ANALYTICS_ENABLED`     | Read by `@nexus/analytics`; `"true"` turns capture on            |
+| `POSTHOG_KEY`           | PostHog project key; absent leaves analytics off                 |
+| `ANALYTICS_ENVIRONMENT` | `production` / `development` — the tier events are attributed to |
 
-Each is validated at first use and throws a descriptive error if missing. The Lambda environment is Terraform-managed —
-change it with a `terraform apply` (`TF_VAR_database_url`, see
-`infra/terraform/README.md`), never `aws lambda update-function-configuration`,
-which Terraform would revert on the next apply.
+The ones the worker reads itself are validated at first use and throw a
+descriptive error if missing (`requireEnv` in `src/aws.ts`); the ones marked as
+read by a package are validated there instead, the same way in both runtimes.
+The Lambda environment is Terraform-managed — change it with a
+`terraform apply` (`TF_VAR_database_url`, `TF_VAR_resend_api_key`, and the
+committed tfvars for the rest; see `infra/terraform/README.md`), never
+`aws lambda update-function-configuration`, which Terraform would revert on
+the next apply.
 
 ## Deployment
 
@@ -79,6 +89,15 @@ all dependencies bundled. Code deploys automatically on every merge to main
 environment's migration). For a first deploy, rollback, or hotfix run the same
 script manually: `pnpm -F worker deploy:<env>` — details in the
 [Background Jobs Runbook](../../docs/guides/background-jobs.md#deploy-updated-worker-code).
+
+`deploy.sh` uploads the zip directly (`aws lambda update-function-code
+--zip-file`), so the ceiling is 50 MB zipped / 250 MB unzipped including the
+ffmpeg and exiftool layers. The shipped bundle is 271 KB zipped, unchanged by
+#425: `@nexus/email` is declared but not yet imported from `src/`, and tsup
+bundles only what the `src/handler.ts` entry reaches. A throwaway build that
+did import the whole notification path (React Email and react-dom through
+`@nexus/email`, plus `@nexus/analytics`) measured 763 KB — about 1.5% of the
+limit, so #426 has no reason to move JS dependencies into a layer.
 
 ## Key Details
 

@@ -120,16 +120,22 @@ Transactional email credentials.
 
 Application-level configuration.
 
-| Variable              | Type   | Description                                                            |
-| --------------------- | ------ | ---------------------------------------------------------------------- |
-| `NEXT_PUBLIC_APP_URL` | Public | Base URL of the application                                            |
-| `LOG_ERROR_VERBOSITY` | Server | Optional: `minimal` \| `standard` \| `full` (defaults per environment) |
+| Variable              | Type   | Description                                                             |
+| --------------------- | ------ | ----------------------------------------------------------------------- |
+| `NEXT_PUBLIC_APP_URL` | Public | Base URL of the application                                             |
+| `LOG_ERROR_VERBOSITY` | Server | Optional: `minimal` \| `standard` \| `full` (defaults per environment)  |
+| `ANALYTICS_ENABLED`   | Server | `true` turns server-side PostHog capture on (production + preview only) |
 
 ### Worker (AWS Lambda)
 
 `apps/worker` does not use Vercel env or the web app's Zod schema. Its
-environment (`DATABASE_URL`) is set per-environment on the Lambda function
-configuration — see `apps/worker/README.md`.
+environment is set per-environment on the Lambda function configuration by
+Terraform — the full table lives in `apps/worker/README.md`.
+
+The two shared packages `@nexus/email` and `@nexus/analytics` read their own
+vars straight from `process.env` in both runtimes, which is why
+`RESEND_API_KEY` / `RESEND_FROM_EMAIL` appear both in the app's schema above
+and on the Lambda: same names, two independently configured environments.
 
 ## Type-Safe Access
 

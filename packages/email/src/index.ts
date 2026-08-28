@@ -4,9 +4,13 @@ import * as templates from './templates';
 /**
  * Transactional email operations (Resend + React Email).
  *
+ * A package rather than a folder in apps/web because the worker Lambda has to
+ * send the same messages and cannot import from the app (the @nexus/db
+ * precedent, #364).
+ *
  * @example
  * ```typescript
- * import { email } from '@/lib/email';
+ * import { email } from '@nexus/email';
  * import { createElement } from 'react';
  *
  * const props = {

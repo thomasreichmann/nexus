@@ -22,6 +22,14 @@ export const serverSchema = z.object({
     // Resend validate the actual address on send.
     RESEND_FROM_EMAIL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32),
+    // Turns server-side PostHog capture on. Explicit rather than inferred from
+    // `process.env.VERCEL`, which the worker Lambda never sets — both runtimes
+    // now opt in the same way (#425). Set on the production and preview Vercel
+    // tiers only; unset in local dev, CI, and the e2e production builds keeps
+    // them out of the funnel. Read raw in lib/posthog/server.ts, for the same
+    // reason as the PostHog keys below; declared here so it's documented and
+    // validated wherever the app does load `@/lib/env`.
+    ANALYTICS_ENABLED: z.enum(['true', 'false']).optional(),
     LOG_ERROR_VERBOSITY: logErrorVerbositySchema.optional(),
     // Unset (local dev, tests, preview) disables the Discord alert transport.
     DISCORD_ALERT_WEBHOOK_URL: z.string().url().optional(),

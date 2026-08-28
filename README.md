@@ -107,7 +107,9 @@ nexus/
 │   │   └── e2e/             # Playwright suites + coverage gate
 │   └── worker/              # AWS Lambda SQS consumer — typed async-job registry
 ├── packages/
+│   ├── analytics/           # @nexus/analytics — PostHog event names + server-side capture
 │   ├── db/                  # @nexus/db — Drizzle schema, migrations, repositories, test-db
+│   ├── email/               # @nexus/email — Resend sender + React Email templates
 │   └── trpc-devtools/       # Published tRPC devtools panel (npm)
 ├── docs/                    # Obsidian vault — architecture, ADRs, guides, planning
 └── scripts/                 # Repo automation (check, coverage summaries)
@@ -150,6 +152,8 @@ Validated at startup by [`apps/web/lib/env/schema.ts`](apps/web/lib/env/schema.t
 | Stripe   | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`                                             |
 | Email    | `RESEND_API_KEY`, `RESEND_FROM_EMAIL`                                                    |
 | Public   | `NEXT_PUBLIC_APP_URL`                                                                    |
+
+The worker Lambda has its own environment, set by Terraform rather than Vercel — see [`apps/worker/README.md`](apps/worker/README.md).
 
 ## Commands
 

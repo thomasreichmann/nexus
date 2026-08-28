@@ -185,7 +185,7 @@ The worker needs its own env configuration, separate from the web app:
 | -------------- | ------------------------------------------ |
 | `DATABASE_URL` | Supabase connection pooler URL (port 6543) |
 
-Additional env vars will be added as job handlers require them (e.g., S3 credentials for the delete-account handler). These are configured via Terraform's `environment` block on the Lambda resource.
+The current full list — S3/SQS names plus the notification vars added in #425 — is in `apps/worker/README.md`. Additional env vars get added as job handlers require them; all of them are configured via Terraform's `environment` block on the Lambda resource.
 
 ## Related
 

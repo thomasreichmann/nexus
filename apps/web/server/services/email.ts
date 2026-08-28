@@ -1,12 +1,12 @@
 import { createElement } from 'react';
 import { createUserRepo } from '@nexus/db/repo/users';
-import { alerts } from '@/lib/alerts';
 import {
     email,
     type InviteEmailProps,
     type PasswordResetEmailProps,
     type RetrievalReadyEmailProps,
-} from '@/lib/email';
+} from '@nexus/email';
+import { alerts } from '@/lib/alerts';
 import { toErrorMessage } from '@/lib/errors';
 import { logger } from '@/server/lib/logger';
 import type { DB } from '@nexus/db';

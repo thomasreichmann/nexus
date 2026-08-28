@@ -4,8 +4,12 @@
  * can import it before any path aliases or bundler config exist.
  */
 
-/** PostHog US cloud ingestion host — the default when the env var is unset. */
-export const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
+/**
+ * The ingestion host itself is defined in `@nexus/analytics/hosts` — the
+ * worker Lambda needs the same default and cannot import from the app (#425).
+ * That module is dependency-free for the same reason this one is.
+ */
+export { DEFAULT_POSTHOG_HOST } from '@nexus/analytics/hosts';
 
 /**
  * Path the reverse proxy is mounted at. Browser traffic goes to a first-party

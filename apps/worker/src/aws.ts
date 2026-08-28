@@ -21,8 +21,17 @@ export function getSqs(): SQSClient {
     return sqsClient;
 }
 
+/**
+ * Lambda env vars the worker's own code reads. `RESEND_API_KEY`,
+ * `RESEND_FROM_EMAIL` and `ANALYTICS_ENABLED` are set on the same function but
+ * are absent here on purpose — `@nexus/email` and `@nexus/analytics` read and
+ * validate those themselves, in both runtimes.
+ */
 export type WorkerEnvVar =
+    | 'ANALYTICS_ENVIRONMENT'
+    | 'APP_URL'
     | 'DATABASE_URL'
+    | 'POSTHOG_KEY'
     | 'S3_BUCKET'
     | 'S3_DERIVED_BUCKET'
     | 'SQS_QUEUE_URL';
@@ -36,4 +45,14 @@ export function requireEnv(name: WorkerEnvVar): string {
         );
     }
     return value;
+}
+
+/**
+ * Reads an optional Lambda env var. For the vars whose absence is a valid
+ * configuration rather than a misconfiguration — an environment that hasn't
+ * been given a PostHog project, say — where throwing would take down real work
+ * over a switched-off side effect.
+ */
+export function optionalEnv(name: WorkerEnvVar): string | undefined {
+    return process.env[name] || undefined;
 }

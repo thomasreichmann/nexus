@@ -41,11 +41,16 @@ cd infra/terraform
 terraform init
 terraform workspace select prod || terraform workspace new prod   # or dev
 
-# The worker Lambda's DATABASE_URL — this environment's Supabase
-# transaction-pooler URL (port 6543, see docs/infra/supabase-manual-setup.md).
-# Never commit it. It is also stored (encrypted at rest) in the Terraform
-# state bucket.
-set -x TF_VAR_database_url "postgresql://..."   # fish; bash: export TF_VAR_database_url=...
+# The two secrets the Lambda's environment carries. Never commit them; both
+# are also stored (encrypted at rest) in the Terraform state bucket. Fish
+# syntax; bash: export TF_VAR_database_url=...
+#
+# DATABASE_URL — this environment's Supabase transaction-pooler URL
+# (port 6543, see docs/infra/supabase-manual-setup.md).
+set -x TF_VAR_database_url "postgresql://..."
+# RESEND_API_KEY — the worker sends the retrieval-ready email (#425). Omit it
+# and the apply still succeeds; the worker just can't send.
+set -x TF_VAR_resend_api_key "re_..."
 
 terraform plan -var-file=environments/prod.tfvars    # or dev.tfvars
 terraform apply -var-file=environments/prod.tfvars   # or dev.tfvars
@@ -83,9 +88,14 @@ production code.
    once the deploy secrets from step 1 exist); for a first deploy before any
    merge, run `pnpm -F worker deploy:<env>` yourself. Later applies won't
    touch the deployed code (`ignore_changes` on the package), but the
-   Lambda's environment (`DATABASE_URL`, `S3_BUCKET`, `S3_DERIVED_BUCKET`)
-   **is** Terraform-managed — update it here, not with
+   Lambda's environment **is** Terraform-managed (`lambda.tf`; the full table
+   is in `apps/worker/README.md`) — update it here, not with
    `aws lambda update-function-configuration`.
+
+    `posthog_key` in the tfvars file starts empty, which leaves worker
+    analytics off. Fill it with this environment's `NEXT_PUBLIC_POSTHOG_KEY`
+    (Vercel env — it is the public browser key, safe to commit) to turn the
+    worker's server-side events on.
 
 3. **Lambda layers** — `layers.tf` publishes the worker's ffmpeg and
    perl/exiftool layers from zips in the `nexus-lambda-artifacts-<env>`

@@ -13,8 +13,8 @@ const posthogHost =
 const nextConfig: NextConfig = {
     // Suppress verbose request logging in dev - we have our own tRPC logging
     logging: false,
-    // @nexus/db exports raw TypeScript (JIT compilation, no build step)
-    transpilePackages: ['@nexus/db'],
+    // The @nexus/* packages export raw TypeScript (JIT compilation, no build step)
+    transpilePackages: ['@nexus/analytics', '@nexus/db', '@nexus/email'],
     // PostHog's ingestion paths end in a slash (/e/, /s/). Next normalizes
     // trailing slashes with a 308 *before* rewrites run, so without this the
     // proxied requests below get redirected instead of proxied.
