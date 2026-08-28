@@ -16,7 +16,6 @@ import * as multipart from './multipart';
  * const downloadUrl = await s3.presigned.get(key, { filename: 'download.png' });
  *
  * // Glacier operations
- * await s3.glacier.restore(key, 'standard');
  * const state = await s3.glacier.getObjectState(key);
  *
  * // Object operations

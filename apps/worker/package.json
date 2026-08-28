@@ -18,6 +18,7 @@
         "@aws-sdk/client-sqs": "^3.975.0",
         "@aws-sdk/s3-request-presigner": "^3.975.0",
         "@nexus/analytics": "workspace:*",
+        "@nexus/async": "workspace:*",
         "@nexus/db": "workspace:*",
         "@nexus/email": "workspace:*",
         "drizzle-orm": "^0.45.1",

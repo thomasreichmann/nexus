@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { createSemaphore } from '@nexus/async';
 import { useTRPC } from '@/lib/trpc/client';
 import { toastContext } from '@/lib/trpc/error-link';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { xhrPut } from '@/lib/http/xhr';
 import { retryAsync } from '@/lib/async/retry';
-import { createSemaphore } from '@/lib/async/semaphore';
 import {
     createFilePool,
     type FilePool,
