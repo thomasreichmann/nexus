@@ -1,5 +1,17 @@
 import type { Mock } from 'vitest';
 
+type S3Module = typeof import('@aws-sdk/client-s3');
+
+/**
+ * The real module with only the client swapped. Spelled out rather than cast
+ * to `S3Module`: the stub deliberately has none of `S3Client`'s config,
+ * middleware or destroy surface, so claiming it is one would be a lie the
+ * compiler is right to reject.
+ */
+interface MockedS3Module extends Omit<S3Module, 'S3Client'> {
+    S3Client: new () => { send: Mock };
+}
+
 /**
  * The module factory for `vi.mock('@aws-sdk/client-s3', …)`, so the three
  * worker suites that need an S3 stub declare it once each instead of restating
@@ -14,14 +26,14 @@ import type { Mock } from 'vitest';
  * would not exist yet.
  */
 export async function mockS3Module(
-    importOriginal: () => Promise<typeof import('@aws-sdk/client-s3')>,
+    importOriginal: () => Promise<S3Module>,
     send: Mock
-): Promise<typeof import('@aws-sdk/client-s3')> {
+): Promise<MockedS3Module> {
     const actual = await importOriginal();
     return {
         ...actual,
         S3Client: class {
             send = send;
         },
-    } as typeof import('@aws-sdk/client-s3');
+    };
 }
