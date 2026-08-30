@@ -38,6 +38,9 @@ importers:
       '@nexus/analytics':
         specifier: workspace:*
         version: link:../../packages/analytics
+      '@nexus/async':
+        specifier: workspace:*
+        version: link:../../packages/async
       '@nexus/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -216,6 +219,9 @@ importers:
       '@nexus/analytics':
         specifier: workspace:*
         version: link:../../packages/analytics
+      '@nexus/async':
+        specifier: workspace:*
+        version: link:../../packages/async
       '@nexus/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -274,6 +280,30 @@ importers:
       posthog-node:
         specifier: ^5.46.1
         version: 5.46.1(rxjs@7.8.2)
+    devDependencies:
+      '@eslint/js':
+        specifier: ^9.39.2
+        version: 9.39.2
+      '@types/node':
+        specifier: ^20
+        version: 20.19.27
+      '@vitest/coverage-v8':
+        specifier: ^4.0.18
+        version: 4.0.18(vitest@4.0.18(@opentelemetry/api@1.9.1)(@types/node@20.19.27)(jiti@2.6.1)(jsdom@27.4.0)(lightningcss@1.30.2)(terser@5.49.0)(tsx@4.21.0))
+      eslint:
+        specifier: ^9.39.2
+        version: 9.39.2(jiti@2.6.1)
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.67.0
+        version: 8.67.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@opentelemetry/api@1.9.1)(@types/node@20.19.27)(jiti@2.6.1)(jsdom@27.4.0)(lightningcss@1.30.2)(terser@5.49.0)(tsx@4.21.0)
+
+  packages/async:
     devDependencies:
       '@eslint/js':
         specifier: ^9.39.2
@@ -9068,8 +9098,8 @@ snapshots:
 
   '@typescript-eslint/project-service@8.54.0(typescript@5.9.3)':
     dependencies:
-      '@typescript-eslint/tsconfig-utils': 8.54.0(typescript@5.9.3)
-      '@typescript-eslint/types': 8.54.0
+      '@typescript-eslint/tsconfig-utils': 8.67.0(typescript@5.9.3)
+      '@typescript-eslint/types': 8.67.0
       debug: 4.4.3
       typescript: 5.9.3
     transitivePeerDependencies:
@@ -9109,7 +9139,7 @@ snapshots:
       '@typescript-eslint/utils': 8.54.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
       debug: 4.4.3
       eslint: 9.39.2(jiti@2.6.1)
-      ts-api-utils: 2.4.0(typescript@5.9.3)
+      ts-api-utils: 2.5.0(typescript@5.9.3)
       typescript: 5.9.3
     transitivePeerDependencies:
       - supports-color

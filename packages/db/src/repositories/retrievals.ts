@@ -6,9 +6,11 @@ import {
     inArray,
     isNull,
     gt,
+    lte,
     desc,
     type SQL,
 } from 'drizzle-orm';
+import { RESTORE_TIERS } from '../objectState';
 import * as schema from '../schema';
 import { createRepository } from './create';
 import type { DB } from '../connection';
@@ -143,17 +145,57 @@ export interface PendingRetrievalWithFile {
 }
 
 /**
- * Every retrieval still waiting on S3, with the file fields the poller needs
- * to finish one off. This is the poll's whole work list: the worker HEADs
- * exactly these keys, so the request volume is bounded by our own pending set
- * rather than by S3's event rate (#416).
+ * How long after `initiatedAt` a restore of each tier could plausibly be
+ * finished, in milliseconds. The values are the caller's — the poll owns them
+ * so they can be tuned from observed `readyAt - initiatedAt` without a schema
+ * or repository change.
+ */
+export type RestoreHorizons = Record<Retrieval['tier'], number>;
+
+// A row is worth a HEAD once its own tier's horizon has passed. Written as a
+// per-tier comparison against a timestamp computed here rather than as SQL
+// interval arithmetic, so the horizons stay plain milliseconds in the caller
+// and the predicate stays a plain drizzle expression.
+function pastCompletionHorizon(horizons: RestoreHorizons): SQL {
+    const now = Date.now();
+    // or() is only `undefined` when called with no arguments
+    return or(
+        // No accept time recorded means no horizon to be inside. Ask now: the
+        // alternative is a row nothing ever HEADs again.
+        isNull(schema.retrievals.initiatedAt),
+        ...RESTORE_TIERS.map((tier) =>
+            and(
+                eq(schema.retrievals.tier, tier),
+                lte(
+                    schema.retrievals.initiatedAt,
+                    new Date(now - horizons[tier])
+                )
+            )
+        )
+    )!;
+}
+
+/**
+ * Every retrieval that is still waiting on S3 *and* old enough to plausibly be
+ * done, with the file fields the poller needs to finish one off. This is the
+ * poll's whole work list: the worker HEADs exactly these keys, so the request
+ * volume is bounded by our own pending set rather than by S3's event rate
+ * (#416).
+ *
+ * The horizon is what keeps that bound cheap (#423). HEADing from t=0 spends
+ * one request per row per run for the ~24-48h nothing can possibly have
+ * happened in — on a 1,000-file restore that was more than the restore itself
+ * cost. Skipping those rows in the WHERE, rather than after fetching them, is
+ * also what lets one run's budget cover a whole full-archive request: the rows
+ * it declines to look at never take up a slot.
  *
  * Ordered oldest-first so a pending set larger than one run's budget drains
  * fairly instead of starving the earliest requests.
  */
 async function findPendingWithFiles(
     db: DB,
-    limit: number
+    limit: number,
+    horizons: RestoreHorizons
 ): Promise<PendingRetrievalWithFile[]> {
     return db
         .select({
@@ -165,7 +207,12 @@ async function findPendingWithFiles(
         })
         .from(schema.retrievals)
         .innerJoin(schema.files, eq(schema.retrievals.fileId, schema.files.id))
-        .where(inArray(schema.retrievals.status, ['pending', 'in_progress']))
+        .where(
+            and(
+                inArray(schema.retrievals.status, ['pending', 'in_progress']),
+                pastCompletionHorizon(horizons)
+            )
+        )
         .orderBy(schema.retrievals.createdAt)
         .limit(limit);
 }

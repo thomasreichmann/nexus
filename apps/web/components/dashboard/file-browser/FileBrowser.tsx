@@ -42,7 +42,7 @@ import { captureEvent } from '@/lib/posthog/client';
 import { PostHogEvent } from '@/lib/posthog/events';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
 import { toastContext } from '@/lib/trpc/error-link';
-import { toastRetrievalResult } from './retrievalFeedback';
+import { toastRetrievalRequested } from './retrievalFeedback';
 import { deriveStatus } from './status';
 import { BatchHeader, BatchHeaderRow } from './BatchHeader';
 import { FileRow } from './FileRow';
@@ -150,23 +150,20 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                 errorMessage: 'Failed to request retrievals',
             }),
             // `variables` rather than the selection state: the selection is
-            // rewritten just below, and it can hold non-archived files the
+            // cleared just below, and it can hold non-archived files the
             // request already filtered out.
             onSuccess(result, variables) {
                 invalidateFileList();
-                // Keep files whose restore failed selected so retrying them
-                // is one click instead of re-selecting by hand.
-                const failedFileIds = new Set(
-                    result.failed.map((r) => r.fileId)
-                );
-                setSelectedFiles((prev) =>
-                    prev.filter((id) => failedFileIds.has(id))
-                );
+                // The whole selection was accepted or the mutation threw —
+                // there is no per-file failure left to keep selected for a
+                // retry, because the restores fire in a worker job after this
+                // returns (#423).
+                setSelectedFiles([]);
                 captureEvent(PostHogEvent.RetrievalRequested, {
                     fileCount: variables.fileIds.length,
                     isBulk: true,
                 });
-                toastRetrievalResult(result, 'Retrieval requests submitted');
+                toastRetrievalRequested(result.fileCount);
             },
         })
     );

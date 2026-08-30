@@ -28,7 +28,7 @@ import { PostHogEvent } from '@/lib/posthog/events';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
 import { toastContext } from '@/lib/trpc/error-link';
 import type { RetrievableFile } from '@/components/dashboard/RetrieveDialog';
-import { toastRetrievalResult } from './retrievalFeedback';
+import { toastRetrievalRequested } from './retrievalFeedback';
 import type { FileWithRetrieval } from '@nexus/db/repo/files';
 import type { DerivedStatus } from './status';
 
@@ -54,7 +54,7 @@ export function useFileActions(file: FileWithRetrieval) {
                     fileCount: 1,
                     isProbablyCold: isProbablyCold(file),
                 });
-                toastRetrievalResult(result, 'Retrieval request submitted');
+                toastRetrievalRequested(result.fileCount);
             },
         })
     );

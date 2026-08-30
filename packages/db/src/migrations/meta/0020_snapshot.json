@@ -1,5 +1,5 @@
 {
-  "id": "e9ca78d7-8980-46d5-bb4e-2e337bb065ac",
+  "id": "55177050-bd02-4194-bd8f-5d2a5b8f3bc8",
   "prevId": "8e976e9d-e8e7-477c-8b6e-0315962ac36a",
   "version": "7",
   "dialect": "postgresql",
@@ -1116,13 +1116,7 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "default": "'standard'"
-        },
-        "completed_at": {
-          "name": "completed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
+          "default": "'bulk'"
         },
         "created_at": {
           "name": "created_at",
@@ -1253,7 +1247,7 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "default": "'standard'"
+          "default": "'bulk'"
         },
         "initiated_at": {
           "name": "initiated_at",

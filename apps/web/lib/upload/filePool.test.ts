@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { flushMicrotasks } from '@/lib/async/testing';
+import { flushMicrotasks } from '@nexus/async/testing';
 import { createFilePool, type FileRunOutcome, type PoolItem } from './filePool';
 
 const GiB = 1024 ** 3;

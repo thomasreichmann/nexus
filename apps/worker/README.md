@@ -11,13 +11,15 @@ AWS Lambda function with two triggers: background jobs from SQS, and a
 Web App → DB insert + SQS send → Lambda receives → handler executes → DB status update
 ```
 
-**Retrieval poll (EventBridge).** Every 15 minutes, EventBridge invokes the same function with a payload that has no `Records` key, which is how `handler` tells the two apart. The poll `HeadObject`s each _pending_ retrieval, marks the readable ones `ready`, and re-enqueues any thumbnail that failed while its original was cold.
+**Retrieval poll (EventBridge).** Every 15 minutes, EventBridge invokes the same function with a payload that has no `Records` key, which is how `handler` tells the two apart. The poll `HeadObject`s each _pending_ retrieval that is past its tier's completion horizon, marks the readable ones `ready`, and re-enqueues any thumbnail that failed while its original was cold.
 
 ```
-EventBridge (15m) → Lambda → HeadObject per pending retrieval → mark ready
+EventBridge (15m) → Lambda → HeadObject per due retrieval → mark ready
 ```
 
-This replaced an S3 → SNS → webhook rail (#416). Completion is observed rather than delivered, so the request volume is bounded by our own pending set instead of by S3's event rate. Rows are processed serially: exactly one query is in flight at a time, so the connection pooler never sees more than one connection from a run.
+This replaced an S3 → SNS → webhook rail (#416). Completion is observed rather than delivered, so the request volume is bounded by our own pending set instead of by S3's event rate. Two rules keep that cheap (#423): a row is not asked about before `initiatedAt + horizon` (~6h Standard, ~24h Bulk — deliberately under the documented 12–48h, since this is when we start asking, not when we expect an answer), and the HEADs run concurrently while the DB writes stay strictly serial, so exactly one query is in flight at a time and the connection pooler never sees more than one connection from a run.
+
+**Restore initiation (SQS).** A restore request writes its retrieval rows on the request path and then enqueues `initiate-restore`; the handler is what HEADs each object and issues `RestoreObject`. The rows exist before any restore fires (#329), so a job that dies mid-run leaves nothing unaccounted for, and the handler is idempotent — a row already restoring is skipped, and a duplicate `RestoreObject` is answered with `RestoreAlreadyInProgress`, which counts as started.
 
 ## Architecture
 

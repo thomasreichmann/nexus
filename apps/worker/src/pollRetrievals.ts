@@ -1,27 +1,55 @@
-import { HeadObjectCommand } from '@aws-sdk/client-s3';
+import { createSemaphore } from '@nexus/async';
 import {
-    interpretObjectState,
     isObjectMissing,
     isReadable,
-    restoreWindowEnd,
+    type ObjectState,
 } from '@nexus/db/objectState';
 import { createRetrievalRequestRepo } from '@nexus/db/repo/retrievalRequests';
 import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
-import { getS3, requireEnv } from './aws';
+import { headObjectState, S3_CONCURRENCY } from './aws';
 import { enqueueJob } from './jobs';
 import { partitionIntoChunks } from './partition';
+import { markRetrievalMissing, markRetrievalReady } from './retrievalWrites';
 import type { RetrievalRequestRepo } from '@nexus/db/repo/retrievalRequests';
-import type { PendingRetrievalWithFile } from '@nexus/db/repo/retrievals';
+import type {
+    PendingRetrievalWithFile,
+    RestoreHorizons,
+} from '@nexus/db/repo/retrievals';
 import type { DB } from '@nexus/db';
 
 /**
- * Cap on rows examined per run. Deep Archive restores take 12-48h and this
- * runs every 15 minutes, so a leftover is picked up long before anyone could
- * notice; the cap exists only so a bulk restore can't run the 120s Lambda
- * timeout out mid-write. `findPendingWithFiles` orders oldest-first, so the
- * overflow drains in request order rather than starving the earliest rows.
+ * How long after `initiatedAt` a restore of each tier could plausibly have
+ * finished. Rows younger than their tier's horizon are skipped in the query,
+ * not fetched and discarded (#423).
+ *
+ * Deliberately below the documented completion times — Deep Archive quotes
+ * 12-48h for Standard and 48h for Bulk — because this is the moment we start
+ * asking, not an expectation of an answer. Under-shooting costs a few HEADs;
+ * over-shooting delays the whole request. `readyAt - initiatedAt` is recorded
+ * per row, so the alpha's own numbers are what these get tuned to.
+ *
+ * Expedited is minutes on Glacier Flexible and unavailable on Deep Archive, so
+ * it has no horizon to wait out.
  */
-const MAX_ROWS_PER_RUN = 400;
+const COMPLETION_HORIZONS: RestoreHorizons = {
+    expedited: 0,
+    standard: 6 * 60 * 60 * 1000,
+    bulk: 24 * 60 * 60 * 1000,
+};
+
+/**
+ * Cap on rows examined per run. It exists only so one run can't spend the 120s
+ * Lambda timeout mid-write; `findPendingWithFiles` orders oldest-first, so any
+ * overflow drains in request order rather than starving the earliest rows.
+ *
+ * The horizon above is what lets this be a full-archive number instead of the
+ * old 400 (#423): a run's budget is now spent only on rows that could actually
+ * be done, so an 8,934-file request drains in two runs rather than waiting out
+ * 22 of them. The HEADs are concurrent and the writes are serial, so the ceiling
+ * is ~5,000 serial UPDATEs against a same-region pooler — tens of seconds,
+ * inside the timeout with room to spare.
+ */
+const MAX_ROWS_PER_RUN = 5000;
 
 /**
  * Cap on requests whose zip builds are started per run, for the same reason as
@@ -62,21 +90,31 @@ type RowOutcome = 'ready' | 'waiting' | 'missing' | 'errored';
  *
  * Replaces the S3 -> SNS -> webhook rail (#416). Completion is *observed*, not
  * delivered: nothing tells us a restore finished, so we ask — but only about
- * retrievals we ourselves are waiting on. That bounds the work by our own
- * pending set (K rows => K HEADs) instead of by S3's event rate, which is what
- * put 862 messages in a DLQ and saturated the connection pooler.
+ * retrievals we ourselves are waiting on, and only once they are old enough to
+ * plausibly be done. That bounds the work by our own pending set (K due rows =>
+ * K HEADs) instead of by S3's event rate, which is what put 862 messages in a
+ * DLQ and saturated the connection pooler.
  *
- * Rows are processed serially, so exactly one query is ever in flight and the
- * pool never opens a second connection.
+ * The HEADs run concurrently and the DB writes that follow run serially, so
+ * exactly one query is ever in flight and the pool still never opens a second
+ * connection (#423). Every row is asked about before any row is written, which
+ * is also what makes the run's cost predictable: one burst of S3 latency, then
+ * a straight line of updates.
  */
 export async function pollRetrievals(db: DB): Promise<PollSummary> {
     const retrievalRepo = createRetrievalRepo(db);
     // Fetch one past the cap purely to detect overflow.
     const pending = await retrievalRepo.findPendingWithFiles(
-        MAX_ROWS_PER_RUN + 1
+        MAX_ROWS_PER_RUN + 1,
+        COMPLETION_HORIZONS
     );
     const capped = pending.length > MAX_ROWS_PER_RUN;
     const rows = capped ? pending.slice(0, MAX_ROWS_PER_RUN) : pending;
+
+    const heads = createSemaphore(S3_CONCURRENCY);
+    const observations = await Promise.all(
+        rows.map((row) => heads.run(() => headRow(row)))
+    );
 
     const summary: PollSummary = {
         checked: 0,
@@ -91,9 +129,9 @@ export async function pollRetrievals(db: DB): Promise<PollSummary> {
         zipLookupFailed: false,
     };
 
-    for (const row of rows) {
+    for (const observation of observations) {
         summary.checked++;
-        summary[await pollRow(db, retrievalRepo, row)]++;
+        summary[await settleRow(db, retrievalRepo, observation)]++;
     }
 
     // After the flips, not interleaved with them: a request is only buildable
@@ -132,45 +170,33 @@ export async function pollRetrievals(db: DB): Promise<PollSummary> {
     return summary;
 }
 
-/** Finish one pending row off, mapping every ending onto a `RowOutcome`. */
-async function pollRow(
+/** What one HEAD said about a row, before anything is written for it. */
+type RowObservation =
+    | { row: PendingRetrievalWithFile; state: ObjectState }
+    | { row: PendingRetrievalWithFile; error: unknown };
+
+/**
+ * Ask S3 about one row. Writes nothing — the whole point of splitting this out
+ * is that the S3 half can run concurrently while the DB half stays serial.
+ */
+async function headRow(row: PendingRetrievalWithFile): Promise<RowObservation> {
+    try {
+        return { row, state: await headObjectState(row.s3Key) };
+    } catch (error) {
+        return { row, error };
+    }
+}
+
+/** Finish one observed row off, mapping every ending onto a `RowOutcome`. */
+async function settleRow(
     db: DB,
     retrievalRepo: ReturnType<typeof createRetrievalRepo>,
-    row: PendingRetrievalWithFile
+    observation: RowObservation
 ): Promise<RowOutcome> {
-    try {
-        const response = await getS3().send(
-            new HeadObjectCommand({
-                Bucket: requireEnv('S3_BUCKET'),
-                Key: row.s3Key,
-            })
-        );
-        const state = interpretObjectState({
-            storageClass: response.StorageClass,
-            restoreHeader: response.Restore,
-        });
+    const { row } = observation;
 
-        if (!isReadable(state)) return 'waiting';
-
-        const now = new Date();
-        await retrievalRepo.updateStatus(row.id, 'ready', {
-            readyAt: now,
-            // The synthetic window quotes the `Days` this restore was actually
-            // requested with, not the default: a zip-delivered restore buys two
-            // days, and claiming seven would keep `readyAndDownloadable` true
-            // for five days after the copy is gone.
-            expiresAt:
-                state.expiresAt ??
-                restoreWindowEnd(now, row.restoreDaysToKeep ?? undefined),
-        });
-
-        // A thumbnail that failed because its original was already cold
-        // can finally be generated now that a readable copy exists.
-        if (row.thumbnailStatus === 'failed_cold') {
-            await enqueueThumbnail(db, row.fileId);
-        }
-        return 'ready';
-    } catch (error) {
+    if ('error' in observation) {
+        const { error } = observation;
         if (isObjectMissing(error)) return failMissing(retrievalRepo, row);
 
         // Leave the row pending: the next run retries it, and the
@@ -182,25 +208,42 @@ async function pollRow(
         );
         return 'errored';
     }
+
+    const { state } = observation;
+    if (!isReadable(state)) return 'waiting';
+
+    try {
+        await markRetrievalReady(
+            retrievalRepo,
+            row.id,
+            state.expiresAt,
+            row.restoreDaysToKeep
+        );
+
+        // A thumbnail that failed because its original was already cold
+        // can finally be generated now that a readable copy exists.
+        if (row.thumbnailStatus === 'failed_cold') {
+            await enqueueThumbnail(db, row.fileId);
+        }
+        return 'ready';
+    } catch (error) {
+        // The HEAD answered, so this is a DB problem: errored, so the next run
+        // retries it rather than reporting the row as settled.
+        console.warn(
+            `Failed to mark retrieval ${row.id} ready (file ${row.fileId}):`,
+            error
+        );
+        return 'errored';
+    }
 }
 
-/**
- * Settle a retrieval whose object is no longer in the bucket.
- *
- * Nothing will ever restore an object that does not exist, so re-HEADing a 404
- * every 15 minutes until the 48h stuck-retrieval check notices is pure waste —
- * and it would hold the file's active-retrieval slot the whole time. `failed`
- * releases that slot, so the user can ask again if the object comes back.
- */
+/** The poll's half of settling a vanished object: the write, plus the log. */
 async function failMissing(
     retrievalRepo: ReturnType<typeof createRetrievalRepo>,
     row: PendingRetrievalWithFile
 ): Promise<RowOutcome> {
     try {
-        await retrievalRepo.updateStatus(row.id, 'failed', {
-            failedAt: new Date(),
-            errorMessage: 'Object no longer exists in S3',
-        });
+        await markRetrievalMissing(retrievalRepo, row.id);
         console.warn(
             `Retrieval ${row.id} failed: object ${row.s3Key} (file ${row.fileId}) no longer exists in S3.`
         );

@@ -91,6 +91,19 @@ function AlertDialogDescription({
     );
 }
 
+function AlertDialogFooter({
+    className,
+    ...props
+}: React.ComponentProps<'div'>) {
+    return (
+        <div
+            data-slot="alert-dialog-footer"
+            className={cn('flex justify-end gap-2', className)}
+            {...props}
+        />
+    );
+}
+
 function AlertDialogAction({
     className,
     variant = 'destructive',
@@ -127,6 +140,7 @@ export {
     AlertDialogPopup,
     AlertDialogTitle,
     AlertDialogDescription,
+    AlertDialogFooter,
     AlertDialogAction,
     AlertDialogCancel,
 };

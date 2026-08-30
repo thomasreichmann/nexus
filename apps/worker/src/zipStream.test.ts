@@ -8,7 +8,7 @@ const hoisted = vi.hoisted(() => ({ send: vi.fn() }));
 // `vi.mock` is hoisted above every import, so a module-scope binding it closed
 // over would not be initialised yet.
 vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
-    const { mockS3Module } = await import('./testing/mockS3');
+    const { mockS3Module } = await import('./testing');
     return mockS3Module(importOriginal, hoisted.send);
 });
 

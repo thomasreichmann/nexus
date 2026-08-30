@@ -1,10 +1,13 @@
 /**
  * FIFO counting semaphore.
  *
- * Exists so several independent workers can share one connection budget: the
- * upload engines hand every browser→S3 PUT through here, so a wave of files
- * can't oversubscribe the browser's per-host socket cap no matter how the work
- * is split between single-part and multipart uploads.
+ * Exists so several independent workers can share one budget of in-flight
+ * operations: the browser upload engines hand every browser→S3 PUT through
+ * here so a wave of files can't oversubscribe the per-host socket cap, and the
+ * worker's restore fan-out and readiness poll hand their HEAD/RestoreObject
+ * calls through it so a 10,000-file request doesn't open 10,000 sockets at
+ * once. Lives in its own package because both runtimes need it and the worker
+ * cannot import app code (#364).
  *
  * FIFO is load-bearing, not incidental. Permits are handed straight to the
  * longest-waiting caller rather than released back into a pool, so a late

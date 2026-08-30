@@ -72,7 +72,7 @@ construction, and a column definition has no way to say "probably".
 
 **Upload:** User selects files → tRPC initiates chunked upload → S3 (Glacier) → metadata saved → visible in dashboard.
 
-**Retrieval:** User requests download → `HeadObject` decides warm vs cold → Glacier restore (12-48 hours) → the worker's 15-minute poll observes completion → presigned download URL → time-limited access.
+**Retrieval:** User requests a restore → the request path writes a retrieval row per file and publishes `initiate-restore` → the worker `HeadObject`s each one to decide warm vs cold and calls `RestoreObject` on the cold ones (Bulk tier by default, ~48 hours) → the 15-minute poll observes completion, skipping rows that are still inside their tier's horizon → presigned download URL → time-limited access.
 
 ## File Locations
 

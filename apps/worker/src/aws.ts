@@ -1,5 +1,6 @@
-import { S3Client } from '@aws-sdk/client-s3';
+import { HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { SQSClient } from '@aws-sdk/client-sqs';
+import { interpretObjectState, type ObjectState } from '@nexus/db/objectState';
 
 /**
  * Lazily-constructed AWS clients and env access for the worker.
@@ -57,4 +58,30 @@ export function requireEnv(name: WorkerEnvVar): string {
  */
 export function optionalEnv(name: WorkerEnvVar): string | undefined {
     return process.env[name] || undefined;
+}
+
+/**
+ * Parallel S3 calls per invocation. One knob, not one per caller: the readiness
+ * poll and the restore-initiation job run against the same SDK client and the
+ * same socket pool, so they cannot be tuned independently anyway. Well under
+ * the SDK's default 50-socket pool, and deliberately never applied to DB
+ * writes — those stay serial so the worker opens one pooler connection (#416).
+ */
+export const S3_CONCURRENCY = 24;
+
+/**
+ * One HeadObject, read into an availability answer — the worker's mirror of the
+ * app's `s3.glacier.getObjectState`. Both of the worker's S3 readers ask the
+ * same question of the same bucket, so the command and the header mapping live
+ * here once; each caller keeps its own error handling, because a missing object
+ * means something different to the poll than to the initiation job.
+ */
+export async function headObjectState(key: string): Promise<ObjectState> {
+    const response = await getS3().send(
+        new HeadObjectCommand({ Bucket: requireEnv('S3_BUCKET'), Key: key })
+    );
+    return interpretObjectState({
+        storageClass: response.StorageClass,
+        restoreHeader: response.Restore,
+    });
 }

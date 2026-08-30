@@ -21,10 +21,9 @@ import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
 import { createRetrievalRequestRepo } from '@nexus/db/repo/retrievalRequests';
 import { InvalidStateError, NotFoundError } from '@/server/errors';
 
-// The database is real; only AWS is faked, so the restore-failure test below
-// exercises the actual unique index and status columns.
+// The database is real; only AWS and the job queue are faked, so the tests
+// below exercise the actual unique index, status columns and horizon SQL.
 const s3Mocks = vi.hoisted(() => ({
-    restore: vi.fn(),
     presignedGet: vi.fn(),
     // Objects default to archived — the case that needs a restore. Tests
     // about warm objects override this per-test.
@@ -33,18 +32,20 @@ const s3Mocks = vi.hoisted(() => ({
     ),
 }));
 
+const jobMocks = vi.hoisted(() => ({ publish: vi.fn() }));
+
 vi.mock('@/lib/storage', () => ({
     s3: {
-        glacier: {
-            restore: s3Mocks.restore,
-            getObjectState: s3Mocks.getObjectState,
-        },
+        glacier: { getObjectState: s3Mocks.getObjectState },
         presigned: { get: s3Mocks.presignedGet },
     },
 }));
 
+vi.mock('@/lib/jobs', () => ({ jobs: { publish: jobMocks.publish } }));
+
 import { retrievalService } from './retrieval';
 import type { ObjectState } from '@nexus/db/objectState';
+import type { RestoreHorizons } from '@nexus/db/repo/retrievals';
 
 // Exercises the active-retrieval predicate against a real database: `ready`
 // rows past `expiresAt` are expired by query, not by stored status — nothing
@@ -68,10 +69,10 @@ afterAll(async () => {
     await deleteUserData(db, userId);
 });
 
-// A test that dies between installing a throwing restore mock and its inline
-// reset would leak the throw (and its call count) into every later test.
+// A test that leaves a rejecting publish installed would fail every later
+// request path, which enqueues one.
 afterEach(() => {
-    s3Mocks.restore.mockReset();
+    jobMocks.publish.mockReset();
 });
 
 describe('active-retrieval expiry predicate', () => {
@@ -85,22 +86,19 @@ describe('active-retrieval expiry predicate', () => {
             expiresAt: past(),
         });
 
-        // The restored copy lapsed but the object is still warm, so the
-        // fresh request should observe that and go straight to `ready`.
-        s3Mocks.getObjectState.mockResolvedValueOnce({ availability: 'warm' });
+        await retrievalService.requestRetrieval(db, userId, file.id);
 
-        const {
-            started: [retrieval],
-        } = await retrievalService.requestRetrieval(db, userId, file.id);
-
-        // Fresh row, ready immediately — the object was observed readable
+        const repo = createRetrievalRepo(db);
+        // Fresh row, waiting on the initiation job — the request path writes
+        // rows and asks S3 nothing (#423).
+        const [retrieval] = await repo.findByFileIds([file.id]);
         expect(retrieval.id).not.toBe(lapsed.id);
-        expect(retrieval.status).toBe('ready');
-        expect(retrieval.expiresAt!.getTime()).toBeGreaterThan(Date.now());
+        expect(retrieval.status).toBe('pending');
+        expect(retrieval.initiatedAt).toBeInstanceOf(Date);
 
         // The insert path flipped the lapsed row to `expired` — it has to,
         // or the row would still hold the unique-index slot for the file.
-        const rows = await createRetrievalRepo(db).findByUser(userId);
+        const rows = await repo.findByUser(userId);
         expect(rows.find((r) => r.id === lapsed.id)?.status).toBe('expired');
     });
 
@@ -187,11 +185,19 @@ describe('one active retrieval per file (#266)', () => {
             retrievalService.requestRetrieval(db, userId, file.id),
         ]);
 
-        // Whichever call lost the insert race got the winner's row back.
-        expect(first.started[0].id).toBe(second.started[0].id);
-
+        expect(first.requestId).not.toBe(second.requestId);
         const active = await createRetrievalRepo(db).findByFileIds([file.id]);
         expect(active).toHaveLength(1);
+
+        // Whichever call lost the insert race adopted the winner's row, so
+        // both requests still count the file they asked for.
+        const requestRepo = createRetrievalRequestRepo(db);
+        expect(
+            (await requestRepo.findReadiness(first.requestId)).totalFiles
+        ).toBe(1);
+        expect(
+            (await requestRepo.findReadiness(second.requestId)).totalFiles
+        ).toBe(1);
     });
 
     it('the unique index skips a duplicate active insert and keeps the existing row', async () => {
@@ -231,13 +237,12 @@ describe('a restore is one request (#422)', () => {
             insertFile(db, { userId }),
         ]);
 
-        const { requestId, started } =
-            await retrievalService.requestBulkRetrieval(
-                db,
-                userId,
-                [first.id, second.id],
-                'bulk'
-            );
+        const { requestId } = await retrievalService.requestBulkRetrieval(
+            db,
+            userId,
+            [first.id, second.id],
+            'bulk'
+        );
 
         const requestRepo = createRetrievalRequestRepo(db);
         expect(await requestRepo.findReadiness(requestId)).toEqual({
@@ -248,7 +253,9 @@ describe('a restore is one request (#422)', () => {
 
         const retrievalRepo = createRetrievalRepo(db);
         const retrievalIdByFileId = new Map(
-            started.map((r) => [r.fileId, r.id])
+            (await retrievalRepo.findByFileIds([first.id, second.id])).map(
+                (r) => [r.fileId, r.id]
+            )
         );
         await retrievalRepo.updateStatus(
             retrievalIdByFileId.get(first.id)!,
@@ -333,7 +340,6 @@ describe('a restore is one request (#422)', () => {
 
     it('a lapsed ready retrieval stops counting toward its request', async () => {
         const file = await insertFile(db, { userId });
-        s3Mocks.getObjectState.mockResolvedValueOnce({ availability: 'warm' });
 
         const { requestId } = await retrievalService.requestRetrieval(
             db,
@@ -341,7 +347,12 @@ describe('a restore is one request (#422)', () => {
             file.id
         );
 
+        // Stand in for the initiation job finding the object already readable.
         const requestRepo = createRetrievalRequestRepo(db);
+        const retrievalRepo = createRetrievalRepo(db);
+        const [row] = await retrievalRepo.findByFileIds([file.id]);
+        await retrievalRepo.updateStatus(row.id, 'ready', readyNow());
+
         expect(await requestRepo.findReadiness(requestId)).toEqual({
             totalFiles: 1,
             readyFiles: 1,
@@ -350,8 +361,6 @@ describe('a restore is one request (#422)', () => {
 
         // Same rule the active-retrieval predicate uses: `ready` past its
         // window is not downloadable, so the request is not ready either.
-        const retrievalRepo = createRetrievalRepo(db);
-        const [row] = await retrievalRepo.findByFileIds([file.id]);
         await retrievalRepo.updateStatus(row.id, 'ready', {
             expiresAt: past(),
         });
@@ -404,65 +413,118 @@ describe('retrieval artifacts (#422)', () => {
     });
 });
 
-describe('partial S3 restore failure (#329)', () => {
-    it('records every file first, then fails only the file AWS rejected', async () => {
-        const [restored, rejected] = await Promise.all([
-            insertFile(db, { userId }),
-            insertFile(db, { userId }),
-        ]);
-        s3Mocks.restore.mockImplementation(async (key: string) => {
-            if (key === rejected.s3Key) throw new Error('AWS throttled');
-        });
-
-        const result = await retrievalService.requestBulkRetrieval(
-            db,
-            userId,
-            [restored.id, rejected.id],
-            'bulk'
-        );
-
-        // The batch resolves rather than throwing, and the split names the
-        // outcome: the succeeded restore is real and paid for, so its row
-        // has to survive the sibling's failure.
-        expect(result.started.map((r) => r.fileId)).toEqual([restored.id]);
-        expect(result.started[0].status).toBe('pending');
-        expect(result.failed.map((r) => r.fileId)).toEqual([rejected.id]);
-        const [failedRow] = result.failed;
-        expect(failedRow.status).toBe('failed');
-        expect(failedRow.failedAt).toBeInstanceOf(Date);
-        // Raw AWS error text (ARNs, account ids) is for operators: it lands
-        // in the DB but is stripped from the mutation payload.
-        expect(failedRow.errorMessage).toBeNull();
-
-        // One RestoreObject per file, and no restore fired for a file that
-        // ended up without a row.
-        expect(s3Mocks.restore).toHaveBeenCalledTimes(2);
-
+// The RestoreObject fan-out itself lives in the worker now (#423); what stays
+// here is the database half of #329's contract — a failed row is outside the
+// active unique index, so the file can be asked for again.
+describe('a failed restore releases the file (#329)', () => {
+    it('lets a retry insert a fresh row after the worker marks one failed', async () => {
+        const file = await insertFile(db, { userId });
         const repo = createRetrievalRepo(db);
-        const persisted = await repo.findByUser(userId);
-        const persistedById = new Map(persisted.map((r) => [r.id, r]));
-        expect(persistedById.get(result.started[0].id)?.status).toBe('pending');
-        const persistedFailed = persistedById.get(failedRow.id);
-        expect(persistedFailed?.status).toBe('failed');
-        expect(persistedFailed?.errorMessage).toBe('AWS throttled');
 
-        // `failed` sits outside the active partial unique index, so the row
-        // no longer holds the file's slot and a retry inserts cleanly.
-        const stillActive = await repo.findByFileIds([
-            restored.id,
-            rejected.id,
-        ]);
-        expect(stillActive.map((r) => r.fileId)).toEqual([restored.id]);
+        await retrievalService.requestRetrieval(db, userId, file.id, 'bulk');
+        const [original] = await repo.findByFileIds([file.id]);
 
-        s3Mocks.restore.mockImplementation(async () => {});
+        // What the initiate-restore handler writes when AWS rejects the call.
+        await repo.updateStatus(original.id, 'failed', {
+            failedAt: new Date(),
+            errorMessage: 'AWS throttled',
+        });
+        expect(await repo.findByFileIds([file.id])).toEqual([]);
+
         const retry = await retrievalService.requestRetrieval(
             db,
             userId,
-            rejected.id,
+            file.id,
             'bulk'
         );
-        expect(retry.failed).toEqual([]);
-        expect(retry.started[0].id).not.toBe(failedRow.id);
-        expect(retry.started[0].status).toBe('pending');
+        const [fresh] = await repo.findByFileIds([file.id]);
+        expect(fresh.id).not.toBe(original.id);
+        expect(fresh.status).toBe('pending');
+
+        // The retry is its own request, and its item points at the new row.
+        const requestRepo = createRetrievalRequestRepo(db);
+        expect(await requestRepo.findReadiness(retry.requestId)).toMatchObject({
+            totalFiles: 1,
+            readyFiles: 0,
+        });
+    });
+});
+
+// The horizon is a WHERE clause, so it only means anything against real SQL.
+describe('tier-aware poll horizon (#423)', () => {
+    const HORIZONS: RestoreHorizons = {
+        expedited: 0,
+        standard: 6 * HOUR_MS,
+        bulk: 24 * HOUR_MS,
+    };
+    const agoHours = (hours: number) => new Date(Date.now() - hours * HOUR_MS);
+
+    it('returns only rows past their own tier’s horizon', async () => {
+        const [freshBulk, dueBulk, freshStandard, dueStandard, noAcceptTime] =
+            await Promise.all([
+                insertFile(db, { userId }),
+                insertFile(db, { userId }),
+                insertFile(db, { userId }),
+                insertFile(db, { userId }),
+                insertFile(db, { userId }),
+            ]);
+
+        const rows = await Promise.all([
+            // 8h into a Bulk restore: nothing can have happened yet.
+            insertRetrieval(db, {
+                userId,
+                fileId: freshBulk.id,
+                status: 'pending',
+                tier: 'bulk',
+                initiatedAt: agoHours(8),
+            }),
+            insertRetrieval(db, {
+                userId,
+                fileId: dueBulk.id,
+                status: 'pending',
+                tier: 'bulk',
+                initiatedAt: agoHours(30),
+            }),
+            // 8h is inside Bulk's horizon but past Standard's.
+            insertRetrieval(db, {
+                userId,
+                fileId: freshStandard.id,
+                status: 'pending',
+                tier: 'standard',
+                initiatedAt: agoHours(2),
+            }),
+            insertRetrieval(db, {
+                userId,
+                fileId: dueStandard.id,
+                status: 'pending',
+                tier: 'standard',
+                initiatedAt: agoHours(8),
+            }),
+            // No accept time recorded: asked about now rather than never.
+            insertRetrieval(db, {
+                userId,
+                fileId: noAcceptTime.id,
+                status: 'pending',
+                tier: 'bulk',
+                initiatedAt: null,
+            }),
+        ]);
+        const [, dueBulkRow, , dueStandardRow, noAcceptTimeRow] = rows;
+
+        // Scoped to this test's rows: the work list is global, and every other
+        // test in this file leaves pending rows behind (all of them freshly
+        // initiated, hence inside their horizon — which is the point).
+        const ownIds = new Set(rows.map((r) => r.id));
+        const due = await createRetrievalRepo(db).findPendingWithFiles(
+            1000,
+            HORIZONS
+        );
+        const dueIds = new Set(
+            due.map((r) => r.id).filter((id) => ownIds.has(id))
+        );
+
+        expect(dueIds).toEqual(
+            new Set([dueBulkRow.id, dueStandardRow.id, noAcceptTimeRow.id])
+        );
     });
 });

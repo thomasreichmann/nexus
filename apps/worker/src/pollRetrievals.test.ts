@@ -7,17 +7,16 @@ const hoisted = vi.hoisted(() => ({
     enqueueJob: vi.fn(),
 }));
 
-// The helper is imported inside the factory, not at the top of the file:
-// `vi.mock` is hoisted above every import, so a module-scope binding it closed
-// over would not be initialised yet.
 vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
-    const { mockS3Module } = await import('./testing/mockS3');
-    return mockS3Module(importOriginal, hoisted.send);
+    const actual = await importOriginal<typeof import('@aws-sdk/client-s3')>();
+    const { s3ClientMock } = await import('./testing');
+    return { ...actual, S3Client: s3ClientMock(hoisted.send) };
 });
 
 vi.mock('./jobs', () => ({ enqueueJob: hoisted.enqueueJob }));
 
 import { pollRetrievals } from './pollRetrievals';
+import { notFound, RESTORED, STILL_ARCHIVED } from './testing';
 
 interface PendingRow {
     id: string;
@@ -40,28 +39,6 @@ function pendingRow(overrides: Partial<PendingRow> = {}): PendingRow {
         thumbnailStatus: 'ready',
         ...overrides,
     };
-}
-
-/** The HeadObject fields the poll reads. */
-function headResponse(
-    storageClass?: string,
-    restore?: string
-): { StorageClass?: string; Restore?: string } {
-    return { StorageClass: storageClass, Restore: restore };
-}
-
-const RESTORED = headResponse(
-    'DEEP_ARCHIVE',
-    'ongoing-request="false", expiry-date="Fri, 29 Aug 2026 00:00:00 GMT"'
-);
-const STILL_ARCHIVED = headResponse('DEEP_ARCHIVE');
-
-/** What the SDK throws when HeadObject is pointed at a key that isn't there. */
-function notFound(): Error {
-    return Object.assign(new Error('NotFound'), {
-        name: 'NotFound',
-        $metadata: { httpStatusCode: 404 },
-    });
 }
 
 describe('pollRetrievals', () => {
@@ -225,6 +202,73 @@ describe('pollRetrievals', () => {
 
         expect(summary).toMatchObject({ checked: 0, ready: 0, capped: false });
         expect(hoisted.send).not.toHaveBeenCalled();
+    });
+
+    // The horizon means a run's budget is spent only on rows that could
+    // actually be done, which is what lets the cap be a full-archive number
+    // instead of the old 400. The predicate itself is SQL, exercised against a
+    // real database in apps/web's retrieval.integration.test.ts.
+    it('asks for a full-archive-sized page of due rows', async () => {
+        givenPending([]);
+
+        await pollRetrievals(db);
+
+        // One past the cap, purely so overflow is detectable.
+        expect(mocks.limit).toHaveBeenCalledWith(5001);
+    });
+
+    // The two halves of #423's poll rule: S3 in parallel, the database strictly
+    // one query at a time, so a 5,000-row run can't open a second pooler
+    // connection.
+    it('runs its HEADs concurrently and its writes serially', async () => {
+        givenPending([
+            pendingRow({ id: 'r1', s3Key: 'k1' }),
+            pendingRow({ id: 'r2', s3Key: 'k2' }),
+            pendingRow({ id: 'r3', s3Key: 'k3' }),
+        ]);
+
+        let headsInFlight = 0;
+        let peakHeads = 0;
+        hoisted.send.mockImplementation(async () => {
+            headsInFlight++;
+            peakHeads = Math.max(peakHeads, headsInFlight);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            headsInFlight--;
+            return RESTORED;
+        });
+
+        // `updateStatus` ends at `.returning()`, so that is the write terminal.
+        let writesInFlight = 0;
+        let peakWrites = 0;
+        mocks.returning.mockImplementation(async () => {
+            writesInFlight++;
+            peakWrites = Math.max(peakWrites, writesInFlight);
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            writesInFlight--;
+            return [];
+        });
+
+        const summary = await pollRetrievals(db);
+
+        expect(summary).toMatchObject({ checked: 3, ready: 3 });
+        expect(peakHeads).toBeGreaterThan(1);
+        expect(peakWrites).toBe(1);
+    });
+
+    // Every row is asked about before any row is written, so a write that
+    // throws leaves the row pending for the next run rather than reporting it
+    // as settled.
+    it('counts a failed status write as errored, not ready', async () => {
+        givenPending([
+            pendingRow({ id: 'r1', s3Key: 'k1' }),
+            pendingRow({ id: 'r2', s3Key: 'k2' }),
+        ]);
+        hoisted.send.mockResolvedValue(RESTORED);
+        mocks.returning.mockRejectedValueOnce(new Error('db connection lost'));
+
+        const summary = await pollRetrievals(db);
+
+        expect(summary).toMatchObject({ checked: 2, ready: 1, errored: 1 });
     });
 
     // The zip trigger is a reconciling scan, not a reaction to this run's

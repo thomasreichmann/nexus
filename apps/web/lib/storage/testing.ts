@@ -45,7 +45,6 @@ const derivedMocks = {
 };
 
 const glacierMocks = {
-    restore: async (): Promise<void> => {},
     // Defaults to warm: the cheap path, so a test that cares about cold
     // objects has to say so. Mirrors the real `ObjectState` shape — the old
     // mock invented its own union, which is how it drifted unnoticed.

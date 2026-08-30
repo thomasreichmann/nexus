@@ -19,10 +19,14 @@
  * `pending` (not `failed`) with no `errorMessage`, and S3 must report
  * `ongoing-request="true"` — a real restore in flight, with a row tracking it.
  *
- * Not covered (intentional): the partial-failure toast. Making one key fail
- * against real S3 means seeding a file whose object doesn't exist, which
- * tests AWS's error rather than ours — the integration test
- * (`partial S3 restore failure (#329)`) owns that path.
+ * Since #423 that spans two planes: the mutation writes the row and publishes
+ * `initiate-restore`, and the **deployed dev worker** is what calls
+ * RestoreObject. So this is now the only test of the whole rail, and the
+ * restore header takes an SQS hop to appear rather than arriving inline.
+ *
+ * Not covered (intentional): per-row restore failures. Making one key fail
+ * against real S3 means seeding a file whose object doesn't exist, which tests
+ * AWS's error rather than ours — `initiateRestore.test.ts` owns that path.
  */
 import {
     DeleteObjectCommand,
@@ -137,6 +141,13 @@ test.describe('glacier retrieval against real S3', () => {
             ],
         },
         async ({ page, db, seedUserId: userId }) => {
+            // Past Playwright's 30s default: the restore now comes from the
+            // deployed dev worker draining the queue, so the poll below waits
+            // out an SQS delivery and a possible Lambda cold start (#423).
+            // Set here rather than in the details object above, which only
+            // takes `tag`/`annotation`.
+            test.setTimeout(150_000);
+
             const file = await seedArchivedFile(db, userId);
             seededFile = file;
             expect(await getStorageClass(s3, file.s3Key)).toBe('DEEP_ARCHIVE');
@@ -164,7 +175,6 @@ test.describe('glacier retrieval against real S3', () => {
             await expect(
                 page.getByText('Retrieval request submitted')
             ).toBeVisible();
-            await expect(page.getByText(/could not be started/)).toHaveCount(0);
             await page.screenshot({
                 path: `${SCREENSHOTS}/02-success-toast.png`,
                 fullPage: true,
@@ -181,11 +191,14 @@ test.describe('glacier retrieval against real S3', () => {
             expect(retrieval!.initiatedAt).not.toBeNull();
 
             // AWS actually took the restore: the Restore header appears only
-            // once RestoreObject has been accepted for this object.
+            // once RestoreObject has been accepted for this object. The call
+            // comes from the deployed dev worker draining the queue (#423), so
+            // this waits out an SQS delivery and a possible Lambda cold start
+            // rather than an inline call.
             await expect
                 .poll(() => getRestoreHeader(file.s3Key), {
-                    timeout: 20_000,
-                    intervals: [1000, 2000, 3000],
+                    timeout: 90_000,
+                    intervals: [1000, 2000, 5000],
                 })
                 .toContain('ongoing-request="true"');
 

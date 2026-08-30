@@ -47,9 +47,10 @@ function findByUserAndId(
 
 /**
  * Unscoped lookup, for the worker. The user-scoped `findByUserAndId` is the
- * right default for anything reached from a request path; a zip job is handed
- * an artifact by the queue and has no user to scope by — it needs the request
- * precisely to learn whose files these are.
+ * right default for anything reached from a request path; a restore-initiation
+ * or zip job is handed its id by the queue and has no session to scope by —
+ * the ownership check happened on the request path, before the job was
+ * published.
  */
 function findById(
     db: DB,
@@ -58,6 +59,53 @@ function findById(
     return db.query.retrievalRequests.findFirst({
         where: eq(schema.retrievalRequests.id, requestId),
     });
+}
+
+export interface PendingRequestRetrieval {
+    retrievalId: string;
+    fileId: string;
+    s3Key: string;
+    /** `Days` this restore was requested with; null on pre-#424 rows. */
+    restoreDaysToKeep: number | null;
+}
+
+/**
+ * The rows a restore-initiation job still has to ask S3 about (#423).
+ *
+ * The request path writes every retrieval row `pending` before the job is
+ * published (#329's row-before-restore, now with the whole queue hop inside the
+ * window it guards), so this is exactly the set that has a row and no answer
+ * from S3 yet. Rows the request merely adopted from a restore already in flight
+ * are included and cost one HEAD each: they come back `restoring`, which is the
+ * same "leave it alone" the synchronous path reached by comparing states.
+ *
+ * Ordered so a job that dies mid-run redoes its work in the same order rather
+ * than a new one, which keeps a redelivery's HEADs warm in the same rows.
+ */
+function findPendingRetrievals(
+    db: DB,
+    requestId: string
+): Promise<PendingRequestRetrieval[]> {
+    return db
+        .select({
+            retrievalId: schema.retrievals.id,
+            fileId: schema.retrievals.fileId,
+            s3Key: schema.files.s3Key,
+            restoreDaysToKeep: schema.retrievals.restoreDaysToKeep,
+        })
+        .from(schema.retrievalRequestItems)
+        .innerJoin(
+            schema.retrievals,
+            eq(schema.retrievalRequestItems.retrievalId, schema.retrievals.id)
+        )
+        .innerJoin(schema.files, eq(schema.retrievals.fileId, schema.files.id))
+        .where(
+            and(
+                eq(schema.retrievalRequestItems.requestId, requestId),
+                eq(schema.retrievals.status, 'pending')
+            )
+        )
+        .orderBy(schema.retrievals.createdAt);
 }
 
 export interface RetrievalRequestReadiness {
@@ -398,8 +446,10 @@ async function completeIfArtifactsReady(
 export const createRetrievalRequestRepo = createRepository({
     insert,
     insertItems,
+    findById,
     findByUserAndId,
     findById,
+    findPendingRetrievals,
     findReadiness,
     findBuildable,
     findFiles,

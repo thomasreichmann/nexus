@@ -25,6 +25,13 @@ resource "aws_iam_user_policy" "app_s3" {
           "s3:GetObjectAttributes",
           "s3:AbortMultipartUpload",
           "s3:ListMultipartUploadParts",
+          # Bucket-level, unlike the two above: `reap:stale-uploads` calls
+          # ListMultipartUploads across the whole bucket to tell a stranded
+          # single-part row from a multipart session still open (see the note
+          # in reap-stale-uploads.ts). Without it the reaper 403s before it
+          # touches anything, so the remedy for the nightly stale-upload leg
+          # of check:s3-event-health never ran.
+          "s3:ListBucketMultipartUploads",
         ]
         Resource = [aws_s3_bucket.files.arn, "${aws_s3_bucket.files.arn}/*"]
       },
