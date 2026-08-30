@@ -8,12 +8,17 @@
  * comment. A hand-written "actual size" note in the PR body would drift; this
  * file is the single reviewed definition of what counts as what.
  *
- * Usage: node scripts/pr-size.mjs [base-ref] [head-ref]   (pnpm pr:size)
- *
- * Prints the comment body to stdout, or nothing for a pure-logic PR — there
- * the headline already is the logic count and a breakdown adds nothing.
+ *   pnpm pr:size                     current branch vs origin/main, including
+ *                                    uncommitted and untracked work
+ *   pnpm pr:size <base> <head>       that range instead
+ *   ... --markdown                   emit the PR comment body (what CI runs);
+ *                                    silent on a pure-logic diff, where the
+ *                                    headline already is the logic count
  */
 import { execSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // Committed but never reviewed. Kept in sync with `.prettierignore`, which
 // excludes exactly these two from formatting for the same reason.
@@ -39,18 +44,21 @@ function classify(path) {
     return 'logic';
 }
 
+function run(command, options = {}) {
+    return execSync(command, {
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        ...options,
+    });
+}
+
 /**
  * `--numstat -z` emits `adds\tdels\tpath\0` per file, except for renames and
  * copies, where the path field is empty and the old and new paths follow as
  * two more NUL-separated fields. Parsing the NUL form avoids the ambiguous
  * `{a => b}` arrow syntax that plain --numstat uses.
  */
-function readDiff(base, head) {
-    const raw = execSync(`git diff --numstat -z ${base}...${head}`, {
-        encoding: 'utf8',
-        maxBuffer: 64 * 1024 * 1024,
-    });
-
+function parseNumstat(raw) {
     const fields = raw.split('\0');
     const files = [];
 
@@ -74,6 +82,36 @@ function readDiff(base, head) {
     }));
 }
 
+function readRangeDiff(base, head) {
+    return parseNumstat(run(`git diff --numstat -z ${base}...${head}`));
+}
+
+/**
+ * Uncommitted edits and brand-new files are part of "what I have changed", but
+ * a plain `git diff` sees neither. Staging everything into a throwaway index —
+ * never the real one, so `git status` is untouched — makes them visible through
+ * the same numstat path, so renames, binaries and .gitignore all behave exactly
+ * as they will once the work is committed.
+ */
+function readWorkingDiff(base) {
+    const root = run('git rev-parse --show-toplevel').trim();
+    const dir = mkdtempSync(join(tmpdir(), 'pr-size-'));
+    const options = {
+        cwd: root,
+        env: { ...process.env, GIT_INDEX_FILE: join(dir, 'index') },
+    };
+
+    try {
+        run('git read-tree HEAD', options);
+        run('git add -A', options);
+        return parseNumstat(
+            run(`git diff --numstat -z --cached ${base}`, options)
+        );
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+}
+
 function tally(files) {
     const empty = () => ({ files: 0, adds: 0, dels: 0 });
     const buckets = { logic: empty(), tests: empty(), generated: empty() };
@@ -88,21 +126,24 @@ function tally(files) {
     return buckets;
 }
 
+function totalsOf(buckets, names) {
+    return names.reduce(
+        (sum, name) => ({
+            files: sum.files + buckets[name].files,
+            adds: sum.adds + buckets[name].adds,
+            dels: sum.dels + buckets[name].dels,
+        }),
+        { files: 0, adds: 0, dels: 0 }
+    );
+}
+
 function renderRow(label, bucket) {
     return `| ${label} | ${bucket.files} | +${bucket.adds} | −${bucket.dels} |`;
 }
 
 function render(buckets) {
-    const reviewable = {
-        files: buckets.logic.files + buckets.tests.files,
-        adds: buckets.logic.adds + buckets.tests.adds,
-        dels: buckets.logic.dels + buckets.tests.dels,
-    };
-    const headline = {
-        files: reviewable.files + buckets.generated.files,
-        adds: reviewable.adds + buckets.generated.adds,
-        dels: reviewable.dels + buckets.generated.dels,
-    };
+    const reviewable = totalsOf(buckets, ['logic', 'tests']);
+    const headline = totalsOf(buckets, ['logic', 'tests', 'generated']);
 
     // Only claim the headline overstates the work when something really is
     // excluded from it. With no generated files every line is reviewable, and
@@ -136,15 +177,77 @@ function render(buckets) {
     ].join('\n');
 }
 
-// CI passes the PR's base and head SHAs; the defaults are for running it by
-// hand on a branch (`pnpm pr:size`).
-const [base = 'origin/main', head = 'HEAD'] = process.argv.slice(2);
+const COLUMNS = [12, 6, 10, 10];
 
-const buckets = tally(readDiff(base, head));
+function renderTextRow(cells) {
+    return cells
+        .map((cell, i) =>
+            i === 0 ? cell.padEnd(COLUMNS[i]) : cell.padStart(COLUMNS[i])
+        )
+        .join('');
+}
 
-// A pure-logic PR needs no breakdown: the headline is the logic count, and a
-// table restating it is pure noise on a two-line fix.
-const hasNonLogic = buckets.tests.files + buckets.generated.files > 0;
-if (hasNonLogic) {
-    console.log(render(buckets));
+function renderTextBucket(label, bucket) {
+    return renderTextRow([
+        label,
+        String(bucket.files),
+        `+${bucket.adds}`,
+        `-${bucket.dels}`,
+    ]);
+}
+
+function renderText(buckets, subject) {
+    const total = totalsOf(buckets, ['logic', 'tests', 'generated']);
+    const reviewable = totalsOf(buckets, ['logic', 'tests']);
+    const rule = '-'.repeat(COLUMNS.reduce((a, b) => a + b, 0));
+
+    return [
+        '',
+        `Reviewable size — ${subject}`,
+        '',
+        renderTextRow(['Bucket', 'Files', 'Added', 'Removed']),
+        rule,
+        renderTextBucket('Logic', buckets.logic),
+        renderTextBucket('Tests', buckets.tests),
+        renderTextBucket('Generated', buckets.generated),
+        rule,
+        renderTextBucket('Total', total),
+        '',
+        buckets.generated.files > 0
+            ? `Reviewable (generated excluded): +${reviewable.adds} -${reviewable.dels}`
+            : 'Nothing generated — every line here is reviewable.',
+        '',
+    ].join('\n');
+}
+
+const args = process.argv.slice(2);
+const isMarkdown = args.includes('--markdown');
+const [base, head] = args.filter((arg) => arg !== '--markdown');
+
+// CI passes the PR's base and head SHAs. With none, report the branch as it
+// stands right now — the question someone asks before opening the PR.
+let files;
+let subject;
+if (base && head) {
+    files = readRangeDiff(base, head);
+    subject = `${base}...${head}`;
+} else {
+    files = readWorkingDiff(run('git merge-base origin/main HEAD').trim());
+    const branch = run('git rev-parse --abbrev-ref HEAD').trim();
+    subject = `${branch} vs origin/main, including uncommitted work`;
+}
+
+const buckets = tally(files);
+
+if (isMarkdown) {
+    // A pure-logic PR needs no comment: the headline is already the logic
+    // count, and a table restating it is noise on a two-line fix. On the CLI
+    // the reverse holds — you asked, so you get an answer either way.
+    if (buckets.tests.files + buckets.generated.files > 0) {
+        console.log(render(buckets));
+    }
+} else if (files.length === 0) {
+    console.log(`\nNo changes — ${subject}.\n`);
+} else {
+    console.log(renderText(buckets, subject));
 }

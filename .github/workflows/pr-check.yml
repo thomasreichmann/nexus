@@ -233,7 +233,7 @@ jobs:
                       // PR, where a breakdown would say nothing the headline
                       // doesn't already say. Empty body = delete any stale one.
                       const body = execSync(
-                        `node scripts/pr-size.mjs ${base} ${head}`,
+                        `node scripts/pr-size.mjs --markdown ${base} ${head}`,
                         { encoding: 'utf8' }
                       ).trim();
 
