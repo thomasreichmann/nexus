@@ -142,7 +142,11 @@ test(
         });
         await dialog.getByRole('button', { name: 'Retrieve' }).click();
 
-        await expect(page.getByText('Retrieval requested')).toBeVisible();
+        // Single-file copy, not the bulk "Retrieval requested for N files" —
+        // see toastRetrievalRequested in retrievalFeedback.ts.
+        await expect(
+            page.getByText('Retrieval request submitted')
+        ).toBeVisible();
 
         // --- the request path wrote rows only, at the single-file window ---
         const [request] = await db
@@ -208,7 +212,12 @@ test(
         // the zip spec's `?request=`): the file browser scrolls to and
         // highlights the restored file, ready for its Download action.
         await page.goto(`/dashboard/files?file=${seededRestoreFile.id}`);
-        await expect(page.getByText(FILE_NAME).first()).toBeVisible();
+        // The row, not the name text: MiddleTruncateName keeps the full name
+        // in an sr-only span (hidden by design), so hasText finds it while
+        // toBeVisible on the text node itself never could.
+        await expect(
+            page.getByRole('row').filter({ hasText: FILE_NAME })
+        ).toBeVisible();
         await page.screenshot({
             path: `${SCREENSHOTS}/02-deep-link.png`,
             fullPage: true,
