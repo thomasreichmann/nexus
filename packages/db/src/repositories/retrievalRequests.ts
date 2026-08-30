@@ -156,6 +156,36 @@ async function findReadiness(
 }
 
 /**
+ * Correlated count of a request's items — the SQL half of the zip-vs-direct
+ * split whose rule `isDeliveredAsZip` owns in TS. `requestRef` is whatever the
+ * enclosing query correlates on: an outer column, or a bound id parameter.
+ */
+function itemCount(requestRef: SQL): SQL {
+    return sql`(
+        select count(*) from ${schema.retrievalRequestItems}
+        where ${schema.retrievalRequestItems.requestId} = ${requestRef}
+    )`;
+}
+
+/**
+ * Every item of the request is ready-and-downloadable, missing files included.
+ *
+ * `is not true` rather than `not (...)`: an item whose restore failed before
+ * any retrieval row existed has a null join, and SQL's `not null` is null, so
+ * the plain negation would quietly read a request with a missing file as ready.
+ */
+function everyItemReady(requestRef: SQL): SQL {
+    const ready = readyAndDownloadable();
+    return sql`not exists (
+        select 1 from ${schema.retrievalRequestItems}
+        left join ${schema.retrievals}
+            on ${schema.retrievals.id} = ${schema.retrievalRequestItems.retrievalId}
+        where ${schema.retrievalRequestItems.requestId} = ${requestRef}
+          and (${ready}) is not true
+    )`;
+}
+
+/**
  * Requests whose every file has thawed but which are not finished building.
  *
  * The zip pipeline's trigger, and deliberately a reconciliation rather than an
@@ -176,35 +206,94 @@ async function findReadiness(
  * consults it too when choosing a restore window. Without the exclusion a
  * single-file restore would get both: a direct download of the restored copy
  * *and* a build nobody reads, duplicating the object in the artifacts bucket.
- *
- * `is not true` rather than `not (...)`: an item whose restore failed before
- * any retrieval row existed has a null join, and SQL's `not null` is null, so
- * the plain negation would quietly read a request with a missing file as ready.
  */
 async function findBuildable(db: DB, limit: number): Promise<string[]> {
-    const ready = readyAndDownloadable();
+    const requestRef = sql`${schema.retrievalRequests.id}`;
     const rows = await db
         .select({ id: schema.retrievalRequests.id })
         .from(schema.retrievalRequests)
         .where(
             and(
                 isNull(schema.retrievalRequests.completedAt),
-                sql`(
-                    select count(*) from ${schema.retrievalRequestItems}
-                    where ${schema.retrievalRequestItems.requestId} = ${schema.retrievalRequests.id}
-                ) >= ${ZIP_DELIVERY_MIN_FILES}`,
-                sql`not exists (
-                    select 1 from ${schema.retrievalRequestItems}
-                    left join ${schema.retrievals}
-                        on ${schema.retrievals.id} = ${schema.retrievalRequestItems.retrievalId}
-                    where ${schema.retrievalRequestItems.requestId} = ${schema.retrievalRequests.id}
-                      and (${ready}) is not true
-                )`
+                sql`${itemCount(requestRef)} >= ${ZIP_DELIVERY_MIN_FILES}`,
+                everyItemReady(requestRef)
             )
         )
         .orderBy(schema.retrievalRequests.createdAt)
         .limit(limit);
     return rows.map((row) => row.id);
+}
+
+/** One deliverable single-file request, with what its announcement needs. */
+export interface DirectDeliverable {
+    requestId: string;
+    userId: string;
+    fileId: string;
+    fileName: string;
+    fileSize: number;
+    /** The thawed copy's lifetime; null only on pre-#424 or hand-seeded rows. */
+    expiresAt: Date | null;
+    /** The thaw window's two ends, for the announcement's `thawSeconds`. */
+    initiatedAt: Date | null;
+    readyAt: Date | null;
+}
+
+/**
+ * Unfinished requests below `ZIP_DELIVERY_MIN_FILES` whose file has thawed —
+ * `findBuildable`'s sibling, and the trigger for direct delivery (#437).
+ *
+ * A reconciling scan for findBuildable's reasons, plus one of its own: the
+ * poll's ready flip is not even the only path to a deliverable request.
+ * `initiateRestore`'s warm short-circuit settles a row the poll's work list
+ * never selects, so anything keyed to "what flipped this run" would miss every
+ * warm request entirely.
+ *
+ * The joins are inner on purpose: with the item count capped below
+ * `ZIP_DELIVERY_MIN_FILES` there is at most one item, so the joined row being
+ * ready-and-downloadable *is* "every item ready" — and an item whose restore
+ * failed before any retrieval row existed drops out of the join instead of
+ * reading as ready (the null findBuildable's `is not true` guards against).
+ */
+async function findDirectDeliverable(
+    db: DB,
+    limit: number
+): Promise<DirectDeliverable[]> {
+    return db
+        .select({
+            requestId: schema.retrievalRequests.id,
+            userId: schema.retrievalRequests.userId,
+            fileId: schema.files.id,
+            fileName: schema.files.name,
+            fileSize: schema.files.size,
+            expiresAt: schema.retrievals.expiresAt,
+            initiatedAt: schema.retrievals.initiatedAt,
+            readyAt: schema.retrievals.readyAt,
+        })
+        .from(schema.retrievalRequests)
+        .innerJoin(
+            schema.retrievalRequestItems,
+            eq(
+                schema.retrievalRequestItems.requestId,
+                schema.retrievalRequests.id
+            )
+        )
+        .innerJoin(
+            schema.retrievals,
+            eq(schema.retrievals.id, schema.retrievalRequestItems.retrievalId)
+        )
+        .innerJoin(
+            schema.files,
+            eq(schema.files.id, schema.retrievalRequestItems.fileId)
+        )
+        .where(
+            and(
+                isNull(schema.retrievalRequests.completedAt),
+                sql`${itemCount(sql`${schema.retrievalRequests.id}`)} < ${ZIP_DELIVERY_MIN_FILES}`,
+                readyAndDownloadable()
+            )
+        )
+        .orderBy(schema.retrievalRequests.createdAt)
+        .limit(limit);
 }
 
 /** One file of a request, with what the partition and the zip writer need. */
@@ -592,18 +681,24 @@ async function failArtifact(
 }
 
 /**
- * Flip a request complete if this was its last artifact, in one statement.
+ * Flip a request complete if everything it promises is deliverable, in one
+ * statement — the single completion writer, shared by both delivery shapes
+ * (#437).
  *
- * The concurrency-safe half of #424's aggregation. Every zip job calls this
- * after committing its own artifact as `ready`, so the job that commits last
- * is the only one whose snapshot can see a fully-ready set — and the
- * `completedAt IS NULL` guard means that even if two somehow did, exactly one
- * row comes back. That single winner is what #426 will send one email on.
+ * The concurrency-safe half of #424's aggregation, unchanged: the caller that
+ * commits the last piece of work is the only one whose snapshot can see a
+ * fully-ready set — and the `completedAt IS NULL` guard means that even if two
+ * somehow did, exactly one row comes back. That single winner is who sends the
+ * one ready email (#426).
  *
- * The NOT EXISTS is what keeps the stored flag honest: `completed_at` can only
- * ever be written while every artifact of the request is `ready`.
+ * Two conjuncts, because the shapes prove deliverability differently. A zip
+ * request hangs it on every artifact `ready`; a single-file request never has
+ * an artifact — which makes that NOT EXISTS vacuously true — so its proof is
+ * the thawed original itself: every item ready-and-downloadable. The item
+ * conjunct binds the zip path too, deliberately: a request whose thawed
+ * originals lapsed mid-build no longer completes.
  */
-async function completeIfArtifactsReady(
+async function completeIfDeliverable(
     db: DB,
     requestId: string
 ): Promise<RetrievalRequest | undefined> {
@@ -614,6 +709,7 @@ async function completeIfArtifactsReady(
             and(
                 eq(schema.retrievalRequests.id, requestId),
                 isNull(schema.retrievalRequests.completedAt),
+                everyItemReady(sql`${requestId}`),
                 sql`not exists (
                     select 1 from ${schema.retrievalArtifacts}
                     where ${schema.retrievalArtifacts.requestId} = ${requestId}
@@ -633,6 +729,7 @@ export const createRetrievalRequestRepo = createRepository({
     findPendingRetrievals,
     findReadiness,
     findBuildable,
+    findDirectDeliverable,
     findFiles,
     findArtifactFiles,
     findArtifactById,
@@ -645,7 +742,7 @@ export const createRetrievalRequestRepo = createRepository({
     claimArtifact,
     completeArtifact,
     failArtifact,
-    completeIfArtifactsReady,
+    completeIfDeliverable,
 });
 
 export type RetrievalRequestRepo = ReturnType<

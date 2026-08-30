@@ -21,6 +21,77 @@ import { requireEnv } from './aws';
 
 import type { DB } from '@nexus/db';
 
+export interface RetrievalFileReadyOptions {
+    userId: string;
+    /** For the warn lines only — the email deep-links to the file, not the request. */
+    requestId: string;
+    fileId: string;
+    fileName: string;
+    /** Null on pre-#424 or hand-seeded rows; the email is skipped rather than sent with a made-up expiry. */
+    expiresAt: Date | null;
+}
+
+/**
+ * Where a single-file ready email points: the file browser, scrolled to and
+ * highlighting the restored file (`?file=` is the deep link the files page
+ * parses, the sibling of `?request=` below). An app link for the same reason
+ * as `retrievalRequestUrl` — the click can land days after the send, so the
+ * app re-checks ownership and mints the presigned GET on arrival.
+ */
+export function retrievalFileUrl(appUrl: string, fileId: string): string {
+    return `${appUrl.replace(/\/$/, '')}/dashboard/files?file=${fileId}`;
+}
+
+/**
+ * Announce a completed single-file restore (#437). At most once per request —
+ * the caller is the single winner of the `completed_at` election — with the
+ * same warn-and-swallow contract as `sendRetrievalRequestReadyEmail` below:
+ * the file is downloadable whether or not Resend answers, so a failed send
+ * costs the announcement, never the completed request.
+ *
+ * A null expiry is skipped, not defaulted: it only occurs on rows no real
+ * request path writes, and this email's one time-sensitive claim is the
+ * expiry date — inventing one would be worse than staying quiet.
+ */
+export async function sendRetrievalFileReadyEmail(
+    db: DB,
+    opts: RetrievalFileReadyOptions
+): Promise<void> {
+    if (!opts.expiresAt) {
+        console.warn(
+            `retrieval-ready email (single-file): skipping request ${opts.requestId} — retrieval has no expiry to announce`
+        );
+        return;
+    }
+
+    const user = await createUserRepo(db).findById(opts.userId);
+    if (!user) {
+        console.warn(
+            `retrieval-ready email (single-file): skipping request ${opts.requestId} — unknown user ${opts.userId}`
+        );
+        return;
+    }
+
+    const props = {
+        fileName: opts.fileName,
+        downloadUrl: retrievalFileUrl(requireEnv('APP_URL'), opts.fileId),
+        expiresAt: opts.expiresAt,
+    };
+
+    try {
+        await email.send({
+            to: user.email,
+            subject: email.templates.retrievalReadySubject(props),
+            react: createElement(email.templates.RetrievalReadyEmail, props),
+        });
+    } catch (err) {
+        console.warn(
+            `retrieval-ready email (single-file): send failed for request ${opts.requestId}`,
+            err
+        );
+    }
+}
+
 export interface RetrievalRequestReadyOptions {
     userId: string;
     requestId: string;

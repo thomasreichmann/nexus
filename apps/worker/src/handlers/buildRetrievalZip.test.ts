@@ -80,7 +80,7 @@ describe('buildRetrievalZip', () => {
         });
     }
 
-    /** claimArtifact and completeIfArtifactsReady both end at .returning(). */
+    /** claimArtifact and completeIfDeliverable both end at .returning(). */
     function givenUpdatesReturn(...rows: unknown[][]) {
         for (const row of rows) mocks.returning.mockResolvedValueOnce(row);
     }

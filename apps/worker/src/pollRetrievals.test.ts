@@ -5,6 +5,8 @@ import { createMockDb, type MockDb, type MockDbMocks } from '@nexus/db/testing';
 const hoisted = vi.hoisted(() => ({
     send: vi.fn(),
     enqueueJob: vi.fn(),
+    sendRetrievalFileReadyEmail: vi.fn(),
+    captureWorkerEvent: vi.fn(),
 }));
 
 vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
@@ -14,6 +16,12 @@ vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
 });
 
 vi.mock('./jobs', () => ({ enqueueJob: hoisted.enqueueJob }));
+vi.mock('./email', () => ({
+    sendRetrievalFileReadyEmail: hoisted.sendRetrievalFileReadyEmail,
+}));
+vi.mock('./analytics', () => ({
+    captureWorkerEvent: hoisted.captureWorkerEvent,
+}));
 
 import { pollRetrievals } from './pollRetrievals';
 import { notFound, RESTORED, STILL_ARCHIVED } from './testing';
@@ -53,9 +61,14 @@ describe('pollRetrievals', () => {
         mocks = mockDb.mocks;
     });
 
-    /** The poll's work list comes from a select().from().innerJoin() chain. */
+    /**
+     * The poll's work list comes from a select().from().innerJoin() chain.
+     * `Once`, because the direct-delivery scan ends at the same `.limit()`
+     * terminal and runs second — with a plain mockResolvedValue it would be
+     * handed these pending-shaped rows instead of falling back to [].
+     */
     function givenPending(rows: PendingRow[]) {
-        mocks.limit.mockResolvedValue(rows);
+        mocks.limit.mockResolvedValueOnce(rows);
     }
 
     it('marks a restored retrieval ready with the expiry S3 reported', async () => {
@@ -412,6 +425,168 @@ describe('pollRetrievals', () => {
                 zipLookupFailed: true,
                 zipErrored: 0,
                 requestsPartitioned: 0,
+            });
+        });
+    });
+
+    // The direct-delivery trigger is the same reconciling shape as the zip one,
+    // with one extra reason: a warm object is settled by initiateRestore's
+    // short-circuit and never enters this poll's work list, so only a scan of
+    // "what is deliverable and not complete?" can ever announce it.
+    describe('direct delivery trigger', () => {
+        interface DeliverableRow {
+            requestId: string;
+            userId: string;
+            fileId: string;
+            fileName: string;
+            fileSize: number;
+            expiresAt: Date | null;
+            initiatedAt: Date | null;
+            readyAt: Date | null;
+        }
+
+        function deliverableRow(
+            overrides: Partial<DeliverableRow> = {}
+        ): DeliverableRow {
+            return {
+                requestId: 'req-1',
+                userId: 'user-1',
+                fileId: 'file-1',
+                fileName: 'shoot.cr2',
+                fileSize: 2_000_000,
+                expiresAt: new Date('2026-09-06T10:00:00Z'),
+                initiatedAt: new Date('2026-08-29T10:00:00Z'),
+                readyAt: new Date('2026-08-29T16:00:00Z'),
+                ...overrides,
+            };
+        }
+
+        /**
+         * The scan shares the innerJoin family's `.limit()` terminal with the
+         * poll's work list, which is fetched first — so queue an empty work
+         * list ahead of the scan's rows rather than calling givenPending.
+         */
+        function givenDeliverable(rows: DeliverableRow[]) {
+            mocks.limit.mockResolvedValueOnce([]).mockResolvedValueOnce(rows);
+        }
+
+        /** completeIfDeliverable's winning UPDATE ends at `.returning()`. */
+        function givenElectionWon() {
+            mocks.returning.mockResolvedValueOnce([
+                { id: 'req-1', userId: 'user-1', tier: 'bulk' },
+            ]);
+        }
+
+        it('completes a deliverable single-file request and announces it', async () => {
+            givenDeliverable([deliverableRow()]);
+            givenElectionWon();
+
+            const summary = await pollRetrievals(db);
+
+            expect(summary).toMatchObject({
+                directCompleted: 1,
+                directErrored: 0,
+            });
+            expect(mocks.set).toHaveBeenCalledWith({
+                completedAt: expect.any(Date),
+            });
+            expect(hoisted.sendRetrievalFileReadyEmail).toHaveBeenCalledWith(
+                db,
+                {
+                    userId: 'user-1',
+                    requestId: 'req-1',
+                    fileId: 'file-1',
+                    fileName: 'shoot.cr2',
+                    expiresAt: new Date('2026-09-06T10:00:00Z'),
+                }
+            );
+        });
+
+        // The AC's documented shape split: one `retrieval_ready` funnel across
+        // both delivery shapes, where partCount/buildSeconds existing at all
+        // means "zip" — so here they must be absent, not zero or null.
+        it('captures one retrieval_ready event shaped for direct delivery', async () => {
+            givenDeliverable([deliverableRow()]);
+            givenElectionWon();
+
+            await pollRetrievals(db);
+
+            expect(hoisted.captureWorkerEvent).toHaveBeenCalledTimes(1);
+            const [userId, event, props] =
+                hoisted.captureWorkerEvent.mock.calls[0];
+            expect(userId).toBe('user-1');
+            expect(event).toBe('retrieval_ready');
+            expect(props).toMatchObject({
+                requestId: 'req-1',
+                tier: 'bulk',
+                fileCount: 1,
+                totalBytes: 2_000_000,
+                thawSeconds: 6 * 60 * 60,
+            });
+            expect(props).not.toHaveProperty('partCount');
+            expect(props).not.toHaveProperty('buildSeconds');
+        });
+
+        // The winning UPDATE elects the single sender: an empty RETURNING
+        // means another writer already completed the request (or readiness
+        // lapsed since the scan), and this run must stay silent.
+        it('announces nothing when the completion election is lost', async () => {
+            givenDeliverable([deliverableRow()]);
+            // mocks.returning defaults to [] — the lost election.
+
+            const summary = await pollRetrievals(db);
+
+            expect(summary.directCompleted).toBe(0);
+            expect(hoisted.sendRetrievalFileReadyEmail).not.toHaveBeenCalled();
+            expect(hoisted.captureWorkerEvent).not.toHaveBeenCalled();
+        });
+
+        // The announcement runs after the winning UPDATE and must not undo it:
+        // the file is downloadable whether or not Resend answers.
+        it('warns and swallows a failed announcement, keeping the completion', async () => {
+            givenDeliverable([deliverableRow()]);
+            givenElectionWon();
+            hoisted.sendRetrievalFileReadyEmail.mockRejectedValue(
+                new Error('Resend is down')
+            );
+
+            const summary = await pollRetrievals(db);
+
+            expect(summary).toMatchObject({
+                directCompleted: 1,
+                directErrored: 0,
+            });
+        });
+
+        it('counts a failed completion write without failing the poll', async () => {
+            givenDeliverable([
+                deliverableRow({ requestId: 'req-1' }),
+                deliverableRow({ requestId: 'req-2' }),
+            ]);
+            mocks.returning
+                .mockRejectedValueOnce(new Error('pooler down'))
+                .mockResolvedValueOnce([
+                    { id: 'req-2', userId: 'user-1', tier: 'bulk' },
+                ]);
+
+            const summary = await pollRetrievals(db);
+
+            expect(summary).toMatchObject({
+                directCompleted: 1,
+                directErrored: 1,
+            });
+        });
+
+        it('flags a failed lookup separately from a failed request', async () => {
+            givenPending([]);
+            mocks.limit.mockRejectedValueOnce(new Error('pooler down'));
+
+            const summary = await pollRetrievals(db);
+
+            expect(summary).toMatchObject({
+                directLookupFailed: true,
+                directErrored: 0,
+                directCompleted: 0,
             });
         });
     });

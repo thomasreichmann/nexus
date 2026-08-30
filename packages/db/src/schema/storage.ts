@@ -221,15 +221,17 @@ export const retrievalRequests = pgTable(
         // replaced was an unrevisited zod default, not a decision. Standard is
         // the upsell candidate, not the floor.
         tier: retrievalTierEnum('tier').notNull().default(DEFAULT_RESTORE_TIER),
-        // When the last artifact finished building (#424) — the moment the
-        // request became downloadable as a whole.
+        // When the request became downloadable as a whole: the last artifact
+        // finished building (#424), or a single-file request's original
+        // finished thawing (#437).
         //
         // Stored, unlike readiness above, because this is a transition rather
-        // than an answer: it is what elects a single winner among the zip jobs
-        // racing to finish last, and therefore what #426 hangs its one email
-        // off. It cannot drift from the artifacts either, because the only
-        // statement that sets it also asserts every artifact is `ready` (see
-        // completeIfArtifactsReady in repositories/retrievalRequests).
+        // than an answer: it is what elects a single winner among the writers
+        // racing to finish last, and therefore what #426/#437 hang their one
+        // email off. It cannot drift from what is deliverable either, because
+        // the only statement that sets it also asserts every artifact is
+        // `ready` and every item downloadable (see completeIfDeliverable in
+        // repositories/retrievalRequests).
         completedAt: timestamp('completed_at'),
         ...timestamps(),
     },
