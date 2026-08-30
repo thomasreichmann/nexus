@@ -6,7 +6,7 @@
  * `seed_`-prefixed). They replace the find/update/delete/upsert/count helpers
  * that used to live in `apps/web/e2e/helpers/db.ts` as hand-written SQL.
  */
-import { eq, count } from 'drizzle-orm';
+import { and, count, eq, notExists, sql } from 'drizzle-orm';
 import * as schema from '../schema';
 import { createSubscriptionFixture, type User } from '../repositories/fixtures';
 import { PLAN_LIMITS, getTrialEnd, type PlanTier } from '../plans';
@@ -93,6 +93,39 @@ export async function deleteUploadBatch(db: DB, id: string): Promise<void> {
 
 export async function deleteRetrieval(db: DB, id: string): Promise<void> {
     await db.delete(schema.retrievals).where(eq(schema.retrievals.id, id));
+}
+
+/**
+ * Delete a user's retrieval requests that no longer point at anything.
+ *
+ * The companion to `deleteRetrieval` for a spec that restores through the UI
+ * on a *shared* user, where `deleteUserData` would be too broad. Since #423
+ * every restore also writes a `retrieval_requests` row, and deleting the
+ * retrieval only cascades the item away — the request survives with nothing
+ * behind it, permanently open and permanently inside the readiness poll's
+ * `findBuildable` scan. Emptiness is the signal rather than an id because the
+ * request is created server-side and the spec never learns its id.
+ */
+export async function deleteOrphanedRetrievalRequests(
+    db: DB,
+    userId: string
+): Promise<void> {
+    await db.delete(schema.retrievalRequests).where(
+        and(
+            eq(schema.retrievalRequests.userId, userId),
+            notExists(
+                db
+                    .select({ one: sql`1` })
+                    .from(schema.retrievalRequestItems)
+                    .where(
+                        eq(
+                            schema.retrievalRequestItems.requestId,
+                            schema.retrievalRequests.id
+                        )
+                    )
+            )
+        )
+    );
 }
 
 export async function deleteJob(db: DB, id: string): Promise<void> {

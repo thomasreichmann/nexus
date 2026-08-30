@@ -33,7 +33,12 @@ import {
     HeadObjectCommand,
     PutObjectCommand,
 } from '@aws-sdk/client-s3';
-import { insertFile, deleteFile, deleteRetrieval } from '@nexus/db/test-db';
+import {
+    insertFile,
+    deleteFile,
+    deleteRetrieval,
+    deleteOrphanedRetrievalRequests,
+} from '@nexus/db/test-db';
 import { originalKey } from '@nexus/db/repo/files';
 import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
 import { test, expect } from '../fixtures';
@@ -118,6 +123,11 @@ test.describe('glacier retrieval against real S3', () => {
                 }
             }
             await deleteFile(db, seededFile.id);
+            // Since #423 the mutation also writes a `retrieval_requests` row.
+            // Deleting the retrieval above only cascades its item away, so
+            // without this the request survives every run — open forever and
+            // inside the readiness poll's scan set.
+            await deleteOrphanedRetrievalRequests(db, seededFile.userId);
         }
         // Keyed on seededS3Key, not seededFile: the object exists as soon as
         // the PUT lands, before the DB insert. S3 delete is idempotent, so a
