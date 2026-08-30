@@ -1,0 +1,10 @@
+# Drizzle writes one JSON snapshot per migration plus a journal, so a single
+# schema change rewrites hundreds of lines nobody reads. GitHub counts them in
+# the PR's +/- headline, which is why migration PRs look several times their
+# reviewable size. Marking them generated collapses them in the diff view (and
+# keeps them out of the repo's language stats).
+#
+# The migration `.sql` files stay visible on purpose: reviewers must read the
+# DDL, and pr-check.yml's destructive-DDL gate greps
+# `packages/db/src/migrations/*.sql` — non-recursive, so it never saw `meta/`.
+packages/db/src/migrations/meta/** linguist-generated=true
