@@ -448,7 +448,6 @@ export const createRetrievalRequestRepo = createRepository({
     insertItems,
     findById,
     findByUserAndId,
-    findById,
     findPendingRetrievals,
     findReadiness,
     findBuildable,
