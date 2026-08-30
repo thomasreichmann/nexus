@@ -38,8 +38,10 @@ import { waveProgress } from '@/lib/upload/parts';
 import { preflightQuota } from '@/lib/upload/preflight';
 import { getImagePreviewUrl } from '@/lib/upload/thumbnails';
 import { CancelUploadDialog } from './CancelUploadDialog';
+import { LeaveUploadDialog } from './LeaveUploadDialog';
 import { MiddleTruncateName } from './MiddleTruncateName';
 import { useUpload, type UploadFile, type UploadStatus } from './useUpload';
+import { useUploadNavigationGuard } from './useUploadNavigationGuard';
 
 // Formats the browser can decode natively — RAW files (NEF/CR3/ARW/…) carry
 // an empty or opaque mime type and fall through to the plain icon tile; their
@@ -154,6 +156,12 @@ export function UploadZone() {
     // The wave is live while the pool holds rows; `isUploading` alone would
     // blink off during the batch-creation await before any row is admitted.
     const hasActiveWave = isUploading || activeCount > 0;
+    // Leaving this page mid-wave unmounts the engine and aborts every
+    // in-flight PUT, so both #398 guards hang off the same liveness bit:
+    // beforeunload for tab close / reload, a link-click interceptor (feeding
+    // the LeaveUploadDialog at the bottom) for in-app navigation.
+    const { pendingHref, confirmNavigation, cancelNavigation } =
+        useUploadNavigationGuard(hasActiveWave);
     const attemptedCount = completedCount + errorCount;
     // The outcome line waits for a settled queue: nothing moving, nothing the
     // user still has to submit, nothing parked waiting for a reconnect.
@@ -530,6 +538,13 @@ export function UploadZone() {
                     if (cancelCandidate) cancelFile(cancelCandidate.id);
                     setCancelCandidateId(null);
                 }}
+            />
+            <LeaveUploadDialog
+                open={pendingHref !== null}
+                onOpenChange={(open) => {
+                    if (!open) cancelNavigation();
+                }}
+                onConfirm={confirmNavigation}
             />
         </div>
     );
