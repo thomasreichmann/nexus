@@ -148,6 +148,13 @@
       "when": 1787927152781,
       "tag": "0020_secret_whistler",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788105505003,
+      "tag": "0021_sticky_vengeance",
+      "breakpoints": true
     }
   ]
 }

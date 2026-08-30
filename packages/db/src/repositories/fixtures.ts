@@ -4,7 +4,11 @@ import type { File, NewFile } from './files';
 import type { Invite } from './invites';
 import type { Job, NewJob } from './jobs';
 import type { Retrieval } from './retrievals';
-import type { RetrievalArtifact, RetrievalRequest } from './retrievalRequests';
+import type {
+    RetrievalArtifact,
+    RetrievalRequest,
+    RetrievalRequestFile,
+} from './retrievalRequests';
 import type { Subscription } from './subscriptions';
 import type { UploadBatch } from './uploadBatches';
 import type { User } from './users';
@@ -211,6 +215,7 @@ export function createRetrievalFixture(
         initiatedAt: null,
         readyAt: null,
         expiresAt: null,
+        restoreDaysToKeep: null,
         failedAt: null,
         errorMessage: null,
         createdAt: now,
@@ -228,8 +233,27 @@ export function createRetrievalRequestFixture(
         userId: TEST_USER_ID,
         uploadBatchId: null,
         tier: 'standard',
+        completedAt: null,
         createdAt: now,
         updatedAt: now,
+        ...overrides,
+    };
+}
+
+/**
+ * One file of a retrieval request, as the partition and the zip writer see it.
+ * Not a table row — the shape `findFiles` projects — so it lives here rather
+ * than being rebuilt in each worker test with its own defaults.
+ */
+export function createRetrievalRequestFileFixture(
+    overrides: Partial<RetrievalRequestFile> = {}
+): RetrievalRequestFile {
+    return {
+        fileId: TEST_FILE_ID,
+        s3Key: `${TEST_USER_ID}/${TEST_FILE_ID}/photo.cr2`,
+        name: 'photo.cr2',
+        size: 1024,
+        createdAt: new Date('2026-08-01T12:00:00Z'),
         ...overrides,
     };
 }

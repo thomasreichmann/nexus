@@ -21,6 +21,7 @@ export {
     RESTORE_TIERS,
     DEFAULT_RESTORE_TIER,
     DEFAULT_RESTORE_DAYS_TO_KEEP,
+    ZIP_BUILD_RESTORE_DAYS,
     type RestoreTier,
 } from '../objectState';
 
@@ -160,6 +161,16 @@ export const retrievals = pgTable(
         initiatedAt: timestamp('initiated_at'), // When AWS restore was started
         readyAt: timestamp('ready_at'), // When file became available
         expiresAt: timestamp('expires_at'), // When temporary restore expires
+        // The `Days` we asked S3 for (#424). A fact from request time, not a
+        // prediction: S3's own clock starts when the restore *completes*, which
+        // is why `expiresAt` is still read from the restore header rather than
+        // computed from this. It exists because the two windows now differ —
+        // a zip-delivered restore buys ZIP_BUILD_RESTORE_DAYS, a direct one
+        // DEFAULT_RESTORE_DAYS_TO_KEEP — and the poll's fallback for a header
+        // with no `expiry-date` would otherwise always quote the longer.
+        // Null on rows predating the split; they were all created at the
+        // default.
+        restoreDaysToKeep: integer('restore_days_to_keep'),
         failedAt: timestamp('failed_at'), // When failure occurred
         errorMessage: text('error_message'), // AWS error details if failed
         ...timestamps(),
@@ -210,6 +221,16 @@ export const retrievalRequests = pgTable(
         // replaced was an unrevisited zod default, not a decision. Standard is
         // the upsell candidate, not the floor.
         tier: retrievalTierEnum('tier').notNull().default(DEFAULT_RESTORE_TIER),
+        // When the last artifact finished building (#424) — the moment the
+        // request became downloadable as a whole.
+        //
+        // Stored, unlike readiness above, because this is a transition rather
+        // than an answer: it is what elects a single winner among the zip jobs
+        // racing to finish last, and therefore what #426 hangs its one email
+        // off. It cannot drift from the artifacts either, because the only
+        // statement that sets it also asserts every artifact is `ready` (see
+        // completeIfArtifactsReady in repositories/retrievalRequests).
+        completedAt: timestamp('completed_at'),
         ...timestamps(),
     },
     (table) => [

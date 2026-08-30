@@ -4,6 +4,8 @@
 // barrel would ship drizzle and every table definition to the browser.
 export {
     DEFAULT_RESTORE_DAYS_TO_KEEP,
+    ZIP_BUILD_RESTORE_DAYS,
+    isDeliveredAsZip,
     RESTORE_TIERS,
     type RestoreTier,
     type ObjectState,

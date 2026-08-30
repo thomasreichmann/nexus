@@ -52,10 +52,13 @@ resource "aws_iam_user_policy" "app_sqs" {
 
   policy = jsonencode({
     Version = "2012-10-17"
+    # Both queues: the admin retry re-publishes a failed job on whichever queue
+    # its type belongs to (queueFor in packages/db/src/jobs/types.ts), which
+    # includes zip builds.
     Statement = [{
       Effect   = "Allow"
       Action   = "sqs:SendMessage"
-      Resource = aws_sqs_queue.jobs.arn
+      Resource = [aws_sqs_queue.jobs.arn, aws_sqs_queue.zip_jobs.arn]
     }]
   })
 }

@@ -124,6 +124,14 @@ unless the caller names one:
 | `standard`  | 12-48 hrs    | $0.02/GB   | Upsell candidate, not default |
 | `bulk`      | 48 hrs       | $0.0025/GB | **The default** (#406)        |
 
+The `Days` a restore is kept comes from the retrieval row's
+`restoreDaysToKeep`, written on the request path: a single-file restore is
+downloaded from the thawed copy directly and buys
+`DEFAULT_RESTORE_DAYS_TO_KEEP`; a multi-file restore is delivered as zip
+artifacts whose own lifecycle rule owns the user-facing window, so it buys
+`ZIP_BUILD_RESTORE_DAYS` — the thawed copies only have to outlive the build
+(#424).
+
 #### `s3.glacier.getObjectState(key)`
 
 One `HeadObject`, answering both "what class is this in" and "is there a

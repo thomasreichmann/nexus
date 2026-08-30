@@ -61,18 +61,20 @@ The worker does not read `.env` files or Vercel env, and does not use the web
 app's Zod schema. Its environment is set per-environment on the Lambda
 function configuration:
 
-| Variable                | Purpose                                                          |
-| ----------------------- | ---------------------------------------------------------------- |
-| `DATABASE_URL`          | Postgres connection string (pooled, port 6543 — PgBouncer)       |
-| `S3_BUCKET`             | Files bucket — thumbnail sources and the retrieval poll          |
-| `S3_DERIVED_BUCKET`     | Derived bucket — generated thumbnails                            |
-| `SQS_QUEUE_URL`         | Jobs queue, for the jobs the poll enqueues                       |
-| `APP_URL`               | Link target for worker-sent email — the app, not a presigned URL |
-| `RESEND_API_KEY`        | Read by `@nexus/email`; empty means the worker can't send        |
-| `RESEND_FROM_EMAIL`     | Read by `@nexus/email` — the visible From address                |
-| `ANALYTICS_ENABLED`     | Read by `@nexus/analytics`; `"true"` turns capture on            |
-| `POSTHOG_KEY`           | PostHog project key; absent leaves analytics off                 |
-| `ANALYTICS_ENVIRONMENT` | `production` / `development` — the tier events are attributed to |
+| Variable                        | Purpose                                                           |
+| ------------------------------- | ----------------------------------------------------------------- |
+| `DATABASE_URL`                  | Postgres connection string (pooled, port 6543 — PgBouncer)        |
+| `S3_BUCKET`                     | Files bucket — thumbnail sources, the retrieval poll, zip sources |
+| `S3_DERIVED_BUCKET`             | Derived bucket — generated thumbnails                             |
+| `S3_RETRIEVAL_ARTIFACTS_BUCKET` | Artifacts bucket — the zips a restore is delivered as             |
+| `SQS_QUEUE_URL`                 | Jobs queue, for the jobs the poll enqueues                        |
+| `SQS_ZIP_QUEUE_URL`             | Zip-build queue — the second function's queue                     |
+| `APP_URL`                       | Link target for worker-sent email — the app, not a presigned URL  |
+| `RESEND_API_KEY`                | Read by `@nexus/email`; empty means the worker can't send         |
+| `RESEND_FROM_EMAIL`             | Read by `@nexus/email` — the visible From address                 |
+| `ANALYTICS_ENABLED`             | Read by `@nexus/analytics`; `"true"` turns capture on             |
+| `POSTHOG_KEY`                   | PostHog project key; absent leaves analytics off                  |
+| `ANALYTICS_ENVIRONMENT`         | `production` / `development` — the tier events are attributed to  |
 
 The ones the worker reads itself are validated at first use and throw a
 descriptive error if missing (`requireEnv` in `src/aws.ts`); the ones marked as
@@ -91,6 +93,12 @@ all dependencies bundled. Code deploys automatically on every merge to main
 environment's migration). For a first deploy, rollback, or hotfix run the same
 script manually: `pnpm -F worker deploy:<env>` — details in the
 [Background Jobs Runbook](../../docs/guides/background-jobs.md#deploy-updated-worker-code).
+
+**One bundle, two functions.** `nexus-worker-<env>` runs the SQS jobs and the
+15-minute retrieval poll; `nexus-worker-zip-<env>` runs only zip builds, which
+need Lambda's 900s maximum (#424). They share this code and their handler
+registry, so `deploy.sh` updates both in one run — a half-deployed pair would
+have two versions of the same registry answering the same job types.
 
 `deploy.sh` uploads the zip directly (`aws lambda update-function-code
 --zip-file`), so the ceiling is 50 MB zipped / 250 MB unzipped including the

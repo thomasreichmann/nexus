@@ -20,6 +20,13 @@ import { jobs } from '@/lib/jobs';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { logger } from '@/server/lib/logger';
 import { s3 } from '@/lib/storage';
+// Value import from ./types (not the package root) so unit tests that mock
+// '@/lib/storage' don't erase the constants.
+import {
+    DEFAULT_RESTORE_DAYS_TO_KEEP,
+    ZIP_BUILD_RESTORE_DAYS,
+    isDeliveredAsZip,
+} from '@/lib/storage/types';
 import type { ObjectState, RestoreTier } from '@/lib/storage';
 import type { DB } from '@nexus/db';
 
@@ -141,6 +148,18 @@ async function restoreFiles(
     // the job's HEAD is where it gets asked. `initiatedAt` still marks when the
     // request was accepted — the horizon the readiness poll measures from wants
     // a conservative lower bound, and accept-time is one.
+    //
+    // A multi-file restore is delivered as zip artifacts whose own lifecycle
+    // rule owns how long the user can download them, so the thawed originals
+    // only have to outlive the build (#424). One file is downloaded directly
+    // from the restored copy, so that window is the user-facing one. The whole
+    // request shares one window, warm files included: a mixed set would let
+    // some rows lapse out of the ready predicate while their siblings are
+    // still readable, and the zip needs all of them at once.
+    const daysToKeep = isDeliveredAsZip(files.length)
+        ? ZIP_BUILD_RESTORE_DAYS
+        : DEFAULT_RESTORE_DAYS_TO_KEEP;
+
     const now = new Date();
     const newRetrievals = await retrievalRepo.insertMany(
         filesToRestore.map((file) => ({
@@ -150,6 +169,7 @@ async function restoreFiles(
             tier,
             status: 'pending' as const,
             initiatedAt: now,
+            restoreDaysToKeep: daysToKeep,
         }))
     );
 

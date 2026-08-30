@@ -38,6 +38,7 @@ interface PendingRow {
     retrievalId: string;
     fileId: string;
     s3Key: string;
+    restoreDaysToKeep: number | null;
 }
 
 function pendingRow(overrides: Partial<PendingRow> = {}): PendingRow {
@@ -45,6 +46,7 @@ function pendingRow(overrides: Partial<PendingRow> = {}): PendingRow {
         retrievalId: 'ret-1',
         fileId: 'file-1',
         s3Key: 'user-1/file-1',
+        restoreDaysToKeep: null,
         ...overrides,
     };
 }
@@ -104,6 +106,31 @@ describe('initiateRestore', () => {
         });
         // A started restore leaves the row pending — the poll observes the end.
         expect(mocks.set).not.toHaveBeenCalled();
+    });
+
+    // The request path buys two days when the thawed copy only feeds a zip
+    // build and seven when it is the download itself (#424); the handler must
+    // ask S3 for what the row says, not restate the policy.
+    it('asks S3 for the Days the request path bought', async () => {
+        givenPending([pendingRow({ restoreDaysToKeep: 2 })]);
+        hoisted.send.mockResolvedValue(STILL_ARCHIVED);
+
+        await run();
+
+        expect(restoreCalls()[0].input.RestoreRequest).toMatchObject({
+            Days: 2,
+        });
+    });
+
+    it('falls back to the default Days on a pre-#424 row', async () => {
+        givenPending([pendingRow({ restoreDaysToKeep: null })]);
+        hoisted.send.mockResolvedValue(STILL_ARCHIVED);
+
+        await run();
+
+        expect(restoreCalls()[0].input.RestoreRequest).toMatchObject({
+            Days: 7,
+        });
     });
 
     it('uses the tier stored on the request, not a default', async () => {

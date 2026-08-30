@@ -14,6 +14,13 @@ export const serverSchema = z.object({
     // degrades thumbnails to icon fallbacks (bulk presign returns no URLs).
     S3_DERIVED_BUCKET: z.string().min(1).optional(),
     SQS_QUEUE_URL: z.string().url(),
+    // Zip-build queue (#424). Optional for the same reason as
+    // S3_DERIVED_BUCKET: deploys must not break between this code landing and
+    // `terraform apply` creating the queue. Nothing in the app publishes zip
+    // jobs — only the admin retry can reach one — and `sendToQueue` throws
+    // rather than falling back to the general queue, where the 120s worker
+    // would take the job and time out.
+    SQS_ZIP_QUEUE_URL: z.string().url().optional(),
     STRIPE_SECRET_KEY: z.string().min(1),
     STRIPE_WEBHOOK_SECRET: z.string().min(1),
     RESEND_API_KEY: z.string().min(1),

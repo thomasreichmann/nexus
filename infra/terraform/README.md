@@ -82,7 +82,15 @@ production code.
     `DEPLOY_AWS_SECRET_ACCESS_KEY` for dev, the `_PROD`-suffixed pair for
     prod (`gh secret set <name>`).
 
-2. **Worker code** — Terraform ships a stub that throws on every invocation
+2. **Apply before merging, when a release adds infrastructure the worker
+   needs.** Worker code ships automatically on merge, Terraform does not — so
+   a merge that lands code depending on a not-yet-applied resource deploys
+   against infrastructure that isn't there. #424 is the worked example: it
+   adds `nexus-worker-zip-<env>`, and `deploy.sh` updates both functions, so
+   an unapplied environment fails the deploy job outright. Apply dev and prod
+   first, then merge.
+
+3. **Worker code** — Terraform ships a stub that throws on every invocation
    (so jobs retry into the DLQ instead of silently succeeding). The real
    worker deploys automatically on every merge to main (`post-merge.yml`,
    once the deploy secrets from step 1 exist); for a first deploy before any
@@ -98,7 +106,7 @@ production code.
     new value from PostHog project settings (Vercel stores this var as
     `Sensitive`, so `vercel env pull` will not give it back).
 
-3. **Lambda layers** — `layers.tf` publishes the worker's ffmpeg and
+4. **Lambda layers** — `layers.tf` publishes the worker's ffmpeg and
    perl/exiftool layers from zips in the `nexus-lambda-artifacts-<env>`
    bucket. Before the first apply (and after any version bump), build them
    in CI (`lambda-layers.yml`) and sync:
@@ -108,7 +116,7 @@ production code.
     ./scripts/upload-layers.sh <env> /tmp/layers
     ```
 
-4. **Env vars** from `terraform output` — prod values go to the Vercel
+5. **Env vars** from `terraform output` — prod values go to the Vercel
    Production tier (#291), dev values to Preview + Development (and GitHub
    Actions secrets `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`S3_BUCKET`/
    `SQS_QUEUE_URL`, which are dev-scoped):
@@ -121,7 +129,7 @@ production code.
     | `SQS_QUEUE_URL`                               | `sqs_queue_url` output     |
     | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1     |
 
-5. **Confirm the alerts email** (prod only) — the apply creates an email
+6. **Confirm the alerts email** (prod only) — the apply creates an email
    subscription on `nexus-ops-alerts-prod` and reports success, but AWS leaves
    it in `PendingConfirmation` until someone clicks the link in the "AWS
    Notification - Subscription Confirmation" mail sent to `alert_email`. Until

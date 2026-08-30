@@ -35,7 +35,9 @@ export type WorkerEnvVar =
     | 'POSTHOG_KEY'
     | 'S3_BUCKET'
     | 'S3_DERIVED_BUCKET'
-    | 'SQS_QUEUE_URL';
+    | 'S3_RETRIEVAL_ARTIFACTS_BUCKET'
+    | 'SQS_QUEUE_URL'
+    | 'SQS_ZIP_QUEUE_URL';
 
 /** Reads a required Lambda env var, or throws pointing at where to set it. */
 export function requireEnv(name: WorkerEnvVar): string {

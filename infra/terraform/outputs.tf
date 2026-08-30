@@ -4,6 +4,7 @@
 #   S3_DERIVED_BUCKET <- s3_derived_bucket
 #   AWS_REGION        <- aws_region
 #   SQS_QUEUE_URL     <- sqs_queue_url
+#   SQS_ZIP_QUEUE_URL <- sqs_zip_queue_url
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY <- manual access key on app_iam_user
 #
 # GitHub Actions additionally holds a read-only key on ci_iam_user as
@@ -27,6 +28,11 @@ output "aws_region" {
 output "sqs_queue_url" {
   description = "Jobs queue URL -> Vercel SQS_QUEUE_URL"
   value       = aws_sqs_queue.jobs.url
+}
+
+output "sqs_zip_queue_url" {
+  description = "Zip-build queue URL -> Vercel SQS_ZIP_QUEUE_URL"
+  value       = aws_sqs_queue.zip_jobs.url
 }
 
 output "app_iam_user" {

@@ -48,3 +48,4 @@ docs/.obsidian/cache
 
 # Local-only docs (personal notes, never committed)
 *.local.md
+infra/terraform/*.tfplan

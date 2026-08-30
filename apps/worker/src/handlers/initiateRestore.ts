@@ -112,7 +112,11 @@ async function planRow(
                 Bucket: bucket,
                 Key: row.s3Key,
                 RestoreRequest: {
-                    Days: DEFAULT_RESTORE_DAYS_TO_KEEP,
+                    // The window the request path bought for this row: two days
+                    // when the thawed copy only feeds a zip build, seven when
+                    // it is the download itself (#424). Pre-#424 rows carry
+                    // null and get the default.
+                    Days: row.restoreDaysToKeep ?? DEFAULT_RESTORE_DAYS_TO_KEEP,
                     GlacierJobParameters: { Tier: S3_TIER[tier] },
                 },
             })
@@ -155,7 +159,8 @@ async function applyPlan(
             await markRetrievalReady(
                 retrievalRepo,
                 plan.row.retrievalId,
-                plan.expiresAt
+                plan.expiresAt,
+                plan.row.restoreDaysToKeep
             );
         } else if (plan.result === 'missing') {
             await markRetrievalMissing(retrievalRepo, plan.row.retrievalId);

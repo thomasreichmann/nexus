@@ -140,6 +140,8 @@ export interface PendingRetrievalWithFile {
     fileId: string;
     s3Key: string;
     thumbnailStatus: (typeof schema.files.$inferSelect)['thumbnailStatus'];
+    /** `Days` this restore was requested with; null on pre-#424 rows. */
+    restoreDaysToKeep: number | null;
 }
 
 /**
@@ -201,6 +203,7 @@ async function findPendingWithFiles(
             fileId: schema.retrievals.fileId,
             s3Key: schema.files.s3Key,
             thumbnailStatus: schema.files.thumbnailStatus,
+            restoreDaysToKeep: schema.retrievals.restoreDaysToKeep,
         })
         .from(schema.retrievals)
         .innerJoin(schema.files, eq(schema.retrievals.fileId, schema.files.id))

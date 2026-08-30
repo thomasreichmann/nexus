@@ -15,16 +15,20 @@ import type { Retrieval, RetrievalRepo } from '@nexus/db/repo/retrievals';
 export function markRetrievalReady(
     retrievalRepo: RetrievalRepo,
     retrievalId: string,
-    expiresAt: Date | undefined
+    expiresAt: Date | undefined,
+    restoreDaysToKeep?: number | null
 ): Promise<Retrieval | undefined> {
     const now = new Date();
     return retrievalRepo.updateStatus(retrievalId, 'ready', {
         readyAt: now,
         // A readable object with no S3 expiry of its own — one that was warm
         // all along, or a restore whose header carried no `expiry-date` — takes
-        // a window the same length as a real restore's, so both present one
-        // download-window state to the UI.
-        expiresAt: expiresAt ?? restoreWindowEnd(now),
+        // a window the same length as the restore actually bought, so both
+        // present one download-window state to the UI. Quoting the default for
+        // a zip-delivered restore instead would keep `readyAndDownloadable`
+        // true for five days after the two-day copy is gone (#424).
+        expiresAt:
+            expiresAt ?? restoreWindowEnd(now, restoreDaysToKeep ?? undefined),
     });
 }
 
