@@ -466,7 +466,29 @@ test(
             .sort();
         expect(actualHashes).toEqual(expectedHashes);
 
-        await page.reload();
+        // The deep link the ready email points at, opened against the artifact
+        // this run just built. `page.reload()` used to stand here, but it
+        // returns to a bare /dashboard/files where `?request=` is absent and
+        // the delivery panel therefore never mounts — and it screenshotted
+        // without awaiting anything, so the image was a "Loading vault..."
+        // spinner either way.
+        //
+        // Worth an assertion and not just a wait: `flows/retrieval-downloads`
+        // drives this panel against seeded artifact rows with no objects
+        // behind them, so this is the only place the ready state is reached
+        // through a real build.
+        await page.goto(`/dashboard/files?request=${request.id}`);
+        await expect(
+            page.getByRole('heading', { name: 'Your restore is ready' })
+        ).toBeVisible();
+        // The summary line rather than the Download button: the file browser
+        // renders its own row buttons named "Download" just below, so that
+        // locator is ambiguous here. This one is the panel's alone, and it
+        // carries the numbers — three files in a single archive — that only a
+        // real build could have produced.
+        await expect(
+            page.getByText(/3 files · .+ · one archive/)
+        ).toBeVisible();
         await page.screenshot({
             path: `${SCREENSHOTS}/04-after-build.png`,
             fullPage: true,
