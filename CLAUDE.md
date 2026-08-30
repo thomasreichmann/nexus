@@ -31,24 +31,6 @@ pnpm -F db db:query "<sql>"    # Read-only raw SQL against the current env's DB 
 
 Stripe CLI is installed and authenticated to the sandbox (test-mode only; live mode pending).
 
-## Sentry
-
-`sentry-cli` is installed and authenticated with a user token; org and project
-defaults live in `~/.sentryclirc`, so no flags are needed:
-
-```bash
-sentry-cli issues list --query "environment:preview"   # prod uses environment:production
-sentry-cli events list --max-rows 20
-```
-
-Issue detail (stack trace, the `cause` chain, event count) needs the REST API:
-`curl -H "Authorization: Bearer $(grep token= ~/.sentryclirc | cut -d= -f2)" \
-  https://sentry.io/api/0/issues/<id>/events/latest/`.
-
-Do not use the `sntrys_` token in Vercel env — it is a CI token for source-map
-upload and 403s on every read endpoint. `SENTRY_AUTH_TOKEN` in the environment
-overrides `~/.sentryclirc`, so don't source repo env files before querying.
-
 ## Bug Repro
 
 Reproduce bugs as specs in `apps/web/e2e/repro/`, never scratch scripts. The

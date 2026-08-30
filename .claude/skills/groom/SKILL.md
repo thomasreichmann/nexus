@@ -1,7 +1,7 @@
 ---
 name: groom
 description: Groom GitHub issues from needs-details to ready
-argument-hint: [issue-number] (optional)
+argument-hint: '[issue-number] (optional)'
 disable-model-invocation: true
 ---
 

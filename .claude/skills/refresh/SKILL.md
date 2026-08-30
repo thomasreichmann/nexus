@@ -1,7 +1,7 @@
 ---
 name: refresh
 description: Verify whether a groomed issue is still accurate
-argument-hint: [issue-number] (optional)
+argument-hint: '[issue-number] (optional)'
 allowed-tools: Bash, Read, Grep, Glob
 disable-model-invocation: true
 agent: refresh-agent

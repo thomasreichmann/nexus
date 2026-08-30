@@ -1,7 +1,7 @@
 ---
 name: attach-video
 description: Upload a local video or image to GitHub and get a URL that renders as an inline player / image in issue, PR, and comment markdown. Use when posting recorded UI evidence or screenshots.
-argument-hint: [path to .mp4/.mov/.png/.gif] (optional)
+argument-hint: '[path to .mp4/.mov/.png/.gif] (optional)'
 allowed-tools: Bash, Read
 ---
 

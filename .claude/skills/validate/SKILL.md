@@ -1,7 +1,7 @@
 ---
 name: validate
 description: End-to-end validate a merged PR or feature against the dev environment — UI + DB assertions with screenshots
-argument-hint: [PR number, commit, or free-form description] (optional)
+argument-hint: '[PR number, commit, or free-form description] (optional)'
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write, Task
 ---
 
