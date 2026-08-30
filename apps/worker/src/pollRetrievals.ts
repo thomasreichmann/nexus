@@ -1,3 +1,4 @@
+import { PostHogEvent } from '@nexus/analytics/events';
 import { createSemaphore } from '@nexus/async';
 import {
     isObjectMissing,
@@ -6,11 +7,18 @@ import {
 } from '@nexus/db/objectState';
 import { createRetrievalRequestRepo } from '@nexus/db/repo/retrievalRequests';
 import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
+import { captureWorkerEvent } from './analytics';
 import { headObjectState, S3_CONCURRENCY } from './aws';
+import { sendRetrievalFileReadyEmail } from './email';
 import { enqueueJob } from './jobs';
 import { partitionIntoChunks } from './partition';
 import { markRetrievalMissing, markRetrievalReady } from './retrievalWrites';
-import type { RetrievalRequestRepo } from '@nexus/db/repo/retrievalRequests';
+import { elapsedSeconds } from './time';
+import type {
+    DirectDeliverable,
+    RetrievalRequest,
+    RetrievalRequestRepo,
+} from '@nexus/db/repo/retrievalRequests';
 import type {
     PendingRetrievalWithFile,
     RestoreHorizons,
@@ -52,10 +60,11 @@ const COMPLETION_HORIZONS: RestoreHorizons = {
 const MAX_ROWS_PER_RUN = 5000;
 
 /**
- * Cap on requests whose zip builds are started per run, for the same reason as
- * `MAX_ROWS_PER_RUN`: bound the invocation. Lower because each one costs a
- * partition and a handful of writes rather than a single HEAD, and because a
- * leftover waits 15 minutes against restores measured in days.
+ * Cap on requests whose zip builds are started — and single-file requests
+ * completed — per run, for the same reason as `MAX_ROWS_PER_RUN`: bound the
+ * invocation. Lower because each one costs a partition and a handful of writes
+ * rather than a single HEAD, and because a leftover waits 15 minutes against
+ * restores measured in days.
  */
 const MAX_REQUESTS_PER_RUN = 25;
 
@@ -80,6 +89,12 @@ export interface PollSummary {
     zipErrored: number;
     /** True when the buildable-request lookup itself failed. */
     zipLookupFailed: boolean;
+    /** Single-file requests completed and announced by *this* run (#437). */
+    directCompleted: number;
+    /** Single-file requests whose completion write failed — retried next run. */
+    directErrored: number;
+    /** True when the direct-deliverable lookup itself failed. */
+    directLookupFailed: boolean;
 }
 
 /** What one pending row turned into. Keyed to match `PollSummary`'s counters. */
@@ -127,6 +142,9 @@ export async function pollRetrievals(db: DB): Promise<PollSummary> {
         zipJobsEnqueued: 0,
         zipErrored: 0,
         zipLookupFailed: false,
+        directCompleted: 0,
+        directErrored: 0,
+        directLookupFailed: false,
     };
 
     for (const observation of observations) {
@@ -135,9 +153,10 @@ export async function pollRetrievals(db: DB): Promise<PollSummary> {
     }
 
     // After the flips, not interleaved with them: a request is only buildable
-    // once every one of its files is `ready`, and the row that completes it may
-    // be anywhere in this loop.
+    // (or deliverable) once every one of its files is `ready`, and the row
+    // that completes it may be anywhere in this loop.
     await startZipBuilds(db, summary);
+    await completeDirectDeliveries(db, summary);
 
     if (capped) {
         console.warn(
@@ -370,6 +389,105 @@ async function startZipBuild(
     }
 
     return { partitioned, enqueued: pending.length };
+}
+
+/**
+ * Complete and announce every single-file request whose file has thawed
+ * (#437) — the delivery `startZipBuilds` is the build of, for requests below
+ * `ZIP_DELIVERY_MIN_FILES`. There is nothing to build: the thawed original is
+ * the download, so completion is the whole delivery.
+ *
+ * The same failure contract as the zip half: counted, not thrown, because the
+ * scan re-offers an uncompleted request every run — and the same reconciling
+ * scan rather than a reaction to this run's flips, because a warm request is
+ * settled by `initiateRestore`'s short-circuit and never passes through this
+ * poll's work list at all.
+ */
+async function completeDirectDeliveries(
+    db: DB,
+    summary: PollSummary
+): Promise<void> {
+    const requestRepo = createRetrievalRequestRepo(db);
+
+    let deliverable: DirectDeliverable[];
+    try {
+        deliverable =
+            await requestRepo.findDirectDeliverable(MAX_REQUESTS_PER_RUN);
+    } catch (error) {
+        // Its own flag rather than a `directErrored` bump, exactly like
+        // `zipLookupFailed`: no request was even named here.
+        console.warn(
+            'Failed to look up single-file requests ready to deliver:',
+            error
+        );
+        summary.directLookupFailed = true;
+        return;
+    }
+
+    for (const row of deliverable) {
+        try {
+            const completed = await requestRepo.completeIfDeliverable(
+                row.requestId
+            );
+            // Lost the election to a concurrent writer, or readiness lapsed
+            // between the scan and the write — either way not this run's
+            // request to announce.
+            if (!completed) continue;
+            summary.directCompleted++;
+            console.log(
+                `Retrieval request ${row.requestId} is complete (direct delivery).`
+            );
+            await announceFileReady(db, row, completed.tier);
+        } catch (error) {
+            console.warn(
+                `Failed to complete single-file retrieval request ${row.requestId}:`,
+                error
+            );
+            summary.directErrored++;
+        }
+    }
+}
+
+/**
+ * The delivery half of a single-file completion: tell the user, tell PostHog.
+ *
+ * Everything here is after the winning UPDATE and must not undo it — the file
+ * is downloadable whether or not Resend or PostHog answer, and the election
+ * means no later run retries the announcement. Warn and move on, the same
+ * contract as `buildRetrievalZip`'s announcement.
+ *
+ * Same `retrieval_ready` event as the zip path — one "restore became ready"
+ * funnel across both shapes — with `partCount` and `buildSeconds` absent
+ * rather than zero: there is no partition and no build here, so queries
+ * touching those two fields are implicitly zip-only.
+ */
+async function announceFileReady(
+    db: DB,
+    row: DirectDeliverable,
+    tier: RetrievalRequest['tier']
+): Promise<void> {
+    try {
+        captureWorkerEvent(row.userId, PostHogEvent.RetrievalReady, {
+            requestId: row.requestId,
+            tier,
+            fileCount: 1,
+            totalBytes: row.fileSize,
+            thawSeconds: elapsedSeconds(row.initiatedAt, row.readyAt),
+        });
+
+        await sendRetrievalFileReadyEmail(db, {
+            userId: row.userId,
+            requestId: row.requestId,
+            fileId: row.fileId,
+            fileName: row.fileName,
+            expiresAt: row.expiresAt,
+        });
+    } catch (error) {
+        console.warn(
+            `Retrieval request ${row.requestId} completed but could not be announced.`,
+            error
+        );
+    }
 }
 
 // A thumbnail re-enqueue must not undo a retrieval that is genuinely ready —

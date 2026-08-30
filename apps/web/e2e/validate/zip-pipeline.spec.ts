@@ -49,9 +49,15 @@ import {
     retrievals,
 } from '@nexus/db/schema';
 import { test as base, expect } from '../fixtures';
+import {
+    awsAsOperator,
+    envSuffix,
+    invokePoll,
+    retrievalStatuses,
+} from '../helpers/aws';
 import { createTestS3, type TestS3 } from '../helpers/s3';
 import { type TestUser } from '../helpers/auth';
-import type { Connection, File } from '@nexus/db/test-db';
+import type { File } from '@nexus/db/test-db';
 
 const ZIP_USER: TestUser = {
     email: 'zip-pipeline-validate@test.local',
@@ -97,66 +103,16 @@ function sha256(buffer: Buffer): string {
     return createHash('sha256').update(buffer).digest('hex');
 }
 
-/** The env this run points at, read off the bucket the helper resolved. */
-function envSuffix(bucket: string): string {
-    const suffix = bucket.replace(/^nexus-storage-files-/, '');
-    if (suffix === bucket) {
-        throw new Error(`Unexpected S3_BUCKET shape: ${bucket}`);
-    }
-    return suffix;
-}
-
-/**
- * Run the deployed worker's retrieval poll now instead of waiting out the
- * 15-minute schedule. Any event without `Records` is the poll (handler.ts), so
- * an empty payload is exactly what EventBridge delivers. Shelled out rather
- * than done through the SDK because @aws-sdk/client-lambda is not a dependency
- * of the app and this is its only caller.
- */
-/**
- * Run the AWS CLI as the *operator*, not as the app.
- *
- * .env.local's credentials are the `nexus-app-*` IAM user, which by design has
- * no `lambda:InvokeFunction`: invoking the deployed worker is an operator
- * action, not something the web app is ever allowed to do. So the invoke below
- * drops those variables and falls back to the ambient profile rather than the
- * policy being widened to suit a test.
- *
- * The artifact read and delete below still go through here, but for different
- * reasons now. #426 granted the app `s3:GetObject` on the artifacts bucket —
- * the download links it hands out are presigned with exactly these credentials
- * — so the read would work either way and stays on the operator profile only
- * because the delete beside it must: the app was given read there and nothing
- * else. Exercising the app's own grant end-to-end is the download click, which
+/*
+ * The AWS-CLI operator helpers (`awsAsOperator`, `invokePoll`, `envSuffix`)
+ * live in ../helpers/aws. A note specific to this spec: the artifact read and
+ * delete below go through the operator profile even though #426 granted the
+ * app `s3:GetObject` on the artifacts bucket — the read would work either way
+ * and stays on the operator profile only because the delete beside it must:
+ * the app was given read there and nothing else. Exercising the app's own
+ * grant end-to-end is the download click, which
  * `e2e/flows/retrieval-downloads.spec.ts` covers against seeded artifacts.
  */
-function awsAsOperator(args: string[]): void {
-    const env = { ...process.env };
-    delete env.AWS_ACCESS_KEY_ID;
-    delete env.AWS_SECRET_ACCESS_KEY;
-    delete env.AWS_SESSION_TOKEN;
-    execFileSync('aws', args, { stdio: 'pipe', env });
-}
-
-/**
- * Run the deployed worker's retrieval poll now instead of waiting out the
- * 15-minute schedule. Any event without `Records` is the poll (handler.ts), so
- * an empty payload is exactly what EventBridge delivers.
- */
-function invokePoll(bucket: string): void {
-    const out = join(mkdtempSync(join(tmpdir(), 'nexus-poll-')), 'out.json');
-    awsAsOperator([
-        'lambda',
-        'invoke',
-        '--function-name',
-        `nexus-worker-${envSuffix(bucket)}`,
-        '--payload',
-        '{}',
-        '--cli-binary-format',
-        'raw-in-base64-out',
-        out,
-    ]);
-}
 
 interface ZipEntry {
     name: string;
@@ -201,22 +157,6 @@ function readCentralDirectory(zip: Buffer): ZipEntry[] {
         offset += 46 + nameLength + extraLength + commentLength;
     }
     return entries;
-}
-
-/** Statuses of the retrievals behind one request, sorted for comparison. */
-async function retrievalStatuses(
-    db: Connection,
-    requestId: string
-): Promise<string[]> {
-    const rows = await db
-        .select({ status: retrievals.status })
-        .from(retrievalRequestItems)
-        .innerJoin(
-            retrievals,
-            eq(retrievals.id, retrievalRequestItems.retrievalId)
-        )
-        .where(eq(retrievalRequestItems.requestId, requestId));
-    return rows.map((row) => row.status).sort();
 }
 
 const test = base.extend<

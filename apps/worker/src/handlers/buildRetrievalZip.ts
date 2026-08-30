@@ -6,6 +6,7 @@ import { captureWorkerEvent } from '../analytics';
 import { requireEnv } from '../aws';
 import { sendRetrievalRequestReadyEmail } from '../email';
 import { uploadStreamMultipart } from '../multipartUpload';
+import { elapsedSeconds } from '../time';
 import { createZipStream } from '../zipStream';
 import type { HandlerContext } from '../registry';
 import type { DB } from '@nexus/db';
@@ -99,13 +100,17 @@ export async function buildRetrievalZip({
     await completeRequest(db, requestRepo, artifact.requestId);
 }
 
-/** Flip the request complete if this was the last artifact standing. */
+/**
+ * Flip the request complete if this was the last artifact standing *and* the
+ * thawed originals are still live — see completeIfDeliverable for why a build
+ * that outlasted its own restore window no longer completes (#437).
+ */
 async function completeRequest(
     db: DB,
     requestRepo: RetrievalRequestRepo,
     requestId: string
 ): Promise<void> {
-    const completed = await requestRepo.completeIfArtifactsReady(requestId);
+    const completed = await requestRepo.completeIfDeliverable(requestId);
     if (!completed) return;
 
     console.log(
@@ -193,10 +198,4 @@ function latest(dates: (Date | null)[]): Date | null {
     return times.length === 0
         ? null
         : new Date(Math.max(...times.map((d) => d.getTime())));
-}
-
-/** Null rather than a misleading zero when either end of the span is unknown. */
-function elapsedSeconds(from: Date | null, to: Date | null): number | null {
-    if (!from || !to) return null;
-    return Math.round((to.getTime() - from.getTime()) / 1000);
 }
