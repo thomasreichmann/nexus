@@ -4,6 +4,7 @@ import {
     type MockDb,
     type MockDbMocks,
     createFileFixture,
+    createRetrievalArtifactFixture,
     createRetrievalFixture,
     createRetrievalRequestFixture,
     createUploadBatchFixture,
@@ -751,6 +752,206 @@ describe('retrieval service', () => {
             await expect(
                 retrievalService.getDownloadUrl(db, TEST_USER_ID, TEST_FILE_ID)
             ).rejects.toThrow('AccessDenied');
+        });
+    });
+
+    // The zip-delivery surface (#426). Everything here is driven by artifacts,
+    // never by the retrieval rows behind them: those carry a two-day window
+    // while the zips they fed stay downloadable for seven.
+    describe('zip delivery', () => {
+        const BUILT_AT = new Date('2026-08-30T10:00:00Z');
+        const EXPECTED_EXPIRY = new Date('2026-09-06T10:00:00Z');
+
+        /** One row as findDownloadableByUser's aggregate returns it. */
+        function downloadableRow(overrides = {}) {
+            return {
+                id: TEST_RETRIEVAL_REQUEST_ID,
+                tier: 'bulk',
+                completedAt: new Date('2026-08-30T10:05:00Z'),
+                fileCount: 12,
+                partCount: 2,
+                // bigint comes back from postgres as a string.
+                totalBytes: '4000',
+                builtAt: BUILT_AT,
+                ...overrides,
+            };
+        }
+
+        describe('listReadyRequests', () => {
+            it("quotes the artifact's window, not the retrievals'", async () => {
+                mocks.groupByRows.mockResolvedValue([downloadableRow()]);
+
+                const [request] = await retrievalService.listReadyRequests(
+                    db,
+                    TEST_USER_ID
+                );
+
+                expect(request).toMatchObject({
+                    requestId: TEST_RETRIEVAL_REQUEST_ID,
+                    fileCount: 12,
+                    partCount: 2,
+                    totalBytes: 4000,
+                });
+                expect(request.expiresAt).toEqual(EXPECTED_EXPIRY);
+            });
+        });
+
+        describe('getRequestDelivery', () => {
+            it('lists the ready parts, 1-based, with per-part expiry', async () => {
+                mocks.retrievalRequests.findFirst.mockResolvedValue(
+                    createRetrievalRequestFixture({ completedAt: new Date() })
+                );
+                mocks.groupByRows.mockResolvedValue([downloadableRow()]);
+                mocks.retrievalArtifacts.findMany.mockResolvedValue([
+                    createRetrievalArtifactFixture({
+                        id: 'artifact-a',
+                        position: 0,
+                        status: 'ready',
+                        s3Key: `${TEST_USER_ID}/req/artifact-a/nexus-part-1.zip`,
+                        sizeBytes: 3000,
+                        completedAt: BUILT_AT,
+                    }),
+                    // Still building: it must not offer a download link.
+                    createRetrievalArtifactFixture({
+                        id: 'artifact-b',
+                        position: 1,
+                        status: 'building',
+                    }),
+                ]);
+
+                const delivery = await retrievalService.getRequestDelivery(
+                    db,
+                    TEST_USER_ID,
+                    TEST_RETRIEVAL_REQUEST_ID
+                );
+
+                expect(delivery.state).toBe('ready');
+                if (delivery.state !== 'ready') return;
+                expect(delivery.artifacts).toHaveLength(1);
+                expect(delivery.artifacts[0]).toEqual({
+                    artifactId: 'artifact-a',
+                    part: 1,
+                    sizeBytes: 3000,
+                    fileName: 'nexus-part-1.zip',
+                    expiresAt: EXPECTED_EXPIRY,
+                });
+            });
+
+            // The two non-ready states mean opposite things to the reader, and
+            // the panel polls on exactly that difference.
+            it('reads a request with no completedAt as still building', async () => {
+                mocks.retrievalRequests.findFirst.mockResolvedValue(
+                    createRetrievalRequestFixture({ completedAt: null })
+                );
+                mocks.groupByRows.mockResolvedValue([]);
+
+                await expect(
+                    retrievalService.getRequestDelivery(
+                        db,
+                        TEST_USER_ID,
+                        TEST_RETRIEVAL_REQUEST_ID
+                    )
+                ).resolves.toEqual({ state: 'building' });
+            });
+
+            it('reads a completed request with no live artifacts as expired', async () => {
+                mocks.retrievalRequests.findFirst.mockResolvedValue(
+                    createRetrievalRequestFixture({ completedAt: new Date() })
+                );
+                mocks.groupByRows.mockResolvedValue([]);
+
+                await expect(
+                    retrievalService.getRequestDelivery(
+                        db,
+                        TEST_USER_ID,
+                        TEST_RETRIEVAL_REQUEST_ID
+                    )
+                ).resolves.toEqual({ state: 'expired' });
+            });
+
+            it("404s another user's request", async () => {
+                mocks.retrievalRequests.findFirst.mockResolvedValue(undefined);
+
+                await expect(
+                    retrievalService.getRequestDelivery(
+                        db,
+                        TEST_USER_ID,
+                        TEST_RETRIEVAL_REQUEST_ID
+                    )
+                ).rejects.toThrow(NotFoundError);
+            });
+        });
+
+        describe('getArtifactDownloadUrl', () => {
+            /** The user-scoped artifact lookup ends at .limit(). */
+            function givenArtifact(artifact: unknown) {
+                mocks.limit.mockResolvedValue(artifact ? [{ artifact }] : []);
+            }
+
+            it('presigns against the artifacts bucket, named for the part', async () => {
+                givenArtifact(
+                    createRetrievalArtifactFixture({
+                        status: 'ready',
+                        s3Key: `${TEST_USER_ID}/req/art/nexus-part-2.zip`,
+                        completedAt: new Date(),
+                    })
+                );
+
+                const result = await retrievalService.getArtifactDownloadUrl(
+                    db,
+                    TEST_USER_ID,
+                    'artifact-a'
+                );
+
+                expect(result.url).toContain('artifacts-test-bucket');
+                expect(result.url).toContain('nexus-part-2.zip');
+            });
+
+            it('refuses a part that is still building', async () => {
+                givenArtifact(
+                    createRetrievalArtifactFixture({ status: 'building' })
+                );
+
+                await expect(
+                    retrievalService.getArtifactDownloadUrl(
+                        db,
+                        TEST_USER_ID,
+                        'artifact-a'
+                    )
+                ).rejects.toThrow(InvalidStateError);
+            });
+
+            // S3's lifecycle rule has already taken the bytes; a presigned URL
+            // would 404 in the browser with no explanation.
+            it('refuses a part past its retention window', async () => {
+                givenArtifact(
+                    createRetrievalArtifactFixture({
+                        status: 'ready',
+                        s3Key: 'user/req/art/nexus-part-1.zip',
+                        completedAt: new Date('2020-01-01T00:00:00Z'),
+                    })
+                );
+
+                await expect(
+                    retrievalService.getArtifactDownloadUrl(
+                        db,
+                        TEST_USER_ID,
+                        'artifact-a'
+                    )
+                ).rejects.toThrow(/expired/);
+            });
+
+            it("404s another user's artifact", async () => {
+                givenArtifact(null);
+
+                await expect(
+                    retrievalService.getArtifactDownloadUrl(
+                        db,
+                        TEST_USER_ID,
+                        'artifact-a'
+                    )
+                ).rejects.toThrow(NotFoundError);
+            });
         });
     });
 });

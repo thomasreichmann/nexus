@@ -36,8 +36,10 @@ import type { File } from '../repositories/files';
 import type { UploadBatch } from '../repositories/uploadBatches';
 import type { Retrieval } from '../repositories/retrievals';
 import type {
+    NewRetrievalRequestItem,
     RetrievalArtifact,
     RetrievalRequest,
+    RetrievalRequestItem,
 } from '../repositories/retrievalRequests';
 import type { Subscription } from '../repositories/subscriptions';
 import type { Job } from '../repositories/jobs';
@@ -129,6 +131,22 @@ export async function insertRetrievalRequest(
         .values(row)
         .returning();
     return request!;
+}
+
+/**
+ * One file's membership in a request. Separate from `insertRetrievalRequest`
+ * because the request's file count is counted over these rows — a seeded
+ * request with no items reads as a restore of nothing.
+ */
+export async function insertRetrievalRequestItem(
+    db: DB,
+    values: Omit<NewRetrievalRequestItem, 'id'> & { id?: string }
+): Promise<RetrievalRequestItem> {
+    const [item] = await db
+        .insert(schema.retrievalRequestItems)
+        .values({ id: crypto.randomUUID(), ...values })
+        .returning();
+    return item!;
 }
 
 export async function insertRetrievalArtifact(

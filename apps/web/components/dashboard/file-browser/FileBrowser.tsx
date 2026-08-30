@@ -38,10 +38,9 @@ import { cn } from '@/lib/cn';
 import { useTRPC } from '@/lib/trpc/client';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
-import { captureEvent } from '@/lib/posthog/client';
-import { PostHogEvent } from '@/lib/posthog/events';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
 import { toastContext } from '@/lib/trpc/error-link';
+import { getLivePollOptionsWhile } from '@/lib/trpc/polling';
 import { toastRetrievalRequested } from './retrievalFeedback';
 import { deriveStatus } from './status';
 import { BatchHeader, BatchHeaderRow } from './BatchHeader';
@@ -73,15 +72,32 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
 
     const debouncedSearch = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
 
-    const { data: groupsData, isLoading } = useQuery(
-        trpc.files.listGrouped.queryOptions({})
-    );
+    // Each query owns its own stop condition, rather than the counts driving
+    // both (#426). They are independent timers: a shared gate flipped by the
+    // counts' refetch can clear the list's interval before the list itself has
+    // refetched, leaving "Retrieving" rows on screen until a reload.
     const { data: countsData } = useQuery(
-        trpc.files.statusCounts.queryOptions()
+        trpc.files.statusCounts.queryOptions(
+            undefined,
+            getLivePollOptionsWhile((counts) => (counts?.retrieving ?? 0) > 0)
+        )
+    );
+    const counts = countsData ?? { archived: 0, retrieving: 0, available: 0 };
+
+    const { data: groupsData, isLoading } = useQuery(
+        trpc.files.listGrouped.queryOptions(
+            {},
+            getLivePollOptionsWhile((groups) =>
+                (groups ?? []).some((group) =>
+                    group.files.some(
+                        (file) => deriveStatus(file) === 'retrieving'
+                    )
+                )
+            )
+        )
     );
 
     const groups = useMemo(() => groupsData ?? [], [groupsData]);
-    const counts = countsData ?? { archived: 0, retrieving: 0, available: 0 };
 
     // Keyed off the unfiltered library so searching never re-chunks the
     // presign queries (see useThumbnailUrls' stable-chunk note).
@@ -149,20 +165,16 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
             trpc: toastContext({
                 errorMessage: 'Failed to request retrievals',
             }),
-            // `variables` rather than the selection state: the selection is
-            // cleared just below, and it can hold non-archived files the
-            // request already filtered out.
-            onSuccess(result, variables) {
+            // No `retrieval_requested` capture here: the request path emits it
+            // server-side, where it fires exactly once per committed request
+            // (#426). Two emitters of one event name double every funnel step.
+            onSuccess(result) {
                 invalidateFileList();
                 // The whole selection was accepted or the mutation threw —
                 // there is no per-file failure left to keep selected for a
                 // retry, because the restores fire in a worker job after this
                 // returns (#423).
                 setSelectedFiles([]);
-                captureEvent(PostHogEvent.RetrievalRequested, {
-                    fileCount: variables.fileIds.length,
-                    isBulk: true,
-                });
                 toastRetrievalRequested(result.fileCount);
             },
         })

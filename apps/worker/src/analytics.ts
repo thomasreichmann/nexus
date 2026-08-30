@@ -10,11 +10,8 @@
  *
  * No `waitUntil`: Lambda freezes the execution environment when the handler
  * resolves, and there is no host-provided way to extend that the way Next's
- * `after` does. The events this worker emits are low-rate enough that
- * posthog-node's own interval flush lands within the invocation — the poll
- * runs for seconds after a capture, not microseconds.
- *
- * The first caller lands with the retrieval-ready notification (#426).
+ * `after` does. `flushWorkerAnalytics` is the substitute — see its docblock for
+ * why the interval flush this originally relied on isn't enough.
  */
 import { DEFAULT_POSTHOG_HOST } from '@nexus/analytics/hosts';
 import { createServerAnalytics } from '@nexus/analytics/server';
@@ -50,4 +47,24 @@ export function captureWorkerEvent(
     properties?: Record<string, unknown>
 ): void {
     getAnalytics().captureEvent(userId, event, properties);
+}
+
+/**
+ * Drain the capture batch before the Lambda freezes.
+ *
+ * #425 reasoned that posthog-node's interval flush lands within the invocation
+ * because "the poll runs for seconds after a capture, not microseconds". That
+ * holds for the poll and not for the zip handler, whose retrieval-ready capture
+ * is the last thing it does (#426) — the handler resolves, the execution
+ * environment freezes, and the batch is dropped unsent. Rather than reason per
+ * call site about how much runway is left, every handler flushes on the way
+ * out.
+ *
+ * Cheap when there is nothing to send: no client is constructed unless
+ * something captured, and it never throws.
+ */
+export function flushWorkerAnalytics(): Promise<void> {
+    // Not `getAnalytics()`: a handler that captured nothing shouldn't
+    // construct a client on its way out.
+    return analytics?.flush() ?? Promise.resolve();
 }

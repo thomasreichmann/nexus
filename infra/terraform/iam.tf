@@ -42,6 +42,15 @@ resource "aws_iam_user_policy" "app_s3" {
         Action   = "s3:GetObject"
         Resource = "${aws_s3_bucket.derived.arn}/*"
       },
+      {
+        # Read-only for the same reason as `derived` (#426): the zip worker
+        # writes the artifacts, the app only presigns the download link the
+        # ready-email points at. Without this every link 403s — the presign
+        # itself succeeds locally, so the failure only shows up on the click.
+        Effect   = "Allow"
+        Action   = "s3:GetObject"
+        Resource = "${aws_s3_bucket.retrieval_artifacts.arn}/*"
+      },
     ]
   })
 }

@@ -117,11 +117,18 @@ function envSuffix(bucket: string): string {
  * Run the AWS CLI as the *operator*, not as the app.
  *
  * .env.local's credentials are the `nexus-app-*` IAM user, which by design has
- * neither `lambda:InvokeFunction` nor any grant on the retrieval-artifacts
- * bucket (#431 gave that bucket to the worker role only). Both are correct
- * least privilege, so the two operator-shaped steps below drop those variables
- * and fall back to the ambient profile rather than the policies being widened
- * to suit a test.
+ * no `lambda:InvokeFunction`: invoking the deployed worker is an operator
+ * action, not something the web app is ever allowed to do. So the invoke below
+ * drops those variables and falls back to the ambient profile rather than the
+ * policy being widened to suit a test.
+ *
+ * The artifact read and delete below still go through here, but for different
+ * reasons now. #426 granted the app `s3:GetObject` on the artifacts bucket —
+ * the download links it hands out are presigned with exactly these credentials
+ * — so the read would work either way and stays on the operator profile only
+ * because the delete beside it must: the app was given read there and nothing
+ * else. Exercising the app's own grant end-to-end is the download click, which
+ * `e2e/flows/retrieval-downloads.spec.ts` covers against seeded artifacts.
  */
 function awsAsOperator(args: string[]): void {
     const env = { ...process.env };

@@ -23,11 +23,16 @@ import {
     formatRelativeTime,
     formatRelativeTimeCompact,
 } from '@/lib/format';
+import { getLivePollOptionsWhile } from '@/lib/trpc/polling';
 import { MiddleTruncateName } from '@/components/dashboard/MiddleTruncateName';
+import { ReadyDownloads } from '@/components/dashboard/ReadyDownloads';
 import { StorageUsageBar } from '@/components/dashboard/StorageUsageBar';
 import { StorageByType } from '@/components/dashboard/StorageByType';
 import { UploadHistory } from '@/components/dashboard/UploadHistory';
-import type { Retrieval } from '@nexus/db/repo/retrievals';
+import type {
+    ActiveRetrievalWithFile,
+    Retrieval,
+} from '@nexus/db/repo/retrievals';
 
 export default function DashboardPage() {
     const trpc = useTRPC();
@@ -40,8 +45,20 @@ export default function DashboardPage() {
         trpc.files.list.queryOptions({ limit: 5 })
     );
     const { data: activeRetrievals, isLoading: isLoadingRetrievals } = useQuery(
-        trpc.retrievals.listActive.queryOptions()
+        trpc.retrievals.listActive.queryOptions(
+            undefined,
+            // Self-referential, so the card stops polling the moment its own
+            // last row thaws rather than needing an outside signal (#426).
+            getLivePollOptionsWhile(hasUnfinishedRestore)
+        )
     );
+
+    // Deliberately "any rows at all", not "any row still thawing": the zip
+    // build only *starts* once every retrieval is `ready`, so a
+    // still-thawing gate would switch this off at exactly the moment the
+    // artifact the card is waiting for begins to exist. A `ready` row stays in
+    // this list for its download window, which spans the build.
+    const isRestoreInFlight = (activeRetrievals?.length ?? 0) > 0;
 
     return (
         <div className="mx-auto max-w-7xl space-y-8">
@@ -54,6 +71,11 @@ export default function DashboardPage() {
                     Overview of your storage and recent activity
                 </p>
             </div>
+
+            {/* Above the fold, and above the stats: a finished restore is the
+                one thing on this page that is waiting on the user. Renders
+                nothing when there is nothing to download. */}
+            <ReadyDownloads isRestoreInFlight={isRestoreInFlight} />
 
             <div className="grid gap-6 sm:grid-cols-2">
                 <Card>
@@ -330,6 +352,16 @@ export default function DashboardPage() {
             </div>
         </div>
     );
+}
+
+/**
+ * Whether any row is still waiting on S3. `ready` rows stay in this list for
+ * their download window, so "the list is non-empty" is not the same question.
+ */
+function hasUnfinishedRestore(
+    retrievals: ActiveRetrievalWithFile[] | undefined
+): boolean {
+    return (retrievals ?? []).some((r) => r.status !== 'ready');
 }
 
 function getRetrievalBadge(

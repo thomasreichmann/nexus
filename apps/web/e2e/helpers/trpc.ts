@@ -15,13 +15,18 @@ export function isTrpcRequest(url: string, procedure: string): boolean {
 }
 
 /**
- * Intercepts a tRPC procedure, records each call's POST body, and aborts the
+ * Intercepts a tRPC procedure, records each call's input, and aborts the
  * request so it never reaches the server (no DB rows, no S3/Stripe calls).
- * Returns the array the recorded bodies land in — assert with
+ * Returns the array the recorded inputs land in — assert with
  * `expect.poll(() => calls.length)`.
  *
+ * A mutation carries its input in the POST body and a query carries it in the
+ * URL, so this records the body when there is one and the full URL otherwise —
+ * either way the recorded string contains the input the assertion is looking
+ * for.
+ *
  * Aborting a batched request would abort every procedure in the batch; fine
- * for the mutations tested this way, which fire alone in their tick.
+ * for the calls tested this way, which fire alone in their tick.
  */
 export async function interceptTrpcCalls(
     page: Page,
@@ -31,7 +36,8 @@ export async function interceptTrpcCalls(
     await page.route(
         (url) => isTrpcRequest(url.href, procedure),
         (route) => {
-            calls.push(route.request().postData() ?? '');
+            const request = route.request();
+            calls.push(request.postData() ?? request.url());
             return route.abort();
         }
     );

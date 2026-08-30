@@ -1,10 +1,18 @@
+import { PostHogEvent } from '@nexus/analytics/events';
+import { artifactWindowEnd } from '@nexus/db/objectState';
 import { retrievalArtifactKey } from '@nexus/db/repo/files';
 import { createRetrievalRequestRepo } from '@nexus/db/repo/retrievalRequests';
+import { captureWorkerEvent } from '../analytics';
 import { requireEnv } from '../aws';
+import { sendRetrievalRequestReadyEmail } from '../email';
 import { uploadStreamMultipart } from '../multipartUpload';
 import { createZipStream } from '../zipStream';
 import type { HandlerContext } from '../registry';
-import type { RetrievalRequestRepo } from '@nexus/db/repo/retrievalRequests';
+import type { DB } from '@nexus/db';
+import type {
+    RetrievalRequest,
+    RetrievalRequestRepo,
+} from '@nexus/db/repo/retrievalRequests';
 
 /**
  * Build one chunk of a retrieval request into a zip in the artifacts bucket.
@@ -43,7 +51,7 @@ export async function buildRetrievalZip({
         console.log(
             `build-retrieval-zip: artifact ${artifactId} is already built; re-checking request completion.`
         );
-        await completeRequest(requestRepo, existing.requestId);
+        await completeRequest(db, requestRepo, existing.requestId);
         return;
     }
 
@@ -88,18 +96,107 @@ export async function buildRetrievalZip({
         throw error;
     }
 
-    await completeRequest(requestRepo, artifact.requestId);
+    await completeRequest(db, requestRepo, artifact.requestId);
 }
 
 /** Flip the request complete if this was the last artifact standing. */
 async function completeRequest(
+    db: DB,
     requestRepo: RetrievalRequestRepo,
     requestId: string
 ): Promise<void> {
     const completed = await requestRepo.completeIfArtifactsReady(requestId);
-    if (completed) {
-        console.log(
-            `build-retrieval-zip: retrieval request ${requestId} is complete.`
+    if (!completed) return;
+
+    console.log(
+        `build-retrieval-zip: retrieval request ${requestId} is complete.`
+    );
+
+    // Exactly one job ever gets here for a given request — the winner of the
+    // `completed_at` election — which is what makes this one email and one
+    // event rather than one per chunk.
+    await announceRequestReady(db, requestRepo, completed);
+}
+
+/**
+ * The delivery half of completion: tell the user, and tell PostHog (#426).
+ *
+ * Everything here is after the winning UPDATE and must not undo it. The request
+ * is complete and its zips are downloadable whether or not Resend answers, so a
+ * throw would only make SQS redeliver a build that already succeeded — and the
+ * redelivery would find the artifacts `ready` and the request already complete,
+ * so it would not even retry the send. Warn and move on.
+ */
+async function announceRequestReady(
+    db: DB,
+    requestRepo: RetrievalRequestRepo,
+    request: RetrievalRequest
+): Promise<void> {
+    try {
+        const [artifacts, timings] = await Promise.all([
+            requestRepo.findArtifacts(request.id),
+            requestRepo.findTimings(request.id),
+        ]);
+
+        const totalBytes = artifacts.reduce(
+            (sum, artifact) => sum + (artifact.sizeBytes ?? 0),
+            0
+        );
+        // The window starts at the earliest artifact, not the last: the reader
+        // needs every part, so the request stops being downloadable when its
+        // first one lapses.
+        const builtAt = earliest(
+            artifacts.map((artifact) => artifact.completedAt)
+        );
+
+        captureWorkerEvent(request.userId, PostHogEvent.RetrievalReady, {
+            requestId: request.id,
+            tier: request.tier,
+            fileCount: timings.fileCount,
+            partCount: artifacts.length,
+            totalBytes,
+            // The two halves of the wait, separately: S3's thaw is what the
+            // poll's tier horizons are tuned against, our build is what the
+            // chunk cap is tuned against. Summed they would tune neither.
+            thawSeconds: elapsedSeconds(timings.initiatedAt, timings.readyAt),
+            buildSeconds: elapsedSeconds(
+                earliest(artifacts.map((artifact) => artifact.startedAt)),
+                latest(artifacts.map((artifact) => artifact.completedAt))
+            ),
+        });
+
+        await sendRetrievalRequestReadyEmail(db, {
+            userId: request.userId,
+            requestId: request.id,
+            fileCount: timings.fileCount,
+            partCount: artifacts.length,
+            totalBytes,
+            expiresAt: artifactWindowEnd(builtAt ?? new Date()),
+        });
+    } catch (error) {
+        console.warn(
+            `build-retrieval-zip: request ${request.id} completed but could not be announced.`,
+            error
         );
     }
+}
+
+function earliest(dates: (Date | null)[]): Date | null {
+    const times = dates.filter((d): d is Date => d !== null);
+    return times.length === 0
+        ? null
+        : new Date(Math.min(...times.map((d) => d.getTime())));
+}
+
+function latest(dates: (Date | null)[]): Date | null {
+    const times = dates.filter((d): d is Date => d !== null);
+    return times.length === 0
+        ? null
+        : new Date(Math.max(...times.map((d) => d.getTime())));
+}
+
+/** Null rather than a misleading zero when either end of the span is unknown. */
+function elapsedSeconds(from: Date | null, to: Date | null): number | null {
+    if (!from || !to) return null;
+    return Math.round((to.getTime() - from.getTime()) / 1000);
 }

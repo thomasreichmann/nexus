@@ -1,13 +1,17 @@
 import { FileBrowser } from '@/components/dashboard/file-browser';
+import { RetrievalDownloads } from '@/components/dashboard/RetrievalDownloads';
 
 interface FilesPageProps {
-    searchParams: Promise<{ file?: string }>;
+    searchParams: Promise<{ file?: string; request?: string }>;
 }
 
-// `?file={id}` is the deep-link target used by the retrieval-ready email —
-// FileBrowser scrolls to and highlights that file.
+// Two deep-link targets, both landed on from a retrieval-ready email:
+// `?file={id}` scrolls to and highlights one file (the single-file restore,
+// #437), while `?request={id}` opens the zip parts of a multi-file restore
+// above the browser (#426). Both ride proxy.ts's redirect preservation, so a
+// signed-out reader arrives here after authenticating.
 export default async function FilesPage({ searchParams }: FilesPageProps) {
-    const { file } = await searchParams;
+    const { file, request } = await searchParams;
 
     return (
         <div className="mx-auto max-w-6xl space-y-6">
@@ -17,6 +21,7 @@ export default async function FilesPage({ searchParams }: FilesPageProps) {
                     Browse and manage your archived files
                 </p>
             </div>
+            {request && <RetrievalDownloads requestId={request} />}
             <FileBrowser focusFileId={file} />
         </div>
     );

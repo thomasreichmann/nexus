@@ -25,6 +25,19 @@ export async function put(
 }
 
 /**
+ * A `Content-Disposition` that names the saved file, with backslashes and
+ * quotes escaped so a filename can't break out of the quoted string.
+ *
+ * Exported because every bucket the app presigns reads from needs the same
+ * sanitisation, and a second copy is a second place to forget it (#426).
+ */
+export function contentDisposition(filename?: string): string | undefined {
+    if (!filename) return undefined;
+    const escaped = filename.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return `attachment; filename="${escaped}"`;
+}
+
+/**
  * Generate a presigned URL for downloading an object
  * @param key - S3 object key
  * @param options - Optional expiration and download filename
@@ -34,15 +47,10 @@ export async function get(
     key: string,
     options?: GetPresignOptions
 ): Promise<string> {
-    // Sanitize filename for Content-Disposition header (escape backslashes and quotes)
-    const disposition = options?.filename
-        ? `attachment; filename="${options.filename.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
-        : undefined;
-
     const command = new GetObjectCommand({
         Bucket: bucket,
         Key: key,
-        ResponseContentDisposition: disposition,
+        ResponseContentDisposition: contentDisposition(options?.filename),
     });
     return getSignedUrl(client, command, {
         expiresIn: options?.expiresIn ?? 3600,

@@ -1,5 +1,6 @@
 import { createDb, type DB } from '@nexus/db';
 import { createJobRepo, type SqsMessageBody } from '@nexus/db/repo/jobs';
+import { flushWorkerAnalytics } from './analytics';
 import { pollRetrievals } from './pollRetrievals';
 import { getHandler } from './registry';
 import type { SQSEvent } from 'aws-lambda';
@@ -77,13 +78,21 @@ export type WorkerEvent = SQSEvent | ScheduledEvent;
  * concurrency — is #385's, not this one's.
  */
 export async function handler(event: WorkerEvent): Promise<void> {
-    if (!isSqsEvent(event)) {
-        const summary = await pollRetrievals(getDb());
-        console.log('Retrieval poll complete:', JSON.stringify(summary));
-        return;
-    }
+    // `finally`, so a failing record still flushes: the events captured before
+    // it threw are as real as the ones on the happy path, and Lambda freezes
+    // the container either way. See flushWorkerAnalytics for why the batch
+    // doesn't drain on its own.
+    try {
+        if (!isSqsEvent(event)) {
+            const summary = await pollRetrievals(getDb());
+            console.log('Retrieval poll complete:', JSON.stringify(summary));
+            return;
+        }
 
-    for (const record of event.Records) {
-        await processRecord(getDb(), record);
+        for (const record of event.Records) {
+            await processRecord(getDb(), record);
+        }
+    } finally {
+        await flushWorkerAnalytics();
     }
 }

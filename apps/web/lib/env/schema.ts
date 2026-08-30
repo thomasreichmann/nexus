@@ -13,6 +13,12 @@ export const serverSchema = z.object({
     // this code landing and `terraform apply` creating the bucket — unset
     // degrades thumbnails to icon fallbacks (bulk presign returns no URLs).
     S3_DERIVED_BUCKET: z.string().min(1).optional(),
+    // Retrieval-artifacts (zip) bucket, #426. Optional for the same rollout
+    // reason as S3_DERIVED_BUCKET, and with the same consequence when unset:
+    // the download surface degrades rather than throwing, gated on
+    // `s3.artifacts.isConfigured()`. Note the app can only *read* this bucket —
+    // the zip worker is its sole writer.
+    S3_RETRIEVAL_ARTIFACTS_BUCKET: z.string().min(1).optional(),
     SQS_QUEUE_URL: z.string().url(),
     // Zip-build queue (#424). Optional for the same reason as
     // S3_DERIVED_BUCKET: deploys must not break between this code landing and
