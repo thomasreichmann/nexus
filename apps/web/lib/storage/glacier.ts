@@ -1,36 +1,12 @@
-import { RestoreObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { interpretObjectState } from '@nexus/db/objectState';
 import { client, bucket } from './client';
-import { DEFAULT_RESTORE_DAYS_TO_KEEP } from './types';
-import type { RestoreTier, ObjectState } from './types';
+import type { ObjectState } from './types';
 
-const tierMapping: Record<RestoreTier, 'Expedited' | 'Standard' | 'Bulk'> = {
-    expedited: 'Expedited',
-    standard: 'Standard',
-    bulk: 'Bulk',
-};
-
-/**
- * Start a restore operation for an object in Glacier Deep Archive
- * @param key - S3 object key
- * @param tier - Restore speed: 'expedited' (1-5min), 'standard' (3-5h), or 'bulk' (5-12h)
- * @param daysToKeep - Days to keep the restored copy accessible (default: 7)
- */
-export async function restore(
-    key: string,
-    tier: RestoreTier,
-    daysToKeep = DEFAULT_RESTORE_DAYS_TO_KEEP
-): Promise<void> {
-    const command = new RestoreObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        RestoreRequest: {
-            Days: daysToKeep,
-            GlacierJobParameters: { Tier: tierMapping[tier] },
-        },
-    });
-    await client.send(command);
-}
+// No `restore` here: `RestoreObject` is the worker's to issue (#423). The app
+// decides *that* a restore happens — it writes the rows and publishes the job —
+// and the `initiate-restore` handler is the single place that tells AWS. A
+// wrapper on this side would be an unused second way to start one.
 
 /**
  * Ask S3 what an object can do right now — one HeadObject, both answers.

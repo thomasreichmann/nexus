@@ -33,9 +33,6 @@ const downloadUrl = await s3.presigned.get('user/123/file.pdf', {
     filename: 'document.pdf',
 });
 
-// Start a Glacier restore
-await s3.glacier.restore('user/123/archive.zip', 'standard');
-
 // Ask S3 what the object can do right now
 const state = await s3.glacier.getObjectState('user/123/archive.zip');
 if (isReadable(state)) {
@@ -109,28 +106,23 @@ if (s3.derived.isConfigured()) {
 
 ### Glacier Operations
 
-#### `s3.glacier.restore(key, tier, daysToKeep?)`
+#### There is no `s3.glacier.restore` here
 
-Start a restore operation for an object in Glacier Deep Archive.
+`RestoreObject` is issued by the worker's `initiate-restore` handler, never
+from the app (#423). The app decides _that_ a restore happens — it writes the
+retrieval rows and publishes the job — and one place tells AWS. A 10,000-file
+request is two S3 round trips per file, which is not something an HTTP handler
+can wait for, and a second wrapper on this side would be a second way to start
+a restore that nothing reconciles.
 
-| Parameter    | Type          | Default | Description                       |
-| ------------ | ------------- | ------- | --------------------------------- |
-| `key`        | `string`      | -       | S3 object key                     |
-| `tier`       | `RestoreTier` | -       | Restore speed (see table below)   |
-| `daysToKeep` | `number`      | 7       | Days to keep restored copy active |
+The tier a restore runs at is `DEFAULT_RESTORE_TIER` (`@nexus/db/objectState`)
+unless the caller names one:
 
-**Restore Tiers:**
-
-| Tier        | Time     | Cost     | Use Case              |
-| ----------- | -------- | -------- | --------------------- |
-| `expedited` | 1-5 min  | Highest  | Urgent access         |
-| `standard`  | 3-5 hrs  | Moderate | Normal retrieval      |
-| `bulk`      | 5-12 hrs | Lowest   | Large batch retrieval |
-
-```typescript
-// Standard restore, keep for 14 days
-await s3.glacier.restore('archives/2024.zip', 'standard', 14);
-```
+| Tier        | Deep Archive | Cost       | Use case                      |
+| ----------- | ------------ | ---------- | ----------------------------- |
+| `expedited` | unavailable  | Highest    | Glacier Flexible only         |
+| `standard`  | 12-48 hrs    | $0.02/GB   | Upsell candidate, not default |
+| `bulk`      | 48 hrs       | $0.0025/GB | **The default** (#406)        |
 
 #### `s3.glacier.getObjectState(key)`
 
@@ -164,7 +156,7 @@ switch (state.availability) {
         console.log('Readable as-is — no restore needed or possible');
         break;
     case 'archived':
-        console.log('Cold; call s3.glacier.restore() to start a retrieval');
+        console.log('Cold; a retrieval request is what thaws it');
         break;
     case 'restoring':
         console.log('Restore underway, check back later');

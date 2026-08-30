@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { RESTORE_TIERS } from '@nexus/db/schema';
+import { DEFAULT_RESTORE_TIER, RESTORE_TIERS } from '@nexus/db/schema';
 import { createFileRepo } from '@nexus/db/repo/files';
 import { fileService } from '@/server/services/files';
 import { retrievalService } from '@/server/services/retrieval';
@@ -158,7 +158,7 @@ export const filesRouter = router({
         .input(
             z.object({
                 fileId: z.string().uuid(),
-                tier: z.enum(RESTORE_TIERS).default('standard'),
+                tier: z.enum(RESTORE_TIERS).default(DEFAULT_RESTORE_TIER),
             })
         )
         .mutation(({ ctx, input }) => {
@@ -170,11 +170,17 @@ export const filesRouter = router({
             );
         }),
 
+    // The cap is shoot-to-full-archive scale, not the old 100 (#423). A wedding
+    // re-delivery is 500-1,500 files and the disaster-recovery case #406 is
+    // built around is a whole library — the ICP reference is 8,934. It survives
+    // the raise because the request path is now a fixed handful of statements
+    // and the S3 fan-out happens in a worker job, so the cost of a big request
+    // is the job's, not the HTTP handler's.
     requestBulkRetrieval: protectedProcedure
         .input(
             z.object({
-                fileIds: z.array(z.string().uuid()).min(1).max(100),
-                tier: z.enum(RESTORE_TIERS).default('standard'),
+                fileIds: z.array(z.string().uuid()).min(1).max(10000),
+                tier: z.enum(RESTORE_TIERS).default(DEFAULT_RESTORE_TIER),
             })
         )
         .mutation(({ ctx, input }) => {
@@ -190,7 +196,7 @@ export const filesRouter = router({
         .input(
             z.object({
                 batchId: z.string().uuid(),
-                tier: z.enum(RESTORE_TIERS).default('standard'),
+                tier: z.enum(RESTORE_TIERS).default(DEFAULT_RESTORE_TIER),
             })
         )
         .mutation(({ ctx, input }) => {

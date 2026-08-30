@@ -10,6 +10,7 @@ const workspaces = [
     { name: '@nexus/web', dir: 'apps/web' },
     { name: '@nexus/worker', dir: 'apps/worker' },
     { name: '@nexus/analytics', dir: 'packages/analytics' },
+    { name: '@nexus/async', dir: 'packages/async' },
     { name: '@nexus/db', dir: 'packages/db' },
     { name: '@nexus/email', dir: 'packages/email' },
     { name: 'trpc-devtools', dir: 'packages/trpc-devtools' },

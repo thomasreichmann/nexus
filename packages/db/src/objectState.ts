@@ -37,6 +37,17 @@ export const RESTORE_TIERS = ['standard', 'bulk', 'expedited'] as const;
 export type RestoreTier = (typeof RESTORE_TIERS)[number];
 
 /**
+ * The tier a restore runs at unless something asks for another one (#406/#423).
+ *
+ * Bulk, not Standard: the pricing model always costed retrieval at Bulk's
+ * $0.0025/GB, and the all-Standard behavior this replaced was an unrevisited
+ * zod default at 8x that price, never a decision. It is a constant rather than
+ * three literals because "every path defaults to bulk" is the acceptance
+ * criterion — a fourth entry point that hardcodes a tier is exactly the bug.
+ */
+export const DEFAULT_RESTORE_TIER: RestoreTier = 'bulk';
+
+/**
  * Days a restored Glacier copy stays accessible. Also the length of the
  * synthetic download window for an object that was already warm, which skips
  * S3 restore entirely — keep the two in lockstep so both present the same

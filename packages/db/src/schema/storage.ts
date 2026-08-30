@@ -9,7 +9,7 @@ import {
     index,
     uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { RESTORE_TIERS } from '../objectState';
+import { DEFAULT_RESTORE_TIER, RESTORE_TIERS } from '../objectState';
 import { user } from './auth';
 import { timestamps } from './helpers';
 
@@ -19,6 +19,7 @@ import { timestamps } from './helpers';
 // `@nexus/db/schema` consumers still find them where they always were.
 export {
     RESTORE_TIERS,
+    DEFAULT_RESTORE_TIER,
     DEFAULT_RESTORE_DAYS_TO_KEEP,
     type RestoreTier,
 } from '../objectState';
@@ -155,7 +156,7 @@ export const retrievals = pgTable(
             onDelete: 'set null',
         }),
         status: retrievalStatusEnum('status').notNull().default('pending'),
-        tier: retrievalTierEnum('tier').notNull().default('standard'),
+        tier: retrievalTierEnum('tier').notNull().default(DEFAULT_RESTORE_TIER),
         initiatedAt: timestamp('initiated_at'), // When AWS restore was started
         readyAt: timestamp('ready_at'), // When file became available
         expiresAt: timestamp('expires_at'), // When temporary restore expires
@@ -203,7 +204,12 @@ export const retrievalRequests = pgTable(
         // The tier every retrieval in the request was initiated at. Stored on
         // the request because it is a property of what the user asked for, not
         // of an individual file.
-        tier: retrievalTierEnum('tier').notNull().default('standard'),
+        //
+        // Bulk by default (#423): the pricing model always assumed Bulk
+        // ($0.0025/GB vs Standard's $0.02/GB) and the all-Standard behavior it
+        // replaced was an unrevisited zod default, not a decision. Standard is
+        // the upsell candidate, not the floor.
+        tier: retrievalTierEnum('tier').notNull().default(DEFAULT_RESTORE_TIER),
         ...timestamps(),
     },
     (table) => [

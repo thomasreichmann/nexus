@@ -11,7 +11,7 @@ import { useTRPC } from '@/lib/trpc/client';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
 import { toastContext } from '@/lib/trpc/error-link';
-import { toastRetrievalResult } from './retrievalFeedback';
+import { toastRetrievalRequested } from './retrievalFeedback';
 import { deriveStatus } from './status';
 import type { FileBatchGroup, FileWithRetrieval } from '@nexus/db/repo/files';
 
@@ -116,7 +116,7 @@ function BatchRestoreSlot({ batchId, files }: BatchRestoreSlotProps) {
             }),
             onSuccess(result) {
                 invalidateFileList();
-                toastRetrievalResult(result, 'Batch retrieval submitted');
+                toastRetrievalRequested(result.fileCount);
             },
         })
     );
@@ -166,7 +166,10 @@ function BatchRestoreSlot({ batchId, files }: BatchRestoreSlotProps) {
                 onOpenChange={setIsDialogOpen}
                 files={eligibleFiles}
                 fileCount={eligibleFiles.length}
-                onConfirm={() => mutation.mutate({ batchId, tier: 'standard' })}
+                // No tier: the router's default is the one place the restore
+                // tier is decided (#423), and a hardcoded one here is how this
+                // path quietly stayed on Standard at 8x the price.
+                onConfirm={() => mutation.mutate({ batchId })}
             />
         </>
     );
