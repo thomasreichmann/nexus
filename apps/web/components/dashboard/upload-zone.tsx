@@ -544,7 +544,15 @@ export function UploadZone() {
                 onOpenChange={(open) => {
                     if (!open) cancelNavigation();
                 }}
-                onConfirm={confirmNavigation}
+                onConfirm={() => {
+                    // Leaving unmounts the engine either way; clearing first
+                    // releases the server rows the wave already minted —
+                    // single-part rows would otherwise strand in `uploading`
+                    // (the Event Health check's stuck-uploads leg) — while
+                    // preserving multipart resume state, same as Clear all.
+                    clearFiles();
+                    confirmNavigation();
+                }}
             />
         </div>
     );

@@ -396,7 +396,7 @@ export const USE_CASES: UseCaseEntry[] = [
     },
     {
         id: 'upload-nav-guard',
-        title: 'Navigating away mid-wave asks for confirmation; idle page navigates freely',
+        title: 'Navigating away mid-wave asks for confirmation; confirmed leave strands no uploading row',
         area: 'upload',
         routes: ['/dashboard/upload'],
     },
