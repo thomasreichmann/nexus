@@ -103,7 +103,12 @@ resource "aws_iam_user_policy" "deploy_worker_code" {
         "lambda:GetFunction",
         "lambda:GetFunctionConfiguration",
       ]
-      Resource = aws_lambda_function.worker.arn
+      # Both functions: deploy.sh ships the same bundle to the general worker
+      # and the zip worker (#424).
+      Resource = [
+        aws_lambda_function.worker.arn,
+        aws_lambda_function.zip_worker.arn,
+      ]
     }]
   })
 }
