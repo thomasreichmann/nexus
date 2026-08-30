@@ -395,6 +395,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-nav-guard',
+        title: 'Navigating away mid-wave asks for confirmation; confirmed leave strands no uploading row',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-preflight-quota',
         title: 'Selection exceeding available storage warns before upload and blocks past the soft cap',
         area: 'upload',
