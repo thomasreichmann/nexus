@@ -49,6 +49,17 @@ export interface ServerAnalytics {
         event: PostHogEventName,
         properties?: Record<string, unknown>
     ): void;
+    /**
+     * Drain the batch now, for a runtime with no `waitUntil` to hold it open.
+     *
+     * A Lambda freezes the instant its handler resolves, so an event captured
+     * as the last thing a handler does never reaches the wire — which is
+     * exactly the shape of the retrieval-ready capture (#426). Await this at
+     * the handler boundary. Resolves rather than rejects on failure, same
+     * never-fail-real-work contract as `captureEvent`, and is a no-op when
+     * analytics is disabled or no client was ever constructed.
+     */
+    flush(): Promise<void>;
 }
 
 /**
@@ -109,6 +120,19 @@ export function createServerAnalytics(
                 // nothing at all in the worker), and both collect stdout the
                 // same way.
                 console.warn(`PostHog capture failed for "${event}":`, error);
+            }
+        },
+
+        async flush() {
+            // `client`, not `getClient()`: nothing to drain if capture never
+            // ran, and constructing a client here just to flush it would open
+            // a connection on every handler exit.
+            if (!client) return;
+
+            try {
+                await client.flush();
+            } catch (error) {
+                console.warn('PostHog flush failed:', error);
             }
         },
     };

@@ -11,11 +11,19 @@ import * as schema from '@nexus/db/schema';
 const hoisted = vi.hoisted(() => ({
     createZipStream: vi.fn(),
     uploadStreamMultipart: vi.fn(),
+    sendRetrievalRequestReadyEmail: vi.fn(),
+    captureWorkerEvent: vi.fn(),
 }));
 
 vi.mock('../zipStream', () => ({ createZipStream: hoisted.createZipStream }));
 vi.mock('../multipartUpload', () => ({
     uploadStreamMultipart: hoisted.uploadStreamMultipart,
+}));
+vi.mock('../email', () => ({
+    sendRetrievalRequestReadyEmail: hoisted.sendRetrievalRequestReadyEmail,
+}));
+vi.mock('../analytics', () => ({
+    captureWorkerEvent: hoisted.captureWorkerEvent,
 }));
 
 import { buildRetrievalZip } from './buildRetrievalZip';
@@ -164,5 +172,118 @@ describe('buildRetrievalZip', () => {
         expect(hoisted.uploadStreamMultipart.mock.calls[0][1]).toContain(
             'nexus-part-4.zip'
         );
+    });
+
+    // The winner of the completed_at election is the only job that announces,
+    // which is what makes it one email and one event per request (#426).
+    describe('announcing a completed request', () => {
+        const BUILT_AT = new Date('2026-08-30T10:00:00Z');
+        const COMPLETED_REQUEST = {
+            id: REQUEST_ID,
+            userId: 'user-1',
+            tier: 'bulk',
+            completedAt: new Date('2026-08-30T10:05:00Z'),
+        };
+
+        function givenRequestCompletes() {
+            mocks.retrievalArtifacts.findFirst.mockResolvedValue(artifact());
+            // claimArtifact, completeArtifact, then the completion election.
+            givenUpdatesReturn(
+                [artifact({ status: 'building' })],
+                [artifact({ status: 'ready' })],
+                [COMPLETED_REQUEST]
+            );
+            mocks.retrievalArtifacts.findMany.mockResolvedValue([
+                artifact({
+                    sizeBytes: 3_000,
+                    startedAt: new Date('2026-08-30T09:58:00Z'),
+                    completedAt: BUILT_AT,
+                }),
+                artifact({
+                    id: 'artifact-2',
+                    position: 1,
+                    sizeBytes: 1_000,
+                    startedAt: new Date('2026-08-30T09:59:00Z'),
+                    completedAt: new Date('2026-08-30T10:01:00Z'),
+                }),
+            ]);
+            // findTimings' aggregate row.
+            mocks.leftJoinRows.mockResolvedValue([
+                {
+                    fileCount: 12,
+                    initiatedAt: new Date('2026-08-29T10:00:00Z'),
+                    readyAt: new Date('2026-08-30T09:00:00Z'),
+                },
+            ]);
+        }
+
+        it('sends one email with the artifacts own expiry window', async () => {
+            givenRequestCompletes();
+
+            await run();
+
+            expect(
+                hoisted.sendRetrievalRequestReadyEmail
+            ).toHaveBeenCalledTimes(1);
+            const [, opts] =
+                hoisted.sendRetrievalRequestReadyEmail.mock.calls[0];
+            expect(opts).toMatchObject({
+                userId: 'user-1',
+                requestId: REQUEST_ID,
+                fileCount: 12,
+                partCount: 2,
+                totalBytes: 4_000,
+            });
+            // Seven days from the EARLIEST artifact — the reader needs every
+            // part, so the first one to lapse ends the window.
+            expect(opts.expiresAt).toEqual(new Date('2026-09-06T10:00:00Z'));
+        });
+
+        it('captures the ready event with the thaw and build spans apart', async () => {
+            givenRequestCompletes();
+
+            await run();
+
+            expect(hoisted.captureWorkerEvent).toHaveBeenCalledWith(
+                'user-1',
+                'retrieval_ready',
+                expect.objectContaining({
+                    requestId: REQUEST_ID,
+                    tier: 'bulk',
+                    fileCount: 12,
+                    partCount: 2,
+                    totalBytes: 4_000,
+                    thawSeconds: 82_800,
+                    buildSeconds: 180,
+                })
+            );
+        });
+
+        // The completion write already landed; a Resend or PostHog outage must
+        // not re-queue a build that succeeded.
+        it('swallows an announcement failure', async () => {
+            givenRequestCompletes();
+            hoisted.sendRetrievalRequestReadyEmail.mockRejectedValue(
+                new Error('Resend is down')
+            );
+
+            await expect(run()).resolves.toBeUndefined();
+        });
+
+        it('announces nothing when another job won the election', async () => {
+            mocks.retrievalArtifacts.findFirst.mockResolvedValue(artifact());
+            givenUpdatesReturn(
+                [artifact({ status: 'building' })],
+                [artifact({ status: 'ready' })],
+                [] // no row came back: a sibling artifact is still building
+            );
+
+            await run();
+
+            expect(
+                hoisted.sendRetrievalRequestReadyEmail
+            ).not.toHaveBeenCalled();
+            expect(hoisted.captureWorkerEvent).not.toHaveBeenCalled();
+        });
     });
 });

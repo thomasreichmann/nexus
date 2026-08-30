@@ -99,6 +99,49 @@ export const ZIP_DELIVERY_MIN_FILES = 2;
 export const ZIP_BUILD_RESTORE_DAYS = 2;
 
 /**
+ * Days a built zip artifact stays downloadable (#426).
+ *
+ * Mirrors the `expire-retrieval-artifacts` lifecycle rule in
+ * `infra/terraform/s3.tf` — S3 owns the deletion, this constant only lets the
+ * UI and the ready-email quote the same date S3 will act on. Change one and
+ * you must change the other.
+ *
+ * This is the number the user experiences, and it is deliberately not
+ * `ZIP_BUILD_RESTORE_DAYS`: the thawed originals behind a zip lapse after two
+ * days while the zip itself lives seven, so a surface that reads the window off
+ * `retrievals.expiresAt` shows a still-downloadable request as expired.
+ *
+ * The clock starts when the artifact was written (`retrieval_artifacts
+ * .completed_at`), not at first download — S3 expiration is age-based.
+ */
+export const RETRIEVAL_ARTIFACT_RETENTION_DAYS = 7;
+
+/**
+ * When a built artifact stops being downloadable.
+ *
+ * Separate from `restoreWindowEnd` despite the identical arithmetic: that one
+ * answers "how long does a thawed S3 copy last", this one answers "how long
+ * does our own staged object last", and they are governed by different rules
+ * that are free to diverge.
+ */
+export function artifactWindowEnd(completedAt: Date): Date {
+    return new Date(
+        completedAt.getTime() +
+            RETRIEVAL_ARTIFACT_RETENTION_DAYS * 24 * 60 * 60 * 1000
+    );
+}
+
+/**
+ * The build time at which an artifact stops being downloadable — the same
+ * window read backwards, for the query that has to select the live ones.
+ */
+export function artifactWindowStart(now: Date = new Date()): Date {
+    return new Date(
+        now.getTime() - RETRIEVAL_ARTIFACT_RETENTION_DAYS * 24 * 60 * 60 * 1000
+    );
+}
+
+/**
  * What an object can actually do right now, as S3 reports it.
  *
  * - `warm` — readable directly; no restore needed or possible.

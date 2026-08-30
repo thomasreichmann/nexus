@@ -219,6 +219,12 @@ export const USE_CASES: UseCaseEntry[] = [
         manual: 'Needs a real upload to move the usage number; exercised by the validate tier',
     },
     {
+        id: 'dashboard-ready-downloads',
+        title: 'Completed restores surface as ready downloads linking to their parts',
+        area: 'dashboard',
+        routes: ['/dashboard'],
+    },
+    {
         id: 'mobile-no-horizontal-overflow',
         title: 'Dashboard and files pages fit a mobile viewport with adversarial filenames (#311)',
         area: 'dashboard',
@@ -327,6 +333,24 @@ export const USE_CASES: UseCaseEntry[] = [
     {
         id: 'files-deep-link-focus',
         title: 'Deep-link ?file={id} highlights the target file (retrieval-ready email landing)',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
+        id: 'retrieval-request-downloads',
+        title: 'Deep-link ?request={id} lists the zip parts of a completed restore with download links',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
+        id: 'retrieval-artifact-expiry-window',
+        title: "A ready request shows the artifact's 7-day window, not the thawed originals' 2-day one",
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
+        id: 'retrieval-request-not-deliverable',
+        title: 'Deep-link ?request={id} explains a still-building or expired restore instead of erroring',
         area: 'files',
         routes: ['/dashboard/files'],
     },
@@ -766,6 +790,8 @@ export const USE_CASES: UseCaseEntry[] = [
      * page encoding one fact).
      * ---------------------------------------------------------------- */
 
-    /* Restore completion has no browser surface: the worker's poll observes it
-     * (#416), covered by apps/worker/src/pollRetrievals.test.ts. */
+    /* Restore completion itself is still observed by the worker's poll (#416,
+     * covered by apps/worker/src/pollRetrievals.test.ts) and its one email is
+     * sent from the Lambda, out of reach of a browser. What the browser now
+     * does have is the delivery — see the retrieval-* entries above. */
 ];

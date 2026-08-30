@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, not, sql, type SQL } from 'drizzle-orm';
-import { ZIP_DELIVERY_MIN_FILES } from '../objectState';
+import { artifactWindowStart, ZIP_DELIVERY_MIN_FILES } from '../objectState';
 import * as schema from '../schema';
 import { createRepository } from './create';
 import { readyAndDownloadable } from './retrievals';
@@ -282,6 +282,188 @@ function findArtifactById(
 }
 
 /**
+ * User-scoped artifact lookup, for the download path.
+ *
+ * The unscoped `findArtifactById` above is the worker's; anything reached from
+ * a request path has to scope by owner, and an artifact carries no `userId` of
+ * its own — it inherits one through its request. A join rather than a second
+ * round trip so another user's artifact is indistinguishable from a missing
+ * one at the only layer that could leak the difference.
+ */
+async function findArtifactByUserAndId(
+    db: DB,
+    userId: string,
+    artifactId: string
+): Promise<RetrievalArtifact | undefined> {
+    const [row] = await db
+        .select({ artifact: schema.retrievalArtifacts })
+        .from(schema.retrievalArtifacts)
+        .innerJoin(
+            schema.retrievalRequests,
+            eq(schema.retrievalArtifacts.requestId, schema.retrievalRequests.id)
+        )
+        .where(
+            and(
+                eq(schema.retrievalArtifacts.id, artifactId),
+                eq(schema.retrievalRequests.userId, userId)
+            )
+        )
+        .limit(1);
+    return row?.artifact;
+}
+
+/**
+ * Read a timestamp that came back through a raw `sql` fragment.
+ *
+ * Aggregates like `min(completed_at)` have no drizzle column behind them, so
+ * the driver's value arrives unmapped — and drizzle configures postgres-js to
+ * hand date types over as raw strings precisely because its column mappers do
+ * the conversion. Every column here is `timestamp without time zone` holding
+ * UTC, so the offset has to be reattached or `new Date` would read it as local
+ * time and silently shift the download window by the server's offset. This is
+ * `PgTimestamp.mapFromDriverValue`, applied by hand.
+ */
+function toDate(value: unknown): Date | null {
+    if (value === null || value === undefined) return null;
+    if (value instanceof Date) return value;
+    return new Date(`${String(value)}+0000`);
+}
+
+export interface RetrievalRequestTimings {
+    /** Items the user asked for — the count the request is measured against. */
+    fileCount: number;
+    /** When the first of its restores was asked of S3. */
+    initiatedAt: Date | null;
+    /** When the last of its restores finished thawing. */
+    readyAt: Date | null;
+}
+
+/**
+ * The thaw window of a request, as one row.
+ *
+ * `readyAt - initiatedAt` is the number #406 committed to tuning the poll's
+ * tier-aware start horizons from, and it is recorded per retrieval row — but a
+ * 1,500-file request is not 1,500 data points worth capturing, and the horizon
+ * is a property of the request anyway. Widest span, not an average: the request
+ * became ready when its slowest file did.
+ *
+ * Nulls are possible and honest — a request whose rows were all adopted warm
+ * never had a restore initiated.
+ */
+async function findTimings(
+    db: DB,
+    requestId: string
+): Promise<RetrievalRequestTimings> {
+    // Ungrouped aggregate: exactly one row, zeros for an empty request. Same
+    // shape as findReadiness, and left-joined for the same reason — an item
+    // whose restore failed still counts as something the user asked for.
+    const [row] = await db
+        .select({
+            fileCount: sql<number>`count(*)::int`,
+            initiatedAt: sql<unknown>`min(${schema.retrievals.initiatedAt})`,
+            readyAt: sql<unknown>`max(${schema.retrievals.readyAt})`,
+        })
+        .from(schema.retrievalRequestItems)
+        .leftJoin(
+            schema.retrievals,
+            eq(schema.retrievalRequestItems.retrievalId, schema.retrievals.id)
+        )
+        .where(eq(schema.retrievalRequestItems.requestId, requestId));
+
+    return {
+        fileCount: row!.fileCount,
+        initiatedAt: toDate(row!.initiatedAt),
+        readyAt: toDate(row!.readyAt),
+    };
+}
+
+export interface DownloadableRequest {
+    id: string;
+    tier: RetrievalRequest['tier'];
+    completedAt: Date;
+    /** Items the user asked for. */
+    fileCount: number;
+    /** Zip archives the request was partitioned into. */
+    partCount: number;
+    totalBytes: number;
+    /**
+     * When the first of its artifacts was written — the start of the download
+     * window, since the reader needs every part and the earliest one expires
+     * first.
+     */
+    builtAt: Date;
+}
+
+/**
+ * A user's requests that can be downloaded right now (#426).
+ *
+ * Driven by `retrieval_artifacts` and `retrieval_requests.completed_at`, never
+ * joined through `retrievals`: those rows carry `ZIP_BUILD_RESTORE_DAYS` and
+ * lapse on day two while the zip they fed lives to day seven, so a surface
+ * built on them shows a still-downloadable request as expired. The artifacts'
+ * own clock is the only correct one here.
+ *
+ * The cutoff mirrors the `expire-retrieval-artifacts` lifecycle rule rather
+ * than observing it: S3 deletes on its own schedule and tells nobody, so this
+ * predicate is what stops us offering a link to bytes that are already gone.
+ */
+async function findDownloadableByUser(
+    db: DB,
+    userId: string,
+    requestId?: string
+): Promise<DownloadableRequest[]> {
+    const oldestDownloadableBuild = artifactWindowStart();
+
+    const rows = await db
+        .select({
+            id: schema.retrievalRequests.id,
+            tier: schema.retrievalRequests.tier,
+            // The plain column, so drizzle's own mapper reads it; the WHERE
+            // below is what makes the non-null assertion true.
+            completedAt: schema.retrievalRequests.completedAt,
+            fileCount: sql<number>`(
+                select count(*) from ${schema.retrievalRequestItems}
+                where ${schema.retrievalRequestItems.requestId} = ${schema.retrievalRequests.id}
+            )::int`,
+            partCount: sql<number>`count(${schema.retrievalArtifacts.id})::int`,
+            // coalesce: size_bytes is nullable on a row that never finished,
+            // and one null would poison the whole sum.
+            totalBytes: sql<number>`coalesce(sum(${schema.retrievalArtifacts.sizeBytes}), 0)::bigint`,
+            builtAt: sql<unknown>`min(${schema.retrievalArtifacts.completedAt})`,
+        })
+        .from(schema.retrievalRequests)
+        .innerJoin(
+            schema.retrievalArtifacts,
+            eq(schema.retrievalArtifacts.requestId, schema.retrievalRequests.id)
+        )
+        .where(
+            and(
+                eq(schema.retrievalRequests.userId, userId),
+                not(isNull(schema.retrievalRequests.completedAt)),
+                requestId
+                    ? eq(schema.retrievalRequests.id, requestId)
+                    : undefined
+            )
+        )
+        .groupBy(schema.retrievalRequests.id)
+        .having(
+            // `::timestamp` on an ISO string, not a bound Date: inside a raw
+            // `sql` fragment drizzle has no column to take a mapper from, so
+            // the driver is handed a Date it cannot serialise. The column is
+            // `timestamp without time zone` holding UTC, which is exactly what
+            // casting a UTC ISO string yields.
+            sql`min(${schema.retrievalArtifacts.completedAt}) > ${oldestDownloadableBuild.toISOString()}::timestamp`
+        )
+        .orderBy(sql`min(${schema.retrievalArtifacts.completedAt}) desc`);
+
+    return rows.map((row) => ({
+        ...row,
+        completedAt: row.completedAt!,
+        builtAt: toDate(row.builtAt)!,
+    }));
+}
+
+/**
  * Write a request's partition, skipping chunks that already exist.
  *
  * ON CONFLICT DO NOTHING against `retrieval_artifacts_request_id_position_idx`,
@@ -454,6 +636,9 @@ export const createRetrievalRequestRepo = createRepository({
     findFiles,
     findArtifactFiles,
     findArtifactById,
+    findArtifactByUserAndId,
+    findTimings,
+    findDownloadableByUser,
     insertArtifacts,
     assignItemsToArtifact,
     findArtifacts,

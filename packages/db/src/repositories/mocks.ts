@@ -18,7 +18,32 @@ export function createMockDb() {
     // explode in tests that don't care about the returned row. Tests that need a
     // specific value override with `mocks.returning.mockResolvedValue([row])`.
     const returning: AnyMock = vi.fn().mockResolvedValue([]);
-    const groupBy: AnyMock = vi.fn();
+    // A grouped aggregate can stop at the GROUP BY or carry on through
+    // HAVING/ORDER BY, so `groupBy` resolves to rows *and* carries the two
+    // continuations as properties — the same trick leftJoinWhere uses below.
+    // Override `mocks.groupByRows` for a chain with a HAVING or ORDER BY after
+    // it; `mocks.groupBy.mockResolvedValue(...)` still answers one that ends
+    // there.
+    const groupByRows: Mock<() => Promise<unknown[]>> = vi.fn(
+        async () => [] as unknown[]
+    );
+    const groupByOrderBy: AnyMock = vi.fn(() => groupByRows());
+    // Thenable rather than a real promise: `groupBy()` and `having()` are
+    // intermediate links as often as they are terminals, and calling
+    // `groupByRows()` eagerly to build a promise nobody awaits would consume a
+    // `mockResolvedValueOnce` meant for the end of the chain. Deferring into
+    // `then` means the row mock is called exactly once, by whoever awaits.
+    const groupByLink = (extra: Record<string, AnyMock>) => ({
+        ...extra,
+        then: (...args: Parameters<Promise<unknown[]>['then']>) =>
+            groupByRows().then(...args),
+    });
+    const having: AnyMock = vi.fn(() =>
+        groupByLink({ orderBy: groupByOrderBy })
+    );
+    const groupBy: AnyMock = vi.fn(() =>
+        groupByLink({ having, orderBy: groupByOrderBy })
+    );
     const orderBy: AnyMock = vi.fn();
     // `select().from().where().orderBy().limit()` — an unjoined scan whose
     // predicates are raw SQL (findBuildable). Its own terminal so it can't be
@@ -75,9 +100,14 @@ export function createMockDb() {
     const innerJoinOrderBy: AnyMock = vi.fn(() =>
         Object.assign(innerJoinOrderByRows(), { limit })
     );
+    // `.limit()` directly after the WHERE, with no ORDER BY, for a joined
+    // lookup of a single row (findArtifactByUserAndId). Same `mocks.limit`
+    // terminal as the ordered chain above — one innerJoin family, one place to
+    // stub the rows it returns.
     const innerJoinWhere: AnyMock = vi.fn(() => ({
         orderBy: innerJoinOrderBy,
         groupBy,
+        limit,
     }));
     const innerJoin: AnyMock = vi.fn(() => ({
         innerJoin,
@@ -166,6 +196,9 @@ export function createMockDb() {
             delete: deleteFn,
             returning,
             groupBy,
+            groupByRows,
+            groupByOrderBy,
+            having,
             orderBy,
             countInsertsInto,
             // Per-table query mocks (db.query.<table>.findFirst/findMany)

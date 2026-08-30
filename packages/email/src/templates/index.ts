@@ -15,3 +15,8 @@ export {
     retrievalReadySubject,
     type RetrievalReadyEmailProps,
 } from './retrieval-ready';
+export {
+    RetrievalRequestReadyEmail,
+    retrievalRequestReadySubject,
+    type RetrievalRequestReadyEmailProps,
+} from './retrieval-request-ready';

@@ -48,12 +48,11 @@ export function useFileActions(file: FileWithRetrieval) {
             trpc: toastContext({
                 errorMessage: 'Failed to request retrieval',
             }),
+            // No `retrieval_requested` capture here: the request path emits it
+            // server-side, where it fires exactly once per committed request
+            // (#426). Two emitters of one event name double every funnel step.
             onSuccess(result) {
                 invalidateFileList();
-                captureEvent(PostHogEvent.RetrievalRequested, {
-                    fileCount: 1,
-                    isProbablyCold: isProbablyCold(file),
-                });
                 toastRetrievalRequested(result.fileCount);
             },
         })

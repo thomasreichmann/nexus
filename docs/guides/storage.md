@@ -104,6 +104,34 @@ if (s3.derived.isConfigured()) {
 }
 ```
 
+### Retrieval Artifacts Bucket (restore zips)
+
+Presigned reads against the Standard-class artifacts bucket
+(`S3_RETRIEVAL_ARTIFACTS_BUCKET`), where the zip worker writes a completed
+restore's archives (#424/#426). Keys are **stored** on `retrieval_artifacts
+.s3_key`, not recomputed — a rebuilt artifact gets a new id and therefore a new
+key.
+
+Read-only, like `derived`: the worker is the sole writer, S3's lifecycle rule
+the sole deleter, and the app's IAM user is granted `s3:GetObject` and nothing
+else here (`infra/terraform/iam.tf`).
+
+#### `s3.artifacts.isConfigured()`
+
+`true` when `S3_RETRIEVAL_ARTIFACTS_BUCKET` is set. Optional (rollout
+ordering); callers must gate on this and hide the download surface.
+
+#### `s3.artifacts.get(key, options?)`
+
+| Option      | Type     | Default   | Description                        |
+| ----------- | -------- | --------- | ---------------------------------- |
+| `expiresIn` | `number` | 3600      | URL expiration in seconds (1 hour) |
+| `filename`  | `string` | undefined | Sets `Content-Disposition`         |
+
+Mint these on the click, never ahead of it: the link lives an hour while the
+archive behind it stays downloadable for `RETRIEVAL_ARTIFACT_RETENTION_DAYS`,
+which is why the ready email deep-links into the app instead of carrying a URL.
+
 ### Glacier Operations
 
 #### There is no `s3.glacier.restore` here

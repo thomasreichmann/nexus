@@ -44,6 +44,12 @@ const derivedMocks = {
         `${MOCK_HOST}/derived-${MOCK_BUCKET}/${key}`,
 };
 
+const artifactMocks = {
+    isConfigured: (): boolean => true,
+    get: async (key: string): Promise<string> =>
+        `${MOCK_HOST}/artifacts-${MOCK_BUCKET}/${key}`,
+};
+
 const glacierMocks = {
     // Defaults to warm: the cheap path, so a test that cares about cold
     // objects has to say so. Mirrors the real `ObjectState` shape — the old
@@ -85,6 +91,7 @@ const multipartMocks = {
 
 interface MockS3 {
     presigned: typeof presignedMocks;
+    artifacts: typeof artifactMocks;
     derived: typeof derivedMocks;
     glacier: typeof glacierMocks;
     objects: typeof objectsMocks;
@@ -114,6 +121,7 @@ interface MockS3 {
 export function createPresignedMocks(): MockS3 {
     return {
         presigned: presignedMocks,
+        artifacts: artifactMocks,
         derived: derivedMocks,
         glacier: glacierMocks,
         objects: objectsMocks,

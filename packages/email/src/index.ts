@@ -34,4 +34,5 @@ export type {
     InviteEmailProps,
     PasswordResetEmailProps,
     RetrievalReadyEmailProps,
+    RetrievalRequestReadyEmailProps,
 } from './templates';

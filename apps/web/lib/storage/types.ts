@@ -5,7 +5,10 @@
 export {
     DEFAULT_RESTORE_DAYS_TO_KEEP,
     ZIP_BUILD_RESTORE_DAYS,
+    RETRIEVAL_ARTIFACT_RETENTION_DAYS,
+    artifactWindowEnd,
     isDeliveredAsZip,
+    isProbablyCold,
     RESTORE_TIERS,
     type RestoreTier,
     type ObjectState,
