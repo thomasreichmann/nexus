@@ -11,6 +11,7 @@
         "check:verbose": "node scripts/check.mjs --verbose",
         "test:coverage": "turbo test:coverage && node scripts/coverage-summary.mjs",
         "coverage:open": "node scripts/coverage-summary.mjs --open",
+        "pr:size": "node scripts/pr-size.mjs",
         "test:e2e": "turbo test:e2e",
         "typecheck": "turbo typecheck",
         "env:pull": "vercel env pull apps/web/.env.local",

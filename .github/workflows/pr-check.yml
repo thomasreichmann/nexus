@@ -133,6 +133,9 @@ jobs:
                   script: |
                       const { execSync } = require('child_process');
                       const fs = require('fs');
+                      const upsertStickyComment = require(
+                        `${process.env.GITHUB_WORKSPACE}/.github/scripts/sticky-comment.cjs`
+                      );
 
                       const base = context.payload.pull_request.base.sha;
                       const head = context.payload.pull_request.head.sha;
@@ -142,22 +145,12 @@ jobs:
                       ).trim();
 
                       const MARKER = '<!-- migration-bot -->';
-                      const { data: comments } = await github.rest.issues.listComments({
-                        owner: context.repo.owner,
-                        repo: context.repo.repo,
-                        issue_number: context.issue.number,
-                      });
-                      const existing = comments.find(c => c.body.includes(MARKER));
 
                       if (!diff) {
-                        if (existing) {
-                          await github.rest.issues.deleteComment({
-                            owner: context.repo.owner,
-                            repo: context.repo.repo,
-                            comment_id: existing.id,
-                          });
-                          console.log('Removed stale migration-bot comment.');
-                        }
+                        const result = await upsertStickyComment({
+                          github, context, marker: MARKER, body: '',
+                        });
+                        console.log(`migration-bot comment: ${result}.`);
                         try {
                           await github.rest.issues.removeLabel({
                             owner: context.repo.owner,
@@ -179,7 +172,6 @@ jobs:
                       }).join('\n\n');
 
                       const body = [
-                        MARKER,
                         '## :warning: This PR contains DB migration(s)',
                         '',
                         'On merge, `post-merge.yml` applies these to the dev database, then to prod once the dev apply succeeds; the worker bundle deploys after each apply, and smoke tests run against dev. If any step fails, the workflow fails loudly.',
@@ -193,23 +185,10 @@ jobs:
                         '- [ ] If perf-only, justify with a query plan in the PR description',
                       ].join('\n');
 
-                      if (existing) {
-                        await github.rest.issues.updateComment({
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          comment_id: existing.id,
-                          body,
-                        });
-                        console.log('Updated existing migration-bot comment.');
-                      } else {
-                        await github.rest.issues.createComment({
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          issue_number: context.issue.number,
-                          body,
-                        });
-                        console.log('Posted migration-bot comment.');
-                      }
+                      const result = await upsertStickyComment({
+                        github, context, marker: MARKER, body,
+                      });
+                      console.log(`migration-bot comment: ${result}.`);
 
                       await github.rest.issues.addLabels({
                         owner: context.repo.owner,
@@ -218,3 +197,47 @@ jobs:
                         labels: ['has-migration'],
                       });
                       console.log('Added has-migration label.');
+
+    # GitHub's +/- headline counts generated files, so migration- or
+    # test-heavy PRs read several times their reviewable surface (#441).
+    # The headline can't be corrected, so publish the honest split beside it.
+    # Advisory only: this job must never fail a PR.
+    report-size:
+        name: Report reviewable size
+        runs-on: ubuntu-latest
+        # A cosmetic comment must never be the reason a PR shows red.
+        continue-on-error: true
+        permissions:
+            pull-requests: write
+            contents: read
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Post sticky reviewable-size comment
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      const { execSync } = require('child_process');
+                      const upsertStickyComment = require(
+                        `${process.env.GITHUB_WORKSPACE}/.github/scripts/sticky-comment.cjs`
+                      );
+
+                      const base = context.payload.pull_request.base.sha;
+                      const head = context.payload.pull_request.head.sha;
+
+                      // scripts/pr-size.mjs owns the bucket definitions and
+                      // renders the body; it prints nothing for a pure-logic
+                      // PR, where a breakdown would say nothing the headline
+                      // doesn't already say. Empty body = delete any stale one.
+                      const body = execSync(
+                        `node scripts/pr-size.mjs --markdown ${base} ${head}`,
+                        { encoding: 'utf8' }
+                      ).trim();
+
+                      const result = await upsertStickyComment({
+                        github, context, marker: '<!-- pr-size-bot -->', body,
+                      });
+                      console.log(`pr-size-bot comment: ${result}.`);
