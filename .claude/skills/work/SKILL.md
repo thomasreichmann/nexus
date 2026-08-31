@@ -22,7 +22,7 @@ Implement a GitHub issue: research, implement, review, commit, PR.
 1. **Spawn & summarize.** The issue is pre-fetched above — don't re-fetch it. (If the pre-fetch shows an error instead of an issue, run `gh issue view <n> --json number,title,body,labels` yourself before anything else.) In one block: spawn the `explore-issue` agent in the background with its full task — the issue body plus the report format from step 3 — and run `ToolSearch select:SendMessage` (needed for explorer follow-ups in step 3) and `git fetch origin main`. For a large issue — many acceptance criteria spanning layers (db/backend/frontend/infra) — spawn 2–3 explorers in that block instead, each scoped to a layer or criteria cluster (full issue body plus its slice); they run concurrently, so the longest slice governs. Single-component issues keep one explorer. Briefly summarize description, acceptance criteria, and out-of-scope.
 
 2. **Fill the research window.** The explorer takes minutes; use them:
-    - `git checkout -b <type>/<n>-<slug> origin/main` (type from the labels: feat/fix/refactor/docs/chore) — if the branch already exists, ask: resume it, rebase onto `origin/main`, or use a different name.
+    - `git checkout -b <type>/<n>-<slug> --no-track origin/main` (type from the labels: feat/fix/refactor/docs/chore) — if the branch already exists, ask: resume it, rebase onto `origin/main`, or use a different name. **`--no-track` matters:** without it, branching off a remote-tracking ref sets the new branch's upstream to `origin/main`, and a bare `git push` then dies with `fatal: The upstream branch of your current branch does not match the name of your current branch` — safe under the default `push.default=simple`, but confusing, and it becomes an actual push-to-`main` hazard if `push.default` is ever set to `upstream` or `matching`. With `--no-track` there is no upstream at all, so a bare `git push` just creates the correctly-named remote branch.
     - Right after branching, start `pnpm check` as a background task: it warms the fresh worktree's cold cache and proves the baseline green, so any later red is attributable to your change. If the explorer's report arrives before it finishes, wait for it before editing any file — a mid-run edit poisons the check.
     - Read `docs/ai/conventions.md`.
     - Read the files the issue body explicitly cites — only those. Broader reading duplicates the explorer's job and bloats context the evidence pack exists to save.
@@ -42,7 +42,7 @@ Implement a GitHub issue: research, implement, review, commit, PR.
 
 6. **Self-review (never skip).** Invoke the `/self-review` skill with the issue number so `code-quality-review` gets the acceptance criteria. Skipped findings get noted in the PR.
 
-7. **Commit & push.** Invoke the `/commit` skill (runs on a cheap model in a forked context). Message format: `<type>: <description> (#<n>)`. Stage only related files.
+7. **Commit & push.** Invoke the `/commit` skill (runs on a cheap model in a forked context). Message format: `<type>: <description> (#<n>)`. Stage only related files, and push with `git push -u origin <branch>` — name the branch explicitly, never rely on a configured upstream.
 
 8. **PR.** `gh pr create` with body:
 
