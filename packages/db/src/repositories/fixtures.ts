@@ -209,7 +209,6 @@ export function createRetrievalFixture(
         id: TEST_RETRIEVAL_ID,
         fileId: TEST_FILE_ID,
         userId: TEST_USER_ID,
-        batchId: null,
         status: 'pending',
         tier: 'standard',
         initiatedAt: null,

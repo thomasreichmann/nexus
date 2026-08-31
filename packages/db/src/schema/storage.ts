@@ -62,7 +62,7 @@ export const thumbnailStatusEnum = pgEnum('thumbnail_status', [
 
 // Groups files uploaded together in a single session. The natural unit of
 // work for photographers is "a shoot" — one wedding/event = one batch. Batch
-// FK is nullable on files/retrievals so legacy rows (pre-batch) keep working.
+// FK is nullable on files so legacy rows (pre-batch) keep working.
 export const uploadBatches = pgTable(
     'upload_batches',
     {
@@ -148,14 +148,6 @@ export const retrievals = pgTable(
         userId: text('user_id')
             .notNull()
             .references(() => user.id, { onDelete: 'cascade' }),
-        // DEPRECATED (#422): the grouping key for a restore is now
-        // `retrieval_requests`, and an upload batch is recorded there as the
-        // selection mechanism it always was. Nothing reads or writes this
-        // column any more; it survives only because dropping it is destructive
-        // DDL, which ships alone once every plane is deployed without it.
-        batchId: text('batch_id').references(() => uploadBatches.id, {
-            onDelete: 'set null',
-        }),
         status: retrievalStatusEnum('status').notNull().default('pending'),
         tier: retrievalTierEnum('tier').notNull().default(DEFAULT_RESTORE_TIER),
         initiatedAt: timestamp('initiated_at'), // When AWS restore was started
@@ -179,7 +171,6 @@ export const retrievals = pgTable(
         index('retrievals_file_id_idx').on(table.fileId),
         index('retrievals_user_id_idx').on(table.userId),
         index('retrievals_status_idx').on(table.status),
-        index('retrievals_batch_id_idx').on(table.batchId),
         index('retrievals_expires_at_idx').on(table.expiresAt),
         // At most one active retrieval per file. `expires_at > now()` isn't
         // indexable (now() is not IMMUTABLE), so a lapsed `ready` row still
