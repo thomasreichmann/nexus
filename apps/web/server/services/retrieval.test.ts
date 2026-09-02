@@ -837,6 +837,38 @@ describe('retrieval service', () => {
                 });
             });
 
+            // The key always says "part-1"; only a chunked restore should.
+            it('names a single-archive restore without a part number', async () => {
+                mocks.retrievalRequests.findFirst.mockResolvedValue(
+                    createRetrievalRequestFixture({ completedAt: new Date() })
+                );
+                mocks.groupByRows.mockResolvedValue([
+                    downloadableRow({ partCount: 1 }),
+                ]);
+                mocks.retrievalArtifacts.findMany.mockResolvedValue([
+                    createRetrievalArtifactFixture({
+                        id: 'artifact-a',
+                        position: 0,
+                        status: 'ready',
+                        s3Key: `${TEST_USER_ID}/req/artifact-a/nexus-part-1.zip`,
+                        sizeBytes: 3000,
+                        completedAt: BUILT_AT,
+                    }),
+                ]);
+
+                const delivery = await retrievalService.getRequestDelivery(
+                    db,
+                    TEST_USER_ID,
+                    TEST_RETRIEVAL_REQUEST_ID
+                );
+
+                expect(delivery.state).toBe('ready');
+                if (delivery.state !== 'ready') return;
+                expect(delivery.artifacts[0].fileName).toBe(
+                    'nexus-restore.zip'
+                );
+            });
+
             // The two non-ready states mean opposite things to the reader, and
             // the panel polls on exactly that difference.
             it('reads a request with no completedAt as still building', async () => {
@@ -896,6 +928,12 @@ describe('retrieval service', () => {
                         completedAt: new Date(),
                     })
                 );
+                mocks.retrievalArtifacts.findMany.mockResolvedValue([
+                    createRetrievalArtifactFixture({ position: 0 }),
+                    createRetrievalArtifactFixture({ position: 1 }),
+                ]);
+
+                const get = vi.spyOn(mockS3.artifacts, 'get');
 
                 const result = await retrievalService.getArtifactDownloadUrl(
                     db,
@@ -904,7 +942,36 @@ describe('retrieval service', () => {
                 );
 
                 expect(result.url).toContain('artifacts-test-bucket');
-                expect(result.url).toContain('nexus-part-2.zip');
+                expect(get).toHaveBeenCalledWith(
+                    expect.stringContaining('nexus-part-2.zip'),
+                    expect.objectContaining({ filename: 'nexus-part-2.zip' })
+                );
+            });
+
+            it('names a single-archive download without a part number', async () => {
+                givenArtifact(
+                    createRetrievalArtifactFixture({
+                        status: 'ready',
+                        s3Key: `${TEST_USER_ID}/req/art/nexus-part-1.zip`,
+                        completedAt: new Date(),
+                    })
+                );
+                mocks.retrievalArtifacts.findMany.mockResolvedValue([
+                    createRetrievalArtifactFixture({ position: 0 }),
+                ]);
+
+                const get = vi.spyOn(mockS3.artifacts, 'get');
+
+                await retrievalService.getArtifactDownloadUrl(
+                    db,
+                    TEST_USER_ID,
+                    'artifact-a'
+                );
+
+                expect(get).toHaveBeenCalledWith(
+                    expect.stringContaining('nexus-part-1.zip'),
+                    expect.objectContaining({ filename: 'nexus-restore.zip' })
+                );
             });
 
             it('refuses a part that is still building', async () => {
