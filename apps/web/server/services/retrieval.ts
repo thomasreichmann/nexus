@@ -524,14 +524,25 @@ async function getRequestDelivery(
                 artifactId: artifact.id,
                 part: artifact.position + 1,
                 sizeBytes: artifact.sizeBytes ?? 0,
-                fileName: artifactFileName(artifact.s3Key!),
+                fileName: artifactFileName(artifact.s3Key!, row.partCount),
                 expiresAt: artifactWindowEnd(artifact.completedAt!),
             })),
     };
 }
 
-/** The `nexus-part-N.zip` tail of an artifact key — what the browser saves. */
-function artifactFileName(s3Key: string): string {
+/** What a single-archive restore downloads as. */
+const SINGLE_ARCHIVE_FILE_NAME = 'nexus-restore.zip';
+
+/**
+ * What the browser saves an artifact as.
+ *
+ * The S3 key ends in `nexus-part-N.zip` for every chunk, because the worker
+ * names objects before anything has counted them. A one-chunk restore is not
+ * "part 1" of anything, so it gets a plain name; a chunked one keeps the key's
+ * tail so the parts sort and read as a set.
+ */
+function artifactFileName(s3Key: string, partCount: number): string {
+    if (partCount === 1) return SINGLE_ARCHIVE_FILE_NAME;
     return s3Key.slice(s3Key.lastIndexOf('/') + 1);
 }
 
@@ -576,9 +587,13 @@ async function getArtifactDownloadUrl(
         );
     }
 
+    // Every artifact of the request, building ones included: the count is the
+    // partition's, and it is fixed the moment the rows are minted.
+    const parts = await requestRepo.findArtifacts(artifact.requestId);
+
     const url = await s3.artifacts.get(artifact.s3Key, {
         expiresIn: DOWNLOAD_URL_EXPIRY_SECONDS,
-        filename: artifactFileName(artifact.s3Key),
+        filename: artifactFileName(artifact.s3Key, parts.length),
     });
 
     return {
