@@ -32,6 +32,7 @@ import { test as base, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
 import { interceptTrpcCalls } from '../helpers/trpc';
 import { fileName } from '../helpers/table';
+import { confirmBulkDelete } from '../helpers/fileBrowser';
 
 const FILES_USER: TestUser = {
     email: 'files-browser-e2e@test.local',
@@ -517,13 +518,7 @@ test.describe('with a seeded library', () => {
                     name: `Select ${seededLibrary.archivedB.name}`,
                 })
                 .click();
-            await page.getByRole('button', { name: 'Delete' }).click();
-
-            await expect(page.getByText('Delete 2 files?')).toBeVisible();
-            await page
-                .getByRole('button', { name: 'Delete', exact: true })
-                .last()
-                .click();
+            await confirmBulkDelete(page, 2);
 
             await expect(
                 fileName(page, seededLibrary.archivedA.name)
