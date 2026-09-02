@@ -108,8 +108,10 @@ query {
 
 ## Updating Issues
 
+**Rewrite the body; don't comment.** Grooming notes, verification findings, scope changes, corrections, and status updates go into the body — a comment leaves the stale body in place for the next reader (or `/work` agent) to act on, and its content gets missed. GitHub keeps body edit history, so nothing is lost. Put the change where it belongs (Description, Out of Scope) and record what changed and why in a dated `## History` bullet at the bottom. Delete any comment the rewrite folds in. Comments are for conversation with another person; the rare exception is noted at the time.
+
 ```bash
-gh issue comment 42 --body "Status update"
+gh issue edit 42 --body-file <scratchpad file>   # the whole body, rewritten
 gh issue edit 42 --add-label "ready"
 gh issue edit 42 --remove-label "blocked"
 gh issue close 42 --comment "Completed in PR #45"

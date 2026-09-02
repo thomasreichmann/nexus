@@ -204,10 +204,10 @@ Ask the user to choose from these options:
     gh issue edit <number> --remove-label ready --add-label needs-details
     ```
 
-2. Add comment explaining why:
+2. Record why in the body, not a comment (see "Updating Issues" in `docs/ai/github-workflow.md`): append a dated `## History` bullet — `**<date> — sent back for re-grooming.** [reason from user or analysis]` — and strike or correct the stale claims the analysis found, so the next groomer reads one current document:
 
     ```bash
-    gh issue comment <number> --body "Sent back for re-grooming: [reason from user or analysis]"
+    gh issue edit <number> --body-file <scratchpad file>
     ```
 
 ### Step 7: Summary
