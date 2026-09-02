@@ -9,6 +9,15 @@ import { protectedProcedure, router } from '../init';
 // on `createBatch`.
 const batchNameSchema = z.string().min(1).max(255);
 
+// Shoot-to-full-archive scale, not the old 100 (#423, #400). A wedding
+// re-delivery is 500-1,500 files and the disaster-recovery case #406 is built
+// around is a whole library — the ICP reference is 8,934. The file browser
+// loads the library unpaginated, so select-all reaches every file a user owns
+// and any smaller cap rejects a real backlog. Shared by `deleteMany` and
+// `requestBulkRetrieval` so the two can't drift; unrelated to the `10000` in
+// `multipart.complete`, which is S3's part-count limit.
+const MAX_BULK_FILE_IDS = 10_000;
+
 const uploadInputSchema = z.object({
     name: z.string().min(1).max(255),
     sizeBytes: z.number().positive(),
@@ -144,8 +153,15 @@ export const filesRouter = router({
             );
         }),
 
+    // The cap raise is cheap here (#400): the delete is one transaction of
+    // three statements with no S3 fan-out, so a bigger selection widens the
+    // `IN (...)` lists rather than adding round-trips.
     deleteMany: protectedProcedure
-        .input(z.object({ ids: z.array(z.string().uuid()).max(100) }))
+        .input(
+            z.object({
+                ids: z.array(z.string().uuid()).max(MAX_BULK_FILE_IDS),
+            })
+        )
         .mutation(({ ctx, input }) => {
             return fileService.deleteUserFile(
                 ctx.db,
@@ -170,16 +186,16 @@ export const filesRouter = router({
             );
         }),
 
-    // The cap is shoot-to-full-archive scale, not the old 100 (#423). A wedding
-    // re-delivery is 500-1,500 files and the disaster-recovery case #406 is
-    // built around is a whole library — the ICP reference is 8,934. It survives
-    // the raise because the request path is now a fixed handful of statements
-    // and the S3 fan-out happens in a worker job, so the cost of a big request
-    // is the job's, not the HTTP handler's.
+    // This one survives the cap because the request path is now a fixed handful
+    // of statements and the S3 fan-out happens in a worker job (#423), so the
+    // cost of a big request is the job's, not the HTTP handler's.
     requestBulkRetrieval: protectedProcedure
         .input(
             z.object({
-                fileIds: z.array(z.string().uuid()).min(1).max(10000),
+                fileIds: z
+                    .array(z.string().uuid())
+                    .min(1)
+                    .max(MAX_BULK_FILE_IDS),
                 tier: z.enum(RESTORE_TIERS).default(DEFAULT_RESTORE_TIER),
             })
         )

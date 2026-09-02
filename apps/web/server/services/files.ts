@@ -521,7 +521,7 @@ async function deleteUserFile(
         }
 
         // Aggregate counted bytes/count and issue a single UPDATE so a
-        // batch delete (up to 100 files) doesn't fan out into N round-trips.
+        // full-archive delete doesn't fan out into N round-trips.
         const counted = before.filter((f) => f.status !== 'uploading');
         if (counted.length > 0) {
             const totalBytes = counted.reduce((sum, f) => sum + f.size, 0);

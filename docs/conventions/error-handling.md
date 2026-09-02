@@ -33,8 +33,8 @@ A global error link intercepts all tRPC errors and shows toasts automatically. T
 
 1. **Mapped domain copy** — `domainErrorMessages` maps a `domainCode` to fixed user-facing copy for codes whose server message is written for logs (currently `NOT_FOUND` → "That item is no longer available"; `NotFoundError` says "File not found: \<uuid\>"). A mapped code beats everything, including a per-mutation `errorMessage` — don't add a code whose server messages should reach users.
 2. **`INTERNAL_SERVER_ERROR` and transport failures** — the server message may leak implementation details, so it is never shown: the per-mutation `errorMessage` if one was passed, else the generic "Something went wrong. Please try again".
-3. **Server message** — everything else shows `err.message`; the remaining `DomainError` subclasses (`InvalidStateError`, `ForbiddenError`, `TrialExpiredError`, …) already write user-facing messages.
-4. **Code fallbacks** — when the server message is empty, per-code copy, then `errorMessage`, then the generic.
+3. **Server message, if it reads as prose** — everything else shows `err.message`; the remaining `DomainError` subclasses (`InvalidStateError`, `ForbiddenError`, `TrialExpiredError`, …) already write user-facing messages. A message that isn't prose is discarded and treated as empty (step 4). The test is structural, not length- or vocabulary-based: a serialized object/array opening the message, or a stack frame anywhere in it. Zod puts its whole issue list in `message` and a validation failure carries no `domainCode`, so without this gate the raw payload reaches the toast (#400).
+4. **Code fallbacks** — when the server message is empty or was discarded, per-code copy, then `errorMessage`, then the generic.
 
 | tRPC Code               | Message Source                                                        |
 | ----------------------- | --------------------------------------------------------------------- |
@@ -42,7 +42,10 @@ A global error link intercepts all tRPC errors and shows toasts automatically. T
 | `FORBIDDEN`             | Server message (from `ForbiddenError`)                                |
 | `NOT_FOUND`             | Mapped copy: "That item is no longer available"                       |
 | `TOO_MANY_REQUESTS`     | Fallback: "Too many requests. Please slow down"                       |
+| `BAD_REQUEST` (Zod)     | Payload discarded → per-mutation `errorMessage`, else the generic     |
 | `INTERNAL_SERVER_ERROR` | Per-mutation `errorMessage`, else the generic fallback                |
+
+A raised input cap is the real fix for a user-reachable validation failure — the sanitizer only keeps the payload off the screen. The bulk file-id caps and their rationale live next to the schemas in `apps/web/server/trpc/routers/files.ts`.
 
 **Per-mutation configuration:**
 

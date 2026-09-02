@@ -74,18 +74,21 @@ export async function seedFiles(
     userId: string,
     count: number
 ): Promise<File[]> {
-    const files: File[] = [];
-    for (let i = 0; i < count; i++) {
-        const file = await insertFile(db, {
-            userId,
-            name: `e2e-test-file-${i + 1}.txt`,
-            size: 1024 * (i + 1),
-            // Prefixed, not `originalKey()` — see that function's docblock.
-            s3Key: `e2e/${userId}/test-file-${Date.now()}-${i}`,
-        });
-        files.push(file);
-    }
-    return files;
+    // Concurrent: at three rows the difference is noise, but a scale fixture
+    // seeds past 100 and pays this once for the whole file. Both derived
+    // fields key off `i`, so they can't collide, and `Promise.all` keeps the
+    // result in seed order for callers that index into it.
+    return Promise.all(
+        Array.from({ length: count }, (_, i) =>
+            insertFile(db, {
+                userId,
+                name: `e2e-test-file-${i + 1}.txt`,
+                size: 1024 * (i + 1),
+                // Prefixed, not `originalKey()` — see that function's docblock.
+                s3Key: `e2e/${userId}/test-file-${Date.now()}-${i}`,
+            })
+        )
+    );
 }
 
 export async function cleanupFiles(

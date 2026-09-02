@@ -65,6 +65,7 @@ Terse reference for AI agents. Detailed examples with code: [[../conventions/nam
 | Form submission | Custom `onError` → toast         |
 
 - Domain errors set user-facing messages; codes mapped in the error link's `domainErrorMessages` (currently `NOT_FOUND`) get fixed copy instead; `INTERNAL_SERVER_ERROR` always uses a generic fallback
+- A server message that isn't prose (serialized object/array, stack trace) is discarded before it reaches the toast and falls back like an empty one (#400)
 - Configure per-mutation with `toastContext(...)` from `@/lib/trpc/error-link` — `{ errorMessage }` replaces only the generic fallback, `{ skipToast: true }` suppresses the toast (never build the context literal by hand)
 - Full details: [[../conventions/error-handling|Error Handling]]
 

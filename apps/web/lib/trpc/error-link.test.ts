@@ -63,6 +63,85 @@ describe('getErrorMessage', () => {
             'Please sign in to continue'
         );
     });
+
+    // #400: a Zod failure is a BAD_REQUEST with no domainCode, so the raw
+    // issue array — Zod v4 serializes the whole list into `message` — used to
+    // reach the toast verbatim.
+    it('falls back to the context message for a raw Zod issue payload', () => {
+        const err = makeClientError({
+            code: 'BAD_REQUEST',
+            message: JSON.stringify(
+                [
+                    {
+                        origin: 'array',
+                        code: 'too_big',
+                        maximum: 100,
+                        inclusive: true,
+                        path: ['ids'],
+                        message: 'Too big: expected array to have <=100 items',
+                    },
+                ],
+                null,
+                2
+            ),
+        });
+
+        expect(getErrorMessage(err, 'Failed to delete files')).toBe(
+            'Failed to delete files'
+        );
+        expect(getErrorMessage(err)).toBe(
+            'Something went wrong. Please try again'
+        );
+    });
+
+    it('falls back for a serialized object and for a stack trace', () => {
+        const objectDump = makeClientError({
+            code: 'BAD_REQUEST',
+            message: '{\n  "code": "too_big",\n  "maximum": 100\n}',
+        });
+        const stack = makeClientError({
+            code: 'BAD_REQUEST',
+            message:
+                'TypeError: Cannot read properties of undefined\n' +
+                '    at deleteMany (/var/task/server/trpc/routers/files.ts:149:20)',
+        });
+
+        expect(getErrorMessage(objectDump)).toBe(
+            'Something went wrong. Please try again'
+        );
+        expect(getErrorMessage(stack)).toBe(
+            'Something went wrong. Please try again'
+        );
+    });
+
+    it('still shows code-specific copy over the generic when the server message is unreadable', () => {
+        const err = makeClientError({
+            code: 'UNAUTHORIZED',
+            message: '[{ "code": "unauthorized" }]',
+        });
+
+        expect(getErrorMessage(err)).toBe('Please sign in to continue');
+    });
+
+    // Guards against an over-eager sanitizer: prose that merely mentions
+    // punctuation or the word "at" is still prose.
+    it('leaves human-readable messages alone', () => {
+        const messages = [
+            'File is not available for retrieval (current status: uploading)',
+            'Your trial ended at 12:00 — pick a plan to keep uploading',
+            '[Beta] Bulk retrieval is limited during the alpha',
+            // Opens with a bracket and quotes a key — prose all the same,
+            // which is why the gate parses rather than pattern-matches.
+            '[Beta] Retrieval limits: {"max": 100} until launch',
+        ];
+
+        for (const message of messages) {
+            const err = makeClientError({ code: 'BAD_REQUEST', message });
+            expect(getErrorMessage(err, 'Failed to delete files')).toBe(
+                message
+            );
+        }
+    });
 });
 
 describe('getToastId', () => {

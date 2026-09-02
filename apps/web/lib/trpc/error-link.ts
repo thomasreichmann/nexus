@@ -59,6 +59,35 @@ const fallbackMessages: Record<string, string> = {
 
 const GENERIC_MESSAGE = 'Something went wrong. Please try again';
 
+// A stack frame, whether the message is a bare trace or prose with one glued
+// on. Anchored per-line so an `at` inside a sentence can't trip it.
+const STACK_FRAME = /^\s+at\s+\S/m;
+
+/**
+ * Whether a server message was written for a machine rather than a person.
+ *
+ * Deliberately structural — domain errors write their own user-facing copy and
+ * must keep reaching the toast verbatim, so this looks for shapes prose never
+ * takes, never at message length or vocabulary. Zod v4 puts its whole issue
+ * list in `error.message` and a validation failure carries no `domainCode`, so
+ * without this gate the raw payload goes straight into the toast (#400).
+ *
+ * The serialized-structure half parses instead of pattern-matching: only a
+ * message that *is* an object or array is a dump, so a sentence that merely
+ * opens with a bracket and quotes a key later (`[Beta] limits: {"max": 100}`)
+ * stays prose.
+ */
+function isMachineGenerated(message: string): boolean {
+    const trimmed = message.trim();
+    if (STACK_FRAME.test(trimmed)) return true;
+    if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) return false;
+    try {
+        return typeof JSON.parse(trimmed) === 'object';
+    } catch {
+        return false;
+    }
+}
+
 export function getErrorMessage(
     err: TRPCClientError<AppRouter>,
     contextMessage?: string
@@ -74,8 +103,11 @@ export function getErrorMessage(
         return contextMessage ?? GENERIC_MESSAGE;
     }
 
+    // A non-prose message is treated as empty, so the code fallbacks apply.
+    const serverMessage = isMachineGenerated(err.message) ? '' : err.message;
+
     return (
-        err.message ||
+        serverMessage ||
         fallbackMessages[code] ||
         contextMessage ||
         GENERIC_MESSAGE

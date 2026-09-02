@@ -153,6 +153,7 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
 
     const deleteManyMutation = useMutation(
         trpc.files.deleteMany.mutationOptions({
+            trpc: toastContext({ errorMessage: 'Failed to delete files' }),
             onSuccess() {
                 invalidateFileList();
                 setSelectedFiles([]);

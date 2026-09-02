@@ -289,6 +289,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/files'],
     },
     {
+        id: 'files-bulk-delete-at-scale',
+        title: 'Bulk delete a selection larger than the old 100-file cap',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
         id: 'files-bulk-retrieve',
         title: 'Bulk retrieve archived files from selection bar',
         area: 'files',
