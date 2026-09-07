@@ -8,7 +8,7 @@ import {
     AlertDialogPopup,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { MiddleTruncateName } from './MiddleTruncateName';
+import { DialogFileName } from './DialogFileName';
 
 interface CancelUploadDialogProps {
     open: boolean;
@@ -39,14 +39,7 @@ export function CancelUploadDialog({
                     Its progress will be thrown away — a cancelled upload can’t
                     be resumed.
                 </AlertDialogDescription>
-                {fileName && (
-                    <div className="rounded-lg border border-border bg-muted/50 px-3 py-2.5 text-sm">
-                        <MiddleTruncateName
-                            name={fileName}
-                            className="font-medium"
-                        />
-                    </div>
-                )}
+                {fileName && <DialogFileName name={fileName} />}
                 <div className="flex justify-end gap-2">
                     <AlertDialogCancel>Keep upload</AlertDialogCancel>
                     <AlertDialogAction onClick={onConfirm}>

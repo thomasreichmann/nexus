@@ -26,6 +26,7 @@ import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { captureEvent } from '@/lib/posthog/client';
 import { PostHogEvent } from '@/lib/posthog/events';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
+import { DeleteDialog } from '@/components/dashboard/DeleteDialog';
 import { toastContext } from '@/lib/trpc/error-link';
 import type { RetrievableFile } from '@/components/dashboard/RetrieveDialog';
 import { toastRetrievalRequested } from './retrievalFeedback';
@@ -39,6 +40,7 @@ export function useFileActions(file: FileWithRetrieval) {
 
     const deleteMutation = useMutation(
         trpc.files.delete.mutationOptions({
+            trpc: toastContext({ errorMessage: 'Failed to delete file' }),
             onSuccess: invalidateFileList,
         })
     );
@@ -83,10 +85,18 @@ export function useFileActions(file: FileWithRetrieval) {
     };
 }
 
+/**
+ * What the menu's dialogs need from a file: the retrieve estimate's inputs
+ * plus a name for the delete confirmation. Every caller passes a full
+ * `FileWithRetrieval`.
+ */
+interface ActionableFile extends RetrievableFile {
+    name: string;
+}
+
 interface FileActionsProps {
     status: DerivedStatus;
-    /** The file this menu acts on; the retrieve dialog estimates from it. */
-    file: RetrievableFile;
+    file: ActionableFile;
     onDelete: () => void;
     onRetrieval: () => void;
     onDownload: () => void;
@@ -103,9 +113,10 @@ export function FileActions({
     isDeleting,
     isRetrieving,
 }: FileActionsProps) {
-    // The dialog lives outside the dropdown: menu content unmounts on close,
-    // which would tear the dialog down mid-open.
+    // The dialogs live outside the dropdown: menu content unmounts on close,
+    // which would tear a dialog down mid-open.
     const [isRetrieveDialogOpen, setIsRetrieveDialogOpen] = useState(false);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     return (
         <>
             <RetrieveDialog
@@ -114,6 +125,13 @@ export function FileActions({
                 files={[file]}
                 fileCount={1}
                 onConfirm={onRetrieval}
+            />
+            <DeleteDialog
+                open={isDeleteDialogOpen}
+                onOpenChange={setIsDeleteDialogOpen}
+                fileCount={1}
+                fileName={file.name}
+                onConfirm={onDelete}
             />
             <DropdownMenu>
                 <DropdownMenuTrigger
@@ -152,7 +170,7 @@ export function FileActions({
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
-                            onClick={onDelete}
+                            onClick={() => setIsDeleteDialogOpen(true)}
                             disabled={isDeleting}
                         >
                             {isDeleting ? (

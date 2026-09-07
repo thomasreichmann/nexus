@@ -302,7 +302,7 @@ export const USE_CASES: UseCaseEntry[] = [
     },
     {
         id: 'files-delete-single',
-        title: 'Delete a single file from its actions menu',
+        title: 'Delete a single file from its actions menu, confirming it by name',
         area: 'files',
         routes: ['/dashboard/files'],
     },

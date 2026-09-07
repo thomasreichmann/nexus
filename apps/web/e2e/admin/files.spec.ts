@@ -2,8 +2,8 @@ import { findUserByEmail, type File } from '@nexus/db/test-db';
 import { test, expect } from '../fixtures';
 import { ADMIN_USER } from '../helpers/auth';
 import { seedFiles, cleanupFiles } from '../helpers/scenarios';
+import { confirmSingleDelete } from '../helpers/fileBrowser';
 import { fileName, waitForTableLoad } from '../helpers/table';
-import type { Page } from '@playwright/test';
 
 const PAGE_URL = '/dashboard/files';
 
@@ -39,7 +39,7 @@ test.describe('sequential file deletion', () => {
 
             // Delete first file. 30s: on a cold dev server this is the first
             // S3-touching mutation (route compile + SDK init can exceed 10s).
-            await deleteFileByName(page, seededFiles[0].name);
+            await confirmSingleDelete(page, seededFiles[0].name);
             await expect(fileName(page, seededFiles[0].name)).toBeHidden({
                 timeout: 30_000,
             });
@@ -48,7 +48,7 @@ test.describe('sequential file deletion', () => {
             // fix. The server is warm by now (route compiled, SDK
             // initialized by the first delete), so the timeout stays tight
             // to keep guarding the no-refresh sequential-delete regression.
-            await deleteFileByName(page, seededFiles[1].name);
+            await confirmSingleDelete(page, seededFiles[1].name);
             await expect(fileName(page, seededFiles[1].name)).toBeHidden({
                 timeout: 10_000,
             });
@@ -61,12 +61,3 @@ test.describe('sequential file deletion', () => {
         }
     );
 });
-
-async function deleteFileByName(page: Page, name: string): Promise<void> {
-    // Find the row containing the file name and click its actions menu
-    const row = page.locator('tr', { hasText: name });
-    await row.getByRole('button', { name: 'Actions' }).click();
-
-    // Click the Delete item in the dropdown
-    await page.getByRole('menuitem', { name: 'Delete' }).click();
-}
