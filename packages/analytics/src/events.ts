@@ -31,6 +31,14 @@ export const PostHogEvent = {
     RetrievalReady: 'retrieval_ready',
     /** User opened a download URL. */
     FileDownloaded: 'file_downloaded',
+    /**
+     * A folder gesture hit `MAX_FILES_PER_DROP` and the user was asked what
+     * to do (#402). Fired on the decision: `choice` is what they picked, and
+     * `mediaShare` + `keptBytes` describe the kept prefix so an accidental
+     * home-folder drop (mostly non-media, small files) reads differently from
+     * a real multi-year archive (all media) that outgrew the cap.
+     */
+    DropCapped: 'drop_capped',
 } as const;
 
 export type PostHogEventName = (typeof PostHogEvent)[keyof typeof PostHogEvent];

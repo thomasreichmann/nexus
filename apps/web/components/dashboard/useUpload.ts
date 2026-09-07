@@ -33,12 +33,13 @@ import {
 import { planVaultLookups, vaultKey } from '@/lib/upload/duplicates';
 import {
     computeRemainingPartNumbers,
-    isFileMatch,
+    indexByFileIdentity,
     isResumable,
     mergeParts,
     partByteRange,
     partsProgress,
     toFileIdentity,
+    toFileIdentityKey,
 } from '@/lib/upload/parts';
 import {
     patchRowById,
@@ -895,13 +896,12 @@ export function useUpload() {
 
             // Match each file against a persisted interrupted upload so a re-add
             // resumes from where S3 left off instead of starting over. One store
-            // read for the whole batch (folder drops make it thousands of files),
-            // and one identity per file rather than one per comparison.
-            const records = await listUploads();
-            const matches = picked.map(({ file }) => {
-                const identity = toFileIdentity(file);
-                return records.find((record) => isFileMatch(record, identity));
-            });
+            // read for the whole batch, indexed once so a library-sized drop
+            // (#402) stays linear in files rather than files × records.
+            const recordsByIdentity = indexByFileIdentity(await listUploads());
+            const matches = picked.map(({ file }) =>
+                recordsByIdentity.get(toFileIdentityKey(toFileIdentity(file)))
+            );
 
             // Ids for the rows this gesture creates, minted outside the state
             // updater (StrictMode runs updaters twice) so the vault check

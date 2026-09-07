@@ -11,13 +11,37 @@ export interface FileIdentity {
     lastModified: number;
 }
 
-/** Does a re-added file match a persisted upload? Identity = name + size + mtime. */
+/**
+ * The one place the identity tuple is spelled out: name + size + mtime.
+ * `isFileMatch` derives from it so the predicate and the map key can't drift.
+ */
+export function toFileIdentityKey(identity: FileIdentity): string {
+    return JSON.stringify([
+        identity.name,
+        identity.size,
+        identity.lastModified,
+    ]);
+}
+
+/** Does a re-added file match a persisted upload? */
 export function isFileMatch(record: FileIdentity, file: FileIdentity): boolean {
-    return (
-        record.name === file.name &&
-        record.size === file.size &&
-        record.lastModified === file.lastModified
-    );
+    return toFileIdentityKey(record) === toFileIdentityKey(file);
+}
+
+/**
+ * Persisted uploads keyed by identity, so a library-sized gesture (#402)
+ * matches in one pass instead of files × records. First record wins, as the
+ * linear scan it replaced did.
+ */
+export function indexByFileIdentity(
+    records: ResumableUpload[]
+): Map<string, ResumableUpload> {
+    const index = new Map<string, ResumableUpload>();
+    for (const record of records) {
+        const key = toFileIdentityKey(record);
+        if (!index.has(key)) index.set(key, record);
+    }
+    return index;
 }
 
 /**
