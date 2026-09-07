@@ -46,5 +46,8 @@ export const MAX_IN_FLIGHT_BYTES = 32 * 1024 ** 3; // 32 GiB
  * so dropping a home folder by accident stops early instead of grinding
  * through the whole disk. Sized for the ICP's worst case: a multi-day wedding
  * shoot is a few thousand frames, not five thousand.
+ *
+ * Also the input cap of `files.findDuplicates` and the chunk size of the
+ * queue's vault check (#401), so one gesture is one lookup.
  */
 export const MAX_FILES_PER_DROP = 5000;

@@ -103,6 +103,47 @@ describe('files repository', () => {
         });
     });
 
+    describe('findExistingByNameAndSize', () => {
+        it('matches on name and size together', async () => {
+            mocks.files.findMany.mockResolvedValue([
+                createFileFixture({ name: 'IMG_0001.CR2', size: 100 }),
+                // Same name, different size: a re-export, not a duplicate.
+                createFileFixture({ name: 'IMG_0001.CR2', size: 200 }),
+            ]);
+
+            const result = await repo.findExistingByNameAndSize(TEST_USER_ID, [
+                { name: 'IMG_0001.CR2', size: 100 },
+                { name: 'IMG_0002.CR2', size: 100 },
+            ]);
+
+            expect(result).toEqual([{ name: 'IMG_0001.CR2', size: 100 }]);
+            expect(mocks.files.findMany).toHaveBeenCalledOnce();
+        });
+
+        it('answers once per identity when the vault already holds copies', async () => {
+            mocks.files.findMany.mockResolvedValue([
+                createFileFixture({ id: 'copy1', name: 'clip.mp4', size: 5 }),
+                createFileFixture({ id: 'copy2', name: 'clip.mp4', size: 5 }),
+            ]);
+
+            const result = await repo.findExistingByNameAndSize(TEST_USER_ID, [
+                { name: 'clip.mp4', size: 5 },
+            ]);
+
+            expect(result).toEqual([{ name: 'clip.mp4', size: 5 }]);
+        });
+
+        it('returns empty array without querying when given no candidates', async () => {
+            const result = await repo.findExistingByNameAndSize(
+                TEST_USER_ID,
+                []
+            );
+
+            expect(result).toEqual([]);
+            expect(mocks.files.findMany).not.toHaveBeenCalled();
+        });
+    });
+
     describe('findByUser', () => {
         const DEFAULT_OPTS = { limit: 50, offset: 0 } as const;
 
