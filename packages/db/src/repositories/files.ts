@@ -367,14 +367,35 @@ async function remove(db: DB, id: string): Promise<File | undefined> {
     return file;
 }
 
-async function softDelete(db: DB, fileId: string): Promise<File | undefined> {
+/**
+ * Move an upload out of `uploading`: to `available` on confirm, to `deleted`
+ * on release. The status check is part of the write, so of two racing
+ * transitions exactly one gets the row back and the other gets `undefined` —
+ * a read-then-update lets the loser overwrite the winner (#381).
+ *
+ * Owner-scoped like `findByUserAndId`, so `undefined` also covers a missing or
+ * foreign file; a caller that needs to tell those apart re-reads.
+ */
+async function claimUpload(
+    db: DB,
+    userId: string,
+    fileId: string,
+    to: 'available' | 'deleted'
+): Promise<File | undefined> {
     const [file] = await db
         .update(schema.files)
-        .set({
-            status: 'deleted',
-            deletedAt: new Date(),
-        })
-        .where(eq(schema.files.id, fileId))
+        .set(
+            to === 'deleted'
+                ? { status: to, deletedAt: new Date() }
+                : { status: to }
+        )
+        .where(
+            and(
+                eq(schema.files.id, fileId),
+                eq(schema.files.userId, userId),
+                eq(schema.files.status, 'uploading')
+            )
+        )
         .returning();
 
     return file;
@@ -598,7 +619,7 @@ export const createFileRepo = createRepository({
     insert,
     update,
     delete: remove,
-    softDelete,
+    claimUpload,
     softDeleteMany,
     softDeleteForUser,
     sumStorageByMimeCategory,
