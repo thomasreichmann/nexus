@@ -257,30 +257,44 @@ describe('files repository', () => {
         });
     });
 
-    describe('softDelete', () => {
-        it('returns soft-deleted file with status and deletedAt', async () => {
+    describe('claimUpload', () => {
+        it('stamps deletedAt when claiming to deleted', async () => {
             const deletedFile = createFileFixture({
                 status: 'deleted',
                 deletedAt: new Date(),
             });
             mocks.returning.mockResolvedValue([deletedFile]);
 
-            const result = await repo.softDelete(TEST_FILE_ID);
+            const result = await repo.claimUpload(
+                TEST_USER_ID,
+                TEST_FILE_ID,
+                'deleted'
+            );
 
             expect(result).toEqual(deletedFile);
             expect(mocks.update).toHaveBeenCalledOnce();
-            expect(mocks.set).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    status: 'deleted',
-                    deletedAt: expect.any(Date),
-                })
-            );
+            expect(mocks.set).toHaveBeenCalledWith({
+                status: 'deleted',
+                deletedAt: expect.any(Date),
+            });
         });
 
-        it('returns undefined when file not found', async () => {
+        it('flips only the status when claiming to available', async () => {
+            mocks.returning.mockResolvedValue([createFileFixture()]);
+
+            await repo.claimUpload(TEST_USER_ID, TEST_FILE_ID, 'available');
+
+            expect(mocks.set).toHaveBeenCalledWith({ status: 'available' });
+        });
+
+        it('returns undefined when the claim is lost', async () => {
             mocks.returning.mockResolvedValue([]);
 
-            const result = await repo.softDelete('nonexistent');
+            const result = await repo.claimUpload(
+                TEST_USER_ID,
+                TEST_FILE_ID,
+                'available'
+            );
 
             expect(result).toBeUndefined();
         });

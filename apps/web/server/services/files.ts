@@ -160,36 +160,50 @@ async function initiateUpload(
     };
 }
 
-async function confirmUpload(
+interface ClaimConfirmationResult {
+    file: File;
+    isConfirmed: boolean;
+}
+
+/**
+ * Flip an upload to `available` and count it — shared by both engines so the
+ * "counted exactly once" rule lives in one place. Only the caller that wins
+ * the claim increments usage, so a duplicate confirm, a second tab completing
+ * the same multipart record, or a confirm racing a cancel can't double-count
+ * or resurrect a released upload (#381). A lost claim returns the row as it
+ * stands, with `isConfirmed: false`.
+ */
+function claimConfirmation(
     db: DB,
     userId: string,
     fileId: string
-): Promise<ConfirmUploadResult> {
-    const { file, isConfirmed } = await db.transaction(async (tx) => {
+): Promise<ClaimConfirmationResult> {
+    return db.transaction(async (tx) => {
         const fileRepo = createFileRepo(tx);
-        const usageRepo = createStorageUsageRepo(tx);
+
+        const claimed = await fileRepo.claimUpload(userId, fileId, 'available');
+        if (claimed) {
+            await createStorageUsageRepo(tx).incrementUsage(
+                userId,
+                claimed.size
+            );
+            return { file: claimed, isConfirmed: true };
+        }
 
         const existing = await fileRepo.findByUserAndId(userId, fileId);
         if (!existing) {
             throw new NotFoundError('File', fileId);
         }
-        // Idempotency: a duplicate confirm shouldn't double-count usage.
-        // Only flip state and increment when the file is still uploading.
-        if (existing.status !== 'uploading') {
-            return { file: existing, isConfirmed: false };
-        }
-
-        const updated = await fileRepo.update(fileId, {
-            status: 'available',
-        });
-        if (!updated) {
-            throw new NotFoundError('File', fileId);
-        }
-
-        await usageRepo.incrementUsage(userId, existing.size);
-
-        return { file: updated, isConfirmed: true };
+        return { file: existing, isConfirmed: false };
     });
+}
+
+async function confirmUpload(
+    db: DB,
+    userId: string,
+    fileId: string
+): Promise<ConfirmUploadResult> {
+    const { file, isConfirmed } = await claimConfirmation(db, userId, fileId);
 
     // After the commit, and only on the branch that actually flipped state —
     // a duplicate confirm must not double-count in the funnel or re-enqueue
@@ -275,40 +289,16 @@ async function completeMultipartUpload(
     }
 
     // S3 completion happens outside the transaction because it's slow,
-    // network-bound, and not rollback-friendly. The DB write that follows
-    // covers status flip and usage bump atomically.
+    // network-bound, and not rollback-friendly. The claim that follows covers
+    // status flip and usage bump atomically — the guard read above is only a
+    // fast path, since a retry after S3 success or a second tab completing
+    // the same record passes it too.
     await s3.multipart.complete(file.s3Key, input.uploadId, input.parts);
 
-    const { file: completed, isConfirmed } = await db.transaction(
-        async (tx) => {
-            const txFileRepo = createFileRepo(tx);
-            const txUsageRepo = createStorageUsageRepo(tx);
-
-            // Idempotency guard inside the txn: a retry after S3 success could
-            // re-enter here with the file already 'available'. Re-fetch under the
-            // tx and short-circuit so we don't double-increment usage.
-            const current = await txFileRepo.findByUserAndId(
-                userId,
-                input.fileId
-            );
-            if (!current) {
-                throw new NotFoundError('File', input.fileId);
-            }
-            if (current.status !== 'uploading') {
-                return { file: current, isConfirmed: false };
-            }
-
-            const updated = await txFileRepo.update(input.fileId, {
-                status: 'available',
-            });
-            if (!updated) {
-                throw new NotFoundError('File', input.fileId);
-            }
-
-            await txUsageRepo.incrementUsage(userId, file.size);
-
-            return { file: updated, isConfirmed: true };
-        }
+    const { file: completed, isConfirmed } = await claimConfirmation(
+        db,
+        userId,
+        input.fileId
     );
 
     // Same post-commit, flip-branch-only enqueue as confirmUpload.
@@ -395,15 +385,23 @@ async function signMultipartParts(
 }
 
 /**
- * Give up on an upload: hand its S3 side to `release`, then close the row.
+ * Give up on an upload: claim the row out of `uploading`, then hand its S3
+ * side to `release`.
  * The two engines differ only in that release step, so the parts that must not
  * drift between them live here.
  *
- * The status guard is the load-bearing line. A row past `uploading` has
- * confirmed and been counted, so releasing it would delete the bytes of a
- * file the user now owns while leaving its usage incremented — and a cancel
- * click really can land just after the confirm it raced. Doing nothing there
- * also makes a repeated release idempotent.
+ * The claim is the load-bearing line. A row past `uploading` has confirmed
+ * and been counted, so releasing it would delete the bytes of a file the user
+ * now owns while leaving its usage incremented — and a cancel click really
+ * can land just after the confirm it raced. A read-then-write guard lets the
+ * two interleave (#381), so the status check is the write itself, and S3 is
+ * touched only once the claim is won. Losing it is a no-op, which also makes
+ * a repeated release idempotent.
+ *
+ * The S3 call runs inside the claiming transaction on purpose: if it throws,
+ * the claim rolls back and the row stays `uploading` for a retry or the
+ * nightly reap, instead of a `deleted` row stranding the bytes. A racing
+ * confirm waits out that call on the row lock, then finds the row released.
  *
  * No usage decrement anywhere: an upload that never confirmed was never
  * counted (`confirmUpload` is what increments).
@@ -414,16 +412,19 @@ async function releaseUpload(
     fileId: string,
     release: (file: File) => Promise<void>
 ): Promise<void> {
-    const fileRepo = createFileRepo(db);
-    const file = await fileRepo.findByUserAndId(userId, fileId);
-    if (!file) {
-        throw new NotFoundError('File', fileId);
-    }
-    if (file.status !== 'uploading') return;
+    await db.transaction(async (tx) => {
+        const fileRepo = createFileRepo(tx);
+        const claimed = await fileRepo.claimUpload(userId, fileId, 'deleted');
+        if (claimed) {
+            await release(claimed);
+            return;
+        }
 
-    await release(file);
-
-    await fileRepo.softDelete(fileId);
+        const existing = await fileRepo.findByUserAndId(userId, fileId);
+        if (!existing) {
+            throw new NotFoundError('File', fileId);
+        }
+    });
 }
 
 function abortMultipartUpload(

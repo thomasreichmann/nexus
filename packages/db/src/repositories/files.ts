@@ -367,14 +367,36 @@ async function remove(db: DB, id: string): Promise<File | undefined> {
     return file;
 }
 
-async function softDelete(db: DB, fileId: string): Promise<File | undefined> {
+/**
+ * Move an owned upload out of `uploading` — the only way an upload leaves that
+ * state (#381). The status predicate is part of the write, so two racing
+ * transitions (confirm vs cancel, two tabs completing one multipart record)
+ * can't both win: under Read Committed the loser blocks on the row lock,
+ * re-checks the predicate against the committed row, and matches nothing.
+ *
+ * `undefined` means the claim was lost — the row is missing, not owned, or
+ * already past `uploading`. Callers that need to tell those apart re-read.
+ */
+async function claimUpload(
+    db: DB,
+    userId: string,
+    fileId: string,
+    to: 'available' | 'deleted'
+): Promise<File | undefined> {
     const [file] = await db
         .update(schema.files)
-        .set({
-            status: 'deleted',
-            deletedAt: new Date(),
-        })
-        .where(eq(schema.files.id, fileId))
+        .set(
+            to === 'deleted'
+                ? { status: 'deleted', deletedAt: new Date() }
+                : { status: 'available' }
+        )
+        .where(
+            and(
+                eq(schema.files.id, fileId),
+                eq(schema.files.userId, userId),
+                eq(schema.files.status, 'uploading')
+            )
+        )
         .returning();
 
     return file;
@@ -598,7 +620,7 @@ export const createFileRepo = createRepository({
     insert,
     update,
     delete: remove,
-    softDelete,
+    claimUpload,
     softDeleteMany,
     softDeleteForUser,
     sumStorageByMimeCategory,
