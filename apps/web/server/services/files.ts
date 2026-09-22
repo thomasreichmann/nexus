@@ -3,6 +3,7 @@ import {
     originalKey,
     thumbnailKey,
     type File,
+    type FileRepo,
 } from '@nexus/db/repo/files';
 import { createStorageUsageRepo } from '@nexus/db/repo/storage-usage';
 import {
@@ -160,6 +161,25 @@ async function initiateUpload(
     };
 }
 
+/**
+ * The file, or `NotFoundError` if it's missing or someone else's. Every lost
+ * `claimUploading` goes through here: the claim collapses three causes into
+ * one `undefined` — missing, not the caller's, or already past `uploading` —
+ * and only the last is a legitimate no-op. One extra read separates them, paid
+ * only on the losing branch.
+ */
+async function requireOwnedFile(
+    fileRepo: FileRepo,
+    userId: string,
+    fileId: string
+): Promise<File> {
+    const existing = await fileRepo.findByUserAndId(userId, fileId);
+    if (!existing) {
+        throw new NotFoundError('File', fileId);
+    }
+    return existing;
+}
+
 async function confirmUpload(
     db: DB,
     userId: string,
@@ -169,26 +189,25 @@ async function confirmUpload(
         const fileRepo = createFileRepo(tx);
         const usageRepo = createStorageUsageRepo(tx);
 
-        const existing = await fileRepo.findByUserAndId(userId, fileId);
-        if (!existing) {
-            throw new NotFoundError('File', fileId);
-        }
-        // Idempotency: a duplicate confirm shouldn't double-count usage.
-        // Only flip state and increment when the file is still uploading.
-        if (existing.status !== 'uploading') {
-            return { file: existing, isConfirmed: false };
+        // Claim before counting: winning is what earns the increment, so
+        // usage can only move once per file (see `claimUploading`, #381).
+        const claimed = await fileRepo.claimUploading(
+            userId,
+            fileId,
+            'available'
+        );
+        if (!claimed) {
+            // Idempotency: a duplicate confirm, or one that lost to a cancel,
+            // reports the file it found without double-counting usage.
+            return {
+                file: await requireOwnedFile(fileRepo, userId, fileId),
+                isConfirmed: false,
+            };
         }
 
-        const updated = await fileRepo.update(fileId, {
-            status: 'available',
-        });
-        if (!updated) {
-            throw new NotFoundError('File', fileId);
-        }
+        await usageRepo.incrementUsage(userId, claimed.size);
 
-        await usageRepo.incrementUsage(userId, existing.size);
-
-        return { file: updated, isConfirmed: true };
+        return { file: claimed, isConfirmed: true };
     });
 
     // After the commit, and only on the branch that actually flipped state —
@@ -263,20 +282,14 @@ async function completeMultipartUpload(
     userId: string,
     input: CompleteMultipartInput
 ): Promise<CompleteMultipartResult> {
-    const fileRepo = createFileRepo(db);
-    const file = await fileRepo.findByUserAndId(userId, input.fileId);
-    if (!file) {
-        throw new NotFoundError('File', input.fileId);
-    }
-    if (file.status !== 'uploading') {
-        throw new InvalidStateError(
-            `File is not in uploading state: ${file.status}`
-        );
-    }
+    const file = await loadResumableFile(db, userId, input.fileId);
 
     // S3 completion happens outside the transaction because it's slow,
-    // network-bound, and not rollback-friendly. The DB write that follows
-    // covers status flip and usage bump atomically.
+    // network-bound, and not rollback-friendly. It also stays *before* the
+    // claim, unlike the destructive S3 calls in `releaseUpload`: assembling
+    // the object is what makes `available` true, and claiming first would let
+    // a failed completion leave an `available` row with nothing behind it —
+    // the very state #381 exists to prevent.
     await s3.multipart.complete(file.s3Key, input.uploadId, input.parts);
 
     const { file: completed, isConfirmed } = await db.transaction(
@@ -284,30 +297,28 @@ async function completeMultipartUpload(
             const txFileRepo = createFileRepo(tx);
             const txUsageRepo = createStorageUsageRepo(tx);
 
-            // Idempotency guard inside the txn: a retry after S3 success could
-            // re-enter here with the file already 'available'. Re-fetch under the
-            // tx and short-circuit so we don't double-increment usage.
-            const current = await txFileRepo.findByUserAndId(
+            // The guard above was only a fast path — a retry of this same
+            // call, or a racing cancel, may have moved the row while S3 was
+            // assembling the object. The claim is the real decision.
+            const claimed = await txFileRepo.claimUploading(
                 userId,
-                input.fileId
+                input.fileId,
+                'available'
             );
-            if (!current) {
-                throw new NotFoundError('File', input.fileId);
-            }
-            if (current.status !== 'uploading') {
-                return { file: current, isConfirmed: false };
-            }
-
-            const updated = await txFileRepo.update(input.fileId, {
-                status: 'available',
-            });
-            if (!updated) {
-                throw new NotFoundError('File', input.fileId);
+            if (!claimed) {
+                return {
+                    file: await requireOwnedFile(
+                        txFileRepo,
+                        userId,
+                        input.fileId
+                    ),
+                    isConfirmed: false,
+                };
             }
 
-            await txUsageRepo.incrementUsage(userId, file.size);
+            await txUsageRepo.incrementUsage(userId, claimed.size);
 
-            return { file: updated, isConfirmed: true };
+            return { file: claimed, isConfirmed: true };
         }
     );
 
@@ -334,20 +345,18 @@ interface SignMultipartPartsResult {
     expiresAt: Date;
 }
 
-// Resume helpers share an ownership + status guard: the caller must own the
-// file and it must still be `uploading`. A file that already reached
-// `available` (completed) or `deleted` (aborted) has no live multipart upload
-// to reconcile against, so resuming it is a client bug, not a recoverable state.
+// Every operation on a live multipart session shares an ownership + status
+// guard: the caller must own the file and it must still be `uploading`. A file
+// that already reached `available` (completed) or `deleted` (aborted) has no
+// live multipart upload to reconcile against, so touching it is a client bug,
+// not a recoverable state. This read is a fast path, not a decision — the
+// transition itself is settled by `claimUploading` (#381).
 async function loadResumableFile(
     db: DB,
     userId: string,
     fileId: string
 ): Promise<File> {
-    const fileRepo = createFileRepo(db);
-    const file = await fileRepo.findByUserAndId(userId, fileId);
-    if (!file) {
-        throw new NotFoundError('File', fileId);
-    }
+    const file = await requireOwnedFile(createFileRepo(db), userId, fileId);
     if (file.status !== 'uploading') {
         throw new InvalidStateError(
             `File is not in uploading state: ${file.status}`
@@ -395,15 +404,21 @@ async function signMultipartParts(
 }
 
 /**
- * Give up on an upload: hand its S3 side to `release`, then close the row.
+ * Give up on an upload: close the row, then hand its S3 side to `release`.
  * The two engines differ only in that release step, so the parts that must not
  * drift between them live here.
  *
- * The status guard is the load-bearing line. A row past `uploading` has
- * confirmed and been counted, so releasing it would delete the bytes of a
- * file the user now owns while leaving its usage incremented — and a cancel
- * click really can land just after the confirm it raced. Doing nothing there
- * also makes a repeated release idempotent.
+ * Claiming the row is the load-bearing line, and it has to come first — see
+ * `claimUploading` (#381). A row past `uploading` has confirmed and been
+ * counted, so releasing it would delete the bytes of a file the user now owns;
+ * winning the claim is what makes the object ours to delete. Losing it is a
+ * no-op, which also makes a repeated release idempotent.
+ *
+ * The inversion trades one residue for another: if `release` throws, the row
+ * is already `deleted` and its object survives, orphaned. That's the better
+ * failure — it costs storage rather than destroying a file the user owns — but
+ * note it is now invisible to `reap-stale-uploads`, which only queries rows
+ * still in `uploading`. Collecting objects behind soft-deleted rows is #307.
  *
  * No usage decrement anywhere: an upload that never confirmed was never
  * counted (`confirmUpload` is what increments).
@@ -415,17 +430,21 @@ async function releaseUpload(
     release: (file: File) => Promise<void>
 ): Promise<void> {
     const fileRepo = createFileRepo(db);
-    const file = await fileRepo.findByUserAndId(userId, fileId);
-    if (!file) {
-        throw new NotFoundError('File', fileId);
+
+    const claimed = await fileRepo.claimUploading(userId, fileId, 'deleted');
+    if (!claimed) {
+        // Still a 404 for a file that isn't there or isn't theirs; a row that
+        // simply moved on is the idempotent no-op the docblock describes.
+        await requireOwnedFile(fileRepo, userId, fileId);
+        return;
     }
-    if (file.status !== 'uploading') return;
 
-    await release(file);
-
-    await fileRepo.softDelete(fileId);
+    await release(claimed);
 }
 
+// Abort inherits `releaseUpload`'s claim, which is where its own status guard
+// comes from (#361): a confirmed file can't be aborted into `deleted`, so
+// storage_usage can't be left counting bytes nothing will ever decrement.
 function abortMultipartUpload(
     db: DB,
     userId: string,

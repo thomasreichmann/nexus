@@ -308,8 +308,7 @@ describe('files service', () => {
                 ...uploadingFile,
                 status: 'available',
             });
-            mocks.files.findFirst.mockResolvedValue(uploadingFile);
-            // Two .returning() calls: file update, then usage upsert.
+            // Two .returning() calls: the status claim, then the usage upsert.
             mocks.returning
                 .mockResolvedValueOnce([availableFile])
                 .mockResolvedValueOnce([
@@ -345,7 +344,6 @@ describe('files service', () => {
                 ...uploadingFile,
                 status: 'available',
             });
-            mocks.files.findFirst.mockResolvedValue(uploadingFile);
             mocks.returning
                 .mockResolvedValueOnce([availableFile])
                 .mockResolvedValueOnce([createStorageUsageFixture()]);
@@ -366,8 +364,12 @@ describe('files service', () => {
             );
         });
 
+        // Post-#381 the guard is the UPDATE's own predicate, so the proof is
+        // that the claim came back empty and nothing downstream ran — not
+        // that no UPDATE was issued.
         it('is a no-op when the file is already available (no double-count)', async () => {
             const availableFile = createFileFixture({ status: 'available' });
+            mocks.returning.mockResolvedValue([]);
             mocks.files.findFirst.mockResolvedValue(availableFile);
 
             const result = await fileService.confirmUpload(
@@ -377,7 +379,6 @@ describe('files service', () => {
             );
 
             expect(result.file).toEqual(availableFile);
-            expect(mocks.update).not.toHaveBeenCalled();
             expect(mocks.onConflictDoUpdate).not.toHaveBeenCalled();
             // The idempotent branch must not re-enqueue a thumbnail job.
             expect(jobs.publish).not.toHaveBeenCalled();
@@ -394,7 +395,6 @@ describe('files service', () => {
                 ...uploadingFile,
                 status: 'available',
             });
-            mocks.files.findFirst.mockResolvedValue(uploadingFile);
             mocks.returning
                 .mockResolvedValueOnce([availableFile])
                 .mockResolvedValueOnce([
@@ -416,6 +416,7 @@ describe('files service', () => {
 
         it('emits nothing on a duplicate confirm', async () => {
             const availableFile = createFileFixture({ status: 'available' });
+            mocks.returning.mockResolvedValue([]);
             mocks.files.findFirst.mockResolvedValue(availableFile);
 
             await fileService.confirmUpload(db, TEST_USER_ID, availableFile.id);
@@ -570,7 +571,7 @@ describe('files service', () => {
                 expect(result).toHaveLength(2);
                 expect(result[0].status).toBe('deleted');
                 expect(result[1].status).toBe('deleted');
-                // softDelete + a single batched usage decrement.
+                // softDeleteForUser + a single batched usage decrement.
                 expect(mocks.update).toHaveBeenCalledTimes(2);
             });
 
@@ -760,6 +761,34 @@ describe('files service', () => {
                 })
             ).rejects.toThrow(InvalidStateError);
         });
+
+        // That pre-flight guard goes stale the moment it returns: a cancel can
+        // land while the parts are being assembled in S3. Losing the claim
+        // afterwards must not bill the user for a row someone else closed.
+        it('does not increment usage when a racing cancel takes the row first', async () => {
+            const uploadingFile = createFileFixture({ status: 'uploading' });
+            mocks.files.findFirst
+                .mockResolvedValueOnce(uploadingFile)
+                .mockResolvedValueOnce({
+                    ...uploadingFile,
+                    status: 'deleted',
+                });
+            mocks.returning.mockResolvedValue([]);
+
+            const result = await fileService.completeMultipartUpload(
+                db,
+                TEST_USER_ID,
+                {
+                    fileId: uploadingFile.id,
+                    uploadId: 'some-upload-id',
+                    parts: [{ partNumber: 1, etag: '"abc"' }],
+                }
+            );
+
+            expect(result.file.status).toBe('deleted');
+            expect(mocks.onConflictDoUpdate).not.toHaveBeenCalled();
+            expect(jobs.publish).not.toHaveBeenCalled();
+        });
     });
 
     describe('listMultipartParts', () => {
@@ -889,9 +918,11 @@ describe('files service', () => {
         });
 
         // Clear-all sweeps completed rows too, so this has to be safe against a
-        // fileId whose upload already confirmed and was counted.
+        // fileId whose upload already confirmed and was counted. Abort's guard
+        // now comes from the claim (#361), so the mock returns no row.
         it('is a no-op on a file that already confirmed', async () => {
             const availableFile = createFileFixture({ status: 'available' });
+            mocks.returning.mockResolvedValue([]);
             mocks.files.findFirst.mockResolvedValue(availableFile);
             const abort = vi.spyOn(mockS3.multipart, 'abort');
 
@@ -903,7 +934,6 @@ describe('files service', () => {
             );
 
             expect(abort).not.toHaveBeenCalled();
-            expect(mocks.update).not.toHaveBeenCalled();
         });
 
         it('throws NotFoundError when file does not exist', async () => {
@@ -923,7 +953,6 @@ describe('files service', () => {
     describe('abandonUpload', () => {
         it('deletes the object at the recorded key and soft-deletes the row', async () => {
             const uploadingFile = createFileFixture({ status: 'uploading' });
-            mocks.files.findFirst.mockResolvedValue(uploadingFile);
             mocks.returning.mockResolvedValue([
                 { ...uploadingFile, status: 'deleted' },
             ]);
@@ -946,40 +975,31 @@ describe('files service', () => {
         // so releasing it must not move the counter.
         it('does not touch storage usage', async () => {
             const uploadingFile = createFileFixture({ status: 'uploading' });
-            mocks.files.findFirst.mockResolvedValue(uploadingFile);
             mocks.returning.mockResolvedValue([
                 { ...uploadingFile, status: 'deleted' },
             ]);
 
             await fileService.abandonUpload(db, TEST_USER_ID, uploadingFile.id);
 
-            // Only the file row's update — no usage decrement or upsert.
+            // Only the claim's own update — no usage decrement or upsert.
             expect(mocks.update).toHaveBeenCalledTimes(1);
             expect(mocks.onConflictDoUpdate).not.toHaveBeenCalled();
         });
 
-        // The dangerous race: a cancel click landing just after the confirm it
-        // raced must not delete the bytes of a file the user now owns.
-        it('is a no-op on a file that already confirmed', async () => {
-            const availableFile = createFileFixture({ status: 'available' });
-            mocks.files.findFirst.mockResolvedValue(availableFile);
-            const remove = vi.spyOn(mockS3.objects, 'remove');
-
-            await fileService.abandonUpload(db, TEST_USER_ID, availableFile.id);
-
-            expect(remove).not.toHaveBeenCalled();
-            expect(mocks.update).not.toHaveBeenCalled();
-        });
-
+        // The cancel-vs-confirm race itself can't be shown here: this mock
+        // resolves whatever it's told to, so a sequential setup only proves
+        // the branch, never the atomicity. That lives in
+        // files.integration.test.ts against a real database (#381). What
+        // stays here is the branch — a lost claim deletes no bytes.
         it('is idempotent — a second abandon deletes nothing', async () => {
             const deletedFile = createFileFixture({ status: 'deleted' });
+            mocks.returning.mockResolvedValue([]);
             mocks.files.findFirst.mockResolvedValue(deletedFile);
             const remove = vi.spyOn(mockS3.objects, 'remove');
 
             await fileService.abandonUpload(db, TEST_USER_ID, deletedFile.id);
 
             expect(remove).not.toHaveBeenCalled();
-            expect(mocks.update).not.toHaveBeenCalled();
         });
 
         it('throws NotFoundError when file does not exist', async () => {

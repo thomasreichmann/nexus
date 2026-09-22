@@ -281,14 +281,25 @@ Services contain business logic and throw domain errors. Each service file expor
 
 ### Conventions
 
-| Convention          | Rule                                                            |
-| ------------------- | --------------------------------------------------------------- |
-| **Export pattern**  | Namespace object: `export const fileService = { ... } as const` |
-| **First parameter** | Always `db: DB` — same as repositories                          |
-| **Return types**    | Inferred — repos have explicit types, chain is broken there     |
-| **Errors**          | Throw domain errors (`NotFoundError`, etc), never `TRPCError`   |
-| **Side effects**    | Coordinate with `lib/` modules (S3, email, etc)                 |
-| **Naming**          | `<action><Noun>` — describes the business operation             |
+| Convention            | Rule                                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------------- |
+| **Export pattern**    | Namespace object: `export const fileService = { ... } as const`                           |
+| **First parameter**   | Always `db: DB` — same as repositories                                                    |
+| **Return types**      | Inferred — repos have explicit types, chain is broken there                               |
+| **Errors**            | Throw domain errors (`NotFoundError`, etc), never `TRPCError`                             |
+| **Side effects**      | Coordinate with `lib/` modules (S3, email, etc)                                           |
+| **Naming**            | `<action><Noun>` — describes the business operation                                       |
+| **State transitions** | Put the current-state check in the UPDATE's own `WHERE`, never in a preceding read (#381) |
+
+**State transitions ride the predicate.** A service that reads a row, checks
+its status, and then UPDATEs by id has made two decisions with a gap between
+them — under Read Committed a concurrent caller commits in that gap and the
+second UPDATE silently overwrites it. Write it as
+`UPDATE … SET status = <next> WHERE id = ? AND status = <current> RETURNING`
+(`claimUploading` in `packages/db/src/repositories/files.ts` is the reference),
+treat no row back as "someone else owns this transition", and do any
+irreversible side effect (deleting an S3 object, billing usage) only after the
+claim succeeds. The upload rail lost a file to this exact race before #381.
 
 ### Example
 
@@ -330,18 +341,22 @@ async function initiateUpload(
     return { fileId, uploadUrl };
 }
 
+// A state transition never reads the current state and then writes the next
+// one — the two are separate decisions and a concurrent caller can slip
+// between them (#381). The predicate rides in the UPDATE, and losing it means
+// someone else owns the transition.
 async function confirmUpload(db: DB, userId: string, fileId: string) {
     const fileRepo = createFileRepo(db);
-    const file = await fileRepo.findByUserAndId(userId, fileId);
-    if (!file) {
-        throw new NotFoundError('File', fileId);
+    const claimed = await fileRepo.claimUploading(userId, fileId, 'available');
+    if (!claimed) {
+        const existing = await fileRepo.findByUserAndId(userId, fileId);
+        if (!existing) {
+            throw new NotFoundError('File', fileId);
+        }
+        return { file: existing };
     }
 
-    const updated = await fileRepo.update(fileId, {
-        status: 'available',
-    });
-
-    return { file: updated };
+    return { file: claimed };
 }
 
 // Export as namespace object — this is the public API

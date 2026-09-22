@@ -367,14 +367,46 @@ async function remove(db: DB, id: string): Promise<File | undefined> {
     return file;
 }
 
-async function softDelete(db: DB, fileId: string): Promise<File | undefined> {
+/** The two states an upload can leave `uploading` for. */
+export type UploadClaim = 'available' | 'deleted';
+
+/** What a soft delete stamps, in one place for the three writers that do it. */
+function softDeleteValues() {
+    return { status: 'deleted', deletedAt: new Date() } as const;
+}
+
+/**
+ * Atomically take an upload out of `uploading` (#381). The status check *is*
+ * the write, so across N racing transitions — confirm, complete, release,
+ * abort — exactly one gets a row back and every other gets `undefined`.
+ *
+ * A predicate-free `UPDATE … WHERE id = ?` cannot express this. Under Read
+ * Committed a caller that read `uploading` before a concurrent cancel
+ * committed still takes the row lock afterwards and overwrites the cancel,
+ * leaving an `available` file whose S3 object is already gone. Ownership is
+ * folded into the same statement for the same reason: any separate SELECT can
+ * go stale between the read and the write.
+ *
+ * `undefined` means the row is missing, owned by someone else, or already past
+ * `uploading`. Callers must read that as "lost the race" and skip whatever S3
+ * work and usage accounting the transition was guarding.
+ */
+async function claimUploading(
+    db: DB,
+    userId: string,
+    fileId: string,
+    claim: UploadClaim
+): Promise<File | undefined> {
     const [file] = await db
         .update(schema.files)
-        .set({
-            status: 'deleted',
-            deletedAt: new Date(),
-        })
-        .where(eq(schema.files.id, fileId))
+        .set(claim === 'deleted' ? softDeleteValues() : { status: 'available' })
+        .where(
+            and(
+                eq(schema.files.id, fileId),
+                eq(schema.files.userId, userId),
+                eq(schema.files.status, 'uploading')
+            )
+        )
         .returning();
 
     return file;
@@ -385,10 +417,7 @@ async function softDeleteMany(db: DB, fileIds: string[]): Promise<File[]> {
 
     return db
         .update(schema.files)
-        .set({
-            status: 'deleted',
-            deletedAt: new Date(),
-        })
+        .set(softDeleteValues())
         .where(inArray(schema.files.id, fileIds))
         .returning();
 }
@@ -402,10 +431,7 @@ async function softDeleteForUser(
 
     return db
         .update(schema.files)
-        .set({
-            status: 'deleted',
-            deletedAt: new Date(),
-        })
+        .set(softDeleteValues())
         .where(
             and(
                 inArray(schema.files.id, fileIds),
@@ -598,7 +624,7 @@ export const createFileRepo = createRepository({
     insert,
     update,
     delete: remove,
-    softDelete,
+    claimUploading,
     softDeleteMany,
     softDeleteForUser,
     sumStorageByMimeCategory,

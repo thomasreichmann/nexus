@@ -257,18 +257,40 @@ describe('files repository', () => {
         });
     });
 
-    describe('softDelete', () => {
-        it('returns soft-deleted file with status and deletedAt', async () => {
+    // The status predicate rides inside the UPDATE, so these can only pin the
+    // shape of the statement. That it actually serializes racing callers is a
+    // property of the database — proven in
+    // apps/web/server/services/files.integration.test.ts (#381).
+    describe('claimUploading', () => {
+        it('flips a claimed upload to available without stamping deletedAt', async () => {
+            const availableFile = createFileFixture({ status: 'available' });
+            mocks.returning.mockResolvedValue([availableFile]);
+
+            const result = await repo.claimUploading(
+                TEST_USER_ID,
+                TEST_FILE_ID,
+                'available'
+            );
+
+            expect(result).toEqual(availableFile);
+            expect(mocks.update).toHaveBeenCalledOnce();
+            expect(mocks.set).toHaveBeenCalledWith({ status: 'available' });
+        });
+
+        it('soft-deletes a released upload with status and deletedAt', async () => {
             const deletedFile = createFileFixture({
                 status: 'deleted',
                 deletedAt: new Date(),
             });
             mocks.returning.mockResolvedValue([deletedFile]);
 
-            const result = await repo.softDelete(TEST_FILE_ID);
+            const result = await repo.claimUploading(
+                TEST_USER_ID,
+                TEST_FILE_ID,
+                'deleted'
+            );
 
             expect(result).toEqual(deletedFile);
-            expect(mocks.update).toHaveBeenCalledOnce();
             expect(mocks.set).toHaveBeenCalledWith(
                 expect.objectContaining({
                     status: 'deleted',
@@ -277,10 +299,16 @@ describe('files repository', () => {
             );
         });
 
-        it('returns undefined when file not found', async () => {
+        // Missing, not owned, or already past `uploading` — the statement
+        // can't tell them apart and doesn't try. Every one is a lost claim.
+        it('returns undefined when no row matches the claim', async () => {
             mocks.returning.mockResolvedValue([]);
 
-            const result = await repo.softDelete('nonexistent');
+            const result = await repo.claimUploading(
+                TEST_USER_ID,
+                'nonexistent',
+                'available'
+            );
 
             expect(result).toBeUndefined();
         });
