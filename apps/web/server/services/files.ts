@@ -169,26 +169,26 @@ async function confirmUpload(
         const fileRepo = createFileRepo(tx);
         const usageRepo = createStorageUsageRepo(tx);
 
-        const existing = await fileRepo.findByUserAndId(userId, fileId);
-        if (!existing) {
-            throw new NotFoundError('File', fileId);
-        }
-        // Idempotency: a duplicate confirm shouldn't double-count usage.
-        // Only flip state and increment when the file is still uploading.
-        if (existing.status !== 'uploading') {
+        // Only the call that wins the claim counts usage, so a duplicate
+        // confirm can't double-count and a cancel that got there first isn't
+        // overwritten. The loser is a no-op either way — it reports the row as
+        // it now stands. Unlike a multipart complete, losing to a release
+        // isn't an error here: the only release that can beat a single-part
+        // confirm is the same tab's own cancel (no other tab knows the fileId,
+        // and the stale reaper's 24h is far past the 15-minute PUT URL), and
+        // that tab has already dropped the row.
+        const claimed = await fileRepo.claimUpload(userId, fileId, 'available');
+        if (!claimed) {
+            const existing = await fileRepo.findByUserAndId(userId, fileId);
+            if (!existing) {
+                throw new NotFoundError('File', fileId);
+            }
             return { file: existing, isConfirmed: false };
         }
 
-        const updated = await fileRepo.update(fileId, {
-            status: 'available',
-        });
-        if (!updated) {
-            throw new NotFoundError('File', fileId);
-        }
+        await usageRepo.incrementUsage(userId, claimed.size);
 
-        await usageRepo.incrementUsage(userId, existing.size);
-
-        return { file: updated, isConfirmed: true };
+        return { file: claimed, isConfirmed: true };
     });
 
     // After the commit, and only on the branch that actually flipped state —
@@ -263,16 +263,9 @@ async function completeMultipartUpload(
     userId: string,
     input: CompleteMultipartInput
 ): Promise<CompleteMultipartResult> {
-    const fileRepo = createFileRepo(db);
-    const file = await fileRepo.findByUserAndId(userId, input.fileId);
-    if (!file) {
-        throw new NotFoundError('File', input.fileId);
-    }
-    if (file.status !== 'uploading') {
-        throw new InvalidStateError(
-            `File is not in uploading state: ${file.status}`
-        );
-    }
+    // A fast fail before the slow S3 call, not the guard: the row can still
+    // change under us until the claim below.
+    const file = await loadResumableFile(db, userId, input.fileId);
 
     // S3 completion happens outside the transaction because it's slow,
     // network-bound, and not rollback-friendly. The DB write that follows
@@ -284,30 +277,35 @@ async function completeMultipartUpload(
             const txFileRepo = createFileRepo(tx);
             const txUsageRepo = createStorageUsageRepo(tx);
 
-            // Idempotency guard inside the txn: a retry after S3 success could
-            // re-enter here with the file already 'available'. Re-fetch under the
-            // tx and short-circuit so we don't double-increment usage.
-            const current = await txFileRepo.findByUserAndId(
+            const claimed = await txFileRepo.claimUpload(
                 userId,
-                input.fileId
+                input.fileId,
+                'available'
             );
-            if (!current) {
-                throw new NotFoundError('File', input.fileId);
-            }
-            if (current.status !== 'uploading') {
+            if (!claimed) {
+                const current = await txFileRepo.findByUserAndId(
+                    userId,
+                    input.fileId
+                );
+                if (!current) {
+                    throw new NotFoundError('File', input.fileId);
+                }
+                // Released while S3 was completing — a cancel in another tab,
+                // or the stale-upload reaper. Reporting success would tell the
+                // client a file is archived that no list will ever show.
+                if (current.status === 'deleted') {
+                    throw new InvalidStateError(
+                        `File is not in uploading state: ${current.status}`
+                    );
+                }
+                // A concurrent complete (two tabs resuming the same record)
+                // already counted it.
                 return { file: current, isConfirmed: false };
             }
 
-            const updated = await txFileRepo.update(input.fileId, {
-                status: 'available',
-            });
-            if (!updated) {
-                throw new NotFoundError('File', input.fileId);
-            }
+            await txUsageRepo.incrementUsage(userId, claimed.size);
 
-            await txUsageRepo.incrementUsage(userId, file.size);
-
-            return { file: updated, isConfirmed: true };
+            return { file: claimed, isConfirmed: true };
         }
     );
 
@@ -334,10 +332,11 @@ interface SignMultipartPartsResult {
     expiresAt: Date;
 }
 
-// Resume helpers share an ownership + status guard: the caller must own the
-// file and it must still be `uploading`. A file that already reached
-// `available` (completed) or `deleted` (aborted) has no live multipart upload
-// to reconcile against, so resuming it is a client bug, not a recoverable state.
+// Complete and the resume helpers share an ownership + status guard: the
+// caller must own the file and it must still be `uploading`. A file that
+// already reached `available` (completed) or `deleted` (aborted) has no live
+// multipart upload to reconcile against, so resuming it is a client bug, not a
+// recoverable state.
 async function loadResumableFile(
     db: DB,
     userId: string,
@@ -395,15 +394,22 @@ async function signMultipartParts(
 }
 
 /**
- * Give up on an upload: hand its S3 side to `release`, then close the row.
+ * Give up on an upload: close the row, then hand its S3 side to `release`.
  * The two engines differ only in that release step, so the parts that must not
  * drift between them live here.
  *
- * The status guard is the load-bearing line. A row past `uploading` has
- * confirmed and been counted, so releasing it would delete the bytes of a
- * file the user now owns while leaving its usage incremented — and a cancel
- * click really can land just after the confirm it raced. Doing nothing there
- * also makes a repeated release idempotent.
+ * The claim is the load-bearing line, and it comes first. A row past
+ * `uploading` has confirmed and been counted, so releasing it would delete the
+ * bytes of a file the user now owns while leaving its usage incremented — and
+ * a cancel click really can land just after the confirm it raced. Claiming
+ * before touching S3 means a confirm that loses finds the row already
+ * `deleted`, and one that wins leaves nothing for this call to delete (#381).
+ * Losing is a no-op, which also makes a repeated release idempotent.
+ *
+ * The cost of that order: if `release` fails, the row is already `deleted`
+ * and the bytes outlive it — orphaned until soft-deleted objects get reaped
+ * (#307); multipart parts fall to the bucket's abort-incomplete lifecycle
+ * rule. The reverse order risks a confirmed file with nothing behind it.
  *
  * No usage decrement anywhere: an upload that never confirmed was never
  * counted (`confirmUpload` is what increments).
@@ -415,15 +421,15 @@ async function releaseUpload(
     release: (file: File) => Promise<void>
 ): Promise<void> {
     const fileRepo = createFileRepo(db);
-    const file = await fileRepo.findByUserAndId(userId, fileId);
-    if (!file) {
-        throw new NotFoundError('File', fileId);
+    const claimed = await fileRepo.claimUpload(userId, fileId, 'deleted');
+    if (!claimed) {
+        if (!(await fileRepo.findByUserAndId(userId, fileId))) {
+            throw new NotFoundError('File', fileId);
+        }
+        return;
     }
-    if (file.status !== 'uploading') return;
 
-    await release(file);
-
-    await fileRepo.softDelete(fileId);
+    await release(claimed);
 }
 
 function abortMultipartUpload(

@@ -19,11 +19,31 @@ import {
 } from '@nexus/db/test-db';
 
 // The database is real — that's the point: this pins the atomicity of the
-// `usedBytes + n` upsert in storage-usage, which no mock can express. Only the
-// out-of-process effects are faked.
-vi.mock('@/lib/jobs', () => ({ jobs: { publish: vi.fn() } }));
+// `usedBytes + n` upsert in storage-usage and of the upload status claims,
+// which no mock can express. Only the out-of-process effects are faked.
+const s3Mocks = vi.hoisted(() => ({
+    // A real DeleteObject is a network round trip, and that gap is the window
+    // a racing confirm used to slip through — so the fake takes one too.
+    removeObject: vi.fn(
+        () => new Promise<void>((resolve) => setTimeout(resolve, 20))
+    ),
+    completeMultipart: vi.fn(),
+    abortMultipart: vi.fn(),
+}));
+
+const jobMocks = vi.hoisted(() => ({ publish: vi.fn() }));
+
+vi.mock('@/lib/jobs', () => ({ jobs: { publish: jobMocks.publish } }));
 vi.mock('@/lib/posthog/server', () => ({ captureServerEvent: vi.fn() }));
-vi.mock('@/lib/storage', () => ({ s3: {} }));
+vi.mock('@/lib/storage', () => ({
+    s3: {
+        objects: { remove: s3Mocks.removeObject },
+        multipart: {
+            complete: s3Mocks.completeMultipart,
+            abort: s3Mocks.abortMultipart,
+        },
+    },
+}));
 
 import { fileService } from './files';
 
@@ -48,6 +68,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+    vi.clearAllMocks();
     await resetUserData(db, userId);
 });
 
@@ -112,5 +133,105 @@ describe('confirmUpload under concurrency', () => {
         } finally {
             await deleteUserByEmail(db, fresh.email);
         }
+    });
+});
+
+/**
+ * Every way out of `uploading` is a claim: the status check is part of the
+ * UPDATE, so of two racing transitions exactly one gets the row back and the
+ * other does nothing. Which one wins is up to the database — these assert the
+ * invariant that has to hold either way.
+ */
+describe('upload transitions under concurrency (#381)', () => {
+    const MULTIPART = {
+        uploadId: 'upload-1',
+        parts: [{ partNumber: 1, etag: '"etag-1"' }],
+    };
+
+    function readFiles(ids: string[]) {
+        return db.query.files.findMany({
+            where: (f, { inArray }) => inArray(f.id, ids),
+        });
+    }
+
+    it('a cancel racing a confirm either releases the upload or counts it, never both', async () => {
+        const files = await seedUploadingFiles(userId, CONCURRENCY);
+
+        await Promise.all(
+            files.map((file) =>
+                Promise.all([
+                    fileService.confirmUpload(db, userId, file.id),
+                    fileService.abandonUpload(db, userId, file.id),
+                ])
+            )
+        );
+
+        const removedKeys = new Set(
+            s3Mocks.removeObject.mock.calls.map(([key]) => key)
+        );
+        const after = await readFiles(files.map((f) => f.id));
+        for (const file of after) {
+            expect(['available', 'deleted']).toContain(file.status);
+            // The bytes are gone exactly when the row says released — an
+            // `available` file with no object is the silent loss this guards.
+            expect(removedKeys.has(file.s3Key)).toBe(file.status === 'deleted');
+        }
+        const kept = after.filter((f) => f.status === 'available');
+        expect(await readUsage(userId)).toEqual({
+            usedBytes: FILE_SIZE * kept.length,
+            fileCount: kept.length,
+        });
+    });
+
+    it('two confirms of one file count it once', async () => {
+        const [file] = await seedUploadingFiles(userId, 1);
+
+        await Promise.all([
+            fileService.confirmUpload(db, userId, file.id),
+            fileService.confirmUpload(db, userId, file.id),
+        ]);
+
+        expect(await readUsage(userId)).toEqual({
+            usedBytes: FILE_SIZE,
+            fileCount: 1,
+        });
+        // Only the winner enqueues the thumbnail job.
+        expect(jobMocks.publish).toHaveBeenCalledOnce();
+    });
+
+    // Two tabs resuming the same multipart record from shared IndexedDB.
+    it('two completes of one multipart upload count it once', async () => {
+        const [file] = await seedUploadingFiles(userId, 1);
+        const input = { fileId: file.id, ...MULTIPART };
+
+        await Promise.all([
+            fileService.completeMultipartUpload(db, userId, input),
+            fileService.completeMultipartUpload(db, userId, input),
+        ]);
+
+        expect(await readUsage(userId)).toEqual({
+            usedBytes: FILE_SIZE,
+            fileCount: 1,
+        });
+    });
+
+    it('aborting an upload that already confirmed leaves it counted and its parts alone (#361)', async () => {
+        const [file] = await seedUploadingFiles(userId, 1);
+        await fileService.confirmUpload(db, userId, file.id);
+
+        await fileService.abortMultipartUpload(
+            db,
+            userId,
+            file.id,
+            MULTIPART.uploadId
+        );
+
+        const [after] = await readFiles([file.id]);
+        expect(after.status).toBe('available');
+        expect(s3Mocks.abortMultipart).not.toHaveBeenCalled();
+        expect(await readUsage(userId)).toEqual({
+            usedBytes: FILE_SIZE,
+            fileCount: 1,
+        });
     });
 });
