@@ -77,6 +77,71 @@ describe.concurrent('retrievals repository', () => {
         );
     });
 
+    it('findByFileId returns the file’s active retrieval, not a past one or another file’s', async ({
+        db,
+        user,
+    }) => {
+        const repo = createRetrievalRepo(db);
+        const [file, otherFile] = await Promise.all([
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id }),
+        ]);
+        await Promise.all([
+            insertRetrieval(db, {
+                userId: user.id,
+                fileId: file.id,
+                status: 'expired',
+            }),
+            insertRetrieval(db, {
+                userId: user.id,
+                fileId: otherFile.id,
+                status: 'pending',
+            }),
+        ]);
+        const active = await insertRetrieval(db, {
+            userId: user.id,
+            fileId: file.id,
+            status: 'in_progress',
+        });
+
+        expect((await repo.findByFileId(file.id))?.id).toBe(active.id);
+    });
+
+    // The race-reconciliation lookup: whatever the status, the newest row.
+    it('findLatestByFileId returns the file’s newest retrieval, active or not', async ({
+        db,
+        user,
+    }) => {
+        const repo = createRetrievalRepo(db);
+        const [file, otherFile] = await Promise.all([
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id }),
+        ]);
+        const created = (hoursAgo: number) =>
+            new Date(Date.now() - hoursAgo * HOUR_MS);
+        // Oldest inserted first: without the sort, it's the row found first.
+        await insertRetrieval(db, {
+            userId: user.id,
+            fileId: file.id,
+            status: 'expired',
+            createdAt: created(2),
+        });
+        const latest = await insertRetrieval(db, {
+            userId: user.id,
+            fileId: file.id,
+            status: 'failed',
+            createdAt: created(1),
+        });
+        await insertRetrieval(db, {
+            userId: user.id,
+            fileId: otherFile.id,
+            status: 'pending',
+            createdAt: created(0),
+        });
+
+        expect((await repo.findLatestByFileId(file.id))?.id).toBe(latest.id);
+    });
+
     it('findByUser returns all of the user’s rows, inactive ones included, and no one else’s', async ({
         db,
         user,
