@@ -9,6 +9,12 @@
 /** Above this size an upload goes through the multipart engine. */
 export const MULTIPART_THRESHOLD = 100 * 1024 * 1024; // 100MB
 
+/**
+ * Size of each multipart part. The server picks it and hands it to the client
+ * with the part URLs (`files.multipart.init`).
+ */
+export const MULTIPART_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
+
 /** Per-file ceiling on concurrent part PUTs within one multipart upload. */
 export const MAX_CONCURRENT_CHUNKS = 3;
 
