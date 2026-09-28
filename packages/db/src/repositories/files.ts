@@ -176,6 +176,53 @@ function findByUserAndBatch(
     });
 }
 
+/** The identity the vault check matches on — no mtime, no checksum (#401). */
+export interface NameAndSize {
+    name: string;
+    size: number;
+}
+
+function nameAndSizeKey(identity: NameAndSize): string {
+    return `${identity.size}:${identity.name}`;
+}
+
+/**
+ * Committed rows sharing a name and size with a candidate — the upload
+ * queue's "already in your vault" check (#401). Visibility is the file
+ * browser's (`buildUserFilesWhereClause`, hiding `HIDDEN_STATUSES`), so an
+ * `uploading` row the user is re-dropping to recover from an interrupted
+ * wave (#398) is not a duplicate: nothing was committed or billed for it.
+ * The name filter does the narrowing (a library is a few thousand rows and
+ * `name` has no index either way) and size is matched in memory, which keeps
+ * a whole gesture to one query without a hand-built tuple IN.
+ */
+async function findExistingByNameAndSize(
+    db: DB,
+    userId: string,
+    candidates: NameAndSize[]
+): Promise<NameAndSize[]> {
+    if (candidates.length === 0) return [];
+    const wanted = new Set(candidates.map(nameAndSizeKey));
+    const rows = await db.query.files.findMany({
+        columns: { name: true, size: true },
+        where: and(
+            buildUserFilesWhereClause(userId, false),
+            inArray(schema.files.name, [
+                ...new Set(candidates.map((c) => c.name)),
+            ])
+        ),
+    });
+    // Once per identity: a vault that already holds two copies (what this
+    // check prevents going forward) must not answer twice for one pair.
+    const found = new Map<string, NameAndSize>();
+    for (const row of rows) {
+        const key = nameAndSizeKey(row);
+        if (!wanted.has(key) || found.has(key)) continue;
+        found.set(key, { name: row.name, size: row.size });
+    }
+    return [...found.values()];
+}
+
 /**
  * Statuses excluded from every user-facing list and every usage total:
  * `uploading` isn't confirmed yet, `deleted` has already been subtracted.
@@ -718,6 +765,7 @@ export const createFileRepo = createRepository({
     findByUserAndId,
     findManyByUserAndIds,
     findByUserAndBatch,
+    findExistingByNameAndSize,
     findByUser,
     findByUserGroupedByBatch,
     countByUser,

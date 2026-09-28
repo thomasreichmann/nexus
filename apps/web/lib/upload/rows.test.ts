@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { patchRowById, resolveUnanimousFolderName } from './rows';
+import {
+    patchRowById,
+    patchRowsWhere,
+    resolveUnanimousFolderName,
+} from './rows';
 
 interface Row {
     id: string;
@@ -43,6 +47,40 @@ describe('patchRowById', () => {
         const next = patchRowById(failed, 'a', { error: undefined });
         expect(next).not.toBe(failed);
         expect(next[0].error).toBeUndefined();
+    });
+});
+
+describe('patchRowsWhere', () => {
+    const isPending = (row: Row) => row.status === 'pending';
+
+    it('returns the same array when nothing matches or nothing changes', () => {
+        expect(patchRowsWhere(rows, () => false, { progress: 50 })).toBe(rows);
+        expect(patchRowsWhere(rows, isPending, { progress: 0 })).toBe(rows);
+    });
+
+    it('patches every matching row in one pass and keeps the rest', () => {
+        const queue: Row[] = [
+            ...rows,
+            { id: 'c', progress: 0, status: 'pending' },
+        ];
+        const next = patchRowsWhere(queue, isPending, { status: 'queued' });
+        expect(next).not.toBe(queue);
+        expect(next.map((row) => row.status)).toEqual([
+            'uploading',
+            'queued',
+            'queued',
+        ]);
+        expect(next[0]).toBe(queue[0]);
+        // Input is untouched.
+        expect(queue[1].status).toBe('pending');
+    });
+
+    it('lets each matching row compute its own patch', () => {
+        const next = patchRowsWhere(rows, isPending, (row) => ({
+            error: `${row.id} failed`,
+        }));
+        expect(next[1].error).toBe('b failed');
+        expect(next[0]).toBe(rows[0]);
     });
 });
 

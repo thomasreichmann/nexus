@@ -16,6 +16,7 @@ import {
     PauseCircle,
     History,
     Play,
+    CopyCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -61,6 +62,8 @@ export function UploadZone() {
         retryFile,
         resumeWithHandle,
         resumeAllWithHandles,
+        uploadAnyway,
+        uploadAllAnyway,
     } = useUpload();
 
     const [isDragOver, setIsDragOver] = useState(false);
@@ -153,6 +156,11 @@ export function UploadZone() {
     const activeCount = files.filter(
         (f) => f.status === 'queued' || f.status === 'uploading'
     ).length;
+    // Both vault-check states (#401) sit outside `pendingFiles`, so the Upload
+    // button, the quota pre-flight and the wave ignore them: `checking` until
+    // the server answers, `duplicate` until the user says "upload anyway".
+    const checkingCount = files.filter((f) => f.status === 'checking').length;
+    const duplicateCount = files.filter((f) => f.status === 'duplicate').length;
     // The wave is live while the pool holds rows; `isUploading` alone would
     // blink off during the batch-creation await before any row is admitted.
     const hasActiveWave = isUploading || activeCount > 0;
@@ -168,6 +176,7 @@ export function UploadZone() {
     const showOutcome =
         !hasActiveWave &&
         pendingFiles.length === 0 &&
+        checkingCount === 0 &&
         pausedCount === 0 &&
         attemptedCount > 0;
     const quickResumable = files.filter(
@@ -207,7 +216,11 @@ export function UploadZone() {
     // never describe different waves (paused rows are in: a row parked by a
     // connection drop is still the wave's work).
     const waveRows = files.filter(
-        (f) => f.status !== 'pending' && f.status !== 'resumable'
+        (f) =>
+            f.status !== 'pending' &&
+            f.status !== 'resumable' &&
+            f.status !== 'checking' &&
+            f.status !== 'duplicate'
     );
     const wavePercent = waveProgress(waveRows);
 
@@ -350,29 +363,54 @@ export function UploadZone() {
                             </div>
                         )}
                         {quickResumable.length > 0 && (
-                            <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-                                <div className="flex items-center gap-2 text-sm">
+                            <QueueNoticeBar
+                                tone="warning"
+                                icon={
                                     <History className="h-4 w-4 shrink-0 text-amber-500" />
-                                    <span>
-                                        <span className="font-medium">
-                                            {quickResumable.length}
-                                        </span>{' '}
-                                        interrupted{' '}
-                                        {quickResumable.length === 1
-                                            ? 'upload'
-                                            : 'uploads'}{' '}
-                                        ready to resume — no re-selecting
-                                    </span>
-                                </div>
-                                <Button
-                                    size="sm"
-                                    onClick={resumeAllWithHandles}
-                                    disabled={isUploading}
-                                >
-                                    <Play className="mr-2 h-4 w-4" />
-                                    Resume all
-                                </Button>
-                            </div>
+                                }
+                                action={
+                                    <Button
+                                        size="sm"
+                                        onClick={resumeAllWithHandles}
+                                        disabled={isUploading}
+                                    >
+                                        <Play className="mr-2 h-4 w-4" />
+                                        Resume all
+                                    </Button>
+                                }
+                            >
+                                <span className="font-medium">
+                                    {quickResumable.length}
+                                </span>{' '}
+                                interrupted{' '}
+                                {quickResumable.length === 1
+                                    ? 'upload'
+                                    : 'uploads'}{' '}
+                                ready to resume — no re-selecting
+                            </QueueNoticeBar>
+                        )}
+                        {duplicateCount > 0 && (
+                            <QueueNoticeBar
+                                tone="neutral"
+                                icon={
+                                    <CopyCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                }
+                                action={
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={uploadAllAnyway}
+                                    >
+                                        Upload all anyway
+                                    </Button>
+                                }
+                            >
+                                <span className="font-medium">
+                                    {duplicateCount}
+                                </span>{' '}
+                                {duplicateCount === 1 ? 'file is' : 'files are'}{' '}
+                                already in your vault — skipped
+                            </QueueNoticeBar>
                         )}
                         {/* Contained scroll: the page must not grow with the
                             selection. Rows are absolutely positioned by the
@@ -421,6 +459,9 @@ export function UploadZone() {
                                                     }
                                                     onRetry={retryFile}
                                                     onResume={resumeWithHandle}
+                                                    onUploadAnyway={
+                                                        uploadAnyway
+                                                    }
                                                 />
                                             </div>
                                         );
@@ -565,6 +606,7 @@ interface UploadQueueRowProps {
     onCancel: (id: string) => void;
     onRetry: (id: string) => void;
     onResume: (id: string) => void;
+    onUploadAnyway: (id: string) => void;
 }
 
 /**
@@ -580,6 +622,7 @@ const UploadQueueRow = memo(function UploadQueueRow({
     onCancel,
     onRetry,
     onResume,
+    onUploadAnyway,
 }: UploadQueueRowProps) {
     return (
         <div className="flex items-center gap-3 rounded-lg border border-border p-3">
@@ -616,10 +659,37 @@ const UploadQueueRow = memo(function UploadQueueRow({
                         {file.error}
                     </p>
                 )}
+                {file.status === 'checking' && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        Checking your vault…
+                    </p>
+                )}
+                {file.status === 'duplicate' && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        Already in your vault — skipped
+                    </p>
+                )}
+                {file.status === 'pending' && file.isDuplicate && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                        Already in your vault — uploading anyway
+                    </p>
+                )}
             </div>
+            {file.status === 'duplicate' && (
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onUploadAnyway(file.id)}
+                >
+                    Upload anyway
+                </Button>
+            )}
             {/* Removable while queued too: the pool re-reads the row at start
                 time, so a removed row is simply skipped. */}
-            {(file.status === 'pending' || file.status === 'queued') && (
+            {(file.status === 'pending' ||
+                file.status === 'queued' ||
+                file.status === 'checking' ||
+                file.status === 'duplicate') && (
                 <Button
                     variant="ghost"
                     size="icon"
@@ -670,6 +740,35 @@ const UploadQueueRow = memo(function UploadQueueRow({
     );
 });
 
+interface QueueNoticeBarProps {
+    icon: React.ReactNode;
+    // Amber for something the user should act on (interrupted work), the
+    // neutral surface for something the queue handled on their behalf.
+    tone: 'warning' | 'neutral';
+    action: React.ReactNode;
+    children: React.ReactNode;
+}
+
+/** One notice above the queue: icon, a count sentence, a bulk action. */
+function QueueNoticeBar({ icon, tone, action, children }: QueueNoticeBarProps) {
+    return (
+        <div
+            className={cn(
+                'mb-4 flex items-center justify-between gap-3 rounded-lg border px-4 py-3',
+                tone === 'warning'
+                    ? 'border-amber-500/30 bg-amber-500/5'
+                    : 'border-border bg-muted/30'
+            )}
+        >
+            <div className="flex items-center gap-2 text-sm">
+                {icon}
+                <span>{children}</span>
+            </div>
+            {action}
+        </div>
+    );
+}
+
 /**
  * The row's 10x10 leading tile. Browser-decodable files get a local blob
  * preview in the same fixed box (no reflow, no server round-trip); the
@@ -709,10 +808,13 @@ function UploadPreviewTile({
     }, [videoUrl]);
     const previewUrl = imageUrl ?? videoUrl;
 
-    // Pending and queued rows keep a clean preview — the scrim + icon only
-    // takes over once the row has a state worth signalling.
+    // Pending, checking and queued rows keep a clean preview — the scrim +
+    // icon only takes over once the row has a state worth signalling.
     const showStatusIcon =
-        (status !== 'pending' && status !== 'queued') || !previewUrl;
+        (status !== 'pending' &&
+            status !== 'checking' &&
+            status !== 'queued') ||
+        !previewUrl;
 
     return (
         <div className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
@@ -753,6 +855,8 @@ function UploadPreviewTile({
                             <History className="h-5 w-5 text-amber-500" />
                         ) : status === 'uploading' ? (
                             <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        ) : status === 'duplicate' ? (
+                            <CopyCheck className="h-5 w-5 text-muted-foreground" />
                         ) : (
                             <FileIcon className="h-5 w-5 text-muted-foreground" />
                         )}

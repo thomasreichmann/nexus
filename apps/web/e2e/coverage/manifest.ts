@@ -395,6 +395,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-duplicate-skip',
+        title: 'Re-dropping an already-uploaded folder marks its files as already in the vault and queues nothing until overridden',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-folder-names-batch',
         title: 'A whole-folder upload names its batch after the folder',
         area: 'upload',

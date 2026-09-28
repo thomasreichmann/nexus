@@ -17,11 +17,38 @@ export function patchRowById<T extends { id: string }>(
     const index = rows.findIndex((row) => row.id === id);
     if (index === -1) return rows;
     const row = rows[index];
-    const keys = Object.keys(updates) as (keyof T)[];
-    if (keys.every((key) => Object.is(row[key], updates[key]))) return rows;
+    if (isNoopPatch(row, updates)) return rows;
     const next = rows.slice();
     next[index] = { ...row, ...updates };
     return next;
+}
+
+/**
+ * Bulk sibling of `patchRowById` with the same identity contract: one pass
+ * over the queue, so settling a re-dropped shoot's thousands of rows costs one
+ * array copy rather than one per row. The same array comes back when no row
+ * actually changes, and untouched rows keep their references. `updates` may
+ * be a function when each matching row needs its own patch.
+ */
+export function patchRowsWhere<T extends object>(
+    rows: T[],
+    predicate: (row: T) => boolean,
+    updates: Partial<T> | ((row: T) => Partial<T>)
+): T[] {
+    let next: T[] | null = null;
+    rows.forEach((row, index) => {
+        if (!predicate(row)) return;
+        const patch = typeof updates === 'function' ? updates(row) : updates;
+        if (isNoopPatch(row, patch)) return;
+        next ??= rows.slice();
+        next[index] = { ...row, ...patch };
+    });
+    return next ?? rows;
+}
+
+function isNoopPatch<T extends object>(row: T, patch: Partial<T>): boolean {
+    const keys = Object.keys(patch) as (keyof T)[];
+    return keys.every((key) => Object.is(row[key], patch[key]));
 }
 
 /**

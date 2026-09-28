@@ -30,6 +30,7 @@ import {
     putUpload,
     type CompletedPart,
 } from '@/lib/upload/uploadStore';
+import { planVaultLookups, vaultKey } from '@/lib/upload/duplicates';
 import {
     computeRemainingPartNumbers,
     isFileMatch,
@@ -41,6 +42,7 @@ import {
 } from '@/lib/upload/parts';
 import {
     patchRowById,
+    patchRowsWhere,
     resolveUnanimousFolderName,
     type FolderOrigin,
 } from '@/lib/upload/rows';
@@ -81,7 +83,14 @@ export type UploadStatus =
     | 'paused'
     | 'resumable'
     | 'complete'
-    | 'error';
+    | 'error'
+    // Just added, vault check in flight (#401): the row shows at once so a
+    // drop never looks ignored, and the Upload button leaves it alone until
+    // the check settles it into `pending` or `duplicate`.
+    | 'checking'
+    // Name + size matched a file already in the vault, so the Upload button
+    // skips it (#401). "Upload anyway" turns it back into `pending`.
+    | 'duplicate';
 
 export interface UploadFile {
     id: string;
@@ -90,6 +99,9 @@ export interface UploadFile {
     progress: number;
     status: UploadStatus;
     error?: string;
+    // Flagged by the vault check on add; survives an "upload anyway" so the
+    // row can still say the second copy was deliberate.
+    isDuplicate?: boolean;
     // A `resumable` row whose persisted handle can be reopened in one click,
     // rather than requiring the user to re-add the file (Chromium only).
     isQuickResumable?: boolean;
@@ -241,6 +253,20 @@ export function useUpload() {
     const multipartSignPartsMutation = useMutation(
         trpc.files.multipart.signParts.mutationOptions()
     );
+    // The vault check fails open: a lookup that errors queues everything as
+    // usual, and this toast is the only thing that says the check didn't run.
+    const findDuplicatesMutation = useMutation(
+        trpc.files.findDuplicates.mutationOptions({
+            trpc: toastContext({
+                errorMessage:
+                    "Couldn't check for duplicates — everything was queued",
+            }),
+        })
+    );
+    // Through a ref so `addFiles` stays dependency-free (the per-render
+    // mutation object would otherwise re-form it; same as runQueuedRef).
+    const findDuplicatesRef = useRef(findDuplicatesMutation);
+    findDuplicatesRef.current = findDuplicatesMutation;
 
     const updateFile = useCallback(
         (id: string, updates: Partial<InternalUploadFile>) => {
@@ -877,6 +903,18 @@ export function useUpload() {
                 return records.find((record) => isFileMatch(record, identity));
             });
 
+            // Ids for the rows this gesture creates, minted outside the state
+            // updater (StrictMode runs updaters twice) so the vault check
+            // below settles exactly these rows and no others. A re-add matched
+            // to an interrupted upload takes the resume path and gets none.
+            // Every progress update, cancel and retry keys on these ids, and a
+            // drop can queue thousands of rows — a short Math.random id
+            // collided at that scale (#410).
+            const freshIds = picked.map((_, i) => {
+                const match = matches[i];
+                return match && isResumable(match) ? null : crypto.randomUUID();
+            });
+
             setFiles((prev) => {
                 // Reattach re-added files to their resumable rows (immutably), then
                 // append rows for everything that didn't match an existing row.
@@ -919,14 +957,11 @@ export function useUpload() {
                         return;
                     }
                     appended.push({
-                        // Every progress update, cancel and retry keys on this
-                        // id, and a drop can queue thousands of rows — a short
-                        // Math.random id collided at that scale (#410).
-                        id: crypto.randomUUID(),
+                        id: freshIds[i]!,
                         name: file.name,
                         size: file.size,
                         progress: 0,
-                        status: 'pending',
+                        status: 'checking',
                         file,
                         fileHandle: handle,
                         folderOrigin,
@@ -951,6 +986,47 @@ export function useUpload() {
                 });
                 return [...updated, ...appended];
             });
+
+            // Then one server round trip for the gesture (#401): which of the
+            // new rows' name + size pairs the vault already holds. The rows are
+            // already showing — a drop must never look ignored (#388) — and
+            // `checking` keeps them out of the Upload button until this
+            // settles them. Chunks run one at a time (a gesture over
+            // MAX_FILES_PER_VAULT_LOOKUP has more than one), and a chunk that
+            // fails leaves the earlier answers standing: fail open on what's
+            // unknown, not on everything. The mutation's own toast says the
+            // check didn't run.
+            const checking = new Set(
+                freshIds.filter((id): id is string => id !== null)
+            );
+            if (checking.size === 0) return;
+            const freshFiles = picked
+                .filter((_, i) => freshIds[i] !== null)
+                .map(({ file }) => file);
+            const vaultKeys = new Set<string>();
+            try {
+                for (const files of planVaultLookups(freshFiles)) {
+                    const found = await findDuplicatesRef.current.mutateAsync({
+                        files,
+                    });
+                    for (const match of found) vaultKeys.add(vaultKey(match));
+                }
+            } catch {
+                // Fail open — see above.
+            }
+            setFiles((prev) =>
+                patchRowsWhere(
+                    prev,
+                    (f) => f.status === 'checking' && checking.has(f.id),
+                    (f) => {
+                        const isDuplicate = vaultKeys.has(vaultKey(f));
+                        return {
+                            status: isDuplicate ? 'duplicate' : 'pending',
+                            isDuplicate,
+                        };
+                    }
+                )
+            );
         },
         []
     );
@@ -1002,6 +1078,25 @@ export function useUpload() {
     dropRowRef.current = dropRow;
     const removeFile = useCallback((id: string) => dropRowRef.current(id), []);
     const cancelFile = removeFile;
+
+    // "Upload anyway" for a row the vault check skipped: back to `pending`, so
+    // the Upload button owns it again. `isDuplicate` stays set — the copy is
+    // deliberate, and the row keeps saying so.
+    const uploadAnyway = useCallback(
+        (id: string) => {
+            const row = filesRef.current.find((f) => f.id === id);
+            if (row?.status !== 'duplicate') return;
+            updateFile(id, { status: 'pending' });
+        },
+        [updateFile]
+    );
+    const uploadAllAnyway = useCallback(() => {
+        setFiles((prev) =>
+            patchRowsWhere(prev, (f) => f.status === 'duplicate', {
+                status: 'pending',
+            })
+        );
+    }, []);
 
     // Clear all empties the list; it is not a per-row "give up on this upload"
     // the way Cancel/Remove is. So it must not destroy multipart work the user
@@ -1127,6 +1222,8 @@ export function useUpload() {
         retryFile,
         resumeWithHandle,
         resumeAllWithHandles,
+        uploadAnyway,
+        uploadAllAnyway,
     };
 }
 
@@ -1148,6 +1245,7 @@ function toPublicUploadFile(row: InternalUploadFile): UploadFile {
             status: row.status,
             error: row.error,
             isQuickResumable: row.isQuickResumable,
+            isDuplicate: row.isDuplicate,
             previewFile: row.file,
         };
         publicRowCache.set(row, cached);

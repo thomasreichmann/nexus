@@ -3,11 +3,15 @@ import { DEFAULT_RESTORE_TIER, RESTORE_TIERS } from '@nexus/db/schema';
 import { createFileRepo } from '@nexus/db/repo/files';
 import { fileService } from '@/server/services/files';
 import { retrievalService } from '@/server/services/retrieval';
+import { MAX_FILES_PER_VAULT_LOOKUP } from '@/lib/upload/limits';
 import { protectedProcedure, router } from '../init';
 
 // One rule for both ways a batch gets named: per-file on `upload`, and up front
 // on `createBatch`.
 const batchNameSchema = z.string().min(1).max(255);
+// Stated once: the name limit an upload accepts is the one the vault check
+// (`findDuplicates`) matches against.
+const fileNameSchema = z.string().min(1).max(255);
 
 // Shoot-to-full-archive scale, not the old 100 (#423, #400). A wedding
 // re-delivery is 500-1,500 files and the disaster-recovery case #406 is built
@@ -19,7 +23,7 @@ const batchNameSchema = z.string().min(1).max(255);
 const MAX_BULK_FILE_IDS = 10_000;
 
 const uploadInputSchema = z.object({
-    name: z.string().min(1).max(255),
+    name: fileNameSchema,
     sizeBytes: z.number().positive(),
     mimeType: z.string().optional(),
     // Join an existing batch by id, or seed a new one with a custom name.
@@ -243,6 +247,33 @@ export const filesRouter = router({
                 ctx.db,
                 ctx.session.user.id,
                 input.fileIds
+            );
+        }),
+
+    // The upload queue's vault check (#401): which of a gesture's files are
+    // already committed, by name + size. A read, but a mutation on the wire —
+    // the input is the whole gesture, which wouldn't fit a GET URL, and a
+    // re-drop right after an upload must never be answered from the query
+    // cache. Capped by its own wire-sized constant, not the drop cap: the
+    // queue chunks its lookups by the same one, so the two can't drift.
+    findDuplicates: protectedProcedure
+        .input(
+            z.object({
+                files: z
+                    .array(
+                        z.object({
+                            name: fileNameSchema,
+                            size: z.number().int().nonnegative(),
+                        })
+                    )
+                    .min(1)
+                    .max(MAX_FILES_PER_VAULT_LOOKUP),
+            })
+        )
+        .mutation(({ ctx, input }) => {
+            return createFileRepo(ctx.db).findExistingByNameAndSize(
+                ctx.session.user.id,
+                input.files
             );
         }),
 
