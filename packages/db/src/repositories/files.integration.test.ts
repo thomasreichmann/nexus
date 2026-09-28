@@ -398,33 +398,57 @@ describe.concurrent('findByUserGroupedByBatch', () => {
     });
 });
 
+// Each write names its rows by id and nothing else scopes it, so the id
+// filter is all that stands between one row and the whole table.
 describe.concurrent('writes by id', () => {
-    it('update, delete and softDeleteMany touch only the rows they name', async ({
+    it('update writes the named file only, and returns undefined for a missing one', async ({
         db,
         user,
     }) => {
         const repo = createFileRepo(db);
-        const [renamed, removed, softDeleted, bystander] = await Promise.all(
-            Array.from({ length: 4 }, () => insertFile(db, { userId: user.id }))
-        );
+        const [target, bystander] = await Promise.all([
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id }),
+        ]);
 
         expect(
-            await repo.update(renamed.id, { name: 'renamed.pdf' })
-        ).toMatchObject({ id: renamed.id, name: 'renamed.pdf' });
-        expect((await repo.delete(removed.id))?.id).toBe(removed.id);
-        expect(
-            (await repo.softDeleteMany([softDeleted.id])).map((f) => [
-                f.id,
-                f.status,
-            ])
-        ).toEqual([[softDeleted.id, 'deleted']]);
-
-        expect(await repo.findById(removed.id)).toBeUndefined();
+            await repo.update(target.id, { name: 'renamed.pdf' })
+        ).toMatchObject({ id: target.id, name: 'renamed.pdf' });
         expect(await repo.findById(bystander.id)).toEqual(bystander);
         expect(
             await repo.update(crypto.randomUUID(), { name: 'x.pdf' })
         ).toBeUndefined();
+    });
+
+    it('delete removes the named file only, and returns undefined for a missing one', async ({
+        db,
+        user,
+    }) => {
+        const repo = createFileRepo(db);
+        const [target, bystander] = await Promise.all([
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id }),
+        ]);
+
+        expect((await repo.delete(target.id))?.id).toBe(target.id);
+        expect(await repo.findById(target.id)).toBeUndefined();
+        expect(await repo.findById(bystander.id)).toEqual(bystander);
         expect(await repo.delete(crypto.randomUUID())).toBeUndefined();
+    });
+
+    it('softDeleteMany deletes the named files only', async ({ db, user }) => {
+        const repo = createFileRepo(db);
+        const [target, bystander] = await Promise.all([
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id }),
+        ]);
+
+        const deleted = await repo.softDeleteMany([target.id]);
+
+        expect(deleted.map((f) => [f.id, f.status])).toEqual([
+            [target.id, 'deleted'],
+        ]);
+        expect(await repo.findById(bystander.id)).toEqual(bystander);
     });
 });
 
