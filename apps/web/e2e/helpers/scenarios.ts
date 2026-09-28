@@ -5,6 +5,7 @@
  * vary per describe — for per-test single-entity preconditions, prefer the
  * fixtures in `fixtures/data.ts` instead.
  */
+import { randomUUID } from 'node:crypto';
 import {
     type Connection,
     type Job,
@@ -57,6 +58,27 @@ export async function seedJobs(
     }
 
     return jobs;
+}
+
+/**
+ * A failed job that is safe to retry for real (#509). The admin retry sends
+ * the row's type and payload to the live dev queue, and the deployed worker
+ * runs it. An `e2e-test-job` has no handler there: it throws, fails every job
+ * in its SQS batch, and parks in the DLQ. A `generate-thumbnail` for a file
+ * that doesn't exist is a success path in that handler (it returns early), so
+ * the retried job just completes.
+ */
+export async function seedRetryableFailedJob(db: Connection): Promise<Job> {
+    const now = Date.now();
+    return insertJob(db, {
+        type: 'generate-thumbnail',
+        payload: { fileId: randomUUID() },
+        status: 'failed',
+        attempts: 1,
+        startedAt: new Date(now - 60_000),
+        completedAt: new Date(now - 30_000),
+        error: 'E2E test simulated failure',
+    });
 }
 
 export async function cleanupJobs(db: Connection, jobs: Job[]): Promise<void> {

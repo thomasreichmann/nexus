@@ -209,16 +209,9 @@ jobs:
               id: smoke
               run: pnpm -F web test:e2e:smoke
 
-            # The retry spec re-publishes a seeded `e2e-test-job` row, a type
-            # no worker handler knows. On the real jobs queue it throws in the
-            # worker, fails the whole batch it rides in, and parks in the DLQ
-            # (the #442 failure mode). Point this tier at the consumer-less
-            # test queue instead: the send is still real, nothing receives it.
             - name: Run admin tests
               id: admin
               if: ${{ !cancelled() }}
-              env:
-                  SQS_QUEUE_URL: https://sqs.us-east-1.amazonaws.com/391615358272/nexus-integration-test-jobs-dev
               run: pnpm -F web test:e2e:admin
 
             - name: Run flows tests
