@@ -74,8 +74,9 @@ export type WorkerEvent = SQSEvent | ScheduledEvent;
  * One Lambda, two triggers: SQS jobs and the 15-minute retrieval poll.
  *
  * They share a function because they share a warm container and its single DB
- * connection, and because the split that would matter — isolating the queue's
- * concurrency — is #385's, not this one's.
+ * connection. The queue's concurrency doesn't need a split to isolate it: the
+ * SQS event source mapping caps it on its own, and the poll isn't counted
+ * against that cap (#385, lambda.tf).
  */
 export async function handler(event: WorkerEvent): Promise<void> {
     // `finally`, so a failing record still flushes: the events captured before
