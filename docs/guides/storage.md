@@ -141,7 +141,8 @@ from the app (#423). The app decides _that_ a restore happens — it writes the
 retrieval rows and publishes the job — and one place tells AWS. A 10,000-file
 request is two S3 round trips per file, which is not something an HTTP handler
 can wait for, and a second wrapper on this side would be a second way to start
-a restore that nothing reconciles.
+a restore that nothing reconciles. The app's IAM user doesn't hold
+`s3:RestoreObject` at all (#468); only the worker role does.
 
 The tier a restore runs at is `DEFAULT_RESTORE_TIER` (`@nexus/db/objectState`)
 unless the caller names one:
