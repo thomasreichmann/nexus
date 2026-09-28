@@ -374,6 +374,10 @@ claims under concurrency, unique indexes.
 | A worker job or its handling (`apps/worker/…`)  | `apps/worker/src/**/x.integration.test.ts` | `pnpm -F @nexus/worker test:integration` |
 | Every package                                   |                                            | `pnpm test:integration`                  |
 
+For a job handler, `apps/worker/src/handlers/generateThumbnail.integration.test.ts`
+is the example: each outcome is read back from the row it writes, with S3
+faked at the client's `send` and ffmpeg/ffprobe/exiftool at `execFile`.
+
 The unit configs exclude `*.integration.test.ts`, so `pnpm check` never needs
 a database.
 
@@ -397,13 +401,12 @@ logic that never reaches SQL (`compareFilesByName` in
 `../test-db/integration` inside `packages/db`) and ask for what the test
 needs. Seed with the typed insert helpers from `@nexus/db/test-db`.
 
-| Fixture      | Scope  | What you get                                                                                                                                                                                     |
-| ------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `db`         | worker | One connection pool per Vitest worker, closed at the end. Never call `createDb` in a test.                                                                                                       |
-| `user`       | test   | A fresh user. After the test, it and every row it owns are deleted in one statement (`deleteUsers`: every user-owned table cascades from `user`; invites it created go in the same statement).   |
-| `createUser` | test   | More users for this test, e.g. the other owner in an ownership test. Torn down with `user`, in that same statement.                                                                              |
-| `fileUser`   | file   | One user shared by the file's tests, deleted after the last one. For a suite where a user per test costs more round trips than its isolation is worth. Its rows pile up across the file's tests. |
-| `createJob`  | test   | A `background_jobs` row (`createNewJobFixture` defaults), deleted after the test. Jobs have no user to cascade from, and a leftover one crowds the admin jobs table (#419).                      |
+| Fixture      | Scope  | What you get                                                                                                                                                                                   |
+| ------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db`         | worker | One connection pool per Vitest worker, closed at the end. Never call `createDb` in a test.                                                                                                     |
+| `user`       | test   | A fresh user. After the test, it and every row it owns are deleted in one statement (`deleteUsers`: every user-owned table cascades from `user`; invites it created go in the same statement). |
+| `createUser` | test   | More users for this test, e.g. the other owner in an ownership test. Torn down with `user`, in that same statement.                                                                            |
+| `createJob`  | test   | A `background_jobs` row (`createNewJobFixture` defaults), deleted after the test. Jobs have no user to cascade from, and a leftover one crowds the admin jobs table (#419).                    |
 
 **The reference example.** Copy this one
 (`packages/db/src/repositories/uploadBatches.integration.test.ts`): seed the

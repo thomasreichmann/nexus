@@ -112,6 +112,7 @@ export const TIERS = [
             /^apps\/worker\/(vitest\.config|vitest\.integration\.config|vitest\.integration\.setup)\.ts$/.test(
                 f
             ) ||
+            f === 'apps/worker/src/testing.ts' ||
             f === 'packages/db/src/test-db/integration.ts',
     },
 ];

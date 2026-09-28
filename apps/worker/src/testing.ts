@@ -1,9 +1,10 @@
 import type { Mock } from 'vitest';
 
 /**
- * Test scaffolding shared by the worker's two S3 specs — the readiness poll and
- * the restore-initiation handler. Both drive the same client through the same
- * HeadObject shapes, so the fixtures live here rather than being copied.
+ * Test scaffolding shared by the worker's S3 specs — the readiness poll, the
+ * restore-initiation handler and the thumbnail handler. They drive the same
+ * client through the same S3 shapes, so the fixtures live here rather than
+ * being copied.
  *
  * Excluded from coverage by `vitest.config.ts` (the `**\/testing*` pattern).
  */
@@ -83,6 +84,14 @@ export function notFound(): Error {
         name: 'NotFound',
         $metadata: { httpStatusCode: 404 },
     });
+}
+
+/** What GetObject throws for an archived object with no restored copy. */
+export function invalidObjectState(): Error {
+    return Object.assign(
+        new Error("The operation is not valid for the object's storage class"),
+        { name: 'InvalidObjectState', $metadata: { httpStatusCode: 403 } }
+    );
 }
 
 /** What S3 answers when the object already has a restore in flight. */
