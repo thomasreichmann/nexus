@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { deriveStatus, getFileExtension } from './status';
-import type { FileWithRetrieval } from '@nexus/db/repo/files';
+import {
+    attachActiveRetrievals,
+    deriveStatus,
+    getFileExtension,
+} from './status';
+import type { File, FileWithRetrieval } from '@nexus/db/repo/files';
 
 // Fixtures only carry the fields deriveStatus reads; the rest of the File
 // row is irrelevant to the status mapping.
@@ -46,6 +50,40 @@ describe('deriveStatus', () => {
     it('is archived without an active retrieval — even for available files (#256)', () => {
         expect(deriveStatus(fileWith('available', null))).toBe('archived');
         expect(deriveStatus(fileWith('uploading', null))).toBe('archived');
+    });
+});
+
+describe('attachActiveRetrievals', () => {
+    // A plain `files.list` row: DB `available`, which on its own means
+    // archived (#358).
+    function plainFile(id: string): File {
+        return { id, status: 'available' } as File;
+    }
+
+    it('derives the same status the joined file-browser row would', () => {
+        const [ready, restoring, untouched] = attachActiveRetrievals(
+            [plainFile('a'), plainFile('b'), plainFile('c')],
+            [
+                { fileId: 'a', status: 'ready', expiresAt: null },
+                { fileId: 'b', status: 'in_progress', expiresAt: null },
+            ]
+        );
+        expect(deriveStatus(ready)).toBe('available');
+        expect(deriveStatus(restoring)).toBe('retrieving');
+        expect(deriveStatus(untouched)).toBe('archived');
+        expect(untouched.activeRetrieval).toBeNull();
+    });
+
+    it('keeps the first row when a race left two active retrievals (#266)', () => {
+        const expiresAt = new Date('2026-10-01T00:00:00Z');
+        const [file] = attachActiveRetrievals(
+            [plainFile('a')],
+            [
+                { fileId: 'a', status: 'ready', expiresAt },
+                { fileId: 'a', status: 'pending', expiresAt: null },
+            ]
+        );
+        expect(file.activeRetrieval).toEqual({ status: 'ready', expiresAt });
     });
 });
 
