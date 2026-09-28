@@ -1,7 +1,7 @@
 ---
 title: S3 Storage Module
 created: 2026-01-26
-updated: 2026-01-26
+updated: 2026-09-28
 status: active
 tags:
     - guide
@@ -208,6 +208,15 @@ switch (state.availability) {
 #### `s3.objects.remove(key)`
 
 Delete an object from the bucket. This operation is idempotent—it returns successfully even if the object doesn't exist.
+
+The files bucket is versioned (#383), so this is a soft delete. S3 writes a
+delete marker, the key reads as missing right away, and the bytes stay
+recoverable as a noncurrent version for 30 days. After that the bucket's
+`expire-noncurrent-versions` lifecycle rule reclaims them
+(`infra/terraform/s3.tf`). S3 storage, and what it costs, is not reclaimed at
+call time for any caller, including the stale-upload reaper and abandoned-upload
+release (`abandonUpload`). The user's quota lives in the database and is
+unaffected.
 
 ```typescript
 await s3.objects.remove('user/123/deleted-file.txt');
