@@ -19,9 +19,9 @@ export const FILE_B = {
 };
 
 /**
- * The `dedicatedUserConfig` for one upload spec. One slug per spec file: the
- * fixture's worker teardown deletes its user, so two files sharing a user
- * would delete it from under each other.
+ * The `dedicatedUserConfig` for one upload spec: base names, which the fixture
+ * scopes to the run and worker (#484). One slug per spec file, so no two files
+ * ever share a user's data.
  */
 export function uploadSpecUser(slug: string): {
     user: TestUser;

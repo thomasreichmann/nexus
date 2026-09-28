@@ -8,9 +8,8 @@ import { test, expect } from '../fixtures';
 import { FILE_A, UPLOAD_PAGE_URL, uploadSpecUser } from '../helpers/uploadPage';
 import { stubS3Puts, writeFolderTree } from '../helpers/uploadStubs';
 
-// One user for the whole file, so its tests take turns on one worker
-// (`default` overrides the config's fullyParallel). Nothing carries over
-// between them, so a failure doesn't skip the rest the way `serial` would.
+// One worker for the file, so it signs up one user rather than one per worker
+// its tests spread to. Not `serial`: no test hands state to the next.
 test.describe.configure({ mode: 'default' });
 test.use({ dedicatedUserConfig: uploadSpecUser('folders') });
 
