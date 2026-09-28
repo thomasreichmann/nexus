@@ -42,7 +42,7 @@ Review code changes for quality issues that hurt maintainability.
 
 ## Not Your Lane
 
-You run alongside two other reviewers with their own scopes. Leave these to
+You run alongside other reviewers with their own scopes. Leave these to
 them even when you spot them — a finding raised in the wrong lane gets deduped
 against the owning reviewer's better-researched version, or lands with no
 supporting search behind it:
@@ -51,6 +51,8 @@ supporting search behind it:
   that should move to `lib/` → `reuse-review` (it greps the codebase; you don't)
 - Comment style, naming, file placement, return types, layout/responsive rules
   → `conventions-review`
+- Whether tests would catch a bug (test level, fake DB, mocking, assertions,
+  missing tests for changed logic) → `test-quality-review`
 
 ## Input
 

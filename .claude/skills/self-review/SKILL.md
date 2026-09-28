@@ -1,12 +1,12 @@
 ---
 name: self-review
-description: Run the work skill's self-review phase standalone — a review workflow (conventions, code quality, reuse) over the current branch diff
+description: Run the work skill's self-review phase standalone — a review workflow (conventions, code quality, reuse, test quality) over the current branch diff
 argument-hint: [issue-number]
 ---
 
 # Self-Review
 
-Review the current diff via the `self-review` workflow (three specialized reviewers in parallel). This is step 6 of the `/work` skill, runnable standalone.
+Review the current diff via the `self-review` workflow (specialized reviewers in parallel). This is step 6 of the `/work` skill, runnable standalone.
 
 **Git state:**
 !`git status --short; git branch --show-current`
@@ -42,10 +42,10 @@ Review the current diff via the `self-review` workflow (three specialized review
     })
     ```
 
-    It runs the three reviewers (`conventions-review`, `code-quality-review`, `reuse-review`) in parallel with structured output, then an aggregate stage merges duplicate findings across reviewers; the diff travels by **path** only, never inlined into args. The call returns immediately — wait for the completion notification, don't poll.
+    It runs the reviewers (`conventions-review`, `code-quality-review`, `reuse-review`, and `test-quality-review` whenever a code file changed) in parallel with structured output, then an aggregate stage merges duplicate findings across reviewers; the diff travels by **path** only, never inlined into args. The call returns immediately — wait for the completion notification, don't poll. `test-quality-review` judges tests against the "Writing a test" section of `docs/conventions/testing.md`.
 
 4. **Triage.** The workflow returns `{ findings, notes, failedReviewers, aggregated }`, pre-sorted by `severity` (high → low). Severity is the ranking signal; present findings in that order with their category.
 
-    The `reviewers` array is provenance, not a vote. The three lanes are deliberately disjoint — a duplication issue can only ever be found by `reuse-review` — so nearly every finding is reported once, and being reported once says nothing about whether it is real. Do not downrank, hedge, or drop a finding for having one reviewer, and do not surface the count as a confidence score.
+    The `reviewers` array is provenance, not a vote. The lanes are deliberately disjoint — a duplication issue can only ever be found by `reuse-review` — so nearly every finding is reported once, and being reported once says nothing about whether it is real. Do not downrank, hedge, or drop a finding for having one reviewer, and do not surface the count as a confidence score.
 
     If `findings` is empty, report clean and stop (mention `failedReviewers` if any reviewer died; if `aggregated` is false the dedup pass failed and findings are unmerged singletons). Otherwise ask: fix all / fix selected / skip. Apply approved fixes, then re-run `pnpm check` (skip the re-run if no fixes were applied).

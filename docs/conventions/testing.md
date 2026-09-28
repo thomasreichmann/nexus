@@ -12,6 +12,141 @@ aliases:
 
 # Testing
 
+**Before you write or review a test, read [Writing a test](#writing-a-test).**
+It covers which test to write and how to tell whether it protects anything.
+The rest of this page is reference for each tier:
+[Integration](#integration-tests-real-database),
+[Unit](#unit-tests), [Smoke](#smoke-tests-for-pages) and
+[E2E](#authenticated-e2e-tests),
+[Coverage](#code-coverage) and [`pnpm cov:touched`](#after-coding-pnpm-covtouched).
+
+## Writing a test
+
+A test earns its place when breaking the behaviour it names turns it red.
+Everything below serves that one rule.
+
+### The workflow
+
+1. **Write the code.**
+2. **Run `pnpm cov:touched`**
+   ([reference](#after-coding-pnpm-covtouched)). It lists the files you
+   changed, worst-covered first. `untested` and `e2e-only` lines are where to
+   look first.
+3. **Decide what each uncovered behaviour needs:** which
+   [quadrant](#code-quadrants-where-a-test-pays-off) the code is in, and
+   which [level](#which-level) would see it break.
+4. **Write the test.** Assert on outcomes, keep it clear of the
+   [smells](#smells), and check it against the [four pillars](#the-four-pillars).
+5. **Break the behaviour, then watch the test go red.** Flip the `<`, drop
+   the `WHERE` term, delete the call, then revert. If the test stays green,
+   it isn't testing that behaviour, so fix the test. Say what you broke in the
+   PR.
+6. **Mutation testing, when available (#494):** run it on your changed
+   files. Each surviving mutant is either a missing test or an assertion that
+   needs tightening.
+
+Coverage shows which code no test runs. Only step 5 (and mutation testing)
+shows whether a test that runs the code would notice it breaking. On the
+2026-09-28 audit, tests graded A and B still let boundary mutants survive
+(`>` → `>=` in `lib/upload/preflight.ts`, the quota soft cap) because nobody
+pinned the edge.
+
+### Which level
+
+Pick the **lowest level at which the bug would be visible.**
+
+| Where the correctness lives                                                                           | Level                                                                                   | Example in this repo                                                                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Logic with no I/O: rules, calculations, parsing, status derivation                                    | **Unit**                                                                                | `packages/db/src/plans.test.ts` pins `isTrialExpired` _exactly at_ `trialEnd`, plus each status that must never expire                                                                                 |
+| SQL: `WHERE` predicates, ownership scoping, upserts, `ON CONFLICT`, unique indexes, concurrent writes | **Integration** ([real DB](#integration-tests-real-database))                           | `apps/web/server/services/retrieval.integration.test.ts` "active queries exclude lapsed rows…" seeds every row of the predicate's truth table, plus another user's row, and asserts the exact set back |
+| A service, route or handler coordinating several collaborators                                        | **Integration**, stubbing only what leaves the process (S3, SQS, Stripe, PostHog)       | `files.integration.test.ts` "lands the same usage as serial confirms when fired concurrently" (a mocked chain cannot race)                                                                             |
+| A route or service branch decided by its inputs, not by SQL                                           | **Unit**, asserting the response or thrown error                                        | `apps/web/app/api/health/route.test.ts` "returns 503 when the DB query throws"                                                                                                                         |
+| What a user sees and does: pages, auth guards, multi-step flows, client ↔ tRPC ↔ DB wiring            | **E2E** (smoke, flows, admin). See [[../guides/e2e-testing-guidelines\|E2E guidelines]] | `apps/web/e2e/admin/jobs.spec.ts`: guards, filtering, pagination, retry                                                                                                                                |
+
+- A dropped `WHERE` term is invisible to a unit test. The mock returns what
+  you told it to, whatever the query says. SQL correctness is always
+  integration.
+- For a presentational component, smoke and e2e cover the rendering. Unit
+  test the logic you pull out of it: `file-browser/status.ts`,
+  `subscriptionPlans.ts`.
+
+### The no-fake-DB rule
+
+**Repository and query code is never tested against a mocked or fake DB.**
+That means `createMockDb`, a `vi.mock` of the connection, or assertions on
+the `values()`/`set()`/`where()` a mocked Drizzle chain received. The mock
+ignores the query, so it can only prove the builder was called. On the
+audit, fake-DB repository tests killed 4 of 11 mutants (36%), and every
+survivor changed which rows a query touches, ownership filters included
+(#489). The rule covers query-building code wherever it lives, including a
+service that calls Drizzle directly.
+
+Test it on the [integration tier](#integration-tests-real-database), with the
+`@nexus/db/test-db/integration` fixtures. Lint enforces the rule under
+`packages/db/src` (#496).
+
+Mocking your own **non-DB** code is fine: a service's repositories, a
+logger, a transport. The audit found it isn't what makes a test weak
+(68% of mutants killed with it, 70% without). Judge those tests by the
+pillars.
+
+### The four pillars
+
+Khorikov's pillars are the yardstick authors and reviewers share. A test's
+value is roughly their product: a test that scores zero on any one of them
+is worth nothing.
+
+| Pillar                             | Ask                                                                                         | A low score here                                                                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Protection against regressions** | If I broke the behaviour this test names, would it go red? How much real logic does it run? | `server/services/files.test.ts` "throws NotFoundError when file belongs to different user": the fake DB returns nothing for any query, so ownership is never exercised |
+| **Resistance to refactoring**      | Would it stay green through a correct rewrite of the implementation?                        | Asserting call counts on `onConflictDoNothing`, a mocked `.set()` payload, or a logger's exact message                                                                 |
+| **Fast feedback**                  | How long does it take to go red?                                                            | Unit ≪ integration ≪ e2e. `upload-queue.spec.ts`'s 400 MB multipart test takes about a minute                                                                          |
+| **Maintainability**                | Can a reader see arrange → act → assert on one screen? How much setup is there?             | `worker/src/pollRetrievals.test.ts` "partitions a ready request…" needs three sequenced `returning` stubs                                                              |
+
+- **Regression protection comes first.** On the audit it was the best single
+  predictor of whether a test caught mutants (r = 0.65, against 0.46 for the
+  combined score).
+- **Don't trade away resistance to refactoring.** Assert on what the code
+  returns, throws, writes to the DB, or shows the user, not on how it got
+  there. A test that fails on every correct refactor gets muted in the end.
+- **Trade speed for protection by picking the level**, not by asserting less.
+- FIRST (fast, isolated, repeatable, self-validating, timely) is a hygiene
+  checklist, not a quality score: 98% of unit tests pass it, weak ones
+  included.
+
+### Code quadrants: where a test pays off
+
+Place the code on two axes: how complex or domain-significant it is, and how
+many collaborators it talks to.
+
+| Quadrant                                               | Here                                                                                                                    | How it gets its protection                                                                                                                                                                              |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Domain and algorithms** (complex, few collaborators) | `lib/upload/*`, `packages/db/src/plans.ts`, `worker/src/partition.ts`, `file-browser/status.ts`                         | Unit tests, edges included. This is where a test buys the most protection                                                                                                                               |
+| **Controllers** (simple, many collaborators)           | tRPC routers, services that orchestrate repositories + S3/SQS, API routes, worker handlers                              | Integration tests over the real DB, and e2e for the user path. Don't unit-test a controller by asserting which mocks it called in which order                                                           |
+| **Trivial** (simple, few collaborators)                | Pass-throughs, constants, re-exports, field mappers                                                                     | The tests of the code that uses it. A dedicated test rarely catches anything those don't, so put the effort there                                                                                       |
+| **Overcomplicated** (complex, many collaborators)      | `worker/src/pollRetrievals.ts`, the request flow in `server/services/retrieval.ts`, `components/dashboard/useUpload.ts` | Extract the decisions into pure functions and unit-test those, leaving a thin controller for the integration tier. `lib/upload/preflight.ts` is that shape: the upload flow calls it, and it has no I/O |
+
+A repository method with a `WHERE` clause is not trivial: the predicate is
+the logic, and it belongs on the integration tier.
+
+### Smells
+
+| Smell                              | How to spot it                                                                | Here                                                                                                                                                                                                   | Instead                                                                                     |
+| ---------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| **Passes without the code** (#490) | The subject is re-implemented in the test, never imported, or never reached   | `server/trpc/middleware/errorHandler.test.ts` tests a copy of the middleware. `logger/__tests__/mapping.test.ts` never imports `mapping.ts`. `worker/src/handler.test.ts` never checks the handler ran | Import the real thing and assert on an effect only it can produce                           |
+| **Mockery**                        | Most of the test sets up mocks, and the asserts check what the mocks received | `packages/db/src/repositories/files.test.ts` "returns soft-deleted files for user" checks only the `set()` payload, so dropping the user scope survived                                                | Integration test that seeds the row the query must exclude                                  |
+| **Tautological assertion**         | The assertion holds whatever the code does                                    | `repositories/files.test.ts` "returns only files that exist and are owned by user": the mock returns the one row the test expects                                                                      | Make the input able to produce the wrong answer, then assert on the right one               |
+| **Obscure test**                   | The title claims more than the asserts check                                  | `server/services/quota.test.ts` "throws QuotaExceededError with details…" checks only the error class                                                                                                  | Assert what the title says (`rejects.toMatchObject({ details })`), or rename it             |
+| **Mystery guest**                  | The outcome depends on a default set somewhere else                           | `retrieval.integration.test.ts` "getDownloadUrl rejects a lapsed ready retrieval" passes because the S3 mock defaults to archived; the lapsed row is irrelevant                                        | Set every precondition in the test, so the named one is the only reason for the outcome     |
+| **Sensitive equality**             | It compares serialized output: SQL text, `toString`, full copy                | `repositories/invites.test.ts` "gates on the same expiry boundary…" substring-matches the generated SQL                                                                                                | Assert on the behaviour: rows either side of the boundary, on the real DB                   |
+| **Assertion roulette**             | Many unlabelled asserts, and a failure doesn't say which behaviour broke      | `repositories/storage-usage.test.ts` "upserts and returns the new snapshot": none of its asserts reach the increment                                                                                   | One behaviour per test, with the assert that proves it                                      |
+| **Conditional test logic**         | An `if`, loop or `try` decides what gets asserted                             | The `try { …; expect.fail() } catch { expect(…) }` blocks in `errorHandler.test.ts`                                                                                                                    | `await expect(p).rejects.toMatchObject({ … })`. `it.each` for tables                        |
+| **Eager test**                     | One test checks several unrelated behaviours                                  | `e2e/flows/files-browser.spec.ts` "standard-tier file without a retrieval…" checks status, menu items and estimate copy together                                                                       | Split it. Push the derivation down to a unit test (`file-browser/status.test.ts`)           |
+| **Excessive setup**                | Arrange dwarfs act and assert                                                 | `pollRetrievals.test.ts` "partitions a ready request…"                                                                                                                                                 | Extract the decision (overcomplicated quadrant). For DB state, use the typed insert helpers |
+
+Several of these examples are queued for repair (#489, #490). Once one is
+fixed, its git history still shows the smell.
+
 ## Smoke Tests for Pages
 
 Every new page should have a corresponding E2E smoke test in `apps/web/e2e/smoke/`. These tests verify that pages render without console errors, catching:
@@ -350,7 +485,12 @@ row is left.
 
 ## Unit Tests
 
-Unit test utilities and pure functions with logic. Skip unit tests for presentational components — E2E tests cover those better.
+Unit tests are for code whose correctness doesn't depend on SQL or on other
+processes: domain logic, algorithms, and route or service branches decided by
+their inputs. For presentational components, unit-test the logic you extract
+from them; smoke and e2e cover the rendering. For what to test and at which
+level, see [Writing a test](#writing-a-test). Repository and query code goes
+on the [integration tier](#integration-tests-real-database), never a fake DB.
 
 ```bash
 pnpm -F web test            # Unit tests (watch mode)
@@ -407,8 +547,8 @@ can't say whether the tests that do run would catch a bug.
 ### After coding: `pnpm cov:touched`
 
 Run this once you've written the code and before you decide which tests to
-add. It shows how well the code you touched is covered, one line per file,
-worst first.
+add (step 2 of [the workflow](#the-workflow)). It shows how well the code you
+touched is covered, one line per file, worst first.
 
 ```bash
 pnpm cov:touched                    # source files changed vs origin/main (committed, staged, unstaged, untracked)

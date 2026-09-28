@@ -1,7 +1,7 @@
 ---
 title: E2E Testing Guidelines
 created: 2026-03-07
-updated: 2026-03-07
+updated: 2026-09-28
 status: active
 tags:
     - guide
@@ -15,7 +15,7 @@ aliases:
 
 # E2E Testing Guidelines
 
-Decision framework for when AI agents should write Playwright E2E tests vs rely on smoke tests + unit tests.
+Decision framework for when AI agents should write Playwright E2E tests vs rely on smoke tests + unit tests. For the choice across all levels (unit, integration, e2e) and how to judge a test, see [[../conventions/testing#Writing a test|Writing a test]].
 
 ## Decision Framework
 
@@ -27,6 +27,7 @@ Decision framework for when AI agents should write Playwright E2E tests vs rely 
 | Does the page require authentication to render?     | Auth smoke test | —            |
 | Is it a new page with no interactivity?             | Smoke test only | —            |
 | Is it a pure utility or business logic function?    | Unit test only  | —            |
+| Does its correctness live in SQL (a repo or query)? | Integration     | —            |
 
 **Default: smoke test + unit tests.** Only add targeted E2E tests when the interaction complexity makes unit tests fundamentally insufficient.
 
