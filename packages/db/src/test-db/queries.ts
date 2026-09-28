@@ -12,6 +12,7 @@ import { createSubscriptionFixture, type User } from '../repositories/fixtures';
 import { PLAN_LIMITS, getTrialEnd, type PlanTier } from '../plans';
 import { insertStorageUsage } from './inserts';
 import type { DB } from '../connection';
+import type { Job } from '../repositories/jobs';
 
 export async function findUserByEmail(
     db: DB,
@@ -172,6 +173,12 @@ export async function backdateRetrievalRequest(
         .update(schema.retrievalRequests)
         .set({ createdAt })
         .where(eq(schema.retrievalRequests.id, id));
+}
+
+export async function findJob(db: DB, id: string): Promise<Job | undefined> {
+    return db.query.backgroundJobs.findFirst({
+        where: eq(schema.backgroundJobs.id, id),
+    });
 }
 
 export async function deleteJob(db: DB, id: string): Promise<void> {
