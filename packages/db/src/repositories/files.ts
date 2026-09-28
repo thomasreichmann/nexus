@@ -715,8 +715,12 @@ const fileNameCollator = new Intl.Collator('en', { numeric: true });
 
 // Equal names (same file uploaded twice, or sibling camera folders
 // flattened into one batch) fall back to oldest-first, then id — explicit,
-// rather than inheriting the query's newest-first order.
-function compareFilesByName(a: File, b: File): number {
+// rather than inheriting the query's newest-first order. Exported for its
+// unit test: the ordering rules are plain JS and need no database.
+export function compareFilesByName(
+    a: Pick<File, 'name' | 'createdAt' | 'id'>,
+    b: Pick<File, 'name' | 'createdAt' | 'id'>
+): number {
     return (
         fileNameCollator.compare(a.name, b.name) ||
         a.createdAt.getTime() - b.createdAt.getTime() ||

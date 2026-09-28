@@ -42,6 +42,8 @@ import type { RestoreHorizons, Retrieval } from '@nexus/db/repo/retrievals';
 // rows past `expiresAt` are expired by query, not by stored status — nothing
 // tells us when a restored copy lapses. Also exercises
 // the partial unique index guaranteeing one active retrieval per file (#266).
+// The repository's own queries, row by row, are pinned in @nexus/db's
+// retrievals.integration.test.ts; these tests are about the service on top.
 
 const HOUR_MS = 60 * 60 * 1000;
 const past = () => new Date(Date.now() - HOUR_MS);
@@ -107,74 +109,6 @@ describe.concurrent('active-retrieval expiry predicate', () => {
             retrievalService.getDownloadUrl(db, user.id, file.id)
         ).rejects.toThrow(InvalidStateError);
     });
-
-    it('active queries exclude lapsed rows but keep unexpired, event-less, and in-flight ones', async ({
-        db,
-        user,
-        createUser,
-    }) => {
-        const repo = createRetrievalRepo(db);
-        const [lapsedFile, unexpiredFile, noExpiryFile, pendingFile] =
-            await Promise.all([
-                insertFile(db, { userId: user.id }),
-                insertFile(db, { userId: user.id }),
-                insertFile(db, { userId: user.id }),
-                insertFile(db, { userId: user.id }),
-            ]);
-
-        await insertRetrieval(db, {
-            userId: user.id,
-            fileId: lapsedFile.id,
-            status: 'ready',
-            expiresAt: past(),
-        });
-        const unexpired = await insertRetrieval(db, {
-            userId: user.id,
-            fileId: unexpiredFile.id,
-            status: 'ready',
-            expiresAt: future(),
-        });
-        // No expiresAt (e.g. a malformed restore-completed event): treated as
-        // still active — better a stale entry than a download cut off early.
-        const noExpiry = await insertRetrieval(db, {
-            userId: user.id,
-            fileId: noExpiryFile.id,
-            status: 'ready',
-            expiresAt: null,
-        });
-        const pending = await insertRetrieval(db, {
-            userId: user.id,
-            fileId: pendingFile.id,
-            status: 'pending',
-        });
-
-        const fileIds = [
-            lapsedFile.id,
-            unexpiredFile.id,
-            noExpiryFile.id,
-            pendingFile.id,
-        ];
-        const byFileIds = await repo.findByFileIds(fileIds);
-        expect(new Set(byFileIds.map((r) => r.id))).toEqual(
-            new Set([unexpired.id, noExpiry.id, pending.id])
-        );
-
-        expect(await repo.findByFileId(lapsedFile.id)).toBeUndefined();
-
-        // Another user's active row, which the ownership filter must exclude.
-        const stranger = await createUser();
-        await insertRetrieval(db, {
-            userId: stranger.id,
-            fileId: (await insertFile(db, { userId: stranger.id })).id,
-            status: 'ready',
-            expiresAt: future(),
-        });
-
-        const active = await repo.findActiveByUserWithFiles(user.id);
-        expect(new Set(active.map((r) => r.id))).toEqual(
-            new Set([unexpired.id, noExpiry.id, pending.id])
-        );
-    });
 });
 
 describe.concurrent('one active retrieval per file (#266)', () => {
@@ -202,33 +136,6 @@ describe.concurrent('one active retrieval per file (#266)', () => {
         expect(
             (await requestRepo.findReadiness(second.requestId)).totalFiles
         ).toBe(1);
-    });
-
-    it('the unique index skips a duplicate active insert and keeps the existing row', async ({
-        db,
-        user,
-    }) => {
-        const repo = createRetrievalRepo(db);
-        const file = await insertFile(db, { userId: user.id });
-        const winner = await insertRetrieval(db, {
-            userId: user.id,
-            fileId: file.id,
-            status: 'pending',
-        });
-
-        const skipped = await repo.insertMany([
-            {
-                id: crypto.randomUUID(),
-                fileId: file.id,
-                userId: user.id,
-                tier: 'standard',
-                status: 'pending',
-            },
-        ]);
-
-        expect(skipped).toEqual([]);
-        const active = await repo.findByFileIds([file.id]);
-        expect(active.map((r) => r.id)).toEqual([winner.id]);
     });
 });
 
