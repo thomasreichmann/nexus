@@ -15,24 +15,34 @@ describe('deleteStaleRunScopedUsers', () => {
     }) => {
         const tag = crypto.randomUUID();
         const twoDaysAgo = new Date(Date.now() - 2 * DAY_MS);
-        const [abandoned, abandonedWorker, inFlight, fixedIdentity] =
-            await Promise.all([
-                createUser({
-                    email: runScopedEmail(`sweep-${tag}@test.local`, 'old1'),
-                    createdAt: twoDaysAgo,
-                }),
-                createUser({
-                    email: runScopedEmail(`sweep-${tag}@test.local`, 'old1', 3),
-                    createdAt: twoDaysAgo,
-                }),
-                createUser({
-                    email: runScopedEmail(`sweep-${tag}@test.local`, 'live'),
-                }),
-                createUser({
-                    email: `sweep-${tag}@test.local`,
-                    createdAt: twoDaysAgo,
-                }),
-            ]);
+        const [
+            abandoned,
+            abandonedWorker,
+            inFlight,
+            fixedIdentity,
+            notE2eDomain,
+        ] = await Promise.all([
+            createUser({
+                email: runScopedEmail(`sweep-${tag}@test.local`, 'old1'),
+                createdAt: twoDaysAgo,
+            }),
+            createUser({
+                email: runScopedEmail(`sweep-${tag}@test.local`, 'old1', 3),
+                createdAt: twoDaysAgo,
+            }),
+            createUser({
+                email: runScopedEmail(`sweep-${tag}@test.local`, 'live'),
+            }),
+            createUser({
+                email: `sweep-${tag}@test.local`,
+                createdAt: twoDaysAgo,
+            }),
+            // Carries the marker, but only @test.local is ever e2e's.
+            createUser({
+                email: `sweep-${tag}--run-old1@example.com`,
+                createdAt: twoDaysAgo,
+            }),
+        ]);
 
         await deleteStaleRunScopedUsers(db, new Date(Date.now() - DAY_MS));
 
@@ -40,15 +50,19 @@ describe('deleteStaleRunScopedUsers', () => {
             .select({ email: schema.user.email })
             .from(schema.user)
             .where(
-                inArray(schema.user.id, [
-                    abandoned.id,
-                    abandonedWorker.id,
-                    inFlight.id,
-                    fixedIdentity.id,
-                ])
+                inArray(
+                    schema.user.id,
+                    [
+                        abandoned,
+                        abandonedWorker,
+                        inFlight,
+                        fixedIdentity,
+                        notE2eDomain,
+                    ].map((user) => user.id)
+                )
             );
         expect(left.map((row) => row.email).sort()).toEqual(
-            [inFlight.email, fixedIdentity.email].sort()
+            [inFlight.email, fixedIdentity.email, notE2eDomain.email].sort()
         );
     });
 });
