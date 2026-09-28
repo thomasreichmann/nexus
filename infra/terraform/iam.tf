@@ -21,7 +21,8 @@ resource "aws_iam_user_policy" "app_s3" {
           "s3:GetObject",
           "s3:DeleteObject",
           "s3:ListBucket",
-          "s3:RestoreObject",
+          # No s3:RestoreObject: the worker issues every restore under its own
+          # role (initiate-restore, #423), so the app user never needs it (#468).
           "s3:GetObjectAttributes",
           "s3:AbortMultipartUpload",
           "s3:ListMultipartUploadParts",
@@ -75,8 +76,8 @@ resource "aws_iam_user_policy" "app_sqs" {
 # Nightly-CI IAM user (#318)
 #
 # Exists so the s3-event-health workflow never needs the app user's key: that
-# would hand a scheduled job PutObject/DeleteObject/RestoreObject on production
-# data to answer a read-only question.
+# would hand a scheduled job PutObject/DeleteObject on production data to answer
+# a read-only question.
 #
 # Both workspaces get one to keep the module set identical across environments
 # (#127). Only prod's key is wired into GitHub Actions — the dev leg shares the
