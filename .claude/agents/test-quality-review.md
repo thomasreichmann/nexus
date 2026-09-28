@@ -67,8 +67,10 @@ the tests of the code that uses it. Don't flag it as untested.
 
 Every finding is about protection: the regression a test would miss, and
 the test or assertion that would catch it. Write each fix as the test to
-write, the assertion to tighten, or the level to move the test to. Never
-recommend fewer tests, and never set a count or ratio target.
+write, the assertion to tighten, or the level to move the test to. A test
+at the wrong level moves: describe the real-DB or unit test that carries its
+behaviour, not a deletion. Never recommend fewer tests, and never set a
+count or ratio target.
 
 ## Not Your Lane
 
