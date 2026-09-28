@@ -154,6 +154,37 @@ describe('files repository', () => {
         });
     });
 
+    describe('countThumbnailStatuses', () => {
+        it('fills in zero for statuses no row has', async () => {
+            mocks.groupByRows.mockResolvedValue([
+                { status: 'ready', count: 7 },
+                { status: 'failed_cold', count: 2 },
+            ]);
+
+            const result = await repo.countThumbnailStatuses();
+
+            expect(result).toEqual({
+                pending: 0,
+                ready: 7,
+                failed: 0,
+                failed_cold: 2,
+                skipped: 0,
+            });
+        });
+    });
+
+    describe('findLatestReadyThumbnail', () => {
+        it('returns the row the query finds', async () => {
+            const row = { id: TEST_FILE_ID, userId: TEST_USER_ID };
+            mocks.files.findFirst.mockResolvedValue(row);
+
+            const result = await repo.findLatestReadyThumbnail();
+
+            expect(result).toEqual(row);
+            expect(mocks.files.findFirst).toHaveBeenCalledOnce();
+        });
+    });
+
     describe('countByUser', () => {
         it('returns count of files for user', async () => {
             mocks.where.mockResolvedValue([{ count: 42 }]);

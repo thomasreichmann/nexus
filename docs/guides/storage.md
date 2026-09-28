@@ -104,6 +104,15 @@ if (s3.derived.isConfigured()) {
 }
 ```
 
+#### `s3.derived.probe(key)`
+
+One `HeadObject` with the app's credentials. It resolves when the object is
+readable and throws the AWS error otherwise. `get` can't answer this: it
+presigns locally, so it succeeds against a bucket that doesn't exist. Pass a
+key that exists. The app is granted `s3:GetObject` only (no `ListBucket`),
+so a missing key and a denied read both come back as 403. Used by the
+deployed-env boot check in `server/lib/derivedBucketCheck.ts` (#409).
+
 ### Retrieval Artifacts Bucket (restore zips)
 
 Presigned reads against the Standard-class artifacts bucket

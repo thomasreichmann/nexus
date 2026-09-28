@@ -22,6 +22,17 @@
  *     abandoned it without calling cleanup, so the row is invisible to every
  *     list and whatever bytes reached S3 are billed but untracked
  *
+ * Also reports on thumbnails (#409), without failing the check. A broken
+ * thumbnail pipeline degrades every library to icon tiles, which look exactly
+ * like "not generated yet", so this leg sends its own alert instead of turning
+ * the event-pipeline check red:
+ *   - error: most of a recent upload cohort is still 'pending' a day later,
+ *     which is what a broken derived bucket or worker looks like (see
+ *     sweepThumbnails for why it's a rate, not a count)
+ *   - info: recent uploads went 'failed_cold' since the last run. Only a paid
+ *     restore heals those, so the daily digest is how a rising trend gets
+ *     noticed.
+ *
  * Usage:
  *   pnpm -F web check:s3-event-health
  */
@@ -109,6 +120,99 @@ async function sweepStrandedWebhooks(
         );
     }
     return rows;
+}
+
+/**
+ * A thumbnail job finishes within minutes, and even one that fails outright
+ * has left 'pending' after SQS's three attempts (~36 min). A row still
+ * 'pending' this long after upload is never getting a thumbnail.
+ */
+const STUCK_THUMBNAIL_HOURS = 24;
+
+/**
+ * Only uploads from this window count. Rows that predate thumbnails (0016)
+ * and seed/fixture rows sit at 'pending' forever with no job behind them;
+ * the window lets them age out instead of alarming every night.
+ */
+const THUMBNAIL_COHORT_DAYS = 7;
+
+/**
+ * One poison file is a bad file, not a broken bucket. The alarm needs both a
+ * floor and a majority of the cohort before it calls the pipeline broken.
+ */
+const MIN_STUCK_THUMBNAILS = 3;
+const STUCK_THUMBNAIL_SHARE = 0.5;
+
+/** Matches the workflow's daily schedule, so each run reports its own day. */
+const FAILED_COLD_DIGEST_HOURS = 24;
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * The thumbnail leg (#409). Reads counts, not rows: the question is whether
+ * the pipeline as a whole is producing thumbnails, and the per-file detail
+ * lives in the worker's logs.
+ */
+async function sweepThumbnails(): Promise<void> {
+    const fileRepo = createFileRepo(db);
+    const now = Date.now();
+
+    const cohortStart = new Date(now - THUMBNAIL_COHORT_DAYS * 24 * HOUR_MS);
+    const cohort = await fileRepo.countThumbnailStatuses({
+        createdAfter: cohortStart,
+        createdBefore: new Date(now - STUCK_THUMBNAIL_HOURS * HOUR_MS),
+    });
+    // 'skipped' rows (non-media, deleted before the job ran) were never going
+    // to get a thumbnail, so they're outside the rate either way.
+    const eligible =
+        cohort.pending + cohort.ready + cohort.failed + cohort.failed_cold;
+    const isPipelineStuck =
+        cohort.pending >= MIN_STUCK_THUMBNAILS &&
+        cohort.pending / eligible >= STUCK_THUMBNAIL_SHARE;
+
+    const failedColdTotal = (await fileRepo.countThumbnailStatuses())
+        .failed_cold;
+    // No thumbnail-status timestamp exists, so "went failed_cold today" is
+    // read off updatedAt, which any later write to the row also bumps. The
+    // cohort bound keeps the big one out: a restore of a legacy failed_cold
+    // row (0016 marked every archived original) would otherwise count as new.
+    const failedColdNew = (
+        await fileRepo.countThumbnailStatuses({
+            createdAfter: cohortStart,
+            updatedAfter: new Date(now - FAILED_COLD_DIGEST_HOURS * HOUR_MS),
+        })
+    ).failed_cold;
+
+    const stuckLabel = `thumbnail(s) still 'pending' >${STUCK_THUMBNAIL_HOURS}h, of ${eligible} eligible upload(s) from the last ${THUMBNAIL_COHORT_DAYS}d`;
+    const failedColdLabel = `upload(s) from the last ${THUMBNAIL_COHORT_DAYS}d went 'failed_cold' in the last ${FAILED_COLD_DIGEST_HOURS}h (${failedColdTotal} failed_cold in all)`;
+
+    console.log(
+        `\nThumbnails stuck: ${cohort.pending} ${stuckLabel}${isPipelineStuck ? '  ✗' : ''}`
+    );
+    console.log(`Thumbnails failed_cold: ${failedColdNew} ${failedColdLabel}`);
+
+    if (!isPipelineStuck && failedColdNew === 0) return;
+
+    const runUrl = getWorkflowRunUrl();
+    const context = {
+        source: 'check-s3-event-health',
+        ...(runUrl && { workflowRun: runUrl }),
+    };
+    await alerts.send(
+        isPipelineStuck
+            ? {
+                  severity: 'error',
+                  title: 'Thumbnail pipeline looks broken',
+                  message: `${cohort.pending} ${stuckLabel}. Users see icon tiles where thumbnails should be. Suspect the derived bucket or the worker; the DLQ alarm covers only jobs that throw. Also ${failedColdNew} ${failedColdLabel}.`,
+                  context,
+              }
+            : {
+                  severity: 'info',
+                  title: 'Thumbnails went failed_cold',
+                  message: `${failedColdNew} ${failedColdLabel}. These heal only if the user pays for a restore.`,
+                  context,
+              }
+    );
 }
 
 async function main(): Promise<void> {
@@ -225,6 +329,10 @@ async function main(): Promise<void> {
     } else {
         console.log('\nAll checks passed.');
     }
+
+    // Last, so a throw here can't suppress the event-pipeline alert above. It
+    // still aborts the run (exit 1) through main's catch.
+    await sweepThumbnails();
 }
 
 main()

@@ -42,6 +42,7 @@ const derivedMocks = {
     isConfigured: (): boolean => true,
     get: async (key: string): Promise<string> =>
         `${MOCK_HOST}/derived-${MOCK_BUCKET}/${key}`,
+    probe: async (): Promise<void> => {},
 };
 
 const artifactMocks = {
