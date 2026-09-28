@@ -1,3 +1,70 @@
+import type { CompletedPart } from './uploadStore';
+
+export type UploadStatus =
+    | 'pending'
+    // Admitted to the pool but not started — distinct from `pending` so the
+    // Upload button only counts files the user hasn't submitted yet, which is
+    // what lets files added mid-wave join the running wave with a click.
+    | 'queued'
+    | 'uploading'
+    | 'paused'
+    | 'resumable'
+    | 'complete'
+    | 'error'
+    // Just added, vault check in flight (#401): the row shows at once so a
+    // drop never looks ignored, and the Upload button leaves it alone until
+    // the check settles it into `pending` or `duplicate`.
+    | 'checking'
+    // Name + size matched a file already in the vault, so the Upload button
+    // skips it (#401). "Upload anyway" turns it back into `pending`.
+    | 'duplicate';
+
+/** The row shape the upload queue UI renders. */
+export interface UploadFile {
+    id: string;
+    name: string;
+    size: number;
+    progress: number;
+    status: UploadStatus;
+    error?: string;
+    // Flagged by the vault check on add; survives an "upload anyway" so the
+    // row can still say the second copy was deliberate.
+    isDuplicate?: boolean;
+    // A `resumable` row whose persisted handle can be reopened in one click,
+    // rather than requiring the user to re-add the file (Chromium only).
+    isQuickResumable?: boolean;
+    // Raw bytes when attached this session — drives the upload zone's local
+    // blob previews. Null for rows restored after a reload until re-attached.
+    previewFile?: File | null;
+}
+
+/** A queue row as the engine sees it: the public shape plus upload state. */
+export interface UploadRow extends UploadFile {
+    // Null for an interrupted upload detected on reload — the bytes are gone
+    // until the user re-adds the file (or one-click reopens its handle), at
+    // which point we reattach and resume.
+    file: File | null;
+    // Persisted File System Access handle; lets us silently reopen the bytes on
+    // reload. Carried from the picker/drop and written into the IndexedDB record.
+    fileHandle?: FileSystemFileHandle;
+    // Identity field a reopened handle must match before we trust it to resume.
+    lastModified?: number;
+    fileId?: string;
+    // Session batch the file belongs to — set once per Upload click and kept
+    // across failures so a retry/resume rejoins the same batch.
+    batchId?: string;
+    // Folder gesture that queued this row, when it came from one. Consulted
+    // only for rows still awaiting a batch — it names the batch they land in.
+    folderOrigin?: FolderOrigin;
+    uploadId?: string;
+    chunkSize?: number;
+    totalParts?: number;
+    // Best-effort local cache of finished parts; S3 ListParts is the source of
+    // truth reconciled on every resume.
+    completedParts?: CompletedPart[];
+    abortController?: AbortController;
+}
+
 /**
  * Identity-preserving patch for upload queue rows.
  *
