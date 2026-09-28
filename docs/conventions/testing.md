@@ -235,6 +235,21 @@ claims under concurrency, unique indexes.
 The unit configs exclude `*.integration.test.ts`, so `pnpm check` never needs
 a database.
 
+**Enforced by lint (#496).** Every test under `packages/db/src` runs
+against the real DB. `pnpm check` fails on any test there that:
+
+- imports the fake DB (`./mocks`, `../testing`, `@nexus/db/testing`), or
+- `vi.mock`s the connection, `@nexus/db` or the drivers.
+
+Query code belongs in `packages/db` (see the server architecture in
+[[../ai/conventions|Conventions]]), so the rule covers it wherever it lives
+in the package. It doesn't reach tests elsewhere that hand a service a mock
+`db` while mocking its repositories; those are fine.
+
+The only exemptions are the repository tests written before the rule, listed
+in `FAKE_DB_EXEMPT` in `packages/db/eslint.config.mjs`. #489 is migrating
+them, and the list only shrinks.
+
 **Fixtures:** import `it` from `@nexus/db/test-db/integration` (relative
 `../test-db/integration` inside `packages/db`) and ask for what the test
 needs. Seed with the typed insert helpers from `@nexus/db/test-db`.
