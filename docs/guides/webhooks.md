@@ -175,6 +175,18 @@ export async function verifySnsMessage(
 | `Notification`             | Process the event payload                              |
 | `UnsubscribeConfirmation`  | Log and ignore (shouldn't happen in normal operation)  |
 
+**The signature is not enough — check `TopicArn` too (#319).** A valid
+signature proves _an_ SNS topic sent the message, not that ours did: any AWS
+account can subscribe a public endpoint to its own topic and have it
+auto-confirmed. After verifying the signature, the CloudWatch alarm route
+compares the envelope's `TopicArn` (covered by the signature) against
+`SNS_OPS_ALERTS_TOPIC_ARN` and rejects a mismatch with a 403, before any side
+effect — no `SubscribeURL` fetch, no `webhook_events` row, no alert, just a
+warn log. The check applies to every message type, because a foreign
+subscription confirmed before it existed keeps delivering Notifications. An
+unset ARN on a deployed tier rejects everything (fail closed) with a 503, so
+SNS retries and then dead-letters real alarms instead of discarding them.
+
 ## Idempotency
 
 External providers retry webhook deliveries. Stripe may send the same event multiple times. SNS guarantees **at-least-once** delivery. Without deduplication, events get processed more than once.
@@ -543,9 +555,9 @@ curl -X POST http://localhost:3000/api/webhooks/cloudwatch-alarm \
   }'
 ```
 
-> **Note:** These manual tests skip signature verification, which the route
-> bypasses only on a local dev machine (`isLocalDevelopment`). Every deployed
-> environment always verifies.
+> **Note:** These manual tests skip signature verification and the `TopicArn`
+> check, which the route bypasses only on a local dev machine
+> (`isLocalDevelopment`). Every deployed environment always runs both.
 
 > **Removed (#416):** there was also an `/api/webhooks/s3-restore` endpoint
 > taking S3 lifecycle and restore events. That rail is gone — S3 owns object
@@ -594,6 +606,7 @@ Before deploying a webhook endpoint:
 - [ ] No sensitive data is logged (mask card numbers, tokens, etc.)
 - [ ] Route does not expose internal error details in the response body
 - [ ] SNS certificate URL is validated against `*.amazonaws.com` domain
+- [ ] SNS `TopicArn` is checked against an expected ARN from env, for every message type
 
 ## Related
 

@@ -121,13 +121,21 @@ production code.
    Actions secrets `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`S3_BUCKET`/
    `SQS_QUEUE_URL`, which are dev-scoped):
 
-    | Var                                           | Source                     |
-    | --------------------------------------------- | -------------------------- |
-    | `S3_BUCKET`                                   | `s3_bucket` output         |
-    | `S3_DERIVED_BUCKET`                           | `s3_derived_bucket` output |
-    | `AWS_REGION`                                  | `aws_region` output        |
-    | `SQS_QUEUE_URL`                               | `sqs_queue_url` output     |
-    | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1     |
+    | Var                                           | Source                            |
+    | --------------------------------------------- | --------------------------------- |
+    | `S3_BUCKET`                                   | `s3_bucket` output                |
+    | `S3_DERIVED_BUCKET`                           | `s3_derived_bucket` output        |
+    | `AWS_REGION`                                  | `aws_region` output               |
+    | `SQS_QUEUE_URL`                               | `sqs_queue_url` output            |
+    | `SNS_OPS_ALERTS_TOPIC_ARN`                    | `sns_ops_alerts_topic_arn` output |
+    | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1            |
+
+    `SNS_OPS_ALERTS_TOPIC_ARN` is not optional in practice: the alarm webhook
+    rejects every message with a 503 on a deployed tier while it is unset
+    (#319). In prod, alarms stop reaching Discord and only the email
+    subscription still delivers. Dev has neither Discord
+    (`DISCORD_ALERT_WEBHOOK_URL` is prod-only) nor email, so there the only
+    trace is the missing `webhook_events` rows.
 
 6. **Confirm the alerts email** (prod only) — the apply creates an email
    subscription on `nexus-ops-alerts-prod` and reports success, but AWS leaves

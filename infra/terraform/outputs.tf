@@ -5,6 +5,7 @@
 #   AWS_REGION        <- aws_region
 #   SQS_QUEUE_URL     <- sqs_queue_url
 #   SQS_ZIP_QUEUE_URL <- sqs_zip_queue_url
+#   SNS_OPS_ALERTS_TOPIC_ARN <- sns_ops_alerts_topic_arn
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY <- manual access key on app_iam_user
 #
 # GitHub Actions additionally holds a read-only key on ci_iam_user as
@@ -33,6 +34,11 @@ output "sqs_queue_url" {
 output "sqs_zip_queue_url" {
   description = "Zip-build queue URL -> Vercel SQS_ZIP_QUEUE_URL"
   value       = aws_sqs_queue.zip_jobs.url
+}
+
+output "sns_ops_alerts_topic_arn" {
+  description = "Only topic /api/webhooks/cloudwatch-alarm accepts (#319); unset on a deployed tier rejects every alarm -> Vercel SNS_OPS_ALERTS_TOPIC_ARN"
+  value       = aws_sns_topic.ops_alerts.arn
 }
 
 output "app_iam_user" {

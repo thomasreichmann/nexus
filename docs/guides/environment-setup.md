@@ -1,7 +1,7 @@
 ---
 title: Environment Setup
 created: 2025-12-30
-updated: 2026-07-05
+updated: 2026-09-28
 status: active
 tags:
     - guide
@@ -98,6 +98,20 @@ File storage credentials for S3/Glacier operations.
 | `S3_BUCKET`             | Server | S3 bucket name                    |
 | `SQS_QUEUE_URL`         | Server | Queue URL for S3 event processing |
 
+### Alerting (SNS)
+
+Inbound CloudWatch alarms arrive over SNS at `/api/webhooks/cloudwatch-alarm`.
+
+| Variable                   | Type   | Description                                                                                                                 |
+| -------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `SNS_OPS_ALERTS_TOPIC_ARN` | Server | The only SNS topic the alarm webhook accepts (#319), from the `sns_ops_alerts_topic_arn` Terraform output. Trimmed on read. |
+
+> [!warning] Required on deployed tiers despite being optional in the schema
+> It is optional only so a missing key can't fail the whole server schema.
+> On a deployed tier the route fails closed without it: every SNS message,
+> real alarms included, gets a 503 and never reaches Discord. Local dev skips
+> the check, like signature verification.
+
 ### Stripe
 
 Payment processing credentials. Server-side only — there is no Stripe.js on the client, so no publishable key is needed.
@@ -174,6 +188,7 @@ shared with dev (or is out of scope for the split).
 | `DB_ENV`                                      | `production`                                              | `development`             |
 | `S3_BUCKET`                                   | `nexus-storage-files-prod`                                | `nexus-storage-files-dev` |
 | `SQS_QUEUE_URL`                               | `…/nexus-jobs-prod`                                       | `…/nexus-jobs-dev`        |
+| `SNS_OPS_ALERTS_TOPIC_ARN`                    | `…:nexus-ops-alerts-prod`                                 | `…:nexus-ops-alerts-dev`  |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key on the `nexus-app-prod` IAM user               | `nexus-app-dev` key       |
 | `BETTER_AUTH_SECRET`                          | prod-only secret (rotating it never touches dev sessions) | dev secret                |
 | `NEXT_PUBLIC_APP_URL`                         | `https://nexus.thomasar.dev`                              | `http://localhost:3000`\* |

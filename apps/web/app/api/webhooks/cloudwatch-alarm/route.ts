@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createWebhookRepo } from '@nexus/db/repo/webhooks';
 import { alerts, type AlertSeverity } from '@/lib/alerts';
+import { env } from '@/lib/env';
 import { isLocalDevelopment } from '@/lib/env/runtime';
 import { confirmSnsSubscription, verifySnsMessage } from '@/lib/sns/webhooks';
 import { resolveWebhookEvent } from '@/lib/webhooks/events';
@@ -15,8 +16,9 @@ const log = logger.child({ handler: 'cloudwatch-alarm-webhook' });
 
 /**
  * CloudWatch alarm state changes -> Discord, via the ops-alerts SNS topic
- * (infra/terraform/alarms.tf): signature-verified envelope, auto-confirmed
- * subscription, deduped and audited through webhook_events.
+ * (infra/terraform/alarms.tf): signature-verified envelope from that topic
+ * only, auto-confirmed subscription, deduped and audited through
+ * webhook_events.
  *
  * Recorded under `source: 'cloudwatch'` — the producer, not the transport.
  * This was the last writer of the old `'sns'` source, which #416 retired with
@@ -47,8 +49,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
     }
 
-    // Signature verification is bypassed only on a local dev machine — every
-    // deployed environment always verifies (see `isLocalDevelopment`).
+    // Signature and topic checks are bypassed only on a local dev machine —
+    // every deployed environment always runs both (see `isLocalDevelopment`).
     if (!isLocalDevelopment()) {
         try {
             await verifySnsMessage(body);
@@ -59,6 +61,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                 { status: 400 }
             );
         }
+
+        const topicRejection = rejectUnexpectedTopic(body);
+        if (topicRejection) return topicRejection;
     }
 
     const messageType = body.Type as string;
@@ -146,4 +151,51 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     return NextResponse.json({ received: true });
+}
+
+/**
+ * A valid signature proves that *an* SNS topic sent the message, not that ours
+ * did — any AWS account can subscribe this public endpoint to its own topic.
+ * `TopicArn` is part of the signed string for every message type, so once the
+ * signature checks out, comparing it is spoof-proof (#319).
+ *
+ * Gates both message types, not just `SubscriptionConfirmation`: a foreign
+ * subscription confirmed before this check shipped stays confirmed, so only
+ * the Notification check actually closes it.
+ *
+ * Rejections are a log line and nothing else — a `webhook_events` row or an
+ * alert per rejected message would hand a foreign topic back the same spam
+ * channel this check exists to close. Returns the rejection response, or
+ * null when the message is from our topic.
+ */
+function rejectUnexpectedTopic(
+    body: Record<string, unknown>
+): NextResponse | null {
+    const expectedTopicArn = env.SNS_OPS_ALERTS_TOPIC_ARN;
+    const logContext = { topicArn: body.TopicArn, type: body.Type };
+
+    if (!expectedTopicArn) {
+        // Fail closed, but as our misconfiguration rather than an attack:
+        // every real alarm is being dropped too, hence `error` over `warn`,
+        // and a 5xx so SNS retries (then dead-letters) instead of discarding
+        // the alarm as a client error.
+        log.error(
+            logContext,
+            'SNS_OPS_ALERTS_TOPIC_ARN is unset; rejecting SNS message'
+        );
+        return NextResponse.json(
+            { error: 'Topic check not configured' },
+            { status: 503 }
+        );
+    }
+
+    if (body.TopicArn !== expectedTopicArn) {
+        log.warn(logContext, 'Rejected SNS message from unexpected topic');
+        return NextResponse.json(
+            { error: 'Unexpected topic' },
+            { status: 403 }
+        );
+    }
+
+    return null;
 }
