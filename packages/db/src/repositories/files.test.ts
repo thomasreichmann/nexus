@@ -38,14 +38,15 @@ describe('compareFilesByName', () => {
         ).toEqual(['IMG_1.JPG', 'IMG_2.JPG', 'IMG_9.JPG', 'IMG_10.JPG']);
     });
 
+    // Ids run against upload time here, so each tie-break is seen on its own.
     it('breaks filename ties by upload time, then id', () => {
         const files = [
-            file('IMG_0001.JPG', LATER, 'f-c'),
+            file('IMG_0001.JPG', EARLIER, 'f-c'),
+            file('IMG_0001.JPG', LATER, 'f-a'),
             file('IMG_0001.JPG', EARLIER, 'f-b'),
-            file('IMG_0001.JPG', EARLIER, 'f-a'),
         ];
 
-        expect(sorted(files).map((f) => f.id)).toEqual(['f-a', 'f-b', 'f-c']);
+        expect(sorted(files).map((f) => f.id)).toEqual(['f-b', 'f-c', 'f-a']);
     });
 
     // The numeric collator compares IMG_0001 and IMG_1 as equal, so their
