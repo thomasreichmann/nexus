@@ -261,15 +261,15 @@ test-quality epic (#502) tracks. The merged per-file map is written to
   on the first lines. A failed tier exits 1 with its test failure below the
   table.
 - Extra args go to every Vitest run, e.g.
-  `pnpm coverage --exclude '**/publish.integration.test.ts'`.
+  `pnpm coverage --exclude '**/files.integration.test.ts'`.
 - `pnpm test:coverage` is the older per-workspace **unit-only** report behind
   `/dev/coverage`. Quote `pnpm coverage` when you mean the repo's coverage.
 
 Coverage is a report, not a merge gate. It says which code no test runs; it
 can't say whether the tests that do run would catch a bug.
 
-**Baseline (2026-09-28, lines):** 37.9% total (web 33.9%, `packages/db`
-40.5%, worker 69.1%). Details and the per-area table are in #492.
+**Baseline (2026-09-28, lines):** 37.9% total (web 34.0%, `packages/db`
+40.7%, worker 69.1%). Details and the per-area table are in #492.
 
 ## Related
 

@@ -12,7 +12,7 @@
  * it the run is unit-only and the first line says so.
  *
  * Extra args pass through to every Vitest run, e.g.
- *   pnpm coverage --exclude '**\/publish.integration.test.ts'
+ *   pnpm coverage --exclude '**\/files.integration.test.ts'
  *
  * Per-tier maps land in coverage/<tier>/, the merged one in
  * coverage/coverage-final.json for per-file tooling.
