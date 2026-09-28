@@ -214,6 +214,79 @@ function findStaleUploads(db: DB, olderThan: Date): Promise<File[]> {
     });
 }
 
+export type ThumbnailStatus =
+    (typeof schema.files.thumbnailStatus.enumValues)[number];
+
+export type ThumbnailStatusCounts = Record<ThumbnailStatus, number>;
+
+export interface ThumbnailStatusCountOptions {
+    createdAfter?: Date;
+    createdBefore?: Date;
+    updatedAfter?: Date;
+}
+
+/**
+ * Thumbnail-status counts across every user's visible files, for the nightly
+ * health check (#409). Hidden rows are excluded: an `uploading` row hasn't
+ * been enqueued yet, and a `deleted` one will never be shown. Every status is
+ * present in the result, zero when no row has it.
+ */
+async function countThumbnailStatuses(
+    db: DB,
+    opts: ThumbnailStatusCountOptions = {}
+): Promise<ThumbnailStatusCounts> {
+    const conditions = [notInArray(schema.files.status, HIDDEN_STATUSES)];
+    if (opts.createdAfter) {
+        conditions.push(gte(schema.files.createdAt, opts.createdAfter));
+    }
+    if (opts.createdBefore) {
+        conditions.push(lt(schema.files.createdAt, opts.createdBefore));
+    }
+    if (opts.updatedAfter) {
+        conditions.push(gte(schema.files.updatedAt, opts.updatedAfter));
+    }
+
+    const rows = await db
+        .select({
+            status: schema.files.thumbnailStatus,
+            count: sql<number>`count(*)::int`,
+        })
+        .from(schema.files)
+        .where(and(...conditions))
+        .groupBy(schema.files.thumbnailStatus);
+
+    const counts: ThumbnailStatusCounts = {
+        pending: 0,
+        ready: 0,
+        failed: 0,
+        failed_cold: 0,
+        skipped: 0,
+    };
+    for (const row of rows) counts[row.status] = row.count;
+    return counts;
+}
+
+/**
+ * The visible file whose thumbnail the worker most recently reported as
+ * written. The boot check reads its object back to prove the app can reach
+ * the derived bucket (#409). A real key is required because the app's IAM
+ * grant is GetObject-only, so a made-up key answers 403 whether the bucket is
+ * healthy or not. Newest, not arbitrary, so one old row whose object has gone
+ * missing can't pass for a broken bucket on every cold start.
+ */
+function findLatestReadyThumbnail(
+    db: DB
+): Promise<Pick<File, 'id' | 'userId'> | undefined> {
+    return db.query.files.findFirst({
+        where: and(
+            eq(schema.files.thumbnailStatus, 'ready'),
+            notInArray(schema.files.status, HIDDEN_STATUSES)
+        ),
+        orderBy: desc(schema.files.updatedAt),
+        columns: { id: true, userId: true },
+    });
+}
+
 // Escape LIKE/ILIKE wildcards so a search for "100%" or "foo_bar" is treated
 // as a literal substring, not a pattern. Postgres' default escape char is `\`.
 function escapeLikePattern(s: string): string {
@@ -594,6 +667,8 @@ export const createFileRepo = createRepository({
     countByUser,
     countStatusesByUser,
     findStaleUploads,
+    countThumbnailStatuses,
+    findLatestReadyThumbnail,
     sumStorageByUser,
     insert,
     update,
