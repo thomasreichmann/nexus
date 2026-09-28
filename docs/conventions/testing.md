@@ -215,6 +215,124 @@ but they are always _listed_.
 - React Query retries failed requests 3x (~7s) — use `{ timeout: 15_000 }` for auth guard tests
 - Use `test.describe.configure({ mode: 'serial' })` when tests share seeded DB data; mutations that invalidate a query while its initial fetch is still in flight should `cancelQueries` + `refetchQueries` (not just `invalidateQueries`), or the stale result wins
 
+## Integration Tests (real database)
+
+Repository and query code is tested against a real Postgres, never a mocked
+or fake DB. A mock of the Drizzle chain returns whatever the test told it to,
+so it can't see a dropped `WHERE` condition, a wrong `ON CONFLICT` or a
+broken index. Those are the bugs these tests exist for (#489). The same tier
+holds service tests whose point is SQL behaviour: atomic upserts, status
+claims under concurrency, unique indexes.
+
+**Where they live:** `*.integration.test.ts`, next to the code under test.
+
+| Code under test                                 | Home                                       | Command                               |
+| ----------------------------------------------- | ------------------------------------------ | ------------------------------------- |
+| A repository or query (`packages/db/src/...`)   | `packages/db/src/**/x.integration.test.ts` | `pnpm -F @nexus/db test:integration`  |
+| A service whose behaviour is SQL (`apps/web/…`) | `apps/web/**/x.integration.test.ts`        | `pnpm -F @nexus/web test:integration` |
+| Both packages                                   |                                            | `pnpm test:integration`               |
+
+The unit configs exclude `*.integration.test.ts`, so `pnpm check` never needs
+a database.
+
+**Fixtures:** import `it` from `@nexus/db/test-db/integration` (relative
+`../test-db/integration` inside `packages/db`) and ask for what the test
+needs. Seed with the typed insert helpers from `@nexus/db/test-db`.
+
+| Fixture      | Scope  | What you get                                                                                                                                                                                     |
+| ------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `db`         | worker | One connection pool per Vitest worker, closed at the end. Never call `createDb` in a test.                                                                                                       |
+| `user`       | test   | A fresh user. After the test, it and every row it owns are deleted in one statement (`deleteUsers`: every user-owned table cascades from `user`; invites it created go in the same statement).   |
+| `createUser` | test   | More users for this test, e.g. the other owner in an ownership test. Torn down with `user`, in that same statement.                                                                              |
+| `fileUser`   | file   | One user shared by the file's tests, deleted after the last one. For a suite where a user per test costs more round trips than its isolation is worth. Its rows pile up across the file's tests. |
+
+**The reference example.** Copy this one
+(`packages/db/src/repositories/uploadBatches.integration.test.ts`): seed the
+row the predicate must _exclude_, then assert on what the query returns, not
+on how it was built.
+
+```typescript
+import { it, expect, describe } from '../test-db/integration';
+import { insertUploadBatch } from '../test-db';
+import { createUploadBatchRepo } from './uploadBatches';
+
+describe('findByUserAndId', () => {
+    it('returns the batch to its owner', async ({ db, user }) => {
+        const batch = await insertUploadBatch(db, { userId: user.id });
+
+        const found = await createUploadBatchRepo(db).findByUserAndId(
+            user.id,
+            batch.id
+        );
+
+        expect(found?.id).toBe(batch.id);
+    });
+
+    it('does not return another user’s batch, even by its id', async ({
+        db,
+        user,
+        createUser,
+    }) => {
+        const owner = await createUser();
+        const batch = await insertUploadBatch(db, { userId: owner.id });
+
+        const found = await createUploadBatchRepo(db).findByUserAndId(
+            user.id,
+            batch.id
+        );
+
+        expect(found).toBeUndefined();
+    });
+});
+```
+
+Before you push, break the behaviour the test names (delete the
+`eq(uploadBatches.userId, userId)` above) and watch the test go red. If it
+stays green, it isn't testing that behaviour.
+
+**Rules of thumb:**
+
+- **Every row belongs to a fixture user.** Rows no user owns
+  (`background_jobs`, `verification`) don't cascade. A test that creates them
+  deletes them itself.
+- **The dev database is shared** with e2e runs, other engineers' runs and
+  manual use. Scope assertions to your own rows (by id or by your `user`),
+  never to a table-wide count. A global scan that sorts oldest-first with a
+  `LIMIT` needs your rows backdated to sort first (`BEFORE_ANY_REAL_ROW` and
+  `backdateRetrievalRequest` in `retrieval.integration.test.ts`, #491).
+  Otherwise older rows can push them out and the assertion passes or fails by
+  accident.
+- **`describe.concurrent` is cheap speed.** Tests that each own their `user`
+  can't collide in the DB, and on the pooler most of a test's time is round
+  trips. `retrieval.integration.test.ts` runs its suites concurrently: 44 s
+  sequential, 15 s concurrent. Don't use it when tests share mock state (an
+  implementation installed per test, call-count assertions), as in
+  `files.integration.test.ts`.
+- **Mock only what leaves the process** (S3, SQS, PostHog) with `vi.mock`.
+  Import `vi` from `'vitest'` itself: the mock is only hoisted when `vi` comes
+  from there.
+
+**Running against a throwaway database:**
+
+```bash
+pnpm test:integration                           # against DATABASE_URL (dev, from apps/web/.env.local)
+pnpm test:integration:fresh                     # against an empty Postgres 17, started and deleted for the run
+pnpm test:integration:fresh --filter=@nexus/db  # one package (args go to turbo)
+```
+
+`:fresh` starts an empty Postgres 17 (Supabase's major) from the
+`embedded-postgres` binaries on a free port, applies every migration, runs the
+tier, and fails if any `user` row is left afterwards. That catches a test that
+creates rows outside the fixtures. It's what CI's Postgres service container
+looks like (#384): no leftover rows and no other writers, so a test that
+passes both here and on dev relies on neither. It's also ~10x faster (about
+2 s locally vs ~22 s on the pooler). Only the database is swapped. Everything
+else still comes from `apps/web/.env.local`.
+
+CI's required `Integration tests` check does the same against a Postgres 17
+service container: it runs `pnpm test:integration`, then fails if any `user`
+row is left.
+
 ## Unit Tests
 
 Unit test utilities and pure functions with logic. Skip unit tests for presentational components — E2E tests cover those better.

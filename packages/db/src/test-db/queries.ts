@@ -6,7 +6,7 @@
  * `seed_`-prefixed). They replace the find/update/delete/upsert/count helpers
  * that used to live in `apps/web/e2e/helpers/db.ts` as hand-written SQL.
  */
-import { and, count, eq, notExists, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, notExists, sql } from 'drizzle-orm';
 import * as schema from '../schema';
 import { createSubscriptionFixture, type User } from '../repositories/fixtures';
 import { PLAN_LIMITS, getTrialEnd, type PlanTier } from '../plans';
@@ -71,21 +71,35 @@ export async function resetUserData(db: DB, userId: string): Promise<void> {
 }
 
 /**
- * Removes a user entirely, in one statement: every user-owned table cascades
+ * Removes users entirely, in one statement: every user-owned table cascades
  * on user delete — domain (files, upload_batches, storage_usage, retrievals,
  * retrieval_requests and through them their items and artifacts,
- * subscriptions) and BetterAuth (session, account). The one reference that
- * does not cascade is `invites.created_by`, so a user who created an invite
- * must have it deleted first.
+ * subscriptions) and BetterAuth (session, account).
  *
- * The teardown for a user a test inserted: `deleteUserData` spares the user
- * row, so a suite that ends on it leaks one user per run (#491).
+ * The one reference that does not cascade is `invites.created_by`, so the
+ * invites these users created go in the same statement, as a data-modifying
+ * CTE. The FK is `NO ACTION`, checked at the end of the statement, by which
+ * point both deletes have happened.
+ *
+ * The teardown behind the integration tier's user fixtures
+ * (`@nexus/db/test-db/integration`). `deleteUserData` spares the user row, so
+ * a suite that ends on it leaks one user per run (#491).
  */
-export async function deleteUser(db: DB, id: string): Promise<void> {
-    await db.delete(schema.user).where(eq(schema.user.id, id));
+export async function deleteUsers(db: DB, ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await db.execute(sql`
+        with released_invites as (
+            delete from ${schema.invites}
+            where ${inArray(schema.invites.createdBy, ids)}
+        )
+        delete from ${schema.user} where ${inArray(schema.user.id, ids)}
+    `);
 }
 
-/** `deleteUser` for a caller that only knows the email. */
+/**
+ * Removes one user the caller only knows by email; the same cascade as
+ * `deleteUsers`, except that it fails if the user created an invite.
+ */
 export async function deleteUserByEmail(db: DB, email: string): Promise<void> {
     await db.delete(schema.user).where(eq(schema.user.email, email));
 }

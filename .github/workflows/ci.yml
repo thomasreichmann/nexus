@@ -133,5 +133,17 @@ jobs:
             - name: Apply migrations
               run: pnpm -F db db:migrate
 
+            # Every package's tier: repository tests live in packages/db (#497).
             - name: Run integration tests
-              run: pnpm -F web test:integration
+              run: pnpm test:integration
+
+            # The database started empty, so a user left now leaked: a test
+            # created rows outside the fixtures or skipped their teardown
+            # (#491). Every user-owned row cascades from `user`.
+            - name: Check no test users leaked
+              run: |
+                  n=$(pnpm -s -F db db:query 'select count(*)::int as n from "user"' | jq '.[0].n')
+                  if [ "$n" != "0" ]; then
+                      echo "::error title=Integration tests leaked users::the run left $n user row(s) behind; use the fixtures from @nexus/db/test-db/integration"
+                      exit 1
+                  fi
