@@ -355,10 +355,10 @@ the trimmed error plus the `error-context.md` page-snapshot path. Flaky tests
 ## Code Coverage
 
 ```bash
-pnpm coverage     # combined line coverage: web unit + web integration + packages/db + worker
+pnpm coverage     # combined line coverage: web + db (unit and integration each) + worker
 ```
 
-This is the repo's coverage number. It runs the four Vitest tiers in parallel
+This is the repo's coverage number. It runs the five Vitest tiers in parallel
 (about a minute, most of it the integration tier's Postgres round trips),
 merges their maps, and prints a total, per-workspace rows, and the areas the
 test-quality epic (#502) tracks. The merged per-file map is written to
@@ -370,10 +370,10 @@ test-quality epic (#502) tracks. The merged per-file map is written to
   tests happened to load; counting all of them it was 34%. When you add a
   source directory outside the include globs (`apps/web/vitest.coverage.ts`,
   `src/**` elsewhere), add it there.
-- **The integration tier needs `DATABASE_URL`** (env or
+- **The integration tiers need `DATABASE_URL`** (env or
   `apps/web/.env.local`). Without it the run is unit-only and the first line
-  says so; `packages/db` then reads low, since its queries are only exercised
-  against Postgres through the web integration tests.
+  says so. `packages/db` then reads low, since its queries only run against
+  Postgres in the integration tiers.
 - **Warnings come first.** A skipped or failed tier, or a file Vitest couldn't
   parse (usually an unbuilt workspace dependency: run `pnpm build`), is named
   on the first lines. A failed tier exits 1 with its test failure below the
@@ -388,6 +388,103 @@ can't say whether the tests that do run would catch a bug.
 
 **Baseline (2026-09-28, lines):** 37.9% total (web 34.0%, `packages/db`
 40.7%, worker 69.1%). Details and the per-area table are in #492.
+
+### After coding: `pnpm cov:touched`
+
+Run this once you've written the code and before you decide which tests to
+add. It shows how well the code you touched is covered, one line per file,
+worst first.
+
+```bash
+pnpm cov:touched                    # source files changed vs origin/main (committed, staged, unstaged, untracked)
+pnpm cov:touched lib/upload/*.ts    # ...plus these files, directories or globs
+pnpm cov:touched --only <paths...>  # exactly these files instead
+pnpm cov:touched --all              # every source file
+pnpm cov:touched --risk             # churn × coverage ranking of the changed set (--all: whole repo, top 20)
+```
+
+```
+  0.0%   0.0%      0/101  untested                apps/worker/src/handlers/generateThumbnail.ts  L16-344
+  0.0%   0.0%      0/340  e2e-only                apps/web/components/dashboard/useUpload.ts  L66-1288
+ 78.0%  79.7%      71/91  unit+integration+e2e    packages/db/src/repositories/files.ts  L44,90,134,256,299,+7 more
+100.0% 100.0%      29/29  unit+e2e                apps/web/lib/upload/parts.ts
+4 files, changed vs origin/main 9c2ae16 · web unit ran 3s · 3.1s
+```
+
+Columns: line %, branch %, covered/total lines, the tiers that execute the
+file, the path, and the uncovered line ranges.
+
+- **`untested`**: no unit or integration test runs a line of it, and no
+  automated e2e spec reaches it. Start here.
+- **`e2e-only`**: no unit or integration test runs it, but a page an e2e spec
+  tags with `@page:` reaches it (the page, its layouts, their static imports,
+  and the tRPC routers and `/api` routes they call). Playwright records no
+  line coverage, so e2e-only code always reads 0%. The label is a guess, and
+  a generous one: it means some spec probably renders this code, not that
+  any spec asserts its behaviour.
+- **`+e2e`** after the tier names means the same for a file that also has
+  some unit or integration coverage.
+
+**Speed.** It reuses the per-tier maps from the last `pnpm coverage`, plus a
+cache of its own earlier runs in `coverage/touched/`. A file's cached entry is
+stale once the file, or any test or config of that tier, is newer than the
+entry. Only stale files re-run, through `vitest related`, which runs just the
+tests that import them, with coverage scoped to them. Measured on #449's file
+set: 0.1s when fresh, 3.6s after editing its `lib/` and `components/` files.
+If a stale file is one an integration tier runs, that tier re-runs too. On
+the dev pooler the web integration tier takes about 50s of round trips;
+`--unit-only` skips both integration tiers. An integration tier doesn't
+re-run for a file it has never executed, as long as its tests haven't
+changed.
+
+**`--risk`** ranks by commits in the last 90 days (`--days N`) × the share of
+lines no unit or integration test runs. The files that change most and are
+tested least come first. `e2e-only` counts as uncovered.
+
+**`--json`** (for the test-maintenance skill, #498) prints one object. Fields
+are only added, never renamed:
+
+```jsonc
+{
+    "version": 1,
+    "mode": "changed", // "changed" | "only" | "all"
+    "base": "9c2ae16…", // merge-base sha, null unless mode is "changed"
+    "riskWindowDays": 90,
+    "seconds": 3.1,
+    "tiers": [
+        // one per tier: fresh | ran | failed | unused
+        {
+            "name": "web unit",
+            "status": "ran",
+            "files": 4,
+            "rerun": 2,
+            "seconds": 3,
+        },
+    ],
+    "notices": [], // skipped/failed tiers, unknown paths
+    "files": [
+        // worst first; by risk with --risk
+        {
+            "path": "apps/web/lib/format.ts",
+            // untested | e2e-only | partial | covered | no-code | unmeasured (its tier failed)
+            "status": "partial",
+            "lines": { "covered": 15, "total": 25, "pct": 60 }, // pct is null when total is 0
+            "branches": { "covered": 4, "total": 6, "pct": 66.7 },
+            "uncovered": [
+                [4, 4],
+                [51, 73],
+            ], // inclusive line ranges
+            "tiers": ["unit"], // subset of ["unit", "integration"]
+            "e2e": true,
+            "churn": 5, // commits in the risk window
+            "risk": 2, // churn × uncovered line share
+        },
+    ],
+}
+```
+
+It exits 1 only when a tier it had to run failed. The failure is printed
+below the table.
 
 ## Related
 

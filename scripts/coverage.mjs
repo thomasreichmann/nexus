@@ -3,8 +3,7 @@
  * `pnpm coverage` — the repo's honest line-coverage number (#492).
  *
  * Runs web unit, web integration, db unit, db integration and worker with
- * coverage in
- * parallel, merges their coverage-final.json maps, and prints a total plus
+ * coverage in parallel, merges their coverage-final.json maps, and prints a total plus
  * per-area rows. Every source file counts (each Vitest config has a
  * `coverage.include`), so an untested file drags the number down instead of
  * vanishing from it.
@@ -15,38 +14,26 @@
  * Extra args pass through to every Vitest run, e.g.
  *   pnpm coverage --exclude '**\/files.integration.test.ts'
  *
- * Per-tier maps land in coverage/<tier>/, the merged one in
- * coverage/coverage-final.json for per-file tooling.
+ * Per-tier maps land in coverage/<tier>/ (which `pnpm cov:touched` reuses),
+ * the merged one in coverage/coverage-final.json.
  */
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import libCoverage from 'istanbul-lib-coverage';
+import {
+    SKIPPED_DB_NOTICE,
+    TIERS,
+    color,
+    formatFailure,
+    hasDatabaseUrl,
+    outDir,
+    root,
+    runTier,
+    unparsedFiles,
+    unparsedNotice,
+} from './coverage/shared.mjs';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = join(root, 'coverage');
 const passthrough = process.argv.slice(2);
-
-const TIERS = [
-    { name: 'web unit', slug: 'web-unit', cwd: 'apps/web', args: [] },
-    {
-        name: 'web integration',
-        slug: 'web-integration',
-        cwd: 'apps/web',
-        args: ['--config', 'vitest.integration.config.ts'],
-        needsDb: true,
-    },
-    { name: 'db unit', slug: 'db-unit', cwd: 'packages/db', args: [] },
-    {
-        name: 'db integration',
-        slug: 'db-integration',
-        cwd: 'packages/db',
-        args: ['--config', 'vitest.integration.config.ts'],
-        needsDb: true,
-    },
-    { name: 'worker unit', slug: 'worker-unit', cwd: 'apps/worker', args: [] },
-];
 
 const WORKSPACES = [
     ['web', (f) => f.startsWith('apps/web/')],
@@ -93,7 +80,14 @@ const AREAS = [
 const started = Date.now();
 const hasDb = hasDatabaseUrl();
 const tiers = TIERS.filter((t) => hasDb || !t.needsDb);
-const results = await Promise.all(tiers.map(runTier));
+const results = await Promise.all(
+    tiers.map((tier) =>
+        runTier(tier, {
+            reportsDir: join(outDir, tier.slug),
+            extra: passthrough,
+        })
+    )
+);
 const failed = results.filter((r) => r.code !== 0);
 const passed = results.filter((r) => r.code === 0);
 
@@ -103,35 +97,18 @@ const mapped = new Set(map.files().map((f) => relative(root, f)));
 
 const c = color(process.stdout.isTTY ?? false);
 const notices = [];
-if (!hasDb)
-    notices.push(
-        c.yellow(
-            '⚠ integration tiers skipped (no DATABASE_URL in env or apps/web/.env.local): unit-only coverage, packages/db understated'
-        )
-    );
+if (!hasDb) notices.push(c.yellow(SKIPPED_DB_NOTICE));
 for (const r of failed)
     notices.push(
         c.red(`✗ ${r.tier.name} failed: its coverage is missing below`)
     );
-// Vitest drops a file it can't transform from its report with only a log
-// line. That's harmless when another tier maps the file (the integration
-// tier can't transform untouched packages/db files; db unit maps them), but
-// a file no tier maps would quietly shrink the denominator.
-const dropped = new Set(
-    results
-        .flatMap((r) =>
-            [...r.output.matchAll(/Failed to parse file:\/\/(\S+)\./g)].map(
-                (m) => relative(root, m[1])
-            )
-        )
-        .filter((f) => !mapped.has(f))
-);
-if (dropped.size > 0)
-    notices.push(
-        c.yellow(
-            `⚠ Vitest couldn't parse ${[...dropped].join(', ')}, so it is missing from the total. Usually an unbuilt workspace dependency: run \`pnpm build\` and retry.`
-        )
-    );
+// Harmless when another tier maps the file (the integration tier can't
+// transform untouched packages/db files; db unit maps them), but a file no
+// tier maps would quietly shrink the denominator.
+const dropped = [
+    ...new Set(unparsedFiles(results).filter((f) => !mapped.has(f))),
+];
+if (dropped.length > 0) notices.push(c.yellow(unparsedNotice(dropped)));
 if (notices.length) console.log(notices.join('\n'));
 
 if (passed.length > 0) {
@@ -143,59 +120,13 @@ if (passed.length > 0) {
     printReport(passed);
 }
 
-for (const r of failed) printFailure(r);
+for (const r of failed)
+    console.log(formatFailure(r, c, ['run', ...r.tier.args, ...passthrough]));
 
 const secs = Math.round((Date.now() - started) / 1000);
 if (passed.length > 0)
     console.log(c.dim(`merged map: coverage/coverage-final.json · ${secs}s`));
 process.exit(failed.length > 0 ? 1 : 0);
-
-function hasDatabaseUrl() {
-    if (process.env.DATABASE_URL) return true;
-    try {
-        const envFile = readFileSync(join(root, 'apps/web/.env.local'), 'utf8');
-        return /^\s*DATABASE_URL\s*=\s*\S/m.test(envFile);
-    } catch {
-        return false;
-    }
-}
-
-function runTier(tier) {
-    const reportsDir = join(outDir, tier.slug);
-    const args = [
-        'run',
-        ...tier.args,
-        '--coverage',
-        '--coverage.reporter=json',
-        `--coverage.reportsDirectory=${reportsDir}`,
-        ...passthrough,
-    ];
-    const bin = join(root, tier.cwd, 'node_modules/.bin/vitest');
-    return new Promise((resolve) => {
-        const proc = spawn(bin, args, {
-            cwd: join(root, tier.cwd),
-            env: { ...process.env, FORCE_COLOR: '0' },
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        /** @type {Buffer[]} */
-        const chunks = [];
-        proc.stdout.on('data', (d) => chunks.push(d));
-        proc.stderr.on('data', (d) => chunks.push(d));
-        proc.on('error', (err) =>
-            resolve({ tier, code: 1, output: err.message })
-        );
-        proc.on('close', (code) => {
-            const output = Buffer.concat(chunks).toString();
-            const file = join(reportsDir, 'coverage-final.json');
-            if (code !== 0 || !existsSync(file))
-                return resolve({ tier, code: code || 1, output });
-            const map = libCoverage.createCoverageMap(
-                JSON.parse(readFileSync(file, 'utf8'))
-            );
-            resolve({ tier, code: 0, output, map });
-        });
-    });
-}
 
 function printReport(ran) {
     // The integration tier may reach other packages (allowExternal); only
@@ -232,42 +163,4 @@ function printReport(ran) {
     console.log(c.bold('Areas'));
     for (const [label, match] of AREAS)
         console.log(row(`  ${label}`, summarize(match)));
-}
-
-function printFailure(result) {
-    const lines = result.output
-        .replace(/\x1b\[[0-9;]*m/g, '')
-        .split('\n')
-        .filter((l) => !isNoise(l.trim()));
-    // Vitest's failure section, else the tail (config/startup errors).
-    const start = lines.findIndex((l) => /Failed Tests|Failed Suites/.test(l));
-    const shown =
-        start >= 0 ? lines.slice(start, start + 60) : lines.slice(-30);
-    const rerun = ['vitest run', ...result.tier.args, ...passthrough].join(' ');
-    console.log(
-        `\n${c.red(`${result.tier.name} FAILED`)} ${c.dim(`(rerun: cd ${result.tier.cwd} && pnpm exec ${rerun})`)}`
-    );
-    console.log(shown.join('\n'));
-}
-
-function isNoise(line) {
-    return (
-        line === '' ||
-        /^(✓|RUN\s|Start at|Duration|Coverage enabled|stderr \||stdout \|)/.test(
-            line
-        ) ||
-        // Stack frames inside node_modules or Node internals.
-        /^at .*(node_modules|node:internal|<anonymous>)/.test(line) ||
-        /^at new Promise/.test(line)
-    );
-}
-
-function color(enabled) {
-    const wrap = (code) => (s) => (enabled ? `\x1b[${code}m${s}\x1b[0m` : s);
-    return {
-        red: wrap('31'),
-        yellow: wrap('33'),
-        dim: wrap('2'),
-        bold: wrap('1'),
-    };
 }

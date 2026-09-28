@@ -10,6 +10,7 @@
         "check": "node scripts/check.mjs",
         "check:verbose": "node scripts/check.mjs --verbose",
         "coverage": "node scripts/coverage.mjs",
+        "cov:touched": "node scripts/coverage/touched.mjs",
         "test:coverage": "turbo test:coverage && node scripts/coverage-summary.mjs",
         "coverage:open": "node scripts/coverage-summary.mjs --open",
         "pr:size": "node scripts/pr-size.mjs",
