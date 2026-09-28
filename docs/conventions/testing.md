@@ -367,11 +367,12 @@ claims under concurrency, unique indexes.
 
 **Where they live:** `*.integration.test.ts`, next to the code under test.
 
-| Code under test                                 | Home                                       | Command                               |
-| ----------------------------------------------- | ------------------------------------------ | ------------------------------------- |
-| A repository or query (`packages/db/src/...`)   | `packages/db/src/**/x.integration.test.ts` | `pnpm -F @nexus/db test:integration`  |
-| A service whose behaviour is SQL (`apps/web/…`) | `apps/web/**/x.integration.test.ts`        | `pnpm -F @nexus/web test:integration` |
-| Both packages                                   |                                            | `pnpm test:integration`               |
+| Code under test                                 | Home                                       | Command                                  |
+| ----------------------------------------------- | ------------------------------------------ | ---------------------------------------- |
+| A repository or query (`packages/db/src/...`)   | `packages/db/src/**/x.integration.test.ts` | `pnpm -F @nexus/db test:integration`     |
+| A service whose behaviour is SQL (`apps/web/…`) | `apps/web/**/x.integration.test.ts`        | `pnpm -F @nexus/web test:integration`    |
+| A worker job or its handling (`apps/worker/…`)  | `apps/worker/src/**/x.integration.test.ts` | `pnpm -F @nexus/worker test:integration` |
+| Every package                                   |                                            | `pnpm test:integration`                  |
 
 The unit configs exclude `*.integration.test.ts`, so `pnpm check` never needs
 a database.
@@ -402,6 +403,7 @@ needs. Seed with the typed insert helpers from `@nexus/db/test-db`.
 | `user`       | test   | A fresh user. After the test, it and every row it owns are deleted in one statement (`deleteUsers`: every user-owned table cascades from `user`; invites it created go in the same statement).   |
 | `createUser` | test   | More users for this test, e.g. the other owner in an ownership test. Torn down with `user`, in that same statement.                                                                              |
 | `fileUser`   | file   | One user shared by the file's tests, deleted after the last one. For a suite where a user per test costs more round trips than its isolation is worth. Its rows pile up across the file's tests. |
+| `createJob`  | test   | A `background_jobs` row (`createNewJobFixture` defaults), deleted after the test. Jobs have no user to cascade from, and a leftover one crowds the admin jobs table (#419).                      |
 
 **The reference example.** Copy this one
 (`packages/db/src/repositories/uploadBatches.integration.test.ts`): seed the
@@ -517,10 +519,10 @@ the trimmed error plus the `error-context.md` page-snapshot path. Flaky tests
 ## Code Coverage
 
 ```bash
-pnpm coverage     # combined line coverage: web + db (unit and integration each) + worker
+pnpm coverage     # combined line coverage: web + db + worker (unit and integration each)
 ```
 
-This is the repo's coverage number. It runs the five Vitest tiers in parallel
+This is the repo's coverage number. It runs the six Vitest tiers in parallel
 (about a minute, most of it the integration tier's Postgres round trips),
 merges their maps, and prints a total, per-workspace rows, and the areas the
 test-quality epic (#502) tracks. The merged per-file map is written to
@@ -690,7 +692,7 @@ Mutants no test runs at all are summed up as line ranges; `pnpm cov:touched`
 already shows those as uncovered. The full report, every mutant in the
 source, is `coverage/mutation/mutation.html`.
 
-**Every tier judges every mutant.** All five Vitest tiers run in one Stryker
+**Every tier judges every mutant.** All six Vitest tiers run in one Stryker
 run, so a repository mutant is killed by the db integration tests on a real
 Postgres or by the web service tests over it, whichever notices. The
 integration tiers run on a throwaway Postgres (as in

@@ -40,8 +40,8 @@ import type { RestoreHorizons, Retrieval } from '@nexus/db/repo/retrievals';
 
 // Exercises the active-retrieval predicate against a real database: `ready`
 // rows past `expiresAt` are expired by query, not by stored status — nothing
-// tells us when a restored copy lapses. Also exercises
-// the partial unique index guaranteeing one active retrieval per file (#266).
+// tells us when a restored copy lapses. Two requests racing for one file's
+// unique-index slot (#266) are in retrieval.concurrency.integration.test.ts.
 // The repository's own queries, row by row, are pinned in @nexus/db's
 // retrievals.integration.test.ts; these tests are about the service on top.
 
@@ -108,34 +108,6 @@ describe.concurrent('active-retrieval expiry predicate', () => {
         await expect(
             retrievalService.getDownloadUrl(db, user.id, file.id)
         ).rejects.toThrow(InvalidStateError);
-    });
-});
-
-describe.concurrent('one active retrieval per file (#266)', () => {
-    it('two concurrent retrieval requests yield exactly one active row', async ({
-        db,
-        user,
-    }) => {
-        const file = await insertFile(db, { userId: user.id });
-
-        const [first, second] = await Promise.all([
-            retrievalService.requestRetrieval(db, user.id, file.id),
-            retrievalService.requestRetrieval(db, user.id, file.id),
-        ]);
-
-        expect(first.requestId).not.toBe(second.requestId);
-        const active = await createRetrievalRepo(db).findByFileIds([file.id]);
-        expect(active).toHaveLength(1);
-
-        // Whichever call lost the insert race adopted the winner's row, so
-        // both requests still count the file they asked for.
-        const requestRepo = createRetrievalRequestRepo(db);
-        expect(
-            (await requestRepo.findReadiness(first.requestId)).totalFiles
-        ).toBe(1);
-        expect(
-            (await requestRepo.findReadiness(second.requestId)).totalFiles
-        ).toBe(1);
     });
 });
 

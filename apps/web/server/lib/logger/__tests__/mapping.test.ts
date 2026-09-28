@@ -1,248 +1,255 @@
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { pathToFileURL } from 'node:url';
+import { afterAll, describe, expect, it } from 'vitest';
+import { mapCallSite, mapPosition } from '../patches/mapping';
 
-// Break up the sourceMappingURL directive so Vite doesn't try to parse these test strings
-const SOURCEMAP_URL = '//# source' + 'MappingURL=';
-const SOURCEMAP_URL_LEGACY = '//@ source' + 'MappingURL=';
+// Split so Vite doesn't read the fixtures' directives as this file's own.
+const SOURCE_MAPPING_URL = '//# source' + 'MappingURL=';
 
-// We need to test the internal functions, so we'll test through mapPosition
-// which exercises the full pipeline
-describe('source map mapping', () => {
-    let tempDir: string;
-    const projectRoot = '/test/project';
+/** The original module. The type alias vanishes on compile, so lines shift. */
+const ORIGINAL = [
+    'interface Payload {',
+    '    id: string;',
+    '}',
+    '',
+    'export function fail(payload: Payload): never {',
+    '    const error = new Error(`bad ${payload.id}`);',
+    '    type Unused = {',
+    '        reason: string;',
+    '    };',
+    '    throw error;',
+    '}',
+    '',
+].join('\n');
 
-    beforeAll(() => {
-        tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mapping-test-'));
+/** What `tsc` emits for ORIGINAL (CommonJS, ES2022, sourceMap on). */
+const COMPILED = [
+    '"use strict";',
+    'Object.defineProperty(exports, "__esModule", { value: true });',
+    'exports.fail = fail;',
+    'function fail(payload) {',
+    '    const error = new Error(`bad ${payload.id}`);',
+    '    throw error;',
+    '}',
+].join('\n');
+const MAPPINGS =
+    ';;AAIA,oBAMC;AAND,SAAgB,IAAI,CAAC,OAAgB;IACjC,MAAM,KAAK,GAAG,IAAI,KAAK,CAAC,OAAO,OAAO,CAAC,EAAE,EAAE,CAAC,CAAC;IAI7C,MAAM,KAAK,CAAC;AAChB,CAAC';
+
+// Where V8 puts `new Error` in COMPILED, and where that is in ORIGINAL
+// (Node's own 1-based SourceMap.findOrigin agrees). The generated line after
+// it maps four original lines further on, so reading the wrong generated
+// line gives a wrong answer rather than a lucky one.
+const NEW_ERROR_IN_CHUNK = { line: 5, column: 19 };
+const NEW_ERROR_IN_SOURCE = { line: 6, column: 19 };
+
+const projectRoot = '/work/nexus/apps/web';
+const MAPPED = {
+    file: path.join(projectRoot, 'server/fail.ts'),
+    ...NEW_ERROR_IN_SOURCE,
+};
+
+const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mapping-test-'));
+afterAll(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+
+let buildCount = 0;
+/**
+ * A fresh directory: under `.next/server/chunks` by default, the only place
+ * mapPosition maps. Fresh because it caches by file and position.
+ */
+function freshDir(...under: string[]): string {
+    const dir = path.join(
+        tempRoot,
+        `build-${buildCount++}`,
+        ...(under.length ? under : ['.next', 'server', 'chunks', 'ssr'])
+    );
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+}
+
+function sourceMapJson(source = '[project]/server/fail.ts'): string {
+    return JSON.stringify({
+        version: 3,
+        file: 'chunk.js',
+        sources: [source],
+        sourcesContent: [ORIGINAL],
+        names: [],
+        mappings: MAPPINGS,
+    });
+}
+
+/** Write COMPILED to `dir/name`, followed by these sourceMappingURL values. */
+function writeChunk(dir: string, urls: string[], name = 'chunk.js'): string {
+    const file = path.join(dir, name);
+    const directives = urls.map((url) => SOURCE_MAPPING_URL + url);
+    fs.writeFileSync(file, [COMPILED, ...directives].join('\n'));
+    return file;
+}
+
+function writeMap(dir: string, name: string, json = sourceMapJson()): string {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, json);
+    return file;
+}
+
+const inlineBase64 = (json = sourceMapJson()) =>
+    `data:application/json;base64,${Buffer.from(json).toString('base64')}`;
+
+const mapNewError = (chunk: string) =>
+    mapPosition(
+        chunk,
+        NEW_ERROR_IN_CHUNK.line,
+        NEW_ERROR_IN_CHUNK.column,
+        projectRoot
+    );
+
+describe('mapPosition', () => {
+    it.each<[string, (dir: string) => string]>([
+        ['an inline base64 map', (dir) => writeChunk(dir, [inlineBase64()])],
+        [
+            'an inline URL-encoded map',
+            (dir) =>
+                writeChunk(dir, [
+                    `data:application/json,${encodeURIComponent(sourceMapJson())}`,
+                ]),
+        ],
+        [
+            'an external map, by a path relative to the chunk',
+            (dir) => {
+                writeMap(dir, 'chunk.js.map');
+                return writeChunk(dir, ['chunk.js.map']);
+            },
+        ],
+        [
+            'an external map, by absolute path',
+            (dir) => writeChunk(dir, [writeMap(dir, 'chunk.js.map')]),
+        ],
+        [
+            // How Turbopack names its chunks' maps.
+            'an external map, by URL-encoded relative path',
+            (dir) => {
+                writeMap(dir, '[root-of-the-server]__0eaa._.js.map');
+                return writeChunk(dir, [
+                    '%5Broot-of-the-server%5D__0eaa._.js.map',
+                ]);
+            },
+        ],
+        [
+            'the last of several sourceMappingURLs',
+            (dir) => {
+                writeMap(
+                    dir,
+                    'stale.js.map',
+                    sourceMapJson('[project]/server/stale.ts')
+                );
+                writeMap(dir, 'chunk.js.map');
+                return writeChunk(dir, ['stale.js.map', 'chunk.js.map']);
+            },
+        ],
+    ])('maps a chunk position to the original through %s', (_form, write) => {
+        const chunk = write(freshDir());
+
+        expect(mapNewError(chunk)).toEqual(MAPPED);
     });
 
-    afterAll(() => {
-        fs.rmSync(tempDir, { recursive: true, force: true });
+    it.each([
+        ['[project]/server/fail.ts', path.join(projectRoot, 'server/fail.ts')],
+        [
+            'webpack:///work/nexus/apps/web/server/fail.ts',
+            '/work/nexus/apps/web/server/fail.ts',
+        ],
+        [
+            // Percent-encoded, so only a real URL decode gets the path back.
+            pathToFileURL('/work/my nexus/apps/web/server/fail.ts').href,
+            '/work/my nexus/apps/web/server/fail.ts',
+        ],
+        ['server/fail.ts', path.join(projectRoot, 'server/fail.ts')],
+    ])('resolves the source %s to %s', (source, expected) => {
+        const chunk = writeChunk(freshDir(), [
+            inlineBase64(sourceMapJson(source)),
+        ]);
+
+        expect(mapNewError(chunk)?.file).toBe(expected);
     });
 
-    describe('normalizeSourcePath', () => {
-        // We test normalizeSourcePath behavior through creating test files
-        // and verifying the mapped paths
+    // On COMPILED line 5, `new ` is one mapped segment (columns 19-22) and
+    // `Error` the next (from 23). Each maps to where its segment starts.
+    it.each([
+        [22, 19],
+        [23, 23],
+    ])('maps chunk column %i to original column %i', (column, original) => {
+        const chunk = writeChunk(freshDir(), [inlineBase64()]);
 
-        it('handles Turbopack [project]/ prefix', () => {
-            // The [project]/ prefix should be replaced with projectRoot
-            const source = '[project]/server/api/route.ts';
-            const expected = path.join(projectRoot, 'server/api/route.ts');
-
-            // This tests the logic conceptually - the actual function is internal
-            // We verify by checking that [project]/ gets normalized correctly
-            expect(source.startsWith('[project]/')).toBe(true);
-            const normalized = path.join(
-                projectRoot,
-                source.slice('[project]/'.length)
-            );
-            expect(normalized).toBe(expected);
-        });
-
-        it('handles webpack:// scheme prefix', () => {
-            const source = 'webpack:///./src/index.ts';
-            // After stripping scheme and leading slashes, should get ./src/index.ts
-            const schemeIdx = source.indexOf('://');
-            let result = source.slice(schemeIdx + 3);
-            while (result.startsWith('/')) {
-                result = result.slice(1);
-            }
-            expect(result).toBe('./src/index.ts');
-        });
-    });
-
-    describe('shouldAttemptMapping', () => {
-        it('returns true for .next/server/chunks paths', () => {
-            const file = path.join(
-                projectRoot,
-                '.next',
-                'server',
-                'chunks',
-                'ssr',
-                'file.js'
-            );
-            // Verify path structure matches what shouldAttemptMapping checks
-            expect(file.includes(`${path.sep}.next${path.sep}`)).toBe(true);
-            expect(file.includes(`${path.sep}server${path.sep}`)).toBe(true);
-            expect(file.includes(`${path.sep}chunks${path.sep}`)).toBe(true);
-        });
-
-        it('returns false for regular project files', () => {
-            const file = path.join(projectRoot, 'server', 'api', 'route.ts');
-            // Should not contain .next
-            expect(file.includes(`${path.sep}.next${path.sep}`)).toBe(false);
-        });
-    });
-
-    describe('inline source maps', () => {
-        it('parses base64 encoded inline source maps', () => {
-            // Create a test file with inline source map
-            const testFile = path.join(tempDir, 'inline-base64.js');
-            const sourceMapJson = JSON.stringify({
-                version: 3,
-                sources: ['original.ts'],
-                names: [],
-                mappings: 'AAAA',
-            });
-            const base64 = Buffer.from(sourceMapJson).toString('base64');
-            const code = `console.log("test");
-${SOURCEMAP_URL}data:application/json;base64,${base64}`;
-
-            fs.writeFileSync(testFile, code);
-
-            // Verify the file was created with valid content
-            const content = fs.readFileSync(testFile, 'utf8');
-            expect(content).toContain('sourceMappingURL=data:');
-            expect(content).toContain('base64,');
-        });
-
-        it('parses URL-encoded inline source maps', () => {
-            const testFile = path.join(tempDir, 'inline-encoded.js');
-            const sourceMapJson = JSON.stringify({
-                version: 3,
-                sources: ['original.ts'],
-                names: [],
-                mappings: 'AAAA',
-            });
-            const encoded = encodeURIComponent(sourceMapJson);
-            const code = `console.log("test");
-${SOURCEMAP_URL}data:application/json,${encoded}`;
-
-            fs.writeFileSync(testFile, code);
-
-            const content = fs.readFileSync(testFile, 'utf8');
-            expect(content).toContain('sourceMappingURL=data:');
-            expect(content).not.toContain('base64');
-        });
-    });
-
-    describe('external source maps', () => {
-        it('resolves relative source map paths', () => {
-            const jsFile = path.join(tempDir, 'external.js');
-            const mapFile = path.join(tempDir, 'external.js.map');
-
-            const sourceMapJson = JSON.stringify({
-                version: 3,
-                sources: ['original.ts'],
-                names: [],
-                mappings: 'AAAA',
-                sourcesContent: ['console.log("original");'],
-            });
-
-            fs.writeFileSync(mapFile, sourceMapJson);
-            fs.writeFileSync(
-                jsFile,
-                `console.log("compiled");
-${SOURCEMAP_URL}external.js.map`
-            );
-
-            // Verify the map file exists
-            expect(fs.existsSync(mapFile)).toBe(true);
-
-            // Verify the source map is valid JSON
-            const parsed = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
-            expect(parsed.version).toBe(3);
-            expect(parsed.sources).toContain('original.ts');
-        });
-
-        it('resolves absolute source map paths', () => {
-            const jsFile = path.join(tempDir, 'absolute.js');
-            const mapFile = path.join(tempDir, 'absolute.js.map');
-
-            const sourceMapJson = JSON.stringify({
-                version: 3,
-                sources: ['original.ts'],
-                names: [],
-                mappings: 'AAAA',
-            });
-
-            fs.writeFileSync(mapFile, sourceMapJson);
-            fs.writeFileSync(
-                jsFile,
-                `console.log("compiled");
-${SOURCEMAP_URL}${mapFile}`
-            );
-
-            // Verify absolute path is in the file
-            const content = fs.readFileSync(jsFile, 'utf8');
-            expect(content).toContain(mapFile);
-        });
-
-        it('handles URL-encoded source map file paths', () => {
-            const jsFile = path.join(tempDir, 'encoded-path.js');
-            const mapFile = path.join(tempDir, 'encoded-path.js.map');
-
-            fs.writeFileSync(
-                mapFile,
-                JSON.stringify({
-                    version: 3,
-                    sources: ['original.ts'],
-                    names: [],
-                    mappings: 'AAAA',
-                })
-            );
-
-            // Some bundlers URL-encode the path
-            const encodedName = encodeURIComponent('encoded-path.js.map');
-            fs.writeFileSync(
-                jsFile,
-                `console.log("compiled");
-${SOURCEMAP_URL}${encodedName}`
-            );
-
-            const content = fs.readFileSync(jsFile, 'utf8');
-            expect(content).toContain('sourceMappingURL=');
+        expect(mapPosition(chunk, 5, column, projectRoot)).toMatchObject({
+            line: 6,
+            column: original,
         });
     });
 
-    describe('source map finding', () => {
-        it('uses last sourceMappingURL when multiple exist', () => {
-            const jsFile = path.join(tempDir, 'multiple-urls.js');
+    it('leaves a position before the chunk’s first mapping unmapped', () => {
+        // Line 1 is tsc's "use strict" preamble, which no original line made.
+        const chunk = writeChunk(freshDir(), [inlineBase64()]);
 
-            // Some minifiers leave multiple sourceMappingURL comments
-            const code = `console.log("test");
-${SOURCEMAP_URL}old.js.map
-console.log("more");
-${SOURCEMAP_URL}final.js.map`;
-
-            fs.writeFileSync(jsFile, code);
-
-            // Verify the file contains both URLs
-            const content = fs.readFileSync(jsFile, 'utf8');
-            expect(content).toContain('old.js.map');
-            expect(content).toContain('final.js.map');
-
-            // The regex in mapping.ts uses lastIndex, which should find final.js.map
-            const regex = /\/\/[#@]\s*sourceMappingURL=([^\s]+)/g;
-            let match: RegExpExecArray | null;
-            let lastUrl: string | null = null;
-            while ((match = regex.exec(content)) !== null) {
-                lastUrl = match[1];
-            }
-            expect(lastUrl).toBe('final.js.map');
-        });
-
-        it('handles both # and @ prefixes for sourceMappingURL', () => {
-            // Legacy syntax uses @, modern uses #
-            const regex = /\/\/[#@]\s*sourceMappingURL=([^\s]+)/g;
-
-            expect(SOURCEMAP_URL + 'test.map').toMatch(regex);
-
-            // Reset lastIndex for new test
-            regex.lastIndex = 0;
-            expect(SOURCEMAP_URL_LEGACY + 'test.map').toMatch(regex);
-        });
+        expect(mapPosition(chunk, 1, 1, projectRoot)).toBeNull();
     });
 
-    describe('caching behavior', () => {
-        it('position cache key format includes file, line, and column', () => {
-            const file = '/path/to/file.js';
-            const line = 42;
-            const column = 10;
-            const cacheKey = `${file}:${line}:${column}`;
+    it('leaves a file outside .next/server/chunks unmapped, even with a map', () => {
+        const file = writeChunk(freshDir('dist'), [inlineBase64()]);
 
-            expect(cacheKey).toBe('/path/to/file.js:42:10');
-        });
+        expect(mapNewError(file)).toBeNull();
+    });
+
+    it('leaves a chunk without a source map unmapped', () => {
+        const chunk = writeChunk(freshDir(), []);
+
+        expect(mapNewError(chunk)).toBeNull();
+    });
+});
+
+describe('mapCallSite', () => {
+    // Loads the chunk for real and takes the call site V8 reports for the
+    // throw, so the test uses V8's own line and column numbering.
+    function callSiteOfThrow(chunk: string): NodeJS.CallSite {
+        const { fail } = createRequire(import.meta.url)(chunk) as {
+            fail: (payload: { id: string }) => never;
+        };
+        const savedPrepare = Error.prepareStackTrace;
+        Error.prepareStackTrace = (_error, callSites) => callSites;
+        try {
+            fail({ id: 'x' });
+        } catch (error) {
+            return (error as { stack: NodeJS.CallSite[] }).stack[0];
+        } finally {
+            Error.prepareStackTrace = savedPrepare;
+        }
+        throw new Error('the fixture did not throw');
+    }
+
+    it('reports a thrown error at its original position', () => {
+        const chunk = writeChunk(freshDir(), [inlineBase64()]);
+        const callSite = callSiteOfThrow(chunk);
+
+        const mapped = mapCallSite(callSite, projectRoot);
+
+        // The fixture's constants are where V8 actually puts the throw.
+        expect({
+            line: callSite.getLineNumber(),
+            column: callSite.getColumnNumber(),
+        }).toEqual(NEW_ERROR_IN_CHUNK);
+        expect({
+            file: mapped.getFileName(),
+            line: mapped.getLineNumber(),
+            column: mapped.getColumnNumber(),
+            functionName: mapped.getFunctionName(),
+        }).toEqual({ ...MAPPED, functionName: 'fail' });
+    });
+
+    it('returns an unmappable call site unchanged', () => {
+        const file = writeChunk(freshDir('dist'), [inlineBase64()]);
+        const callSite = callSiteOfThrow(file);
+
+        expect(mapCallSite(callSite, projectRoot)).toBe(callSite);
     });
 });

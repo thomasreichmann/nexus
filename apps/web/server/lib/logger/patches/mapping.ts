@@ -203,23 +203,25 @@ export function mapPosition(
         return null;
     }
 
-    // Source maps use 0-based columns
-    const column0 = Math.max(0, column - 1);
-    let entry = sourceMap.findEntry(line, column0) as SourceMapping | null;
+    // A call site's line and column are 1-based; findEntry takes and returns
+    // 0-based offsets for both (#490: the line used to go in and come out
+    // unconverted, which read the next generated line's mapping).
+    const entry: Partial<SourceMapping> = sourceMap.findEntry(
+        line - 1,
+        Math.max(0, column - 1)
+    );
 
-    // Retry with original column if needed
-    if (!entry?.originalSource || !entry?.originalLine) {
-        entry = sourceMap.findEntry(line, column) as SourceMapping | null;
-    }
-
-    if (!entry?.originalSource || !entry?.originalLine) {
+    if (
+        entry.originalSource === undefined ||
+        entry.originalLine === undefined
+    ) {
         positionCache.set(cacheKey, null);
         return null;
     }
 
     const result: MappedPosition = {
         file: normalizeSourcePath(entry.originalSource, projectRoot),
-        line: entry.originalLine,
+        line: entry.originalLine + 1,
         column: (entry.originalColumn ?? 0) + 1,
     };
 
