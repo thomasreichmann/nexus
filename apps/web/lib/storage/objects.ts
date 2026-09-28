@@ -4,6 +4,8 @@ import { client, bucket } from './client';
 /**
  * Delete an object from the bucket
  * Idempotent: returns successfully even if the object doesn't exist
+ * Soft on the versioned files bucket (#383): writes a delete marker; the
+ * lifecycle rule reclaims the bytes later, see docs/guides/storage.md
  * @param key - S3 object key to delete
  */
 export async function remove(key: string): Promise<void> {

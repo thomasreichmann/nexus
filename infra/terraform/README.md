@@ -160,7 +160,10 @@ Because of that guard, removing resources here is a targeted **apply** after
 deleting them from the config — never a `terraform destroy`.
 
 Decommissioning an environment for real means deleting the bucket contents and
-removing the guard in a commit first. Then:
+removing the guard in a commit first. The files bucket is versioned (#383), so
+"contents" means every object version and delete marker, not only what
+`aws s3 rm --recursive` removes: S3 refuses to delete a bucket that still has
+versions. Then:
 
 ```bash
 terraform -chdir=infra/terraform workspace select dev    # or prod

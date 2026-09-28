@@ -11,6 +11,24 @@ resource "aws_s3_bucket" "files" {
   }
 }
 
+# prevent_destroy above guards the Terraform plane only. Versioning is the
+# data-plane guard (#383): a DeleteObject without a version ID — from a code
+# bug, a bad script or a leaked key — writes a delete marker instead of
+# removing bytes, so the object stays recoverable until the noncurrent-version
+# rule below expires it. No principal in this stack holds
+# s3:DeleteObjectVersion, so nothing short of an admin can skip that window.
+# What that means for callers that delete: docs/guides/storage.md.
+#
+# Suspending (not removing) is the only way back: a versioned bucket can never
+# return to unversioned.
+resource "aws_s3_bucket_versioning" "files" {
+  bucket = aws_s3_bucket.files.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "files" {
   bucket = aws_s3_bucket.files.id
 
@@ -52,6 +70,38 @@ resource "aws_s3_bucket_lifecycle_configuration" "files" {
       days_after_initiation = 7
     }
   }
+
+  # The recovery window versioning buys, and its cost ceiling (#383). Thirty
+  # days is long enough to notice a bad delete and short enough that deleted
+  # bytes stop billing after one month. An object over 128KB that has been
+  # through a lifecycle run is already Deep Archive, whose 180-day minimum is
+  # billed on deletion anyway, so for one younger than ~150 days the extra 30
+  # days costs nothing. Objects deleted within a day or two of upload (abandoned
+  # uploads, mostly) are still STANDARD and pay 30 days of Standard storage. The
+  # transition rule above covers current versions only, so a noncurrent version
+  # keeps the class it had when it was superseded.
+  #
+  # expired_object_delete_marker removes the marker once the versions behind it
+  # have expired. Without it every deleted key leaves a marker behind for good,
+  # and ListObjectVersions has to page through all of them.
+  rule {
+    id     = "expire-noncurrent-versions"
+    status = "Enabled"
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+
+    expiration {
+      expired_object_delete_marker = true
+    }
+  }
+
+  # The provider's documented ordering for a versioned bucket: put the lifecycle
+  # configuration only after versioning is enabled, so the noncurrent rule never
+  # lands on a bucket that is not versioned yet.
+  depends_on = [aws_s3_bucket_versioning.files]
 }
 
 # Derived bucket: worker-generated thumbnails (#350). Standard class with no

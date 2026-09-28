@@ -44,11 +44,14 @@ resource "aws_iam_role_policy" "worker_s3" {
     Version = "2012-10-17"
     Statement = [
       {
+        # No s3:DeleteObject (#383): no worker handler deletes from the files
+        # bucket, and deleteAccount is still a stub. Grant it back in the PR
+        # that implements that handler. RestoreObject is needed because
+        # initiate-restore issues every restore (#423).
         Effect = "Allow"
         Action = [
           "s3:PutObject",
           "s3:GetObject",
-          "s3:DeleteObject",
           "s3:ListBucket",
           "s3:RestoreObject",
           "s3:GetObjectAttributes",
