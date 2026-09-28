@@ -14,13 +14,14 @@
  *   afterwards, in one statement (`deleteUsers`).
  * - `createUser`: more users for this test (a second owner for an ownership
  *   test), torn down with `user` in that same statement.
- * - `fileUser`: one user shared by every test in the file, for suites where a
- *   user per test would cost more round trips than its isolation is worth.
- *   Its rows accumulate across the file's tests and go at the end.
- *
  * - `createJob`: a `background_jobs` row, deleted after the test. Jobs have
  *   no user to cascade from, and a leftover one shows up in the admin jobs
  *   table and crowds out e2e's seeded rows (#419).
+ *
+ * There is no file-scoped user: Vitest 4 runs a file-scoped fixture against
+ * the file's context, where the worker-scoped `db` never lands, so it would
+ * receive `db` as undefined. `fileUser` shipped that way unused and was
+ * removed on first use (#501).
  *
  * Other rows that no user owns (`verification`) don't cascade either: a test
  * that creates them deletes them itself.
@@ -39,7 +40,6 @@ export interface IntegrationFixtures {
     db: Connection;
     createUser: (overrides?: Partial<User>) => Promise<User>;
     user: User;
-    fileUser: User;
     createJob: (overrides?: Partial<NewJob>) => Promise<Job>;
 }
 
@@ -73,15 +73,6 @@ export const it = test.extend<IntegrationFixtures>({
     user: async ({ createUser }, use) => {
         await use(await createUser());
     },
-
-    fileUser: [
-        async ({ db }, use) => {
-            const user = await insertUser(db);
-            await use(user);
-            await deleteUsers(db, [user.id]);
-        },
-        { scope: 'file' },
-    ],
 
     createJob: async ({ db }, use) => {
         const ids: string[] = [];

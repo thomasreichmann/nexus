@@ -28,7 +28,7 @@
  * the event-pipeline check red:
  *   - error: most of a recent upload cohort is still 'pending' a day later,
  *     which is what a broken derived bucket or worker looks like (see
- *     sweepThumbnails for why it's a rate, not a count)
+ *     thumbnailHealth.ts for why it's a rate, not a count)
  *   - info: recent uploads went 'failed_cold' since the last run. Only a paid
  *     restore heals those, so the daily digest is how a rising trend gets
  *     noticed.
@@ -49,6 +49,7 @@ import {
 import { retrievals } from '@nexus/db/schema';
 import { alerts, getWorkflowRunUrl } from '@/lib/alerts';
 import { db } from '@/server/db';
+import { assessThumbnailHealth } from './thumbnailHealth';
 
 /**
  * How far back the failed/unhandled leg looks. Those rows are history: they
@@ -136,13 +137,6 @@ const STUCK_THUMBNAIL_HOURS = 24;
  */
 const THUMBNAIL_COHORT_DAYS = 7;
 
-/**
- * One poison file is a bad file, not a broken bucket. The alarm needs both a
- * floor and a majority of the cohort before it calls the pipeline broken.
- */
-const MIN_STUCK_THUMBNAILS = 3;
-const STUCK_THUMBNAIL_SHARE = 0.5;
-
 /** Matches the workflow's daily schedule, so each run reports its own day. */
 const FAILED_COLD_DIGEST_HOURS = 24;
 
@@ -162,13 +156,6 @@ async function sweepThumbnails(): Promise<void> {
         createdAfter: cohortStart,
         createdBefore: new Date(now - STUCK_THUMBNAIL_HOURS * HOUR_MS),
     });
-    // 'skipped' rows (non-media, deleted before the job ran) were never going
-    // to get a thumbnail, so they're outside the rate either way.
-    const eligible =
-        cohort.pending + cohort.ready + cohort.failed + cohort.failed_cold;
-    const isPipelineStuck =
-        cohort.pending >= MIN_STUCK_THUMBNAILS &&
-        cohort.pending / eligible >= STUCK_THUMBNAIL_SHARE;
 
     const failedColdTotal = (await fileRepo.countThumbnailStatuses())
         .failed_cold;
@@ -183,6 +170,11 @@ async function sweepThumbnails(): Promise<void> {
         })
     ).failed_cold;
 
+    const { eligible, isPipelineStuck, alertSeverity } = assessThumbnailHealth(
+        cohort,
+        failedColdNew
+    );
+
     const stuckLabel = `thumbnail(s) still 'pending' >${STUCK_THUMBNAIL_HOURS}h, of ${eligible} eligible upload(s) from the last ${THUMBNAIL_COHORT_DAYS}d`;
     const failedColdLabel = `upload(s) from the last ${THUMBNAIL_COHORT_DAYS}d went 'failed_cold' in the last ${FAILED_COLD_DIGEST_HOURS}h (${failedColdTotal} failed_cold in all)`;
 
@@ -191,7 +183,7 @@ async function sweepThumbnails(): Promise<void> {
     );
     console.log(`Thumbnails failed_cold: ${failedColdNew} ${failedColdLabel}`);
 
-    if (!isPipelineStuck && failedColdNew === 0) return;
+    if (!alertSeverity) return;
 
     const runUrl = getWorkflowRunUrl();
     const context = {
@@ -199,7 +191,7 @@ async function sweepThumbnails(): Promise<void> {
         ...(runUrl && { workflowRun: runUrl }),
     };
     await alerts.send(
-        isPipelineStuck
+        alertSeverity === 'error'
             ? {
                   severity: 'error',
                   title: 'Thumbnail pipeline looks broken',
