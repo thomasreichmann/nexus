@@ -12,10 +12,9 @@
  * Deletion runs for real, and needs no objects behind the seeded keys: it is a
  * soft-delete transaction with no S3 fan-out at all.
  */
-import { deleteUserData, type File } from '@nexus/db/test-db';
-import { test as base, expect } from '../fixtures';
+import { expect } from '../fixtures';
+import { withSeededFiles } from '../fixtures/seeded-files';
 import { type TestUser } from '../helpers/auth';
-import { seedFiles } from '../helpers/scenarios';
 import { confirmBulkDelete } from '../helpers/fileBrowser';
 import { fileName } from '../helpers/table';
 
@@ -32,22 +31,7 @@ const PAGE_URL = '/dashboard/files';
 // inside the (slow-marked) test timeout.
 const FILE_COUNT = 120;
 
-const test = base.extend<NonNullable<unknown>, { seededFiles: File[] }>({
-    seededFiles: [
-        async ({ db, dedicatedUser }, use) => {
-            const userId = dedicatedUser!.userId;
-            // Ungrouped (no batchId) so they render in one flat, expanded
-            // group — the shape select-all walks.
-            const files = await seedFiles(db, userId, FILE_COUNT);
-
-            await use(files);
-
-            // Tear the library down before the dedicated user is deleted.
-            await deleteUserData(db, userId);
-        },
-        { scope: 'worker' },
-    ],
-});
+const test = withSeededFiles(FILE_COUNT);
 
 test.use({
     dedicatedUserConfig: { user: BULK_DELETE_USER, statePath: STATE_PATH },

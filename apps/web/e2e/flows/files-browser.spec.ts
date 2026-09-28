@@ -32,7 +32,7 @@ import { test as base, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
 import { interceptTrpcCalls } from '../helpers/trpc';
 import { fileName } from '../helpers/table';
-import { confirmBulkDelete } from '../helpers/fileBrowser';
+import { confirmBulkDelete, openRowMenu } from '../helpers/fileBrowser';
 
 const FILES_USER: TestUser = {
     email: 'files-browser-e2e@test.local',
@@ -370,10 +370,7 @@ test.describe('with a seeded library', () => {
                 fileName(page, seededLibrary.archivedB.name)
             ).toBeVisible();
 
-            await page
-                .locator('tr', { hasText: seededLibrary.archivedB.name })
-                .getByRole('button', { name: 'Actions' })
-                .click();
+            await openRowMenu(page, seededLibrary.archivedB.name);
             await page
                 .getByRole('menuitem', { name: 'Request retrieval' })
                 .click();
@@ -448,7 +445,7 @@ test.describe('with a seeded library', () => {
             await page.getByRole('button', { name: 'Clear selection' }).click();
 
             // Actions menu offers Download, not Request retrieval.
-            await row.getByRole('button', { name: 'Actions' }).click();
+            await openRowMenu(page, seededLibrary.readyDoc.name);
             await expect(
                 page.getByRole('menuitem', { name: 'Download' })
             ).toBeVisible();
@@ -479,7 +476,7 @@ test.describe('with a seeded library', () => {
                 hasText: seededLibrary.standardDoc.name,
             });
             await expect(row.getByText('archived')).toBeVisible();
-            await row.getByRole('button', { name: 'Actions' }).click();
+            await openRowMenu(page, seededLibrary.standardDoc.name);
             await expect(
                 page.getByRole('menuitem', { name: 'Request retrieval' })
             ).toBeVisible();

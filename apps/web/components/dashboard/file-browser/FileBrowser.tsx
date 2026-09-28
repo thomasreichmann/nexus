@@ -16,15 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogDescription,
-    AlertDialogPopup,
-    AlertDialogTitle,
-    AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import {
     Table,
     TableBody,
     TableHead,
@@ -39,6 +30,7 @@ import { useTRPC } from '@/lib/trpc/client';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { RetrieveDialog } from '@/components/dashboard/RetrieveDialog';
+import { DeleteDialog } from '@/components/dashboard/DeleteDialog';
 import { toastContext } from '@/lib/trpc/error-link';
 import { getLivePollOptionsWhile } from '@/lib/trpc/polling';
 import { toastRetrievalRequested } from './retrievalFeedback';
@@ -193,6 +185,7 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
     );
     const hasArchivedSelected = retrievableSelectedFiles.length > 0;
     const [isRetrieveDialogOpen, setIsRetrieveDialogOpen] = useState(false);
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
     const toggleSelectAll = () => {
         if (selectedFiles.length === visibleFiles.length) {
@@ -687,45 +680,26 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                             fileCount={retrievableSelectedFiles.length}
                             onConfirm={handleBulkRetrieval}
                         />
-                        <AlertDialog>
-                            <AlertDialogTrigger
-                                render={
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-destructive hover:text-destructive"
-                                    />
-                                }
-                                disabled={deleteManyMutation.isPending}
-                            >
-                                {deleteManyMutation.isPending ? (
-                                    <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                                ) : (
-                                    <Trash2 className="mr-1.5 size-3.5" />
-                                )}
-                                Delete
-                            </AlertDialogTrigger>
-                            <AlertDialogPopup>
-                                <AlertDialogTitle>
-                                    Delete {selectedFiles.length} file
-                                    {selectedFiles.length > 1 ? 's' : ''}?
-                                </AlertDialogTitle>
-                                <AlertDialogDescription>
-                                    This action cannot be undone. The selected
-                                    files will be permanently deleted.
-                                </AlertDialogDescription>
-                                <div className="flex justify-end gap-2">
-                                    <AlertDialogCancel>
-                                        Cancel
-                                    </AlertDialogCancel>
-                                    <AlertDialogAction
-                                        onClick={handleBulkDelete}
-                                    >
-                                        Delete
-                                    </AlertDialogAction>
-                                </div>
-                            </AlertDialogPopup>
-                        </AlertDialog>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setIsDeleteDialogOpen(true)}
+                            disabled={deleteManyMutation.isPending}
+                        >
+                            {deleteManyMutation.isPending ? (
+                                <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                            ) : (
+                                <Trash2 className="mr-1.5 size-3.5" />
+                            )}
+                            Delete
+                        </Button>
+                        <DeleteDialog
+                            open={isDeleteDialogOpen}
+                            onOpenChange={setIsDeleteDialogOpen}
+                            fileCount={selectedFiles.length}
+                            onConfirm={handleBulkDelete}
+                        />
                         <span className="h-4 w-px bg-border" />
                         <Button
                             variant="ghost"

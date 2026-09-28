@@ -43,6 +43,7 @@ import { originalKey } from '@nexus/db/repo/files';
 import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
 import { test, expect } from '../fixtures';
 import { createTestS3, getStorageClass, type TestS3 } from '../helpers/s3';
+import { openRowMenu } from '../helpers/fileBrowser';
 import { fileName } from '../helpers/table';
 import type { Connection, File } from '@nexus/db/test-db';
 
@@ -166,10 +167,7 @@ test.describe('glacier retrieval against real S3', () => {
             await page.goto('/dashboard/files');
             await expect(fileName(page, file.name)).toBeVisible();
 
-            await page
-                .locator('tr', { hasText: file.name })
-                .getByRole('button', { name: 'Actions' })
-                .click();
+            await openRowMenu(page, file.name);
             await page
                 .getByRole('menuitem', { name: 'Request retrieval' })
                 .click();
