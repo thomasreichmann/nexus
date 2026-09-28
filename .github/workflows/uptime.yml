@@ -40,43 +40,133 @@ jobs:
             # one line per attempt (status + latency), a truncated body only
             # on final failure, and an ::error annotation + step summary so
             # the run page says what broke without opening logs.
+            #
+            # The same step also reads the served certificate (#448). Prod was
+            # down two days behind an expired cert that had been failing to
+            # renew for a month, and this check reported it as "no HTTP
+            # response". Now an expiring cert fails the run while the app is
+            # still up, and a TLS error is named as one. Let's Encrypt renews
+            # ~30 days out, so under 14 days left means renewal has been
+            # failing for about two weeks: early enough to fix before impact,
+            # and never hit by a normal renewal.
             - name: GET ${{ matrix.url }}
+              id: check
               env:
                   URL: ${{ matrix.url }}
                   ENV_NAME: ${{ matrix.env }}
+                  EXPIRY_WARN_DAYS: 14
               run: |
                   attempts=3
-                  status=000
-                  touch body.txt
+                  host=${URL#https://}
+                  host=${host%%/*}
+
+                  # s_client finishes the handshake even when verification
+                  # fails, so an expired or untrusted cert still yields its
+                  # notAfter. Empty when the host is unreachable.
+                  probe_cert() {
+                      not_after=$(timeout 20 openssl s_client -connect "$host:443" \
+                          -servername "$host" </dev/null 2>/dev/null |
+                          openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2 || true)
+                      if [ -n "$not_after" ]; then
+                          secs_left=$(( $(date -d "$not_after" +%s) - $(date +%s) ))
+                          expires_on=$(date -u -d "$not_after" +'%Y-%m-%d %H:%M UTC')
+                          if [ "$secs_left" -le 0 ]; then
+                              cert_note="cert EXPIRED $expires_on"
+                          else
+                              cert_note="cert expires $expires_on ($(( secs_left / 86400 ))d left)"
+                          fi
+                      else
+                          cert_note="cert unreadable"
+                      fi
+                  }
+                  probe_cert
+
+                  # $1 short reason (Discord), $2 annotation title, $3 detail;
+                  # $4=body appends the response body to the summary.
+                  fail() {
+                      echo "::error title=$2 ($ENV_NAME)::$3"
+                      echo "reason=$1" >> "$GITHUB_OUTPUT"
+                      {
+                          echo "### ❌ $ENV_NAME: $3"
+                          if [ "${4:-}" = "body" ]; then
+                              echo
+                              echo '```'
+                              head -c 300 body.txt
+                              echo
+                              echo '```'
+                          fi
+                      } >> "$GITHUB_STEP_SUMMARY"
+                      exit 1
+                  }
+
+                  touch body.txt curl-err.txt
                   for i in $(seq 1 "$attempts"); do
                       started=$(date +%s%3N)
+                      rc=0
                       status=$(curl --silent --show-error --output body.txt \
-                          --write-out '%{http_code}' --max-time 30 "$URL" || true)
+                          --write-out '%{http_code}' --max-time 30 "$URL" \
+                          2>curl-err.txt) || rc=$?
                       status=${status:-000}
                       took=$(( $(date +%s%3N) - started ))
+                      curl_err=$(head -n 1 curl-err.txt)
                       if [ "$status" = "200" ]; then
-                          echo "attempt $i/$attempts: HTTP 200 in ${took}ms — $(cat body.txt)"
-                          exit 0
+                          # The app answered, so an empty probe is most likely
+                          # a blip. Retry it like the GET before paging anyone.
+                          for p in $(seq 2 "$attempts"); do
+                              [ -n "$not_after" ] && break
+                              echo "cert probe $((p - 1))/$attempts: no certificate read; retrying in 10s"
+                              sleep 10
+                              probe_cert
+                          done
+                          echo "attempt $i/$attempts: HTTP 200 in ${took}ms — $(cat body.txt) · $cert_note"
+                          break
                       fi
-                      if [ "$status" = "000" ]; then
-                          echo "attempt $i/$attempts: no HTTP response (timeout/DNS/connection) after ${took}ms"
-                      else
-                          echo "attempt $i/$attempts: HTTP $status in ${took}ms"
-                      fi
+                      case "$rc" in
+                          # curl's TLS-layer exit codes: 35 handshake, 60 peer
+                          # cert not trusted (expired, self-signed, wrong
+                          # name), the rest cert/cipher/CRL/pinning errors.
+                          35|51|53|54|58|59|60|64|66|77|80|82|83|90|91)
+                              kind=tls
+                              echo "attempt $i/$attempts: TLS failure after ${took}ms — $curl_err" ;;
+                          *)
+                              if [ "$status" = "000" ]; then
+                                  kind=unreachable
+                                  echo "attempt $i/$attempts: no HTTP response (timeout/DNS/connection) after ${took}ms — $curl_err"
+                              else
+                                  kind=http
+                                  echo "attempt $i/$attempts: HTTP $status in ${took}ms"
+                              fi ;;
+                      esac
                       if [ "$i" -lt "$attempts" ]; then sleep 10; fi
                   done
-                  echo "last response body (truncated to 300 bytes):"
-                  head -c 300 body.txt; echo
-                  echo "::error title=Uptime check failed ($ENV_NAME)::GET $URL → HTTP $status on all $attempts attempts"
-                  {
-                      echo "### ❌ $ENV_NAME: \`GET $URL\` → HTTP $status ($attempts attempts)"
-                      echo
-                      echo '```'
-                      head -c 300 body.txt
-                      echo
-                      echo '```'
-                  } >> "$GITHUB_STEP_SUMMARY"
-                  exit 1
+
+                  if [ "$status" != "200" ]; then
+                      case "$kind" in
+                          tls)
+                              fail "TLS failure: $curl_err" "TLS failure" \
+                                  "GET $URL failed TLS on all $attempts attempts: $curl_err ($cert_note)" ;;
+                          unreachable)
+                              fail "no HTTP response: $curl_err" "Uptime check failed" \
+                                  "GET $URL → no HTTP response on all $attempts attempts: $curl_err" ;;
+                          *)
+                              echo "last response body (truncated to 300 bytes):"
+                              head -c 300 body.txt; echo
+                              fail "HTTP $status" "Uptime check failed" \
+                                  "GET $URL → HTTP $status on all $attempts attempts" body ;;
+                      esac
+                  fi
+
+                  # Still empty after every retry: the probe is broken, not the
+                  # app. Failing beats silently losing the expiry check, which
+                  # is how the #448 outage went unnoticed.
+                  if [ -z "$not_after" ]; then
+                      fail "could not read TLS certificate" "TLS certificate unreadable" \
+                          "GET $URL succeeded but openssl could not read the served certificate for $host in $attempts probes"
+                  fi
+                  if [ "$secs_left" -lt $(( EXPIRY_WARN_DAYS * 86400 )) ]; then
+                      fail "TLS cert expires $expires_on" "TLS certificate expiring" \
+                          "$host serves a certificate with notAfter $expires_on, under $EXPIRY_WARN_DAYS days away. Renewal is likely failing: check the Vercel domain config (e.g. CAA records)."
+                  fi
 
             # Raw curl instead of lib/alerts on purpose: routing through the
             # shared module needs checkout + Node + pnpm install, and an
@@ -91,6 +181,7 @@ jobs:
                   MESSAGE: >-
                       🔴 **Uptime check failed** (${{ matrix.env }}):
                       ${{ matrix.url }} —
+                      ${{ steps.check.outputs.reason || 'see run' }} —
                       <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>
               run: |
                   if [ -z "$DISCORD_ALERT_WEBHOOK_URL" ]; then
