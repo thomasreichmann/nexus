@@ -161,8 +161,9 @@ describe('mapPosition', () => {
             '/work/nexus/apps/web/server/fail.ts',
         ],
         [
-            pathToFileURL('/work/nexus/apps/web/server/fail.ts').href,
-            '/work/nexus/apps/web/server/fail.ts',
+            // Percent-encoded, so only a real URL decode gets the path back.
+            pathToFileURL('/work/my nexus/apps/web/server/fail.ts').href,
+            '/work/my nexus/apps/web/server/fail.ts',
         ],
         ['server/fail.ts', path.join(projectRoot, 'server/fail.ts')],
     ])('resolves the source %s to %s', (source, expected) => {
@@ -171,6 +172,27 @@ describe('mapPosition', () => {
         ]);
 
         expect(mapNewError(chunk)?.file).toBe(expected);
+    });
+
+    // On COMPILED line 5, `new ` is one mapped segment (columns 19-22) and
+    // `Error` the next (from 23). Each maps to where its segment starts.
+    it.each([
+        [22, 19],
+        [23, 23],
+    ])('maps chunk column %i to original column %i', (column, original) => {
+        const chunk = writeChunk(freshDir(), [inlineBase64()]);
+
+        expect(mapPosition(chunk, 5, column, projectRoot)).toMatchObject({
+            line: 6,
+            column: original,
+        });
+    });
+
+    it('leaves a position before the chunk’s first mapping unmapped', () => {
+        // Line 1 is tsc's "use strict" preamble, which no original line made.
+        const chunk = writeChunk(freshDir(), [inlineBase64()]);
+
+        expect(mapPosition(chunk, 1, 1, projectRoot)).toBeNull();
     });
 
     it('leaves a file outside .next/server/chunks unmapped, even with a map', () => {

@@ -692,7 +692,7 @@ Mutants no test runs at all are summed up as line ranges; `pnpm cov:touched`
 already shows those as uncovered. The full report, every mutant in the
 source, is `coverage/mutation/mutation.html`.
 
-**Every tier judges every mutant.** All five Vitest tiers run in one Stryker
+**Every tier judges every mutant.** All six Vitest tiers run in one Stryker
 run, so a repository mutant is killed by the db integration tests on a real
 Postgres or by the web service tests over it, whichever notices. The
 integration tiers run on a throwaway Postgres (as in
