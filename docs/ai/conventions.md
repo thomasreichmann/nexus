@@ -72,7 +72,7 @@ Terse reference for AI agents. Detailed examples with code: [[../conventions/nam
 ## Testing
 
 - **Before writing or reviewing a test:** read [[../conventions/testing#Writing a test|Writing a test]]: the workflow, which level, the no-fake-DB rule, Khorikov's four pillars, code quadrants, smells
-- Workflow: code → `pnpm cov:touched` → decide quadrant and level → write → break the behaviour and watch the test go red (say what you broke in the PR) → mutation testing when available (#494)
+- Workflow: code → `pnpm cov:touched` → decide quadrant and level → write → break the behaviour and watch the test go red (say what you broke in the PR) → `pnpm mutate`
 - Public pages: smoke test in `e2e/smoke/` using `setupConsoleErrorTracking`
 - Authenticated pages: smoke test in `e2e/smoke/authenticated/` using `authenticated` fixture (supports `userRole`)
 - Auth E2E tests use `storageState` pattern via Playwright `setup` project
@@ -81,6 +81,7 @@ Terse reference for AI agents. Detailed examples with code: [[../conventions/nam
 - Test commands: `pnpm -F web test`, `test:e2e:smoke`, `test:e2e:admin`, `test:e2e`
 - Coverage: `pnpm coverage` (all tiers merged, every source file counted); a report, not a gate
 - After coding, before deciding which tests to add: `pnpm cov:touched` (coverage of the files you changed, worst first; `--risk` for churn × coverage)
+- After writing the tests: `pnpm mutate` (mutation testing of the files you changed, all tiers, throwaway Postgres). Each surviving mutant is a change no test noticed; kill it with a test or judge it equivalent. A report, not a gate
 - Full details: [[../conventions/testing|Testing]]
 
 ## Layout / Responsive Safety

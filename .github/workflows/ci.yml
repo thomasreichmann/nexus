@@ -147,3 +147,62 @@ jobs:
                       echo "::error title=Integration tests leaked users::the run left $n user row(s) behind; use the fixtures from @nexus/db/test-db/integration"
                       exit 1
                   fi
+
+    mutation:
+        # A report, never a gate (#494): mutation-tests the source files this
+        # PR changed and writes the score and each surviving mutant to the job
+        # summary, with Stryker's HTML report as an artifact. Not a required
+        # check, and it doesn't go red: a failed run is a warning. Whether it
+        # ever gates is a later decision, made on its run time and noise.
+        name: Mutation report
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        continue-on-error: true
+        services:
+            postgres:
+                # The integration job's container: repository mutants are
+                # judged by the real-DB tests.
+                image: postgres:17
+                env:
+                    POSTGRES_USER: nexus
+                    POSTGRES_PASSWORD: nexus
+                    POSTGRES_DB: nexus
+                ports:
+                    - 5432:5432
+                options: >-
+                    --health-cmd pg_isready
+                    --health-interval 2s
+                    --health-timeout 5s
+                    --health-retries 15
+        env:
+            DATABASE_URL: postgres://nexus:nexus@localhost:5432/nexus
+
+        steps:
+            # Full history: the changed set is the diff against the merge base
+            # with the PR's base branch.
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Setup Node and pnpm
+              uses: ./.github/actions/setup-node-pnpm
+
+            - name: Apply migrations
+              run: pnpm -F db db:migrate
+
+            - name: Mutation-test the changed source files
+              run: |
+                  if ! pnpm -s mutate --db-from-env --base "origin/$GITHUB_BASE_REF" --markdown >> "$GITHUB_STEP_SUMMARY"; then
+                      echo "::warning title=Mutation report incomplete::pnpm mutate could not measure every file; see the job summary"
+                  fi
+
+            - name: Upload the HTML report
+              if: ${{ !cancelled() && hashFiles('coverage/mutation/mutation.html') != '' }}
+              uses: actions/upload-artifact@v4
+              with:
+                  name: mutation-report
+                  path: |
+                      coverage/mutation/mutation.html
+                      coverage/mutation/report.json
+                  retention-days: 14
