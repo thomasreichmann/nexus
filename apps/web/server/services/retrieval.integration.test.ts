@@ -511,131 +511,116 @@ describe('unified completion writer and direct-delivery scan (#437)', () => {
         expect(results.filter(Boolean)).toHaveLength(1);
     });
 
-    // Generous timeout: the setup is ~15 round trips to a remote database,
-    // which the 5s default doesn't cover. Same for the mid-build test below.
-    it(
-        'the scan returns exactly the deliverable single-file requests',
-        { timeout: 20_000 },
-        async () => {
-            const retrievalRepo = createRetrievalRepo(db);
-            const requestRepo = createRetrievalRequestRepo(db);
+    it('the scan returns exactly the deliverable single-file requests', async () => {
+        const retrievalRepo = createRetrievalRepo(db);
+        const requestRepo = createRetrievalRequestRepo(db);
 
-            const [deliverable, stillPending, lapsed, zipA, zipB] =
-                await Promise.all([
-                    singleFileRequest('warm.cr2', 2_000_000),
-                    singleFileRequest('pending.cr2'),
-                    singleFileRequest('lapsed.cr2'),
-                    insertFile(db, { userId }),
-                    insertFile(db, { userId }),
-                ]);
-            await retrievalRepo.updateStatus(
-                deliverable.retrievalId,
-                'ready',
-                readyNow()
-            );
-            await retrievalRepo.updateStatus(lapsed.retrievalId, 'ready', {
-                readyAt: past(),
-                expiresAt: past(),
-            });
-
-            // Two files, both thawed: zip-delivered, never the scan's to return.
-            const zipRequest = await retrievalService.requestBulkRetrieval(
-                db,
-                userId,
-                [zipA.id, zipB.id],
-                'bulk'
-            );
-            for (const row of await retrievalRepo.findByFileIds([
-                zipA.id,
-                zipB.id,
-            ])) {
-                await retrievalRepo.updateStatus(row.id, 'ready', readyNow());
-            }
-
-            // Scoped to this test's rows: the scan is global and other tests leave
-            // their own requests behind.
-            const ownIds = new Set([
-                deliverable.requestId,
-                stillPending.requestId,
-                lapsed.requestId,
-                zipRequest.requestId,
+        const [deliverable, stillPending, lapsed, zipA, zipB] =
+            await Promise.all([
+                singleFileRequest('warm.cr2', 2_000_000),
+                singleFileRequest('pending.cr2'),
+                singleFileRequest('lapsed.cr2'),
+                insertFile(db, { userId }),
+                insertFile(db, { userId }),
             ]);
-            const scanned = (
-                await requestRepo.findDirectDeliverable(100)
-            ).filter((r) => ownIds.has(r.requestId));
+        await retrievalRepo.updateStatus(
+            deliverable.retrievalId,
+            'ready',
+            readyNow()
+        );
+        await retrievalRepo.updateStatus(lapsed.retrievalId, 'ready', {
+            readyAt: past(),
+            expiresAt: past(),
+        });
 
-            expect(scanned).toEqual([
-                {
-                    requestId: deliverable.requestId,
-                    userId,
-                    fileId: deliverable.file.id,
-                    fileName: 'warm.cr2',
-                    fileSize: 2_000_000,
-                    expiresAt: expect.any(Date),
-                    initiatedAt: expect.any(Date),
-                    readyAt: expect.any(Date),
-                },
-            ]);
+        // Two files, both thawed: zip-delivered, never the scan's to return.
+        const zipRequest = await retrievalService.requestBulkRetrieval(
+            db,
+            userId,
+            [zipA.id, zipB.id],
+            'bulk'
+        );
+        for (const row of await retrievalRepo.findByFileIds([
+            zipA.id,
+            zipB.id,
+        ])) {
+            await retrievalRepo.updateStatus(row.id, 'ready', readyNow());
         }
-    );
+
+        // Scoped to this test's rows: the scan is global and other tests leave
+        // their own requests behind.
+        const ownIds = new Set([
+            deliverable.requestId,
+            stillPending.requestId,
+            lapsed.requestId,
+            zipRequest.requestId,
+        ]);
+        const scanned = (await requestRepo.findDirectDeliverable(100)).filter(
+            (r) => ownIds.has(r.requestId)
+        );
+
+        expect(scanned).toEqual([
+            {
+                requestId: deliverable.requestId,
+                userId,
+                fileId: deliverable.file.id,
+                fileName: 'warm.cr2',
+                fileSize: 2_000_000,
+                expiresAt: expect.any(Date),
+                initiatedAt: expect.any(Date),
+                readyAt: expect.any(Date),
+            },
+        ]);
+    });
 
     // The intended behavior change for zips: completion now asserts the thawed
     // originals are still live, so a build that outlasted its own restore
     // window leaves the request incomplete rather than announcing a download
     // whose source is gone.
-    it(
-        'does not complete a zip request whose originals lapsed mid-build',
-        { timeout: 20_000 },
-        async () => {
-            const retrievalRepo = createRetrievalRepo(db);
-            const requestRepo = createRetrievalRequestRepo(db);
+    it('does not complete a zip request whose originals lapsed mid-build', async () => {
+        const retrievalRepo = createRetrievalRepo(db);
+        const requestRepo = createRetrievalRequestRepo(db);
 
-            async function builtZipRequest(expiresAt: Date) {
-                const [a, b] = await Promise.all([
-                    insertFile(db, { userId }),
-                    insertFile(db, { userId }),
-                ]);
-                const { requestId } =
-                    await retrievalService.requestBulkRetrieval(
-                        db,
-                        userId,
-                        [a.id, b.id],
-                        'bulk'
-                    );
-                for (const row of await retrievalRepo.findByFileIds([
-                    a.id,
-                    b.id,
-                ])) {
-                    await retrievalRepo.updateStatus(row.id, 'ready', {
-                        readyAt: past(),
-                        expiresAt,
-                    });
-                }
-                await insertRetrievalArtifact(db, {
-                    requestId,
-                    position: 0,
-                    status: 'ready',
-                    s3Key: `${userId}/${requestId}/0.zip`,
-                });
-                return requestId;
-            }
-
-            const [lapsedRequest, liveRequest] = await Promise.all([
-                builtZipRequest(past()),
-                builtZipRequest(future()),
+        async function builtZipRequest(expiresAt: Date) {
+            const [a, b] = await Promise.all([
+                insertFile(db, { userId }),
+                insertFile(db, { userId }),
             ]);
-
-            expect(await requestRepo.completeIfDeliverable(lapsedRequest)).toBe(
-                undefined
+            const { requestId } = await retrievalService.requestBulkRetrieval(
+                db,
+                userId,
+                [a.id, b.id],
+                'bulk'
             );
-            // The control: identical request, unexpired originals — the artifact
-            // conjunct alone is not what blocked the lapsed one.
-            expect(
-                (await requestRepo.completeIfDeliverable(liveRequest))
-                    ?.completedAt
-            ).toBeInstanceOf(Date);
+            for (const row of await retrievalRepo.findByFileIds([a.id, b.id])) {
+                await retrievalRepo.updateStatus(row.id, 'ready', {
+                    readyAt: past(),
+                    expiresAt,
+                });
+            }
+            await insertRetrievalArtifact(db, {
+                requestId,
+                position: 0,
+                status: 'ready',
+                s3Key: `${userId}/${requestId}/0.zip`,
+            });
+            return requestId;
         }
-    );
+
+        const [lapsedRequest, liveRequest] = await Promise.all([
+            builtZipRequest(past()),
+            builtZipRequest(future()),
+        ]);
+
+        expect(await requestRepo.completeIfDeliverable(lapsedRequest)).toBe(
+            undefined
+        );
+        // The control: identical request, unexpired originals — the artifact
+        // conjunct alone is not what blocked the lapsed one.
+        expect(
+            (await requestRepo.completeIfDeliverable(liveRequest))?.completedAt
+        ).toBeInstanceOf(Date);
+    });
 });
 
 // The horizon is a WHERE clause, so it only means anything against real SQL.
