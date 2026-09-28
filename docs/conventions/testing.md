@@ -329,6 +329,10 @@ passes both here and on dev relies on neither. It's also ~10x faster (about
 2 s locally vs ~22 s on the pooler). Only the database is swapped. Everything
 else still comes from `apps/web/.env.local`.
 
+CI's required `Integration tests` check does the same against a Postgres 17
+service container: it runs `pnpm test:integration`, then fails if any `user`
+row is left.
+
 ## Unit Tests
 
 Unit test utilities and pure functions with logic. Skip unit tests for presentational components — E2E tests cover those better.
