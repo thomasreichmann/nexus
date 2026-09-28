@@ -184,7 +184,7 @@ Automated publish-side integration tests verify the web app's `jobs.publish()` f
 
 ### Prerequisites
 
-- `.env.local` in `apps/web/` with: `DATABASE_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `SQS_QUEUE_URL`
+- `.env.local` in `apps/web/` with: `DATABASE_URL`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `SQS_QUEUE_URL`, and `SQS_INTEGRATION_TEST_QUEUE_URL` (dev Terraform output `sqs_integration_test_queue_url`)
 - Network access to the dev database and AWS SQS
 
 ### Running
@@ -199,10 +199,11 @@ pnpm -F web test:integration
 - Loads env vars from `.env.local` via dotenv in the setup file
 - Excluded from the default `pnpm test` run (only `*.integration.test.ts` files)
 - Connects to the real database via `createDb()` and calls `jobs.publish()` with real SQS credentials
-- Asserts that a `background_jobs` record is created with status `pending` and that the SQS publish resolves without error
+- Publishes to `nexus-integration-test-jobs-dev`, never to `SQS_QUEUE_URL` (#442). That queue has no consumer: no event source mapping, no DLQ, five-minute retention
+- Receives its own message back, asserts the body matches the inserted row, and deletes it. Messages from other concurrent runs are released untouched
 - Cleans up test DB records in `afterAll`
 
-> **Note:** The dev Lambda event source mapping is active, so test messages will be consumed by the real worker, which may transition the job's status (e.g. to `failed`) at any point after publish. The test therefore asserts only on publish-owned state — the returned row and the inserted fields — never on `status` re-read from the DB (#262).
+> **Why a separate queue:** the test used to publish a real `delete-account` job to the jobs queue. The deployed worker picked it up, the handler (still a stub, #28) threw, and the whole SQS batch it rode in failed with it. Every run parked more of these in `nexus-jobs-dlq-dev` and tripped the DLQ-depth alarm. Never point an integration test at a queue a worker polls.
 
 ## Related
 

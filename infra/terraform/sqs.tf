@@ -43,3 +43,19 @@ resource "aws_sqs_queue" "zip_jobs" {
     maxReceiveCount     = 3
   })
 }
+
+# Integration-test traffic (#442), dev only. Deliberately has no consumer: no
+# event source mapping, no redrive, no alarm. publish.integration.test.ts used
+# to send a real delete-account job to the jobs queue above, where the worker's
+# not-yet-implemented handler threw and failed every job sharing its batch
+# before it parked in the DLQ. Here nothing dequeues but the test itself, which
+# reads its own message back and deletes it.
+resource "aws_sqs_queue" "integration_test" {
+  count = var.environment == "dev" ? 1 : 0
+
+  name = "nexus-integration-test-jobs-${var.environment}"
+  # A run that dies between send and receive leaves its message behind; short
+  # retention sweeps it before it can pile up. The test reads back within
+  # seconds, so five minutes is ample.
+  message_retention_seconds = 300
+}

@@ -11,7 +11,9 @@ vector between environments).
 Two resources carry a `count` guard so they exist in the prod workspace only:
 the monthly cost budget (`budgets.tf`), which is account-global and would
 otherwise be fought over by both workspaces, and the alerts email subscription
-(`alarms.tf`), which dev deliberately skips.
+(`alarms.tf`), which dev deliberately skips. Two go the other way, dev only:
+the consumer-less integration-test queue (`sqs.tf`, #442) and the app user's
+policy on it (`iam.tf`). Test traffic never needs a prod queue.
 
 State lives in S3 (`nexus-terraform-state-391615358272`, us-east-1) with one
 workspace per environment. A guard resource fails the plan if the selected
