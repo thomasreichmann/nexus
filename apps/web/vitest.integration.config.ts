@@ -10,8 +10,11 @@ export default defineConfig({
         // These talk to a real (often remote) Postgres: a test is dozens of
         // round trips and routinely runs 3–5s, so vitest's 5s default flakes
         // under parallel load (#471). 20s leaves ~4x headroom while a truly
-        // hung test still fails in reasonable time.
+        // hung test still fails in reasonable time. Hooks (beforeAll/afterAll
+        // DB setup and teardown) make the same round trips on a separate
+        // 10s default, so they get the same budget (#484).
         testTimeout: 20_000,
+        hookTimeout: 20_000,
         coverage: {
             provider: 'v8',
             reporter: ['text', 'html', 'json-summary'],

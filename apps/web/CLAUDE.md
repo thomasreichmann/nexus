@@ -29,6 +29,12 @@ is required anyway, don't run a single spec first "to check": that doubles
 the build+boot cost for no extra signal. Single-spec runs are for iterating
 on a spec you're actively writing.
 
+**Overlapping runs don't share users.** Each `playwright test` invocation
+signs up its own admin, regular and dedicated users (`e2e/helpers/run-id.ts`)
+and deletes them when it ends, so two runs against the shared dev DB can't
+reset each other's data (#484). Global tables are still shared, which is what
+the next paragraph is about.
+
 **Known red: `test:e2e` in one go fails `admin/jobs.spec.ts` (#419).** Each
 tier is green on its own. The `flows` tier's upload specs enqueue real
 `generate-thumbnail` rows that nothing cleans up, and they crowd the admin

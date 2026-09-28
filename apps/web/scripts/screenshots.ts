@@ -24,13 +24,21 @@ import {
 import { join } from 'node:path';
 import { type Locator, chromium, request } from '@playwright/test';
 import {
-    ADMIN_STATE_PATH,
-    ADMIN_USER,
+    type TestUser,
     authenticateAndSaveState,
     createUser,
     promoteToAdmin,
 } from '../e2e/helpers/auth';
 import { createTestDb } from '../e2e/helpers/connection';
+
+// A long-lived admin on the dev DB, reused across invocations. Not the e2e
+// suite's ADMIN_USER: that one exists only for the length of one test run.
+const ADMIN_USER: TestUser = {
+    email: 'admin-e2e@test.local',
+    password: 'admin-e2e-password-123',
+    name: 'Admin E2E',
+};
+const ADMIN_STATE_PATH = 'e2e/.auth/screenshots-admin.json';
 
 const BASE_URL = 'http://localhost:3000';
 const DEFAULT_WIDTH = 1280;

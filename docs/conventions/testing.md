@@ -190,7 +190,7 @@ For pages that require authentication (dashboards, admin pages), use the `authen
 
 | Option          | Type                | Default  | Purpose                                                                   |
 | --------------- | ------------------- | -------- | ------------------------------------------------------------------------- |
-| `userRole`      | `'admin' \| 'user'` | `'user'` | Selects auth state (`e2e/.auth/admin.json` or `user.json`)                |
+| `userRole`      | `'admin' \| 'user'` | `'user'` | Selects auth state (`ADMIN_STATE_PATH` or `USER_STATE_PATH`)              |
 | `consoleErrors` | `string[]`          | (auto)   | Collects console errors — assert with `expect(consoleErrors).toEqual([])` |
 
 **Pattern:**
@@ -256,6 +256,8 @@ Playwright):
       `test.use({ dedicatedUserConfig: { user, statePath } })` **at file top level**
       (never in a describe — it's a worker-scoped option) to provision a dedicated
       per-spec user once per worker; `storageState` then auth's the page as it.
+      The email and path are base names: the fixture scopes both to the run and
+      worker, so no other run or worker can reset or delete that user.
     - `seededBatch` / `seededFile` / `readyRetrieval` / `paidSubscription` — yield
       the entity and clean up after the test.
 
@@ -305,7 +307,7 @@ test.describe('feature with seeded data', () => {
 
 **Playwright config** projects:
 
-- `setup` — Creates test users and saves auth state to `e2e/.auth/`
+- `setup` — Signs up this run's admin and regular users (emails scoped by `E2E_RUN_ID`, see `e2e/helpers/run-id.ts`), saves their auth state under `e2e/.auth/run-<id>/`, and sweeps users left by killed runs. Its `teardown` project deletes the run's users when every dependent project is done, so overlapping runs on the shared dev DB never share a user (#484)
 - `smoke` — All smoke tests (public + authenticated, depends on `setup`, matches `smoke/`)
 - `admin-files` → `admin-jobs` → `admin` — Admin specs share the admin user's data (and the global jobs table), so the spec files are **chained as dependent projects**: serialization is enforced in the config itself, for every entrypoint (`playwright test`, `--ui`, all scripts). New admin specs land in the catch-all `admin` tail; if it ever holds more than one file, give the new file its own chain link.
 - `flows` — Interactive user flows (matches `flows/`). Each spec opts into a **dedicated user** with `test.use({ dedicatedUserConfig: { user, statePath } })` (the worker-scoped `dedicatedUser` fixture provisions it once and tears it down), so empty-state and exact-count assertions can't race other specs.
