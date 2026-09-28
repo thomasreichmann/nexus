@@ -151,6 +151,13 @@ the logic, and it belongs on the integration tier.
 Several of these examples are queued for repair (#489, #490). Once one is
 fixed, its git history still shows the smell.
 
+### Improving tests that already exist
+
+`/test-maintenance` applies this section to an area of the existing suite.
+It maps churn × coverage with you, and you pick the area. It then grades that
+area's tests against a mutation run, strengthens them, and reports the
+before/after mutation score.
+
 ## Smoke Tests for Pages
 
 Every new page should have a corresponding E2E smoke test in `apps/web/e2e/smoke/`. These tests verify that pages render without console errors, catching:
@@ -611,7 +618,7 @@ changed.
 lines no unit or integration test runs. The files that change most and are
 tested least come first. `e2e-only` counts as uncovered.
 
-**`--json`** (for the test-maintenance skill, #498) prints one object. Fields
+**`--json`** (read by `/test-maintenance`) prints one object. Fields
 are only added, never renamed:
 
 ```jsonc
@@ -752,7 +759,7 @@ files against the Postgres service container, and writes the table and the
 survivors to the job summary, with the HTML report as an artifact. It is a
 report, not a gate: never a required check, and never red.
 
-**`--json`** (for the test-maintenance skill, #498). Fields are only added,
+**`--json`** (read by `/test-maintenance`). Fields are only added,
 never renamed. `--markdown` prints the CI summary instead.
 
 ```jsonc
@@ -801,6 +808,22 @@ never renamed. `--markdown` prints the CI summary instead.
                 },
             ],
             "noCoverageLines": [], // inclusive line ranges of mutants no test runs
+            // Each test that ran any of the file's mutants: how many it ran and
+            // how many turned it red, weakest first. Static mutants are left
+            // out. A timeout names no test, so it counts in `timedOut` (not in
+            // `ran`) for every test that covers it. `ran > 0, killed: 0` is a
+            // test that runs this code and notices nothing. `test` names the
+            // file by basename, which repeats across packages (files.test.ts):
+            // `file` is exact.
+            "tests": [
+                {
+                    "test": "retrievals.integration.test.ts › findByFileId …",
+                    "file": "packages/db/src/repositories/retrievals.integration.test.ts",
+                    "ran": 12,
+                    "killed": 9,
+                    "timedOut": 0,
+                },
+            ],
         },
     ],
 }
