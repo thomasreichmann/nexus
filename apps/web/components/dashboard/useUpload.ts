@@ -33,12 +33,13 @@ import {
 import { planVaultLookups, vaultKey } from '@/lib/upload/duplicates';
 import {
     computeRemainingPartNumbers,
-    isFileMatch,
+    indexByFileIdentity,
     isResumable,
     mergeParts,
     partByteRange,
     partsProgress,
     toFileIdentity,
+    toFileIdentityKey,
 } from '@/lib/upload/parts';
 import {
     patchRowById,
@@ -724,11 +725,15 @@ export function useUpload() {
         // A quota halt throws away the queue; put those rows back to
         // `pending` so the Upload button re-owns them instead of leaving
         // them stranded in `queued` with nothing left to start them.
-        // (`updateFile` is stable, so closing over it here is safe.)
+        // One pass over the queue, not one `updateFile` per dropped row: at
+        // the 50k drop cap a per-row patch is quadratic (#402).
         onDropped: (items) => {
-            for (const item of items) {
-                updateFile(item.id, { status: 'pending' });
-            }
+            const dropped = new Set(items.map((item) => item.id));
+            setFiles((prev) =>
+                patchRowsWhere(prev, (f) => dropped.has(f.id), {
+                    status: 'pending',
+                })
+            );
         },
     });
 
@@ -765,10 +770,15 @@ export function useUpload() {
         // Claim the rows before the batch round trip: the Upload button stays
         // enabled while a wave runs (so added files can join it), which makes
         // a second click during the await possible — `queued` is what keeps
-        // that click from minting a second batch for the same rows.
-        for (const f of pending) {
-            updateFile(f.id, { status: 'queued' });
-        }
+        // that click from minting a second batch for the same rows. Both row
+        // writes in here are single passes: a per-row `updateFile` copies the
+        // whole queue each time, which cost ~17s per click at 50k rows (#402).
+        const pendingIds = new Set(pending.map((f) => f.id));
+        setFiles((prev) =>
+            patchRowsWhere(prev, (f) => pendingIds.has(f.id), {
+                status: 'queued',
+            })
+        );
 
         // One batch per Upload click: every pending file in this pass joins
         // it, so a multi-file selection lands in a single upload_batches row.
@@ -794,14 +804,22 @@ export function useUpload() {
         // join this session's batch. Written to the row for retry/persistence,
         // but carried on the queue item too — the ref won't reflect this update
         // until the next render commit.
-        const queued = pending.map((f) => {
-            const rowBatchId = f.batchId ?? batchId;
-            updateFile(f.id, { batchId: rowBatchId });
-            return toQueuedUpload(f, rowBatchId);
-        });
+        const rowBatchIds = new Map(
+            pending.map((f) => [f.id, f.batchId ?? batchId])
+        );
+        setFiles((prev) =>
+            patchRowsWhere(
+                prev,
+                (f) => rowBatchIds.has(f.id),
+                (f) => ({ batchId: rowBatchIds.get(f.id) })
+            )
+        );
+        const queued = pending.map((f) =>
+            toQueuedUpload(f, rowBatchIds.get(f.id))
+        );
 
         await drive(queued);
-    }, [drive, createBatchMutation, updateFile]);
+    }, [drive, createBatchMutation]);
 
     // Surface interrupted uploads found in IndexedDB on mount as `resumable`
     // rows. Records that persisted a File System Access handle (and run on a
@@ -895,13 +913,12 @@ export function useUpload() {
 
             // Match each file against a persisted interrupted upload so a re-add
             // resumes from where S3 left off instead of starting over. One store
-            // read for the whole batch (folder drops make it thousands of files),
-            // and one identity per file rather than one per comparison.
-            const records = await listUploads();
-            const matches = picked.map(({ file }) => {
-                const identity = toFileIdentity(file);
-                return records.find((record) => isFileMatch(record, identity));
-            });
+            // read for the whole batch, indexed once so a library-sized drop
+            // (#402) stays linear in files rather than files × records.
+            const recordsByIdentity = indexByFileIdentity(await listUploads());
+            const matches = picked.map(({ file }) =>
+                recordsByIdentity.get(toFileIdentityKey(toFileIdentity(file)))
+            );
 
             // Ids for the rows this gesture creates, minted outside the state
             // updater (StrictMode runs updaters twice) so the vault check

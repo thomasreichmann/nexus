@@ -42,12 +42,15 @@ export const MAX_IN_FLIGHT_BYTES = 32 * 1024 ** 3; // 32 GiB
 
 /**
  * Ceiling on files one gesture (a drop or a folder pick) may add to the queue.
- * The queue itself survives far more (#390) — this bounds the directory walk,
- * so dropping a home folder by accident stops early instead of grinding
- * through the whole disk. Sized for the ICP's worst case: a multi-day wedding
- * shoot is a few thousand frames, not five thousand.
+ * It exists to stop an accidental home-folder drop from grinding through the
+ * whole disk, not to size a shoot: the ICP reference library is 8,934 files
+ * across six shoot folders, the natural gesture is dropping the parent, and
+ * the old 5,000 quietly kept 56% of it (#402). Hitting this is a blocking
+ * choice, never a silent trim, and the queue itself survives far more (#390).
+ * Sized so a whole library fits with room to grow while a home folder still
+ * stops within seconds (~11k files/s measured on the reference library).
  */
-export const MAX_FILES_PER_DROP = 5000;
+export const MAX_FILES_PER_DROP = 50_000;
 
 /**
  * Input cap of `files.findDuplicates`, and the chunk size the queue's vault

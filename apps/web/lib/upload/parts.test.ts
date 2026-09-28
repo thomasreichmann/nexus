@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
     isFileMatch,
+    toFileIdentityKey,
+    indexByFileIdentity,
     computeRemainingPartNumbers,
     mergeParts,
     partByteRange,
@@ -23,6 +25,44 @@ describe('isFileMatch', () => {
         ['lastModified', { ...base, lastModified: 6 }],
     ])('rejects when %s differs', (_field, file) => {
         expect(isFileMatch(base, file)).toBe(false);
+    });
+});
+
+describe('toFileIdentityKey', () => {
+    const base = { name: 'a.zip', size: 100, lastModified: 5 };
+
+    it('distinguishes name, size, and lastModified', () => {
+        expect(toFileIdentityKey(base)).toBe(toFileIdentityKey({ ...base }));
+        for (const other of [
+            { ...base, name: 'b.zip' },
+            { ...base, size: 101 },
+            { ...base, lastModified: 6 },
+        ]) {
+            expect(toFileIdentityKey(other)).not.toBe(toFileIdentityKey(base));
+        }
+    });
+
+    it('does not collide on a name that embeds a separator', () => {
+        expect(toFileIdentityKey({ ...base, name: 'a.zip",100,5' })).not.toBe(
+            toFileIdentityKey(base)
+        );
+    });
+});
+
+describe('indexByFileIdentity', () => {
+    const record = (fileId: string, name: string) =>
+        ({ fileId, name, size: 1, lastModified: 1 }) as ResumableUpload;
+
+    it('keys records by identity and keeps the first on a collision', () => {
+        const index = indexByFileIdentity([
+            record('first', 'a.zip'),
+            record('other', 'b.zip'),
+            record('second', 'a.zip'),
+        ]);
+        expect(index.size).toBe(2);
+        expect(index.get(toFileIdentityKey(record('x', 'a.zip')))?.fileId).toBe(
+            'first'
+        );
     });
 });
 

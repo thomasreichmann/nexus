@@ -24,7 +24,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/cn';
 import { formatBytes } from '@/lib/format';
+import { captureEvent } from '@/lib/posthog/client';
+import { PostHogEvent } from '@/lib/posthog/events';
 import { useTRPC } from '@/lib/trpc/client';
+import { summarizeCappedSelection } from '@/lib/upload/cappedSelection';
 import {
     isDirectoryPickerSupported,
     isFileSystemAccessSupported,
@@ -39,6 +42,7 @@ import { waveProgress } from '@/lib/upload/parts';
 import { preflightQuota } from '@/lib/upload/preflight';
 import { getImagePreviewUrl } from '@/lib/upload/thumbnails';
 import { CancelUploadDialog } from './CancelUploadDialog';
+import { CappedSelectionDialog } from './CappedSelectionDialog';
 import { LeaveUploadDialog } from './LeaveUploadDialog';
 import { MiddleTruncateName } from './MiddleTruncateName';
 import { useUpload, type UploadFile, type UploadStatus } from './useUpload';
@@ -49,6 +53,19 @@ import { useUploadNavigationGuard } from './useUploadNavigationGuard';
 // real thumbnails arrive server-side after upload. TIFF is image/* but most
 // browsers can't render it.
 const DECODABLE_IMAGE_TYPE = /^image\/(?!tiff)/;
+
+/**
+ * Which gesture produced a batch. Carried on `drop_capped` so a folder picked
+ * by misclick and one dragged in stay tellable apart when reading the event.
+ * `file-picker` can't actually trip the cap (a multi-file pick has no walk);
+ * it's here so every gesture goes through the one seam with one signature.
+ */
+type IngestSource = 'drop' | 'file-picker' | 'folder-picker' | 'folder-input';
+
+interface CappedBatch {
+    batch: PickedFileBatch;
+    source: IngestSource;
+}
 
 export function UploadZone() {
     const {
@@ -74,21 +91,28 @@ export function UploadZone() {
     );
     const inputRef = useRef<HTMLInputElement>(null);
     const folderInputRef = useRef<HTMLInputElement>(null);
+    // A gesture that hit the walk cap waits here for the user's call (#402).
+    const [cappedBatch, setCappedBatch] = useState<CappedBatch | null>(null);
 
     // The one queueing seam for every ingest gesture. Feedback lives here so
     // no path can regress into the silent ignore #388 was about: a capped walk
-    // says what it kept, an empty folder says it had nothing.
+    // stops and asks, an empty folder says it had nothing.
     const addPickedBatch = useCallback(
-        ({
-            files: picked,
-            truncated,
-            emptySelection,
-            folderName,
-        }: PickedFileBatch) => {
+        (batch: PickedFileBatch, source: IngestSource) => {
+            const {
+                files: picked,
+                truncated,
+                emptySelection,
+                folderName,
+            } = batch;
             if (truncated) {
-                toast.info(
-                    `Large selection — only the first ${MAX_FILES_PER_DROP.toLocaleString()} files were added.`
-                );
+                // Held, not queued: the cut lands mid-shoot and nothing says
+                // which files fell past it, so a prefix is only worth having
+                // if the user says so. First gesture wins the slot — a second
+                // capped walk resolving before the dialog is answered must
+                // not silently replace the one already waiting.
+                setCappedBatch((pending) => pending ?? { batch, source });
+                return;
             }
             if (picked.length === 0) {
                 if (emptySelection)
@@ -100,14 +124,30 @@ export function UploadZone() {
         [addFiles]
     );
 
+    const resolveCappedBatch = useCallback(
+        (choice: 'add' | 'dismiss') => {
+            if (!cappedBatch) return;
+            const { batch, source } = cappedBatch;
+            setCappedBatch(null);
+            captureEvent(PostHogEvent.DropCapped, {
+                source,
+                choice,
+                cap: MAX_FILES_PER_DROP,
+                ...summarizeCappedSelection(batch.files),
+            });
+            if (choice === 'add') void addFiles(batch.files, batch.folderName);
+        },
+        [cappedBatch, addFiles]
+    );
+
     const handleDrop = useCallback(
         (e: React.DragEvent) => {
             e.preventDefault();
             setIsDragOver(false);
             // The DataTransfer is read synchronously inside — its items are
             // only live during the event.
-            void pickedFilesFromDataTransfer(e.dataTransfer).then(
-                addPickedBatch
+            void pickedFilesFromDataTransfer(e.dataTransfer).then((batch) =>
+                addPickedBatch(batch, 'drop')
             );
         },
         [addPickedBatch]
@@ -118,7 +158,9 @@ export function UploadZone() {
     // at click time so there's no SSR/client mismatch and no render-time state.
     const handleBrowse = useCallback(() => {
         if (isFileSystemAccessSupported()) {
-            void pickFilesWithHandles().then(addPickedBatch);
+            void pickFilesWithHandles().then((batch) =>
+                addPickedBatch(batch, 'file-picker')
+            );
         } else {
             inputRef.current?.click();
         }
@@ -128,7 +170,9 @@ export function UploadZone() {
     // hidden `webkitdirectory` input everywhere else.
     const handleBrowseFolder = useCallback(() => {
         if (isDirectoryPickerSupported()) {
-            void pickFolderWithHandles().then(addPickedBatch);
+            void pickFolderWithHandles().then((batch) =>
+                addPickedBatch(batch, 'folder-picker')
+            );
         } else {
             folderInputRef.current?.click();
         }
@@ -293,7 +337,8 @@ export function UploadZone() {
                                     addPickedBatch(
                                         pickedFilesFromDirectoryInput(
                                             e.target.files
-                                        )
+                                        ),
+                                        'folder-input'
                                     );
                                 }
                                 e.target.value = '';
@@ -594,6 +639,13 @@ export function UploadZone() {
                     clearFiles();
                     confirmNavigation();
                 }}
+            />
+            <CappedSelectionDialog
+                open={cappedBatch !== null}
+                onOpenChange={(open) => {
+                    if (!open) resolveCappedBatch('dismiss');
+                }}
+                onConfirm={() => resolveCappedBatch('add')}
             />
         </div>
     );

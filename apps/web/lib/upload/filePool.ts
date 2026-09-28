@@ -59,6 +59,9 @@ export function createFilePool<T extends PoolItem>(
     options: FilePoolOptions<T>
 ): FilePool<T> {
     const queue: T[] = [];
+    // Mirrors `queue` for the enqueue dedupe: a linear scan per item made
+    // enqueueing a 50k-row wave quadratic (#402).
+    const queuedIds = new Set<string>();
     const running = new Map<string, Promise<void>>();
     let inFlightBytes = 0;
     let isHalted = false;
@@ -115,6 +118,7 @@ export function createFilePool<T extends PoolItem>(
                 // when the callback is absent, so the splice must not live
                 // inside the call.
                 const droppedItems = queue.splice(0);
+                queuedIds.clear();
                 if (droppedItems.length > 0) {
                     options.onDropped?.(droppedItems);
                 }
@@ -123,6 +127,7 @@ export function createFilePool<T extends PoolItem>(
             const next = queue[0];
             if (next && canStart(next)) {
                 queue.shift();
+                queuedIds.delete(next.id);
                 start(next);
                 continue;
             }
@@ -138,7 +143,8 @@ export function createFilePool<T extends PoolItem>(
         enqueue(items: T[]): Promise<void> {
             for (const item of items) {
                 if (running.has(item.id)) continue;
-                if (queue.some((queued) => queued.id === item.id)) continue;
+                if (queuedIds.has(item.id)) continue;
+                queuedIds.add(item.id);
                 queue.push(item);
             }
             // No work and no wave in progress: don't spin up a drain just to
