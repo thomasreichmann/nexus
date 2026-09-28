@@ -14,7 +14,8 @@ import {
     insertRetrieval,
     insertRetrievalRequest,
     insertRetrievalArtifact,
-    deleteUserData,
+    backdateRetrievalRequest,
+    deleteUser,
     type Connection,
 } from '@nexus/db/test-db';
 import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
@@ -45,7 +46,7 @@ vi.mock('@/lib/jobs', () => ({ jobs: { publish: jobMocks.publish } }));
 
 import { retrievalService } from './retrieval';
 import type { ObjectState } from '@nexus/db/objectState';
-import type { RestoreHorizons } from '@nexus/db/repo/retrievals';
+import type { RestoreHorizons, Retrieval } from '@nexus/db/repo/retrievals';
 
 // Exercises the active-retrieval predicate against a real database: `ready`
 // rows past `expiresAt` are expired by query, not by stored status — nothing
@@ -59,6 +60,12 @@ const past = () => new Date(Date.now() - HOUR_MS);
 const future = () => new Date(Date.now() + HOUR_MS);
 const readyNow = () => ({ readyAt: new Date(), expiresAt: future() });
 
+// The worker's scans are global, oldest-first and limited, and this database
+// is shared: a row created now sorts behind every older qualifying row and
+// drops out of the limit once there are enough of them. A `created_at` older
+// than any real row keeps a test's own rows inside it (#491).
+const BEFORE_ANY_REAL_ROW = new Date('2000-01-01T00:00:00Z');
+
 let userId: string;
 
 beforeAll(async () => {
@@ -67,7 +74,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-    await deleteUserData(db, userId);
+    await deleteUser(db, userId);
 });
 
 // A test that leaves a rejecting publish installed would fail every later
@@ -472,7 +479,12 @@ describe('unified completion writer and direct-delivery scan (#437)', () => {
     // a single-file request the moment it was created — before the thaw.
     it('never completes a single-file request while its item is pending', async () => {
         const { requestId, retrievalId } = await singleFileRequest('cold.cr2');
+        await backdateRetrievalRequest(db, requestId, BEFORE_ANY_REAL_ROW);
         const requestRepo = createRetrievalRequestRepo(db);
+        const scannedIds = async () =>
+            (await requestRepo.findDirectDeliverable(100)).map(
+                (r) => r.requestId
+            );
 
         expect(await requestRepo.completeIfDeliverable(requestId)).toBe(
             undefined
@@ -485,13 +497,15 @@ describe('unified completion writer and direct-delivery scan (#437)', () => {
             'ready',
             readyNow()
         );
+        // The control for the `not.toContain` below: deliverable and not yet
+        // completed, the scan does return it.
+        expect(await scannedIds()).toContain(requestId);
         const completed = await requestRepo.completeIfDeliverable(requestId);
         expect(completed?.completedAt).toBeInstanceOf(Date);
 
         // And a completed request leaves the scan for good — a second poll
         // run finds nothing to announce.
-        const again = await requestRepo.findDirectDeliverable(100);
-        expect(again.map((r) => r.requestId)).not.toContain(requestId);
+        expect(await scannedIds()).not.toContain(requestId);
     });
 
     it('two concurrent completion attempts yield exactly one winner', async () => {
@@ -548,13 +562,17 @@ describe('unified completion writer and direct-delivery scan (#437)', () => {
         }
 
         // Scoped to this test's rows: the scan is global and other tests leave
-        // their own requests behind.
+        // their own requests behind. Backdated so all four sit inside the
+        // limit, which is what makes the three exclusions mean anything.
         const ownIds = new Set([
             deliverable.requestId,
             stillPending.requestId,
             lapsed.requestId,
             zipRequest.requestId,
         ]);
+        for (const id of ownIds) {
+            await backdateRetrievalRequest(db, id, BEFORE_ANY_REAL_ROW);
+        }
         const scanned = (await requestRepo.findDirectDeliverable(100)).filter(
             (r) => ownIds.has(r.requestId)
         );
@@ -642,42 +660,44 @@ describe('tier-aware poll horizon (#423)', () => {
                 insertFile(db, { userId }),
             ]);
 
-        const rows = await Promise.all([
-            // 8h into a Bulk restore: nothing can have happened yet.
+        // Backdated so all five sit inside the scan's limit, which is what
+        // makes the two exclusions mean anything.
+        const insertPending = (
+            overrides: Pick<Retrieval, 'fileId' | 'tier' | 'initiatedAt'>
+        ) =>
             insertRetrieval(db, {
                 userId,
-                fileId: freshBulk.id,
                 status: 'pending',
+                createdAt: BEFORE_ANY_REAL_ROW,
+                ...overrides,
+            });
+
+        const rows = await Promise.all([
+            // 8h into a Bulk restore: nothing can have happened yet.
+            insertPending({
+                fileId: freshBulk.id,
                 tier: 'bulk',
                 initiatedAt: agoHours(8),
             }),
-            insertRetrieval(db, {
-                userId,
+            insertPending({
                 fileId: dueBulk.id,
-                status: 'pending',
                 tier: 'bulk',
                 initiatedAt: agoHours(30),
             }),
             // 8h is inside Bulk's horizon but past Standard's.
-            insertRetrieval(db, {
-                userId,
+            insertPending({
                 fileId: freshStandard.id,
-                status: 'pending',
                 tier: 'standard',
                 initiatedAt: agoHours(2),
             }),
-            insertRetrieval(db, {
-                userId,
+            insertPending({
                 fileId: dueStandard.id,
-                status: 'pending',
                 tier: 'standard',
                 initiatedAt: agoHours(8),
             }),
             // No accept time recorded: asked about now rather than never.
-            insertRetrieval(db, {
-                userId,
+            insertPending({
                 fileId: noAcceptTime.id,
-                status: 'pending',
                 tier: 'bulk',
                 initiatedAt: null,
             }),
