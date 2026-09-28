@@ -73,6 +73,32 @@ resource "aws_iam_user_policy" "app_sqs" {
   })
 }
 
+# The integration tier runs on the dev app user's key (locally and in CI), and
+# publish.integration.test.ts reads its own message back off the consumer-less
+# queue (#442). Receive/delete stay scoped to that queue: the app never
+# consumes the real ones. ChangeMessageVisibility releases another concurrent
+# run's message the test received by accident.
+resource "aws_iam_user_policy" "app_sqs_integration_test" {
+  count = var.environment == "dev" ? 1 : 0
+
+  name = "nexus-sqs-integration-test-${var.environment}"
+  user = aws_iam_user.app.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "sqs:SendMessage",
+        "sqs:ReceiveMessage",
+        "sqs:DeleteMessage",
+        "sqs:ChangeMessageVisibility",
+      ]
+      Resource = aws_sqs_queue.integration_test[0].arn
+    }]
+  })
+}
+
 # Nightly-CI IAM user (#318)
 #
 # Exists so the s3-event-health workflow never needs the app user's key: that

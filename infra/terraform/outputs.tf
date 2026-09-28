@@ -6,6 +6,8 @@
 #   SQS_QUEUE_URL     <- sqs_queue_url
 #   SQS_ZIP_QUEUE_URL <- sqs_zip_queue_url
 #   SNS_OPS_ALERTS_TOPIC_ARN <- sns_ops_alerts_topic_arn
+#   SQS_INTEGRATION_TEST_QUEUE_URL <- sqs_integration_test_queue_url (dev only;
+#     local .env.local and CI for the integration tier, never Vercel)
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY <- manual access key on app_iam_user
 #
 # GitHub Actions additionally holds a read-only key on ci_iam_user as
@@ -34,6 +36,11 @@ output "sqs_queue_url" {
 output "sqs_zip_queue_url" {
   description = "Zip-build queue URL -> Vercel SQS_ZIP_QUEUE_URL"
   value       = aws_sqs_queue.zip_jobs.url
+}
+
+output "sqs_integration_test_queue_url" {
+  description = "Dev only, null in prod: consumer-less queue for publish.integration.test.ts (#442) -> SQS_INTEGRATION_TEST_QUEUE_URL in apps/web/.env.local and CI"
+  value       = one(aws_sqs_queue.integration_test[*].url)
 }
 
 output "sns_ops_alerts_topic_arn" {

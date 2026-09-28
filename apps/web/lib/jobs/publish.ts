@@ -17,11 +17,17 @@ import type { DB } from '@nexus/db';
  * admin retry re-publishes whatever type it finds on a failed row, and a zip
  * build sent to the general queue would be picked up by the 120s worker and
  * time straight back into the DLQ.
+ *
+ * `destination` bypasses that routing. Only the integration test passes it, to
+ * send to a queue no worker consumes (#442).
  */
-export async function sendToQueue(body: SqsMessageBody): Promise<void> {
+export async function sendToQueue(
+    body: SqsMessageBody,
+    destination: string = queueUrlFor(body.type)
+): Promise<void> {
     await client.send(
         new SendMessageCommand({
-            QueueUrl: queueUrlFor(body.type),
+            QueueUrl: destination,
             MessageBody: JSON.stringify(body),
         })
     );
@@ -37,24 +43,40 @@ function queueUrlFor(type: SqsMessageBody['type']): string {
     return zipQueueUrl;
 }
 
+interface PublishOptions {
+    /**
+     * Send here instead of the queue the job's type routes to. For the
+     * integration test only: a real job on the shared queue reaches the
+     * deployed worker (#442).
+     */
+    queueUrl?: string;
+}
+
 /**
  * Publish a background job: inserts a DB record and sends an SQS message.
  *
  * The DB insert happens first so the record exists before the message is sent.
  * If SQS fails, the DB record remains with status 'pending' (safe to retry).
  */
-export async function publish(db: DB, input: JobInput): Promise<Job> {
+export async function publish(
+    db: DB,
+    input: JobInput,
+    options: PublishOptions = {}
+): Promise<Job> {
     const jobRepo = createJobRepo(db);
     const job = await jobRepo.insert({
         type: input.type,
         payload: input.payload,
     });
 
-    await sendToQueue({
-        jobId: job.id,
-        type: input.type,
-        payload: input.payload,
-    });
+    await sendToQueue(
+        {
+            jobId: job.id,
+            type: input.type,
+            payload: input.payload,
+        },
+        options.queueUrl
+    );
 
     return job;
 }
