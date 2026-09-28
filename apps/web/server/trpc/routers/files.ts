@@ -3,7 +3,7 @@ import { DEFAULT_RESTORE_TIER, RESTORE_TIERS } from '@nexus/db/schema';
 import { createFileRepo } from '@nexus/db/repo/files';
 import { fileService } from '@/server/services/files';
 import { retrievalService } from '@/server/services/retrieval';
-import { MAX_FILES_PER_DROP } from '@/lib/upload/limits';
+import { MAX_FILES_PER_VAULT_LOOKUP } from '@/lib/upload/limits';
 import { protectedProcedure, router } from '../init';
 
 // One rule for both ways a batch gets named: per-file on `upload`, and up front
@@ -254,8 +254,8 @@ export const filesRouter = router({
     // already committed, by name + size. A read, but a mutation on the wire —
     // the input is the whole gesture, which wouldn't fit a GET URL, and a
     // re-drop right after an upload must never be answered from the query
-    // cache. Capped at the drop cap: the queue chunks its lookups by the same
-    // constant, so the two can't drift.
+    // cache. Capped by its own wire-sized constant, not the drop cap: the
+    // queue chunks its lookups by the same one, so the two can't drift.
     findDuplicates: protectedProcedure
         .input(
             z.object({
@@ -267,7 +267,7 @@ export const filesRouter = router({
                         })
                     )
                     .min(1)
-                    .max(MAX_FILES_PER_DROP),
+                    .max(MAX_FILES_PER_VAULT_LOOKUP),
             })
         )
         .mutation(({ ctx, input }) => {

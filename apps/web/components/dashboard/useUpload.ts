@@ -991,8 +991,8 @@ export function useUpload() {
             // new rows' name + size pairs the vault already holds. The rows are
             // already showing — a drop must never look ignored (#388) — and
             // `checking` keeps them out of the Upload button until this
-            // settles them. Chunks run one at a time (only an over-cap
-            // plain-input selection has more than one), and a chunk that
+            // settles them. Chunks run one at a time (a gesture over
+            // MAX_FILES_PER_VAULT_LOOKUP has more than one), and a chunk that
             // fails leaves the earlier answers standing: fail open on what's
             // unknown, not on everything. The mutation's own toast says the
             // check didn't run.

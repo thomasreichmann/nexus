@@ -2,7 +2,7 @@
  * Pure helpers for the queue's "already in your vault" check (#401), split
  * out of the upload hook the same way ./parts is.
  */
-import { MAX_FILES_PER_DROP } from './limits';
+import { MAX_FILES_PER_VAULT_LOOKUP } from './limits';
 import type { NameAndSize } from '@nexus/db/repo/files';
 
 /**
@@ -23,13 +23,14 @@ export function vaultKey(identity: VaultIdentity): string {
 
 /**
  * The lookups one gesture needs: identities deduped (a re-drop of a re-drop
- * repeats itself) and chunked at the drop cap, so the plain file input — the
- * one ingest path the cap doesn't bound (#397) — still gets an answer rather
- * than a rejected call. Sends bare name + size, never the File objects.
+ * repeats itself) and chunked at the lookup's own input cap, so a gesture of
+ * any size — a drop at the drop cap, or the uncapped plain file input (#397) —
+ * gets an answer rather than a rejected or oversized call. Sends bare
+ * name + size, never the File objects.
  */
 export function planVaultLookups(
     files: VaultIdentity[],
-    chunkSize = MAX_FILES_PER_DROP
+    chunkSize = MAX_FILES_PER_VAULT_LOOKUP
 ): VaultIdentity[][] {
     const unique = new Map<string, VaultIdentity>();
     for (const file of files) {

@@ -46,8 +46,16 @@ export const MAX_IN_FLIGHT_BYTES = 32 * 1024 ** 3; // 32 GiB
  * so dropping a home folder by accident stops early instead of grinding
  * through the whole disk. Sized for the ICP's worst case: a multi-day wedding
  * shoot is a few thousand frames, not five thousand.
- *
- * Also the input cap of `files.findDuplicates` and the chunk size of the
- * queue's vault check (#401), so one gesture is one lookup.
  */
 export const MAX_FILES_PER_DROP = 5000;
+
+/**
+ * Input cap of `files.findDuplicates`, and the chunk size the queue's vault
+ * check (#401) splits a gesture into. Deliberately not `MAX_FILES_PER_DROP`:
+ * that one bounds a directory walk and is free to grow, while this one is
+ * bounded by the wire. A chunk has to fit Vercel's 4.5 MB request body (a
+ * worst-case 255-char CJK name is ~800 bytes, so ~4 MB here) and its distinct
+ * names become one IN list, well inside Postgres's 65,535 bind parameters.
+ * A bigger drop just costs more round trips.
+ */
+export const MAX_FILES_PER_VAULT_LOOKUP = 5000;

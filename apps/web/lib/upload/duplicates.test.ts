@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { planVaultLookups, vaultKey } from './duplicates';
+import { MAX_FILES_PER_VAULT_LOOKUP } from './limits';
+
+// Vercel rejects a function request body above 4.5 MB.
+const MAX_REQUEST_BODY_BYTES = 4.5 * 1024 * 1024;
 
 describe('vaultKey', () => {
     it('separates name from size so different sizes never collide', () => {
@@ -44,6 +48,38 @@ describe('planVaultLookups', () => {
         const plan = planVaultLookups(files, 2);
 
         expect(plan.map((chunk) => chunk.length)).toEqual([2, 2, 1]);
+    });
+
+    it('splits a drop over the lookup cap into several requests', () => {
+        const files = Array.from(
+            { length: MAX_FILES_PER_VAULT_LOOKUP * 2 + 1 },
+            (_, i) => ({ name: `IMG_${i}.CR2`, size: i })
+        );
+
+        const plan = planVaultLookups(files);
+
+        expect(plan.map((chunk) => chunk.length)).toEqual([
+            MAX_FILES_PER_VAULT_LOOKUP,
+            MAX_FILES_PER_VAULT_LOOKUP,
+            1,
+        ]);
+    });
+
+    it('keeps a full chunk of worst-case names under the request body limit', () => {
+        // 255 UTF-16 units is the schema's name cap; a BMP CJK character is
+        // one unit but three UTF-8 bytes, the most bytes per unit there is.
+        // Distinct sizes keep every identity distinct under one shared name.
+        const name = '語'.repeat(255);
+        const files = Array.from(
+            { length: MAX_FILES_PER_VAULT_LOOKUP },
+            (_, i) => ({ name, size: Number.MAX_SAFE_INTEGER - i })
+        );
+
+        const [chunk] = planVaultLookups(files);
+        const body = new TextEncoder().encode(JSON.stringify({ files: chunk }));
+
+        expect(chunk).toHaveLength(MAX_FILES_PER_VAULT_LOOKUP);
+        expect(body.byteLength).toBeLessThan(MAX_REQUEST_BODY_BYTES);
     });
 
     it('plans nothing for an empty gesture', () => {
