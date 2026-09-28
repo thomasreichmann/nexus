@@ -381,9 +381,10 @@ Query code belongs in `packages/db` (see the server architecture in
 in the package. It doesn't reach tests elsewhere that hand a service a mock
 `db` while mocking its repositories; those are fine.
 
-The only exemptions are the repository tests written before the rule, listed
-in `FAKE_DB_EXEMPT` in `packages/db/eslint.config.mjs`. #489 is migrating
-them, and the list only shrinks.
+There are no exemptions: #489 migrated the last repository tests written on
+the fake before the rule. A plain unit test in the package is still fine for
+logic that never reaches SQL (`compareFilesByName` in
+`repositories/files.test.ts`), as long as it doesn't import the fake.
 
 **Fixtures:** import `it` from `@nexus/db/test-db/integration` (relative
 `../test-db/integration` inside `packages/db`) and ask for what the test

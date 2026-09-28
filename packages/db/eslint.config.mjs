@@ -16,12 +16,6 @@ import { importOrderConfig } from '../../eslint.import-order.mjs';
 const NO_FAKE_DB_MESSAGE =
     'Repository and query code is tested against a real Postgres, never a mocked DB (#496). Write a *.integration.test.ts on the fixtures from `@nexus/db/test-db/integration` (`db`, `user`, `createUser`): see "Integration Tests (real database)" in docs/conventions/testing.md.';
 
-// Written before #496 and migrated by #489, which removes each entry as it
-// goes. The list must end empty; nothing new is added to it.
-const FAKE_DB_EXEMPT = [
-    'src/repositories/files.test.ts', // #489
-];
-
 export default tseslint.config(
     js.configs.recommended,
     ...tseslint.configs.recommended,
@@ -36,7 +30,6 @@ export default tseslint.config(
     },
     {
         files: ['src/**/*.test.ts'],
-        ignores: FAKE_DB_EXEMPT,
         rules: {
             'no-restricted-imports': [
                 'error',
