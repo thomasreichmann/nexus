@@ -98,6 +98,11 @@
             "types": "./src/test-db/index.ts",
             "import": "./src/test-db/index.ts",
             "default": "./src/test-db/index.ts"
+        },
+        "./test-db/integration": {
+            "types": "./src/test-db/integration.ts",
+            "import": "./src/test-db/integration.ts",
+            "default": "./src/test-db/integration.ts"
         }
     },
     "scripts": {
@@ -111,6 +116,7 @@
         "test": "vitest",
         "test:run": "vitest run",
         "test:coverage": "vitest run --coverage",
+        "test:integration": "vitest run --config vitest.integration.config.ts",
         "typecheck": "tsc --noEmit",
         "lint": "eslint src/"
     },

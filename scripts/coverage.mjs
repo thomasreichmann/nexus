@@ -2,7 +2,8 @@
 /**
  * `pnpm coverage` — the repo's honest line-coverage number (#492).
  *
- * Runs web unit, web integration, packages/db and worker with coverage in
+ * Runs web unit, web integration, db unit, db integration and worker with
+ * coverage in
  * parallel, merges their coverage-final.json maps, and prints a total plus
  * per-area rows. Every source file counts (each Vitest config has a
  * `coverage.include`), so an untested file drags the number down instead of
@@ -37,6 +38,13 @@ const TIERS = [
         needsDb: true,
     },
     { name: 'db unit', slug: 'db-unit', cwd: 'packages/db', args: [] },
+    {
+        name: 'db integration',
+        slug: 'db-integration',
+        cwd: 'packages/db',
+        args: ['--config', 'vitest.integration.config.ts'],
+        needsDb: true,
+    },
     { name: 'worker unit', slug: 'worker-unit', cwd: 'apps/worker', args: [] },
 ];
 
@@ -98,7 +106,7 @@ const notices = [];
 if (!hasDb)
     notices.push(
         c.yellow(
-            '⚠ web integration skipped (no DATABASE_URL in env or apps/web/.env.local): unit-only coverage, packages/db understated'
+            '⚠ integration tiers skipped (no DATABASE_URL in env or apps/web/.env.local): unit-only coverage, packages/db understated'
         )
     );
 for (const r of failed)

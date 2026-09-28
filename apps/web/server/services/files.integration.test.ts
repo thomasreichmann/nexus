@@ -1,21 +1,6 @@
-import {
-    describe,
-    it,
-    expect,
-    beforeAll,
-    afterAll,
-    afterEach,
-    vi,
-} from 'vitest';
-import {
-    createDb,
-    insertUser,
-    insertFile,
-    insertStorageUsage,
-    deleteUser,
-    resetUserData,
-    type Connection,
-} from '@nexus/db/test-db';
+import { vi } from 'vitest';
+import { it, describe, expect, afterEach } from '@nexus/db/test-db/integration';
+import { insertFile, insertStorageUsage, type DB } from '@nexus/db/test-db';
 
 // The database is real — that's the point: this pins the atomicity of the
 // `usedBytes + n` upsert in storage-usage and of the upload status claims,
@@ -57,31 +42,17 @@ import { fileService } from './files';
  * `usedBytes + n` upsert rather than a read-modify-write — a lost update here
  * would silently under-bill every concurrent upload.
  */
-const db: Connection = createDb(process.env.DATABASE_URL!);
-
 const CONCURRENCY = 6;
 // Prime-ish, so a lost update can't happen to sum to the right number anyway.
 const FILE_SIZE = 1_000_003;
 
-let userId: string;
-
-beforeAll(async () => {
-    const user = await insertUser(db);
-    userId = user.id;
-});
-
-afterEach(async () => {
+afterEach(() => {
     // Reset, not clear: a test that swaps in its own implementation must not
     // leak it into the next one. Mocks built as `vi.fn(impl)` go back to impl.
     vi.resetAllMocks();
-    await resetUserData(db, userId);
 });
 
-afterAll(async () => {
-    await deleteUser(db, userId);
-});
-
-function seedUploadingFiles(owner: string, count: number) {
+function seedUploadingFiles(db: DB, owner: string, count: number) {
     return Promise.all(
         Array.from({ length: count }, () =>
             insertFile(db, {
@@ -93,7 +64,7 @@ function seedUploadingFiles(owner: string, count: number) {
     );
 }
 
-async function readUsage(owner: string) {
+async function readUsage(db: DB, owner: string) {
     const usage = await db.query.storageUsage.findFirst({
         where: (u, { eq }) => eq(u.userId, owner),
     });
@@ -104,40 +75,44 @@ async function readUsage(owner: string) {
 }
 
 describe('confirmUpload under concurrency', () => {
-    it('lands the same usage as serial confirms when fired concurrently', async () => {
-        await insertStorageUsage(db, { userId, usedBytes: 0, fileCount: 0 });
-        const files = await seedUploadingFiles(userId, CONCURRENCY);
+    it('lands the same usage as serial confirms when fired concurrently', async ({
+        db,
+        user,
+    }) => {
+        await insertStorageUsage(db, {
+            userId: user.id,
+            usedBytes: 0,
+            fileCount: 0,
+        });
+        const files = await seedUploadingFiles(db, user.id, CONCURRENCY);
 
         await Promise.all(
-            files.map((file) => fileService.confirmUpload(db, userId, file.id))
+            files.map((file) => fileService.confirmUpload(db, user.id, file.id))
         );
 
-        expect(await readUsage(userId)).toEqual({
+        expect(await readUsage(db, user.id)).toEqual({
             usedBytes: FILE_SIZE * CONCURRENCY,
             fileCount: CONCURRENCY,
         });
     });
 
-    it('counts correctly when no usage row exists yet', async () => {
+    it('counts correctly when no usage row exists yet', async ({
+        db,
+        user,
+    }) => {
         // A user's first-ever upload: every concurrent confirm takes the INSERT
-        // branch of the upsert and they race on the userId unique index.
-        const fresh = await insertUser(db);
-        try {
-            const files = await seedUploadingFiles(fresh.id, CONCURRENCY);
+        // branch of the upsert and they race on the userId unique index. A
+        // fixture user starts with no usage row.
+        const files = await seedUploadingFiles(db, user.id, CONCURRENCY);
 
-            await Promise.all(
-                files.map((file) =>
-                    fileService.confirmUpload(db, fresh.id, file.id)
-                )
-            );
+        await Promise.all(
+            files.map((file) => fileService.confirmUpload(db, user.id, file.id))
+        );
 
-            expect(await readUsage(fresh.id)).toEqual({
-                usedBytes: FILE_SIZE * CONCURRENCY,
-                fileCount: CONCURRENCY,
-            });
-        } finally {
-            await deleteUser(db, fresh.id);
-        }
+        expect(await readUsage(db, user.id)).toEqual({
+            usedBytes: FILE_SIZE * CONCURRENCY,
+            fileCount: CONCURRENCY,
+        });
     });
 });
 
@@ -153,7 +128,7 @@ describe('upload transitions under concurrency (#381)', () => {
         parts: [{ partNumber: 1, etag: '"etag-1"' }],
     };
 
-    function readFiles(ids: string[]) {
+    function readFiles(db: DB, ids: string[]) {
         return db.query.files.findMany({
             where: (f, { inArray }) => inArray(f.id, ids),
         });
@@ -162,20 +137,26 @@ describe('upload transitions under concurrency (#381)', () => {
     // The heart of the fix at its narrowest: two claims on one row with
     // opposite targets. Postgres serializes them and the loser re-checks the
     // predicate against the winner's committed row, so it matches nothing.
-    it('lets exactly one of a confirm claim and a release claim win', async () => {
-        const [file] = await seedUploadingFiles(userId, 1);
+    it('lets exactly one of a confirm claim and a release claim win', async ({
+        db,
+        user,
+    }) => {
+        const [file] = await seedUploadingFiles(db, user.id, 1);
         const repo = createFileRepo(db);
 
         const claims = await Promise.all([
-            repo.claimUpload(userId, file.id, 'available'),
-            repo.claimUpload(userId, file.id, 'deleted'),
+            repo.claimUpload(user.id, file.id, 'available'),
+            repo.claimUpload(user.id, file.id, 'deleted'),
         ]);
 
         expect(claims.filter(Boolean)).toHaveLength(1);
     });
 
-    it('a cancel racing a confirm either releases the upload or counts it, never both', async () => {
-        const files = await seedUploadingFiles(userId, CONCURRENCY);
+    it('a cancel racing a confirm either releases the upload or counts it, never both', async ({
+        db,
+        user,
+    }) => {
+        const files = await seedUploadingFiles(db, user.id, CONCURRENCY);
         // The row's status at the moment S3 was told to delete its object.
         // Call order alone can't show the claim was committed by then; this
         // reads it back from another connection.
@@ -191,13 +172,16 @@ describe('upload transitions under concurrency (#381)', () => {
         await Promise.all(
             files.map((file) =>
                 Promise.all([
-                    fileService.confirmUpload(db, userId, file.id),
-                    fileService.abandonUpload(db, userId, file.id),
+                    fileService.confirmUpload(db, user.id, file.id),
+                    fileService.abandonUpload(db, user.id, file.id),
                 ])
             )
         );
 
-        const after = await readFiles(files.map((f) => f.id));
+        const after = await readFiles(
+            db,
+            files.map((f) => f.id)
+        );
         for (const file of after) {
             expect(['available', 'deleted']).toContain(file.status);
         }
@@ -212,21 +196,21 @@ describe('upload transitions under concurrency (#381)', () => {
             )
         );
         const kept = after.filter((f) => f.status === 'available');
-        expect(await readUsage(userId)).toEqual({
+        expect(await readUsage(db, user.id)).toEqual({
             usedBytes: FILE_SIZE * kept.length,
             fileCount: kept.length,
         });
     });
 
-    it('two confirms of one file count it once', async () => {
-        const [file] = await seedUploadingFiles(userId, 1);
+    it('two confirms of one file count it once', async ({ db, user }) => {
+        const [file] = await seedUploadingFiles(db, user.id, 1);
 
         await Promise.all([
-            fileService.confirmUpload(db, userId, file.id),
-            fileService.confirmUpload(db, userId, file.id),
+            fileService.confirmUpload(db, user.id, file.id),
+            fileService.confirmUpload(db, user.id, file.id),
         ]);
 
-        expect(await readUsage(userId)).toEqual({
+        expect(await readUsage(db, user.id)).toEqual({
             usedBytes: FILE_SIZE,
             fileCount: 1,
         });
@@ -235,16 +219,19 @@ describe('upload transitions under concurrency (#381)', () => {
     });
 
     // Two tabs resuming the same multipart record from shared IndexedDB.
-    it('two completes of one multipart upload count it once', async () => {
-        const [file] = await seedUploadingFiles(userId, 1);
+    it('two completes of one multipart upload count it once', async ({
+        db,
+        user,
+    }) => {
+        const [file] = await seedUploadingFiles(db, user.id, 1);
         const input = { fileId: file.id, ...MULTIPART };
 
         await Promise.all([
-            fileService.completeMultipartUpload(db, userId, input),
-            fileService.completeMultipartUpload(db, userId, input),
+            fileService.completeMultipartUpload(db, user.id, input),
+            fileService.completeMultipartUpload(db, user.id, input),
         ]);
 
-        expect(await readUsage(userId)).toEqual({
+        expect(await readUsage(db, user.id)).toEqual({
             usedBytes: FILE_SIZE,
             fileCount: 1,
         });
@@ -252,44 +239,50 @@ describe('upload transitions under concurrency (#381)', () => {
 
     // Two tabs cancelling the same resumed record, or a cancel meeting the
     // stale-upload reaper.
-    it('two aborts of one multipart upload abort it in S3 once', async () => {
-        const [file] = await seedUploadingFiles(userId, 1);
+    it('two aborts of one multipart upload abort it in S3 once', async ({
+        db,
+        user,
+    }) => {
+        const [file] = await seedUploadingFiles(db, user.id, 1);
 
         await Promise.all([
             fileService.abortMultipartUpload(
                 db,
-                userId,
+                user.id,
                 file.id,
                 MULTIPART.uploadId
             ),
             fileService.abortMultipartUpload(
                 db,
-                userId,
+                user.id,
                 file.id,
                 MULTIPART.uploadId
             ),
         ]);
 
-        const [after] = await readFiles([file.id]);
+        const [after] = await readFiles(db, [file.id]);
         expect(after.status).toBe('deleted');
         expect(s3Mocks.abortMultipart).toHaveBeenCalledOnce();
     });
 
-    it('aborting an upload that already confirmed leaves it counted and its parts alone (#361)', async () => {
-        const [file] = await seedUploadingFiles(userId, 1);
-        await fileService.confirmUpload(db, userId, file.id);
+    it('aborting an upload that already confirmed leaves it counted and its parts alone (#361)', async ({
+        db,
+        user,
+    }) => {
+        const [file] = await seedUploadingFiles(db, user.id, 1);
+        await fileService.confirmUpload(db, user.id, file.id);
 
         await fileService.abortMultipartUpload(
             db,
-            userId,
+            user.id,
             file.id,
             MULTIPART.uploadId
         );
 
-        const [after] = await readFiles([file.id]);
+        const [after] = await readFiles(db, [file.id]);
         expect(after.status).toBe('available');
         expect(s3Mocks.abortMultipart).not.toHaveBeenCalled();
-        expect(await readUsage(userId)).toEqual({
+        expect(await readUsage(db, user.id)).toEqual({
             usedBytes: FILE_SIZE,
             fileCount: 1,
         });

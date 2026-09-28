@@ -14,11 +14,14 @@
         "coverage:open": "node scripts/coverage-summary.mjs --open",
         "pr:size": "node scripts/pr-size.mjs",
         "test:e2e": "turbo test:e2e",
+        "test:integration": "turbo test:integration",
+        "test:integration:fresh": "node scripts/test-integration-fresh.mjs",
         "typecheck": "turbo typecheck",
         "env:pull": "vercel env pull apps/web/.env.local",
         "capture": "pnpm --filter @nexus/capture exec tsx src/cli.ts"
     },
     "devDependencies": {
+        "embedded-postgres": "17.10.0-beta.17",
         "eslint": "^9.39.2",
         "eslint-plugin-import": "^2.32.0",
         "istanbul-lib-coverage": "^3.2.2",
@@ -29,6 +32,9 @@
     "packageManager": "pnpm@10.26.2",
     "pnpm": {
         "onlyBuiltDependencies": [
+            "@embedded-postgres/darwin-arm64",
+            "@embedded-postgres/darwin-x64",
+            "@embedded-postgres/linux-x64",
             "@sentry/cli",
             "sharp",
             "unrs-resolver"
