@@ -367,14 +367,36 @@ async function remove(db: DB, id: string): Promise<File | undefined> {
     return file;
 }
 
-async function softDelete(db: DB, fileId: string): Promise<File | undefined> {
+/**
+ * Move an upload out of `uploading` — confirmed to `available`, or released
+ * to `deleted` — but only if it is still `uploading`. The status check is part
+ * of the UPDATE, so of two racing transitions exactly one gets the row back
+ * and the other gets `undefined` (#381). A read-then-write here let a cancel
+ * and a confirm both pass the check and the later write overwrite the earlier.
+ *
+ * Callers do their side effects (usage increment, S3 delete) only on a
+ * returned row: winning the claim is what entitles them to.
+ */
+async function claimUpload(
+    db: DB,
+    userId: string,
+    fileId: string,
+    to: 'available' | 'deleted'
+): Promise<File | undefined> {
     const [file] = await db
         .update(schema.files)
-        .set({
-            status: 'deleted',
-            deletedAt: new Date(),
-        })
-        .where(eq(schema.files.id, fileId))
+        .set(
+            to === 'deleted'
+                ? { status: 'deleted', deletedAt: new Date() }
+                : { status: 'available' }
+        )
+        .where(
+            and(
+                eq(schema.files.id, fileId),
+                eq(schema.files.userId, userId),
+                eq(schema.files.status, 'uploading')
+            )
+        )
         .returning();
 
     return file;
@@ -598,7 +620,7 @@ export const createFileRepo = createRepository({
     insert,
     update,
     delete: remove,
-    softDelete,
+    claimUpload,
     softDeleteMany,
     softDeleteForUser,
     sumStorageByMimeCategory,
