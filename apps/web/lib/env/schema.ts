@@ -46,6 +46,12 @@ export const serverSchema = z.object({
     LOG_ERROR_VERBOSITY: logErrorVerbositySchema.optional(),
     // Unset (local dev, tests, preview) disables the Discord alert transport.
     DISCORD_ALERT_WEBHOOK_URL: z.string().url().optional(),
+    // The one SNS topic allowed to reach /api/webhooks/cloudwatch-alarm
+    // (#319), from the `sns_ops_alerts_topic_arn` Terraform output. Optional
+    // only because a required key missing on any tier would fail this whole
+    // schema and take the app down with it — the route fails closed instead,
+    // rejecting every message on a deployed tier while this is unset.
+    SNS_OPS_ALERTS_TOPIC_ARN: z.string().min(1).optional(),
 });
 
 // Client-side env vars (NEXT_PUBLIC_ prefix)
