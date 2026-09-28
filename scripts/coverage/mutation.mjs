@@ -36,7 +36,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { availableParallelism } from 'node:os';
-import { basename, join, relative } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import { withThrowawayPostgres } from '../throwaway-postgres.mjs';
 import { TIERS, formatFailure, outDir, root } from './shared.mjs';
 
@@ -73,7 +73,9 @@ export function cachedMutation(files, tiers, allFiles) {
         if (
             entry &&
             entry.at > Math.max(mtime(f), inputsAt) &&
-            names.every((n) => entry.tiers.includes(n))
+            names.every((n) => entry.tiers.includes(n)) &&
+            // Cached before the per-test tally existed (#498): measure again.
+            Array.isArray(entry.result.tests)
         )
             fresh.set(f, entry.result);
     }
@@ -379,10 +381,15 @@ function spawnLogged(bin, args, env, onLine) {
     });
 }
 
+/** Test id → its label (`basename › title`) and its repo-relative file. */
 function testNames(report) {
     const names = new Map();
     for (const [file, { tests }] of Object.entries(report.testFiles ?? {}))
-        for (const t of tests) names.set(t.id, `${basename(file)} › ${t.name}`);
+        for (const t of tests)
+            names.set(t.id, {
+                label: `${basename(file)} › ${t.name}`,
+                file: relative(root, resolve(root, file)),
+            });
     return names;
 }
 
@@ -396,6 +403,7 @@ function noTestsResult() {
         total: null,
         survivors: [],
         noCoverageLines: [],
+        tests: [],
     };
 }
 
@@ -403,6 +411,12 @@ function noTestsResult() {
  * One file's result. `killed` counts Stryker's Killed and Timeout, `total`
  * is killed + survived + noCoverage (compile/runtime errors and ignored
  * mutants don't count), and `score` is killed / total in percent.
+ *
+ * `tests` is each test's own tally over the file's mutants: how many it ran
+ * and how many turned it red, weakest first. With `disableBail` every
+ * covering test runs, so `killedBy` names every test that noticed. Static
+ * mutants (every related test "runs" them) are left out. A timeout names no
+ * test, so it's counted apart, in `timedOut`, for each test that covers it.
  */
 function summarize(entry, tests) {
     const result = {
@@ -414,11 +428,23 @@ function summarize(entry, tests) {
         total: 0,
         survivors: [],
         noCoverageLines: [],
+        tests: [],
     };
     if (!entry) return result;
     const source = entry.source.split('\n');
     const unreached = [];
+    const perTest = new Map();
     for (const m of entry.mutants) {
+        if (!m.static && ['Killed', 'Survived', 'Timeout'].includes(m.status))
+            for (const id of m.coveredBy ?? []) {
+                const t = perTest.get(id) ?? { ran: 0, killed: 0, timedOut: 0 };
+                if (m.status === 'Timeout') t.timedOut++;
+                else {
+                    t.ran++;
+                    if (m.killedBy?.includes(id)) t.killed++;
+                }
+                perTest.set(id, t);
+            }
         if (m.status === 'Killed' || m.status === 'Timeout') result.killed++;
         else if (m.status === 'Survived') {
             result.survived++;
@@ -429,7 +455,9 @@ function summarize(entry, tests) {
                 original: snippet(originalText(source, m.location)),
                 replacement: snippet(m.replacement ?? ''),
                 static: Boolean(m.static),
-                coveredBy: (m.coveredBy ?? []).map((id) => tests.get(id) ?? id),
+                coveredBy: (m.coveredBy ?? []).map(
+                    (id) => tests.get(id)?.label ?? id
+                ),
             });
         } else if (m.status === 'NoCoverage') {
             result.noCoverage++;
@@ -442,7 +470,19 @@ function summarize(entry, tests) {
         : null;
     result.survivors.sort((a, b) => a.line - b.line || a.column - b.column);
     result.noCoverageLines = mergeRanges(unreached);
+    result.tests = [...perTest]
+        .map(([id, t]) => ({
+            test: tests.get(id)?.label ?? id,
+            file: tests.get(id)?.file ?? null,
+            ...t,
+        }))
+        .sort((a, b) => ratio(a) - ratio(b) || a.test.localeCompare(b.test));
     return result;
+}
+
+// A test whose only mutants timed out sorts with the strongest.
+function ratio(t) {
+    return t.ran ? t.killed / t.ran : 1;
 }
 
 function originalText(source, { start, end }) {
