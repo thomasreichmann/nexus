@@ -32,6 +32,9 @@
         "test:e2e": {
             "cache": false
         },
+        "test:integration": {
+            "cache": false
+        },
         "typecheck": {
             "dependsOn": ["^typecheck"]
         }

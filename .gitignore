@@ -28,6 +28,7 @@ apps/worker/worker.zip
 /coverage/
 apps/*/coverage/
 packages/*/coverage/
+packages/*/coverage-integration/
 playwright-report/
 
 # Terraform

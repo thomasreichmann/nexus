@@ -1,22 +1,12 @@
+import { vi } from 'vitest';
+import { it, describe, expect } from '@nexus/db/test-db/integration';
 import {
-    describe,
-    it,
-    expect,
-    beforeAll,
-    afterAll,
-    afterEach,
-    vi,
-} from 'vitest';
-import {
-    createDb,
-    insertUser,
     insertFile,
     insertRetrieval,
     insertRetrievalRequest,
     insertRetrievalArtifact,
     backdateRetrievalRequest,
-    deleteUser,
-    type Connection,
+    type DB,
 } from '@nexus/db/test-db';
 import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
 import { createRetrievalRequestRepo } from '@nexus/db/repo/retrievalRequests';
@@ -53,8 +43,6 @@ import type { RestoreHorizons, Retrieval } from '@nexus/db/repo/retrievals';
 // tells us when a restored copy lapses. Also exercises
 // the partial unique index guaranteeing one active retrieval per file (#266).
 
-const db: Connection = createDb(process.env.DATABASE_URL!);
-
 const HOUR_MS = 60 * 60 * 1000;
 const past = () => new Date(Date.now() - HOUR_MS);
 const future = () => new Date(Date.now() + HOUR_MS);
@@ -66,35 +54,27 @@ const readyNow = () => ({ readyAt: new Date(), expiresAt: future() });
 // than any real row keeps a test's own rows inside it (#491).
 const BEFORE_ANY_REAL_ROW = new Date('2000-01-01T00:00:00Z');
 
-let userId: string;
+// Every suite here is `describe.concurrent`: each test owns its `user`, so
+// their rows can't collide, and on the pooler the file runs in a fraction of
+// its serial time. The price is that the mocks above are shared by tests in
+// flight at once, so no test may install its own implementation or assert
+// on their calls. A test that needs to belongs in a sequential file.
 
-beforeAll(async () => {
-    const user = await insertUser(db);
-    userId = user.id;
-});
-
-afterAll(async () => {
-    await deleteUser(db, userId);
-});
-
-// A test that leaves a rejecting publish installed would fail every later
-// request path, which enqueues one.
-afterEach(() => {
-    jobMocks.publish.mockReset();
-});
-
-describe('active-retrieval expiry predicate', () => {
-    it('a lapsed ready retrieval no longer blocks a fresh request', async () => {
-        const file = await insertFile(db, { userId });
+describe.concurrent('active-retrieval expiry predicate', () => {
+    it('a lapsed ready retrieval no longer blocks a fresh request', async ({
+        db,
+        user,
+    }) => {
+        const file = await insertFile(db, { userId: user.id });
         const lapsed = await insertRetrieval(db, {
-            userId,
+            userId: user.id,
             fileId: file.id,
             status: 'ready',
             readyAt: past(),
             expiresAt: past(),
         });
 
-        await retrievalService.requestRetrieval(db, userId, file.id);
+        await retrievalService.requestRetrieval(db, user.id, file.id);
 
         const repo = createRetrievalRepo(db);
         // Fresh row, waiting on the initiation job — the request path writes
@@ -106,14 +86,17 @@ describe('active-retrieval expiry predicate', () => {
 
         // The insert path flipped the lapsed row to `expired` — it has to,
         // or the row would still hold the unique-index slot for the file.
-        const rows = await repo.findByUser(userId);
+        const rows = await repo.findByUser(user.id);
         expect(rows.find((r) => r.id === lapsed.id)?.status).toBe('expired');
     });
 
-    it('getDownloadUrl rejects a lapsed ready retrieval', async () => {
-        const file = await insertFile(db, { userId });
+    it('getDownloadUrl rejects a lapsed ready retrieval', async ({
+        db,
+        user,
+    }) => {
+        const file = await insertFile(db, { userId: user.id });
         await insertRetrieval(db, {
-            userId,
+            userId: user.id,
             fileId: file.id,
             status: 'ready',
             readyAt: past(),
@@ -121,28 +104,32 @@ describe('active-retrieval expiry predicate', () => {
         });
 
         await expect(
-            retrievalService.getDownloadUrl(db, userId, file.id)
+            retrievalService.getDownloadUrl(db, user.id, file.id)
         ).rejects.toThrow(InvalidStateError);
     });
 
-    it('active queries exclude lapsed rows but keep unexpired, event-less, and in-flight ones', async () => {
+    it('active queries exclude lapsed rows but keep unexpired, event-less, and in-flight ones', async ({
+        db,
+        user,
+        createUser,
+    }) => {
         const repo = createRetrievalRepo(db);
         const [lapsedFile, unexpiredFile, noExpiryFile, pendingFile] =
             await Promise.all([
-                insertFile(db, { userId }),
-                insertFile(db, { userId }),
-                insertFile(db, { userId }),
-                insertFile(db, { userId }),
+                insertFile(db, { userId: user.id }),
+                insertFile(db, { userId: user.id }),
+                insertFile(db, { userId: user.id }),
+                insertFile(db, { userId: user.id }),
             ]);
 
         await insertRetrieval(db, {
-            userId,
+            userId: user.id,
             fileId: lapsedFile.id,
             status: 'ready',
             expiresAt: past(),
         });
         const unexpired = await insertRetrieval(db, {
-            userId,
+            userId: user.id,
             fileId: unexpiredFile.id,
             status: 'ready',
             expiresAt: future(),
@@ -150,13 +137,13 @@ describe('active-retrieval expiry predicate', () => {
         // No expiresAt (e.g. a malformed restore-completed event): treated as
         // still active — better a stale entry than a download cut off early.
         const noExpiry = await insertRetrieval(db, {
-            userId,
+            userId: user.id,
             fileId: noExpiryFile.id,
             status: 'ready',
             expiresAt: null,
         });
         const pending = await insertRetrieval(db, {
-            userId,
+            userId: user.id,
             fileId: pendingFile.id,
             status: 'pending',
         });
@@ -174,23 +161,32 @@ describe('active-retrieval expiry predicate', () => {
 
         expect(await repo.findByFileId(lapsedFile.id)).toBeUndefined();
 
-        const active = await repo.findActiveByUserWithFiles(userId);
-        const activeForTheseFiles = active.filter((r) =>
-            fileIds.includes(r.fileId)
-        );
-        expect(new Set(activeForTheseFiles.map((r) => r.id))).toEqual(
+        // Another user's active row, which the ownership filter must exclude.
+        const stranger = await createUser();
+        await insertRetrieval(db, {
+            userId: stranger.id,
+            fileId: (await insertFile(db, { userId: stranger.id })).id,
+            status: 'ready',
+            expiresAt: future(),
+        });
+
+        const active = await repo.findActiveByUserWithFiles(user.id);
+        expect(new Set(active.map((r) => r.id))).toEqual(
             new Set([unexpired.id, noExpiry.id, pending.id])
         );
     });
 });
 
-describe('one active retrieval per file (#266)', () => {
-    it('two concurrent retrieval requests yield exactly one active row', async () => {
-        const file = await insertFile(db, { userId });
+describe.concurrent('one active retrieval per file (#266)', () => {
+    it('two concurrent retrieval requests yield exactly one active row', async ({
+        db,
+        user,
+    }) => {
+        const file = await insertFile(db, { userId: user.id });
 
         const [first, second] = await Promise.all([
-            retrievalService.requestRetrieval(db, userId, file.id),
-            retrievalService.requestRetrieval(db, userId, file.id),
+            retrievalService.requestRetrieval(db, user.id, file.id),
+            retrievalService.requestRetrieval(db, user.id, file.id),
         ]);
 
         expect(first.requestId).not.toBe(second.requestId);
@@ -208,11 +204,14 @@ describe('one active retrieval per file (#266)', () => {
         ).toBe(1);
     });
 
-    it('the unique index skips a duplicate active insert and keeps the existing row', async () => {
+    it('the unique index skips a duplicate active insert and keeps the existing row', async ({
+        db,
+        user,
+    }) => {
         const repo = createRetrievalRepo(db);
-        const file = await insertFile(db, { userId });
+        const file = await insertFile(db, { userId: user.id });
         const winner = await insertRetrieval(db, {
-            userId,
+            userId: user.id,
             fileId: file.id,
             status: 'pending',
         });
@@ -221,7 +220,7 @@ describe('one active retrieval per file (#266)', () => {
             {
                 id: crypto.randomUUID(),
                 fileId: file.id,
-                userId,
+                userId: user.id,
                 tier: 'standard',
                 status: 'pending',
             },
@@ -236,16 +235,19 @@ describe('one active retrieval per file (#266)', () => {
 // Request-level readiness against real SQL. The unit tests can only pin the
 // all-or-nothing rule on top of a mocked aggregate; the counting itself — and
 // the adoption case that made a join table necessary — needs the database.
-describe('a restore is one request (#422)', () => {
-    it('counts every requested file and only flips ready on the last one', async () => {
+describe.concurrent('a restore is one request (#422)', () => {
+    it('counts every requested file and only flips ready on the last one', async ({
+        db,
+        user,
+    }) => {
         const [first, second] = await Promise.all([
-            insertFile(db, { userId }),
-            insertFile(db, { userId }),
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id }),
         ]);
 
         const { requestId } = await retrievalService.requestBulkRetrieval(
             db,
-            userId,
+            user.id,
             [first.id, second.id],
             'bulk'
         );
@@ -286,22 +288,25 @@ describe('a restore is one request (#422)', () => {
         });
     });
 
-    it('two overlapping requests share one retrieval row and both count it', async () => {
+    it('two overlapping requests share one retrieval row and both count it', async ({
+        db,
+        user,
+    }) => {
         const [shared, onlyFirst, onlySecond] = await Promise.all([
-            insertFile(db, { userId }),
-            insertFile(db, { userId }),
-            insertFile(db, { userId }),
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id }),
         ]);
 
         const first = await retrievalService.requestBulkRetrieval(
             db,
-            userId,
+            user.id,
             [shared.id, onlyFirst.id],
             'bulk'
         );
         const second = await retrievalService.requestBulkRetrieval(
             db,
-            userId,
+            user.id,
             [shared.id, onlySecond.id],
             'bulk'
         );
@@ -344,12 +349,15 @@ describe('a restore is one request (#422)', () => {
         ).toBe(1);
     });
 
-    it('a lapsed ready retrieval stops counting toward its request', async () => {
-        const file = await insertFile(db, { userId });
+    it('a lapsed ready retrieval stops counting toward its request', async ({
+        db,
+        user,
+    }) => {
+        const file = await insertFile(db, { userId: user.id });
 
         const { requestId } = await retrievalService.requestRetrieval(
             db,
-            userId,
+            user.id,
             file.id
         );
 
@@ -378,18 +386,26 @@ describe('a restore is one request (#422)', () => {
         });
     });
 
-    it('getRequestStatus hides another user’s request behind NotFound', async () => {
-        const request = await insertRetrievalRequest(db, { userId });
+    it('getRequestStatus hides another user’s request behind NotFound', async ({
+        db,
+        user,
+        createUser,
+    }) => {
+        const request = await insertRetrievalRequest(db, { userId: user.id });
+        const someoneElse = await createUser();
 
         await expect(
-            retrievalService.getRequestStatus(db, 'someone-else', request.id)
+            retrievalService.getRequestStatus(db, someoneElse.id, request.id)
         ).rejects.toThrow(NotFoundError);
     });
 });
 
-describe('retrieval artifacts (#422)', () => {
-    it('a request holds positioned artifacts, one per chunk', async () => {
-        const request = await insertRetrievalRequest(db, { userId });
+describe.concurrent('retrieval artifacts (#422)', () => {
+    it('a request holds positioned artifacts, one per chunk', async ({
+        db,
+        user,
+    }) => {
+        const request = await insertRetrievalRequest(db, { userId: user.id });
 
         await insertRetrievalArtifact(db, {
             requestId: request.id,
@@ -399,7 +415,7 @@ describe('retrieval artifacts (#422)', () => {
             requestId: request.id,
             position: 1,
             status: 'ready',
-            s3Key: `${userId}/${request.id}/1.zip`,
+            s3Key: `${user.id}/${request.id}/1.zip`,
             sizeBytes: 4 * 1024 ** 3,
         });
 
@@ -422,12 +438,15 @@ describe('retrieval artifacts (#422)', () => {
 // The RestoreObject fan-out itself lives in the worker now (#423); what stays
 // here is the database half of #329's contract — a failed row is outside the
 // active unique index, so the file can be asked for again.
-describe('a failed restore releases the file (#329)', () => {
-    it('lets a retry insert a fresh row after the worker marks one failed', async () => {
-        const file = await insertFile(db, { userId });
+describe.concurrent('a failed restore releases the file (#329)', () => {
+    it('lets a retry insert a fresh row after the worker marks one failed', async ({
+        db,
+        user,
+    }) => {
+        const file = await insertFile(db, { userId: user.id });
         const repo = createRetrievalRepo(db);
 
-        await retrievalService.requestRetrieval(db, userId, file.id, 'bulk');
+        await retrievalService.requestRetrieval(db, user.id, file.id, 'bulk');
         const [original] = await repo.findByFileIds([file.id]);
 
         // What the initiate-restore handler writes when AWS rejects the call.
@@ -439,7 +458,7 @@ describe('a failed restore releases the file (#329)', () => {
 
         const retry = await retrievalService.requestRetrieval(
             db,
-            userId,
+            user.id,
             file.id,
             'bulk'
         );
@@ -459,190 +478,227 @@ describe('a failed restore releases the file (#329)', () => {
 // The completion predicate and the delivery scan are SQL conjuncts — the
 // vacuity hazard (a zero-artifact NOT EXISTS reading as "all artifacts ready")
 // and the single-winner RETURNING only mean anything against a real database.
-describe('unified completion writer and direct-delivery scan (#437)', () => {
-    /** One request via the real request path: request + item + pending row. */
-    async function singleFileRequest(name: string, size = 1024) {
-        const file = await insertFile(db, { userId, name, size });
-        const { requestId } = await retrievalService.requestRetrieval(
-            db,
-            userId,
-            file.id
-        );
-        const [retrieval] = await createRetrievalRepo(db).findByFileIds([
-            file.id,
-        ]);
-        return { file, requestId, retrievalId: retrieval.id };
-    }
-
-    // The reason completeIfArtifactsReady could not be reused: at zero
-    // artifacts its NOT EXISTS was vacuously true, so it would have completed
-    // a single-file request the moment it was created — before the thaw.
-    it('never completes a single-file request while its item is pending', async () => {
-        const { requestId, retrievalId } = await singleFileRequest('cold.cr2');
-        await backdateRetrievalRequest(db, requestId, BEFORE_ANY_REAL_ROW);
-        const requestRepo = createRetrievalRequestRepo(db);
-        const scannedIds = async () =>
-            (await requestRepo.findDirectDeliverable(100)).map(
-                (r) => r.requestId
-            );
-
-        expect(await requestRepo.completeIfDeliverable(requestId)).toBe(
-            undefined
-        );
-        expect((await requestRepo.findById(requestId))?.completedAt).toBe(null);
-
-        // The same statement completes it once the item is downloadable.
-        await createRetrievalRepo(db).updateStatus(
-            retrievalId,
-            'ready',
-            readyNow()
-        );
-        // The control for the `not.toContain` below: deliverable and not yet
-        // completed, the scan does return it.
-        expect(await scannedIds()).toContain(requestId);
-        const completed = await requestRepo.completeIfDeliverable(requestId);
-        expect(completed?.completedAt).toBeInstanceOf(Date);
-
-        // And a completed request leaves the scan for good — a second poll
-        // run finds nothing to announce.
-        expect(await scannedIds()).not.toContain(requestId);
-    });
-
-    it('two concurrent completion attempts yield exactly one winner', async () => {
-        const { requestId, retrievalId } = await singleFileRequest('race.cr2');
-        await createRetrievalRepo(db).updateStatus(
-            retrievalId,
-            'ready',
-            readyNow()
-        );
-
-        const requestRepo = createRetrievalRequestRepo(db);
-        const results = await Promise.all([
-            requestRepo.completeIfDeliverable(requestId),
-            requestRepo.completeIfDeliverable(requestId),
-        ]);
-
-        expect(results.filter(Boolean)).toHaveLength(1);
-    });
-
-    it('the scan returns exactly the deliverable single-file requests', async () => {
-        const retrievalRepo = createRetrievalRepo(db);
-        const requestRepo = createRetrievalRequestRepo(db);
-
-        const [deliverable, stillPending, lapsed, zipA, zipB] =
-            await Promise.all([
-                singleFileRequest('warm.cr2', 2_000_000),
-                singleFileRequest('pending.cr2'),
-                singleFileRequest('lapsed.cr2'),
-                insertFile(db, { userId }),
-                insertFile(db, { userId }),
-            ]);
-        await retrievalRepo.updateStatus(
-            deliverable.retrievalId,
-            'ready',
-            readyNow()
-        );
-        await retrievalRepo.updateStatus(lapsed.retrievalId, 'ready', {
-            readyAt: past(),
-            expiresAt: past(),
-        });
-
-        // Two files, both thawed: zip-delivered, never the scan's to return.
-        const zipRequest = await retrievalService.requestBulkRetrieval(
-            db,
-            userId,
-            [zipA.id, zipB.id],
-            'bulk'
-        );
-        for (const row of await retrievalRepo.findByFileIds([
-            zipA.id,
-            zipB.id,
-        ])) {
-            await retrievalRepo.updateStatus(row.id, 'ready', readyNow());
-        }
-
-        // Scoped to this test's rows: the scan is global and other tests leave
-        // their own requests behind. Backdated so all four sit inside the
-        // limit, which is what makes the three exclusions mean anything.
-        const ownIds = new Set([
-            deliverable.requestId,
-            stillPending.requestId,
-            lapsed.requestId,
-            zipRequest.requestId,
-        ]);
-        for (const id of ownIds) {
-            await backdateRetrievalRequest(db, id, BEFORE_ANY_REAL_ROW);
-        }
-        const scanned = (await requestRepo.findDirectDeliverable(100)).filter(
-            (r) => ownIds.has(r.requestId)
-        );
-
-        expect(scanned).toEqual([
-            {
-                requestId: deliverable.requestId,
-                userId,
-                fileId: deliverable.file.id,
-                fileName: 'warm.cr2',
-                fileSize: 2_000_000,
-                expiresAt: expect.any(Date),
-                initiatedAt: expect.any(Date),
-                readyAt: expect.any(Date),
-            },
-        ]);
-    });
-
-    // The intended behavior change for zips: completion now asserts the thawed
-    // originals are still live, so a build that outlasted its own restore
-    // window leaves the request incomplete rather than announcing a download
-    // whose source is gone.
-    it('does not complete a zip request whose originals lapsed mid-build', async () => {
-        const retrievalRepo = createRetrievalRepo(db);
-        const requestRepo = createRetrievalRequestRepo(db);
-
-        async function builtZipRequest(expiresAt: Date) {
-            const [a, b] = await Promise.all([
-                insertFile(db, { userId }),
-                insertFile(db, { userId }),
-            ]);
-            const { requestId } = await retrievalService.requestBulkRetrieval(
+describe.concurrent(
+    'unified completion writer and direct-delivery scan (#437)',
+    () => {
+        /** One request via the real request path: request + item + pending row. */
+        async function singleFileRequest(
+            db: DB,
+            userId: string,
+            name: string,
+            size = 1024
+        ) {
+            const file = await insertFile(db, { userId, name, size });
+            const { requestId } = await retrievalService.requestRetrieval(
                 db,
                 userId,
-                [a.id, b.id],
-                'bulk'
+                file.id
             );
-            for (const row of await retrievalRepo.findByFileIds([a.id, b.id])) {
-                await retrievalRepo.updateStatus(row.id, 'ready', {
-                    readyAt: past(),
-                    expiresAt,
-                });
-            }
-            await insertRetrievalArtifact(db, {
-                requestId,
-                position: 0,
-                status: 'ready',
-                s3Key: `${userId}/${requestId}/0.zip`,
-            });
-            return requestId;
+            const [retrieval] = await createRetrievalRepo(db).findByFileIds([
+                file.id,
+            ]);
+            return { file, requestId, retrievalId: retrieval.id };
         }
 
-        const [lapsedRequest, liveRequest] = await Promise.all([
-            builtZipRequest(past()),
-            builtZipRequest(future()),
-        ]);
+        // The reason completeIfArtifactsReady could not be reused: at zero
+        // artifacts its NOT EXISTS was vacuously true, so it would have completed
+        // a single-file request the moment it was created — before the thaw.
+        it('never completes a single-file request while its item is pending', async ({
+            db,
+            user,
+        }) => {
+            const { requestId, retrievalId } = await singleFileRequest(
+                db,
+                user.id,
+                'cold.cr2'
+            );
+            await backdateRetrievalRequest(db, requestId, BEFORE_ANY_REAL_ROW);
+            const requestRepo = createRetrievalRequestRepo(db);
+            const scannedIds = async () =>
+                (await requestRepo.findDirectDeliverable(100)).map(
+                    (r) => r.requestId
+                );
 
-        expect(await requestRepo.completeIfDeliverable(lapsedRequest)).toBe(
-            undefined
-        );
-        // The control: identical request, unexpired originals — the artifact
-        // conjunct alone is not what blocked the lapsed one.
-        expect(
-            (await requestRepo.completeIfDeliverable(liveRequest))?.completedAt
-        ).toBeInstanceOf(Date);
-    });
-});
+            expect(await requestRepo.completeIfDeliverable(requestId)).toBe(
+                undefined
+            );
+            expect((await requestRepo.findById(requestId))?.completedAt).toBe(
+                null
+            );
+
+            // The same statement completes it once the item is downloadable.
+            await createRetrievalRepo(db).updateStatus(
+                retrievalId,
+                'ready',
+                readyNow()
+            );
+            // The control for the `not.toContain` below: deliverable and not yet
+            // completed, the scan does return it.
+            expect(await scannedIds()).toContain(requestId);
+            const completed =
+                await requestRepo.completeIfDeliverable(requestId);
+            expect(completed?.completedAt).toBeInstanceOf(Date);
+
+            // And a completed request leaves the scan for good — a second poll
+            // run finds nothing to announce.
+            expect(await scannedIds()).not.toContain(requestId);
+        });
+
+        it('two concurrent completion attempts yield exactly one winner', async ({
+            db,
+            user,
+        }) => {
+            const { requestId, retrievalId } = await singleFileRequest(
+                db,
+                user.id,
+                'race.cr2'
+            );
+            await createRetrievalRepo(db).updateStatus(
+                retrievalId,
+                'ready',
+                readyNow()
+            );
+
+            const requestRepo = createRetrievalRequestRepo(db);
+            const results = await Promise.all([
+                requestRepo.completeIfDeliverable(requestId),
+                requestRepo.completeIfDeliverable(requestId),
+            ]);
+
+            expect(results.filter(Boolean)).toHaveLength(1);
+        });
+
+        it('the scan returns exactly the deliverable single-file requests', async ({
+            db,
+            user,
+        }) => {
+            const retrievalRepo = createRetrievalRepo(db);
+            const requestRepo = createRetrievalRequestRepo(db);
+
+            const [deliverable, stillPending, lapsed, zipA, zipB] =
+                await Promise.all([
+                    singleFileRequest(db, user.id, 'warm.cr2', 2_000_000),
+                    singleFileRequest(db, user.id, 'pending.cr2'),
+                    singleFileRequest(db, user.id, 'lapsed.cr2'),
+                    insertFile(db, { userId: user.id }),
+                    insertFile(db, { userId: user.id }),
+                ]);
+            await retrievalRepo.updateStatus(
+                deliverable.retrievalId,
+                'ready',
+                readyNow()
+            );
+            await retrievalRepo.updateStatus(lapsed.retrievalId, 'ready', {
+                readyAt: past(),
+                expiresAt: past(),
+            });
+
+            // Two files, both thawed: zip-delivered, never the scan's to return.
+            const zipRequest = await retrievalService.requestBulkRetrieval(
+                db,
+                user.id,
+                [zipA.id, zipB.id],
+                'bulk'
+            );
+            for (const row of await retrievalRepo.findByFileIds([
+                zipA.id,
+                zipB.id,
+            ])) {
+                await retrievalRepo.updateStatus(row.id, 'ready', readyNow());
+            }
+
+            // Scoped to this test's rows: the scan is global, and other writers
+            // on a shared database leave their own requests in it. Backdated so
+            // all four sit inside the limit, which is what makes the three
+            // exclusions mean anything.
+            const ownIds = new Set([
+                deliverable.requestId,
+                stillPending.requestId,
+                lapsed.requestId,
+                zipRequest.requestId,
+            ]);
+            for (const id of ownIds) {
+                await backdateRetrievalRequest(db, id, BEFORE_ANY_REAL_ROW);
+            }
+            const scanned = (
+                await requestRepo.findDirectDeliverable(100)
+            ).filter((r) => ownIds.has(r.requestId));
+
+            expect(scanned).toEqual([
+                {
+                    requestId: deliverable.requestId,
+                    userId: user.id,
+                    fileId: deliverable.file.id,
+                    fileName: 'warm.cr2',
+                    fileSize: 2_000_000,
+                    expiresAt: expect.any(Date),
+                    initiatedAt: expect.any(Date),
+                    readyAt: expect.any(Date),
+                },
+            ]);
+        });
+
+        // The intended behavior change for zips: completion now asserts the thawed
+        // originals are still live, so a build that outlasted its own restore
+        // window leaves the request incomplete rather than announcing a download
+        // whose source is gone.
+        it('does not complete a zip request whose originals lapsed mid-build', async ({
+            db,
+            user,
+        }) => {
+            const retrievalRepo = createRetrievalRepo(db);
+            const requestRepo = createRetrievalRequestRepo(db);
+
+            async function builtZipRequest(expiresAt: Date) {
+                const [a, b] = await Promise.all([
+                    insertFile(db, { userId: user.id }),
+                    insertFile(db, { userId: user.id }),
+                ]);
+                const { requestId } =
+                    await retrievalService.requestBulkRetrieval(
+                        db,
+                        user.id,
+                        [a.id, b.id],
+                        'bulk'
+                    );
+                for (const row of await retrievalRepo.findByFileIds([
+                    a.id,
+                    b.id,
+                ])) {
+                    await retrievalRepo.updateStatus(row.id, 'ready', {
+                        readyAt: past(),
+                        expiresAt,
+                    });
+                }
+                await insertRetrievalArtifact(db, {
+                    requestId,
+                    position: 0,
+                    status: 'ready',
+                    s3Key: `${user.id}/${requestId}/0.zip`,
+                });
+                return requestId;
+            }
+
+            const [lapsedRequest, liveRequest] = await Promise.all([
+                builtZipRequest(past()),
+                builtZipRequest(future()),
+            ]);
+
+            expect(await requestRepo.completeIfDeliverable(lapsedRequest)).toBe(
+                undefined
+            );
+            // The control: identical request, unexpired originals — the artifact
+            // conjunct alone is not what blocked the lapsed one.
+            expect(
+                (await requestRepo.completeIfDeliverable(liveRequest))
+                    ?.completedAt
+            ).toBeInstanceOf(Date);
+        });
+    }
+);
 
 // The horizon is a WHERE clause, so it only means anything against real SQL.
-describe('tier-aware poll horizon (#423)', () => {
+describe.concurrent('tier-aware poll horizon (#423)', () => {
     const HORIZONS: RestoreHorizons = {
         expedited: 0,
         standard: 6 * HOUR_MS,
@@ -650,14 +706,17 @@ describe('tier-aware poll horizon (#423)', () => {
     };
     const agoHours = (hours: number) => new Date(Date.now() - hours * HOUR_MS);
 
-    it('returns only rows past their own tier’s horizon', async () => {
+    it('returns only rows past their own tier’s horizon', async ({
+        db,
+        user,
+    }) => {
         const [freshBulk, dueBulk, freshStandard, dueStandard, noAcceptTime] =
             await Promise.all([
-                insertFile(db, { userId }),
-                insertFile(db, { userId }),
-                insertFile(db, { userId }),
-                insertFile(db, { userId }),
-                insertFile(db, { userId }),
+                insertFile(db, { userId: user.id }),
+                insertFile(db, { userId: user.id }),
+                insertFile(db, { userId: user.id }),
+                insertFile(db, { userId: user.id }),
+                insertFile(db, { userId: user.id }),
             ]);
 
         // Backdated so all five sit inside the scan's limit, which is what
@@ -666,7 +725,7 @@ describe('tier-aware poll horizon (#423)', () => {
             overrides: Pick<Retrieval, 'fileId' | 'tier' | 'initiatedAt'>
         ) =>
             insertRetrieval(db, {
-                userId,
+                userId: user.id,
                 status: 'pending',
                 createdAt: BEFORE_ANY_REAL_ROW,
                 ...overrides,
@@ -704,9 +763,8 @@ describe('tier-aware poll horizon (#423)', () => {
         ]);
         const [, dueBulkRow, , dueStandardRow, noAcceptTimeRow] = rows;
 
-        // Scoped to this test's rows: the work list is global, and every other
-        // test in this file leaves pending rows behind (all of them freshly
-        // initiated, hence inside their horizon — which is the point).
+        // Scoped to this test's rows: the work list is global, and other
+        // writers on a shared database leave pending rows in it.
         const ownIds = new Set(rows.map((r) => r.id));
         const due = await createRetrievalRepo(db).findPendingWithFiles(
             1000,
