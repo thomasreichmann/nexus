@@ -50,7 +50,7 @@ jobs:
                   DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     # Prod gates on the dev apply (same SQL against a schema-identical DB acts
-    # as a canary) but deliberately NOT on smoke-tests: e2e can fail for
+    # as a canary) but deliberately NOT on e2e-tests: e2e can fail for
     # reasons unrelated to migrations (browsers, S3, Stripe), and gating prod
     # on it would leave prod drifted whenever e2e flakes.
     migrate-prod:
@@ -114,7 +114,7 @@ jobs:
 
     # Gates on the dev deploy (same bundle, so a broken build or bad zip fails
     # there first) and on the prod migration, mirroring migrate-prod's canary
-    # ordering. Like migrate-prod, deliberately NOT gated on smoke-tests.
+    # ordering. Like migrate-prod, deliberately NOT gated on e2e-tests.
     deploy-worker-prod:
         name: Deploy worker (prod)
         needs: [migrate-prod, deploy-worker]
@@ -141,11 +141,20 @@ jobs:
             - name: Build and deploy
               run: pnpm -F worker deploy:prod
 
-    smoke-tests:
-        name: Smoke Tests
+    # Smoke, admin and flows e2e tiers against dev (#384). Post-merge only, by
+    # decision: browser tiers flake for reasons unrelated to the change, so
+    # they alert instead of gating (the integration tier is the pre-merge
+    # gate). One job, tiers in sequence, for two reasons: they share one
+    # install, browser setup and build, and the dev DB is shared, so running
+    # them side by side would have each tier's `setup` project reset the same
+    # e2e users under the other. Admin runs before flows because flows leaves
+    # generate-thumbnail rows in the global jobs table the admin jobs spec
+    # reads (#419).
+    e2e-tests:
+        name: E2E Tests
         needs: migrate
         runs-on: ubuntu-latest
-        timeout-minutes: 15
+        timeout-minutes: 40
         # e2e runs against a production build (next build + next start), so the
         # build step and the test step both need these at build/runtime.
         env:
@@ -194,5 +203,47 @@ jobs:
             - name: Build app and workspace packages
               run: pnpm exec turbo run build --filter=@nexus/web
 
+            # Each tier runs even if an earlier one failed (`!cancelled()`), so
+            # one red run reports every broken tier at once.
             - name: Run smoke tests
+              id: smoke
               run: pnpm -F web test:e2e:smoke
+
+            # The retry spec re-publishes a seeded `e2e-test-job` row, a type
+            # no worker handler knows. On the real jobs queue it throws in the
+            # worker, fails the whole batch it rides in, and parks in the DLQ
+            # (the #442 failure mode). Point this tier at the consumer-less
+            # test queue instead: the send is still real, nothing receives it.
+            - name: Run admin tests
+              id: admin
+              if: ${{ !cancelled() }}
+              env:
+                  SQS_QUEUE_URL: https://sqs.us-east-1.amazonaws.com/391615358272/nexus-integration-test-jobs-dev
+              run: pnpm -F web test:e2e:admin
+
+            - name: Run flows tests
+              id: flows
+              if: ${{ !cancelled() }}
+              run: pnpm -F web test:e2e:flows
+
+            # Same raw-curl Discord rail as uptime.yml; an unset secret
+            # degrades to a no-op, and the red run stays the primary alert.
+            - name: Notify Discord
+              if: failure()
+              env:
+                  DISCORD_ALERT_WEBHOOK_URL: ${{ secrets.DISCORD_ALERT_WEBHOOK_URL }}
+                  MESSAGE: >-
+                      **Post-merge e2e failed** on `${{ github.sha }}`:
+                      smoke ${{ steps.smoke.outcome }},
+                      admin ${{ steps.admin.outcome }},
+                      flows ${{ steps.flows.outcome }} —
+                      <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>
+              run: |
+                  if [ -z "$DISCORD_ALERT_WEBHOOK_URL" ]; then
+                      echo "DISCORD_ALERT_WEBHOOK_URL not configured — skipping Discord notification."
+                      exit 0
+                  fi
+                  jq -n --arg content "$MESSAGE" '{content: $content}' |
+                      curl --silent --show-error --max-time 15 \
+                          -H 'Content-Type: application/json' \
+                          -d @- "$DISCORD_ALERT_WEBHOOK_URL"

@@ -202,6 +202,7 @@ pnpm -F web test:integration
 - Publishes to `nexus-integration-test-jobs-dev`, never to `SQS_QUEUE_URL` (#442). That queue has no consumer: no event source mapping, no DLQ, five-minute retention
 - Receives its own message back, asserts the body matches the inserted row, and deletes it. Messages from other concurrent runs are released untouched
 - Cleans up test DB records in `afterAll`
+- In CI, the whole integration tier is the `Integration tests` job in `ci.yml`, a required check: a Postgres 17 service container with every migration applied, and the dev AWS secrets for this test. Fork PRs get no secrets, so there the job skips only this test (via `INTEGRATION_SKIP_AWS=1`) and posts a warning annotation (#384)
 
 > **Why a separate queue:** the test used to publish a real `delete-account` job to the jobs queue. The deployed worker picked it up, the handler (still a stub, #28) threw, and the whole SQS batch it rode in failed with it. Every run parked more of these in `nexus-jobs-dlq-dev` and tripped the DLQ-depth alarm. Never point an integration test at a queue a worker polls.
 

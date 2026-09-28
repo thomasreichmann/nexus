@@ -65,7 +65,8 @@ pnpm -F db db:studio           # inspect data in Drizzle Studio
 Testing this workspace:
 
 ```bash
-pnpm -F web test               # unit + integration (Vitest)
+pnpm -F web test               # unit (Vitest)
+pnpm -F web test:integration   # real-DB tier; required pre-merge check in CI
 pnpm -F web test:e2e:smoke     # fastest E2E tier — run after any UI change
 pnpm -F web test:e2e           # full Playwright suite
 pnpm -F web e2e:coverage --check  # coverage gate — run after adding a page or test
