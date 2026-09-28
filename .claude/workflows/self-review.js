@@ -1,13 +1,13 @@
 export const meta = {
     name: 'self-review',
     description:
-        'Review a prepared branch diff with the conventions, code-quality, and reuse reviewers in parallel, then dedupe findings across reviewers',
+        'Review a prepared branch diff with the conventions, code-quality, reuse and (when code changed) test-quality reviewers in parallel, then dedupe findings across reviewers',
     whenToUse:
         'Self-review phase of /work and standalone /self-review. Requires args: { diffPath, changedFiles[], criteria? } — the diff must already be written to a file.',
     phases: [
         {
             title: 'Review',
-            detail: 'conventions, code quality, reuse — one agent each, parallel',
+            detail: 'conventions, code quality, reuse, test quality — one agent each, parallel',
             model: 'opus',
         },
         {
@@ -124,12 +124,9 @@ const AGGREGATED_SCHEMA = {
     required: ['findings'],
 };
 
-const task = [
-    `Review the diff at ${input.diffPath}. Read it with the Read tool — read all of it, it may be long.`,
-    `Changed files:\n${input.changedFiles.map((f) => `- ${f}`).join('\n')}`,
-    'Report via structured output instead of the text format in your instructions: one findings entry per issue (file, line, category, description, fix, severity). Put good patterns, searched locations, and clean files in notes.',
-    'Two other reviewers cover the other lanes; stay in yours. Nobody else covers yours, so a finding only you can see is not a weak finding — severity is about the issue, not about who found it.',
-].join('\n\n');
+// Test quality is judged on any code change: a diff without tests can still
+// leave changed logic unprotected. Docs- or config-only diffs skip it.
+const touchesCode = input.changedFiles.some((f) => /\.[cm]?[jt]sx?$/.test(f));
 
 const reviewers = [
     { type: 'conventions-review', extra: null },
@@ -140,7 +137,15 @@ const reviewers = [
             : 'No acceptance criteria were provided — review for general quality only and skip scope-creep checks.',
     },
     { type: 'reuse-review', extra: null },
+    ...(touchesCode ? [{ type: 'test-quality-review', extra: null }] : []),
 ];
+
+const task = [
+    `Review the diff at ${input.diffPath}. Read it with the Read tool — read all of it, it may be long.`,
+    `Changed files:\n${input.changedFiles.map((f) => `- ${f}`).join('\n')}`,
+    'Report via structured output instead of the text format in your instructions: one findings entry per issue (file, line, category, description, fix, severity). Put good patterns, searched locations, and clean files in notes.',
+    `${reviewers.length - 1} other reviewers cover the other lanes; stay in yours. Nobody else covers yours, so a finding only you can see is not a weak finding — severity is about the issue, not about who found it.`,
+].join('\n\n');
 
 phase('Review');
 const results = await parallel(

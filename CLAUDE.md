@@ -47,6 +47,7 @@ top-level await), arrows only in `page.evaluate`, target `$PORT` not `:3000`.
 
 - **Before writing code:** `docs/ai/conventions.md` — naming, structure, style
 - **When unfamiliar with project:** `docs/ai/context.md` — data model, architecture
+- **When writing or reviewing tests:** `docs/conventions/testing.md` § "Writing a test" — workflow (`pnpm cov:touched` → decide → write → break it), which level, no fake DB, four pillars, quadrants, smells
 - **When writing UI features:** `docs/guides/e2e-testing-guidelines.md` — E2E decisions
 - **Before creating GitHub issues:** `docs/ai/github-workflow.md` — issue format & labels
 - **To refresh the README demo GIF/MP4:** `docs/ai/recording-captures.md` — `pnpm capture` (the `tooling/capture` scene recorder)

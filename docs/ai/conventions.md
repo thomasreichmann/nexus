@@ -1,7 +1,7 @@
 ---
 title: Code Conventions
 created: 2025-12-29
-updated: 2026-07-13
+updated: 2026-09-28
 status: active
 tags:
     - ai
@@ -71,10 +71,12 @@ Terse reference for AI agents. Detailed examples with code: [[../conventions/nam
 
 ## Testing
 
+- **Before writing or reviewing a test:** read [[../conventions/testing#Writing a test|Writing a test]]: the workflow, which level, the no-fake-DB rule, Khorikov's four pillars, code quadrants, smells
+- Workflow: code → `pnpm cov:touched` → decide quadrant and level → write → break the behaviour and watch the test go red (say what you broke in the PR) → mutation testing when available (#494)
 - Public pages: smoke test in `e2e/smoke/` using `setupConsoleErrorTracking`
 - Authenticated pages: smoke test in `e2e/smoke/authenticated/` using `authenticated` fixture (supports `userRole`)
 - Auth E2E tests use `storageState` pattern via Playwright `setup` project
-- Unit test utilities/pure functions only; skip presentational components
+- Unit tests: domain logic, algorithms, input-decided branches; for presentational components, unit-test the logic you extract and leave rendering to smoke/e2e
 - Repository/query code: real-DB `*.integration.test.ts` next to the code, on the fixtures from `@nexus/db/test-db/integration` (`db`, `user`, `createUser`); never a mocked DB. Run with `pnpm test:integration` (dev DB) or `pnpm test:integration:fresh` (throwaway Postgres)
 - Test commands: `pnpm -F web test`, `test:e2e:smoke`, `test:e2e:admin`, `test:e2e`
 - Coverage: `pnpm coverage` (all tiers merged, every source file counted); a report, not a gate
