@@ -4,8 +4,9 @@
  * Presigned PUTs are the one part of the flow that leaves the machine, so
  * answering them locally is what lets the non-destructive tiers drive a whole
  * upload — queue, progress, confirm, batch rows — without writing an object or
- * touching a bucket. The stub also counts overlap, which is the only way to
- * observe the client's upload concurrency from the outside.
+ * touching a bucket. The stub also counts overlap as the network sees it; for
+ * PUTs with large bodies, `observeS3PutXhrs` counts it where the client's
+ * connection budget actually acts.
  */
 import type { Page, Request } from '@playwright/test';
 
@@ -99,6 +100,79 @@ export async function stubS3Puts(
     });
 
     return seen;
+}
+
+/** Reads back what `observeS3PutXhrs` counted in the page. */
+export interface S3PutXhrObserver {
+    /** Highest number of S3 PUT XHRs the page held open at once. */
+    readPeak: () => Promise<number>;
+}
+
+/**
+ * Counts S3 PUTs from inside the page: open from `xhr.send()` until the request
+ * settles, which is exactly the span the upload engine holds a connection
+ * permit for. Call before `page.goto`; read the peak before navigating away.
+ *
+ * `stubS3Puts` can't measure this for multipart parts. Chromium hands an
+ * intercepted request to Playwright only after shipping its body across CDP,
+ * and for a 10MB part that takes seconds, varying with the machine. Every
+ * part spends that transit already holding its permit but invisible to the
+ * route handler, so whether all of the budget's PUTs ever overlap inside the
+ * stub depends on the host rather than on the client.
+ */
+export async function observeS3PutXhrs(page: Page): Promise<S3PutXhrObserver> {
+    await page.addInitScript(() => {
+        const state = { inFlight: 0, peak: 0 };
+        (window as unknown as { __s3PutXhrs: typeof state }).__s3PutXhrs =
+            state;
+        const tracked = new WeakSet<XMLHttpRequest>();
+        const sent = new WeakSet<XMLHttpRequest>();
+        const settle = (xhr: XMLHttpRequest) => {
+            if (sent.delete(xhr)) state.inFlight--;
+        };
+
+        const originalOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function (
+            this: XMLHttpRequest,
+            ...args: [string, string | URL, ...unknown[]]
+        ) {
+            if (args[0] === 'PUT' && /amazonaws\.com/.test(String(args[1]))) {
+                tracked.add(this);
+                // Registered at open, before the engine assigns its own
+                // `onload`: the engine releases its permit (and the next part
+                // sends) in that handler's microtasks, so settling after it
+                // would count every hand-off as one PUT too many.
+                for (const type of ['load', 'error', 'abort', 'timeout']) {
+                    this.addEventListener(type, () => settle(this));
+                }
+            }
+            // Every argument through, not just the two this reads: other XHRs
+            // on the page may use the async/credentials overload.
+            return Reflect.apply(originalOpen, this, args);
+        };
+
+        const originalSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.send = function (
+            this: XMLHttpRequest,
+            body?: Document | XMLHttpRequestBodyInit | null
+        ) {
+            if (tracked.has(this)) {
+                sent.add(this);
+                state.inFlight++;
+                state.peak = Math.max(state.peak, state.inFlight);
+            }
+            return originalSend.call(this, body);
+        };
+    });
+
+    return {
+        readPeak: () =>
+            page.evaluate(
+                () =>
+                    (window as unknown as { __s3PutXhrs: { peak: number } })
+                        .__s3PutXhrs.peak
+            ),
+    };
 }
 
 /**

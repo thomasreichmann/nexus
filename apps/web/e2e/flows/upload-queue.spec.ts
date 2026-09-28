@@ -29,6 +29,7 @@ import {
 import {
     makePngFile,
     makeTextFiles,
+    observeS3PutXhrs,
     stubS3Puts,
     writeFolderTree,
     writeLargeFiles,
@@ -572,11 +573,13 @@ test(
             prefix: 'queue-multipart',
             bytes: MULTIPART_THRESHOLD + 1024,
         });
-        // Held long enough that the PUTs, not the browser's reading of 100MB
-        // blobs, are what limits overlap. At a short hold the file reads become
-        // the bottleneck and the observed peak drops below the budget, which
-        // would make this pass without the semaphore doing anything.
+        // Held so every part stays open long enough for the wave to queue up
+        // behind the budget rather than trickle through it.
         const puts = await stubS3Puts(page, { holdMs: 1200 });
+        // Counted in the page, not at the stub: a 10MB part reaches the route
+        // handler seconds after it takes its permit, so the stub's view of the
+        // overlap depends on the host (see `observeS3PutXhrs`).
+        const putXhrs = await observeS3PutXhrs(page);
         const inFlightRows = page.getByRole('button', {
             name: 'Cancel upload',
         });
@@ -605,7 +608,10 @@ test(
             // MAX_CONCURRENT_CHUNKS would open 12 connections unbounded, and
             // landing on 6 shows the semaphore is what's holding them back
             // rather than some incidental bottleneck.
-            expect(puts.peak).toBe(S3_CONNECTION_BUDGET);
+            expect(await putXhrs.readPeak()).toBe(S3_CONNECTION_BUDGET);
+            // And the network never saw more than that, however the transit
+            // delay spread the PUTs out.
+            expect(puts.peak).toBeLessThanOrEqual(S3_CONNECTION_BUDGET);
         } finally {
             await large.cleanup();
         }
