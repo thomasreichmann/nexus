@@ -44,6 +44,25 @@ export function changedFiles(baseRef) {
     return { base, files: [...new Set([...changed, ...untracked])] };
 }
 
+/**
+ * The file set both CLIs start from: `--all` is every file, `--only` is the
+ * named paths, and the default is the change vs `base` plus the named paths.
+ * `base` is the merge-base sha in the default mode, else null. Not yet
+ * filtered to source files.
+ */
+export function resolveFileSet({ all, only, paths, base }, allFiles) {
+    if (all) return { files: allFiles, base: null, unmatched: [] };
+    const named = expandPaths(paths, allFiles);
+    if (only)
+        return { files: named.files, base: null, unmatched: named.unmatched };
+    const changed = changedFiles(base);
+    return {
+        files: [...new Set([...changed.files, ...named.files])],
+        base: changed.base,
+        unmatched: named.unmatched,
+    };
+}
+
 // Paths are tried against the caller's cwd, the repo root, then each
 // workspace, so `lib/upload/parts.ts` finds apps/web/lib/upload/parts.ts.
 const WORKSPACE_DIRS = ['apps/web', 'packages/db', 'apps/worker'];

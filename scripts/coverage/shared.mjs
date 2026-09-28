@@ -198,7 +198,7 @@ export function formatFailure(result, c, rerunArgs) {
 function isNoise(line) {
     return (
         line === '' ||
-        /^(✓|RUN\s|Start at|Duration|Coverage enabled|stderr \||stdout \|)/.test(
+        /^(✓|RUN\s|Start at|Duration|Coverage enabled|JSON report written|stderr \||stdout \|)/.test(
             line
         ) ||
         // Stack frames inside node_modules or Node internals.
