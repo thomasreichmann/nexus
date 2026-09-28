@@ -9,7 +9,9 @@ import {
     updateUserRole,
     ensureTrialSubscription,
     deleteUserData,
+    runScopedEmail,
 } from '@nexus/db/test-db';
+import { E2E_RUN_ID, runStatePath } from './run-id';
 import { E2E_BASE_URL } from './server-url';
 import type { Connection } from '@nexus/db/test-db';
 
@@ -25,20 +27,22 @@ export interface TestUser {
     name: string;
 }
 
+// The shared users belong to this run only (see `run-id.ts`): the setup
+// project signs them up and the teardown project deletes them.
 export const ADMIN_USER: TestUser = {
-    email: 'admin-e2e@test.local',
+    email: runScopedEmail('admin-e2e@test.local', E2E_RUN_ID),
     password: 'admin-e2e-password-123',
     name: 'Admin E2E',
 };
 
 export const REGULAR_USER: TestUser = {
-    email: 'user-e2e@test.local',
+    email: runScopedEmail('user-e2e@test.local', E2E_RUN_ID),
     password: 'user-e2e-password-123',
     name: 'User E2E',
 };
 
-export const ADMIN_STATE_PATH = 'e2e/.auth/admin.json';
-export const USER_STATE_PATH = 'e2e/.auth/user.json';
+export const ADMIN_STATE_PATH = runStatePath('admin');
+export const USER_STATE_PATH = runStatePath('user');
 
 /**
  * Builds a throwaway address for a spec that signs up its own user.

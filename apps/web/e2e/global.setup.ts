@@ -1,8 +1,10 @@
+import { existsSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { test as setup } from '@playwright/test';
 import {
     findUserByEmail,
     ensureTrialSubscription,
-    deleteUserData,
+    deleteStaleRunScopedUsers,
 } from '@nexus/db/test-db';
 import {
     ADMIN_USER,
@@ -13,22 +15,11 @@ import {
     promoteToAdmin,
     authenticateAndSaveState,
 } from './helpers/auth';
-import { createTestDb } from './helpers/connection';
+import { createTestDb, withTestDb } from './helpers/connection';
 
-/**
- * Clear the shared users' domain data at the start of a run, so leftovers from
- * the previous run can't produce strict-mode violations ("resolved to 3
- * elements") in specs that assert on a filename.
- *
- * Only when this worktree has its own database — E2E_DATABASE_URL, loaded by
- * playwright.config.ts from the git-ignored .env.e2e.local that
- * .claude/hooks/worktree-setup.sh writes. On the shared dev DB a wipe would
- * delete rows out from under another worktree's in-flight run — the exact
- * failure this whole change exists to remove.
- */
-const OWNS_DB = !!process.env.E2E_DATABASE_URL;
-
-// The setup project runs outside the fixture chain, so it owns its own
+// The users signed up here are this run's own (`helpers/run-id.ts`), so they
+// start empty and no other run can touch them; `global.teardown.ts` deletes
+// them. The setup project runs outside the fixture chain, so it owns its own
 // connection (created + disposed per setup test) rather than the worker `db`
 // fixture.
 
@@ -43,7 +34,6 @@ setup('create and authenticate admin user', async ({ request }) => {
                 `admin user not found after createUser: ${ADMIN_USER.email}`
             );
         }
-        if (OWNS_DB) await deleteUserData(db, user.id);
         await ensureTrialSubscription(db, user.id);
         await authenticateAndSaveState(request, ADMIN_USER, ADMIN_STATE_PATH);
     } finally {
@@ -61,10 +51,28 @@ setup('create and authenticate regular user', async ({ request }) => {
                 `regular user not found after createUser: ${REGULAR_USER.email}`
             );
         }
-        if (OWNS_DB) await deleteUserData(db, user.id);
         await ensureTrialSubscription(db, user.id);
         await authenticateAndSaveState(request, REGULAR_USER, USER_STATE_PATH);
     } finally {
         await db.$client.end({ timeout: 5 });
+    }
+});
+
+/**
+ * A killed run never reaches its teardown, so its users and state files stay
+ * behind. A day is far longer than any run, so nothing swept here is in use.
+ */
+const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+const AUTH_DIR = 'e2e/.auth';
+
+setup('sweep users and auth state left by killed runs', async () => {
+    const cutoff = Date.now() - STALE_AFTER_MS;
+    await withTestDb((db) => deleteStaleRunScopedUsers(db, new Date(cutoff)));
+    if (!existsSync(AUTH_DIR)) return;
+    for (const entry of readdirSync(AUTH_DIR)) {
+        const dir = join(AUTH_DIR, entry);
+        if (entry.startsWith('run-') && statSync(dir).mtimeMs < cutoff) {
+            rmSync(dir, { recursive: true, force: true });
+        }
     }
 });

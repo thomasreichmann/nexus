@@ -1,6 +1,8 @@
-import { deleteUserByEmail } from '@nexus/db/test-db';
+import { basename } from 'node:path';
+import { deleteUserByEmail, runScopedEmail } from '@nexus/db/test-db';
 import { test as base, expect } from './db';
 import { type TestUser, provisionDedicatedUser } from '../helpers/auth';
+import { E2E_RUN_ID, runStatePath } from '../helpers/run-id';
 
 type DedicatedUserWorkerFixtures = {
     /**
@@ -8,7 +10,8 @@ type DedicatedUserWorkerFixtures = {
      * `test.use(...)` — NEVER inside a describe (Playwright errors: a
      * worker-scoped option set in a describe would force a new worker).
      * Use a unique email + state path per spec so worker teardown can't delete
-     * a user another spec reuses.
+     * a user another spec reuses. Both are base names: the fixture scopes them
+     * to this run and worker.
      */
     dedicatedUserConfig: { user: TestUser; statePath: string } | null;
     /** Provisioned once per worker; null when no config is set. */
@@ -30,12 +33,27 @@ export const test = base.extend<
     dedicatedUserConfig: [null, { option: true, scope: 'worker' }],
 
     dedicatedUser: [
-        async ({ db, dedicatedUserConfig }, use) => {
+        async ({ db, dedicatedUserConfig }, use, workerInfo) => {
             if (!dedicatedUserConfig) {
                 await use(null);
                 return;
             }
-            const { user, statePath } = dedicatedUserConfig;
+            // The configured email and path are a base name. The user is
+            // this worker's own (#484): another run, or another worker of
+            // this run picking up the same file, gets a different one, so
+            // neither can reset its data or delete it mid-test.
+            const { workerIndex } = workerInfo;
+            const user = {
+                ...dedicatedUserConfig.user,
+                email: runScopedEmail(
+                    dedicatedUserConfig.user.email,
+                    E2E_RUN_ID,
+                    workerIndex
+                ),
+            };
+            const statePath = runStatePath(
+                `${basename(dedicatedUserConfig.statePath, '.json')}-w${workerIndex}`
+            );
             const { userId } = await provisionDedicatedUser(
                 db,
                 user,
