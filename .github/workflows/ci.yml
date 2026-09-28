@@ -7,6 +7,28 @@ concurrency:
     group: ci-${{ github.ref }}
     cancel-in-progress: true
 
+# `next build` collects page data by evaluating route modules, and some read
+# server env at module scope, so the build needs the full env schema satisfied
+# — not just NEXT_PUBLIC_*. The integration tier imports the same `@/lib/env`.
+# These are NON-SECRET placeholders that only have to pass zod validation: the
+# build constructs DB/AWS/Stripe clients lazily and never connects. Literals
+# (not `secrets.*`) on purpose — fork PRs run without repo secrets, so a real
+# dev-env wiring would leave every outside contributor's build red. The
+# integration job overrides the two it genuinely uses (DATABASE_URL, AWS).
+env:
+    NEXT_PUBLIC_APP_URL: https://ci.example.com
+    DATABASE_URL: postgres://user:pass@localhost:5432/ci
+    AWS_ACCESS_KEY_ID: ci
+    AWS_SECRET_ACCESS_KEY: ci
+    AWS_REGION: us-east-1
+    S3_BUCKET: ci-bucket
+    SQS_QUEUE_URL: https://sqs.us-east-1.amazonaws.com/000000000000/ci
+    STRIPE_SECRET_KEY: sk_test_ci
+    STRIPE_WEBHOOK_SECRET: whsec_ci
+    RESEND_API_KEY: re_ci
+    RESEND_FROM_EMAIL: ci@example.com
+    BETTER_AUTH_SECRET: ci_dummy_secret_least_thirty_two_chars_long_000
+
 jobs:
     ci:
         # Required status check in branch protection. The name is deliberately
@@ -40,31 +62,10 @@ jobs:
             # (`tsc -p e2e`), which `next build` never type-checks. Adding
             # `build` here is what catches broken config / build regressions
             # that lint+typecheck alone miss. --continue so one failing task
-            # doesn't hide the others.
-            #
-            # `next build` collects page data by evaluating route modules, and
-            # some read server env at module scope, so the build needs the full
-            # env schema satisfied — not just NEXT_PUBLIC_*. These are
-            # NON-SECRET placeholders that only have to pass zod validation: the
-            # build constructs DB/AWS/Stripe clients lazily and never connects.
-            # Literals (not `secrets.*`) on purpose — fork PRs run without repo
-            # secrets, so a real dev-env wiring would leave every outside
-            # contributor's build red. Nothing here runs the app; the tiers
-            # that do (smoke e2e) live in post-merge with real dev secrets.
+            # doesn't hide the others. Env: the workflow-level placeholders.
+            # Nothing here runs the app; the tiers that do (e2e) live in
+            # post-merge with real dev secrets.
             - name: Lint, typecheck, build, test
-              env:
-                  NEXT_PUBLIC_APP_URL: https://ci.example.com
-                  DATABASE_URL: postgres://user:pass@localhost:5432/ci
-                  AWS_ACCESS_KEY_ID: ci
-                  AWS_SECRET_ACCESS_KEY: ci
-                  AWS_REGION: us-east-1
-                  S3_BUCKET: ci-bucket
-                  SQS_QUEUE_URL: https://sqs.us-east-1.amazonaws.com/000000000000/ci
-                  STRIPE_SECRET_KEY: sk_test_ci
-                  STRIPE_WEBHOOK_SECRET: whsec_ci
-                  RESEND_API_KEY: re_ci
-                  RESEND_FROM_EMAIL: ci@example.com
-                  BETTER_AUTH_SECRET: ci_dummy_secret_least_thirty_two_chars_long_000
               run: pnpm exec turbo lint typecheck build test --continue
 
             # Static coverage gate: `playwright test --list` cross-referenced
@@ -76,3 +77,61 @@ jobs:
             - name: E2E coverage gate
               if: ${{ !cancelled() }}
               run: pnpm -F web e2e:coverage --check
+
+    integration:
+        # Required status check (#384): the real-DB tier (`*.integration.test.ts`)
+        # against a throwaway Postgres with every migration applied. Keep the
+        # name stable, for the same reason as Checks.
+        #
+        # A parallel job, not a step in Checks: the job costs its own install,
+        # but it runs beside Checks instead of after it, so the required gate's
+        # wall time stays max(Checks, this) rather than their sum.
+        name: Integration tests
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        services:
+            postgres:
+                # Dev and prod Supabase both run Postgres 17.
+                image: postgres:17
+                env:
+                    POSTGRES_USER: nexus
+                    POSTGRES_PASSWORD: nexus
+                    POSTGRES_DB: nexus
+                ports:
+                    - 5432:5432
+                options: >-
+                    --health-cmd pg_isready
+                    --health-interval 2s
+                    --health-timeout 5s
+                    --health-retries 15
+        env:
+            DATABASE_URL: postgres://nexus:nexus@localhost:5432/nexus
+            # Only publish.integration.test.ts touches AWS: it sends a real SQS
+            # message to the consumer-less dev queue and reads it back (#442).
+            # Fork PRs get empty secrets; they skip that one test (next step),
+            # and the placeholder fallback keeps `@/lib/env` loadable for the
+            # rest. The queue URL is not a secret.
+            AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || 'ci' }}
+            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY || 'ci' }}
+            SQS_INTEGRATION_TEST_QUEUE_URL: https://sqs.us-east-1.amazonaws.com/391615358272/nexus-integration-test-jobs-dev
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Node and pnpm
+              uses: ./.github/actions/setup-node-pnpm
+
+            # Keyed on the fork flag, not on an empty secret: on this repo's
+            # own PRs a missing secret must fail the publish test, not skip it.
+            - name: Skip the AWS test on fork PRs
+              if: github.event.pull_request.head.repo.fork
+              run: |
+                  echo "::warning title=Publish integration test skipped::Fork PRs get no repo secrets, so publish.integration.test.ts (real SQS) is skipped. Every other integration test ran."
+                  echo "INTEGRATION_SKIP_AWS=1" >> "$GITHUB_ENV"
+
+            - name: Apply migrations
+              run: pnpm -F db db:migrate
+
+            - name: Run integration tests
+              run: pnpm -F web test:integration
