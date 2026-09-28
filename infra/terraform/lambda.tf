@@ -191,10 +191,29 @@ resource "aws_lambda_function" "worker" {
   }
 }
 
+# Capped because every concurrent execution is a client of the same Supabase
+# transaction pooler the web app uses: 15 backends on this compute tier
+# (max_connections 60, pooler defaults). The worker keeps its DB writes serial,
+# so an execution holds at most one backend. When the DB is slow and every
+# execution sits mid-statement, the worker's worst case is
+#   5 (this cap) + 1 (retrieval poll, not under the cap) + 5 (zip worker)
+# = 11 of 15, leaving the app at least 4, or 9 when no zip build is running.
+# At 10 it would be 16 and starve the app. Throughput barely matters because
+# thumbnails are fail-soft and backfill as they land: at a measured p90 of
+# ~1.6s per job, 5 lanes clear a 2,000-file upload in about 11 minutes (#385).
+#
+# scaling_config rather than reserved_concurrent_executions: reserved
+# concurrency throttles, and SQS counts each throttled delivery as a receive,
+# so a backlog would burn retries into the DLQ. maximum_concurrency just stops
+# the poller from scaling past the cap, and excess messages wait in the queue.
 resource "aws_lambda_event_source_mapping" "worker_jobs" {
   function_name    = aws_lambda_function.worker.arn
   event_source_arn = aws_sqs_queue.jobs.arn
   batch_size       = 1
+
+  scaling_config {
+    maximum_concurrency = 5
+  }
 }
 
 # The split the comment above pre-authorised (#424): a second function and a
