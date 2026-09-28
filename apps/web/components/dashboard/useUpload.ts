@@ -142,10 +142,6 @@ function toQueuedUpload(
     return { id: file.id, size: file.size, batchId: batchId ?? file.batchId };
 }
 
-function randomId(): string {
-    return Math.random().toString(36).substring(7);
-}
-
 /**
  * `upload_started` counts *attempts*, not uploads: both engines are also the
  * entry point for retry and auto-resume-on-reconnect, so one file that drops
@@ -923,7 +919,10 @@ export function useUpload() {
                         return;
                     }
                     appended.push({
-                        id: randomId(),
+                        // Every progress update, cancel and retry keys on this
+                        // id, and a drop can queue thousands of rows — a short
+                        // Math.random id collided at that scale (#410).
+                        id: crypto.randomUUID(),
                         name: file.name,
                         size: file.size,
                         progress: 0,
