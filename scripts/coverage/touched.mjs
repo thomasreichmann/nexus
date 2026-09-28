@@ -9,6 +9,8 @@
  *   --risk          churn × coverage ranking instead (git log, --days 90)
  *   --limit N       rows to show with --risk --all (default 20)
  *   --unit-only     skip the integration tiers (web's costs ~50s when stale)
+ *   --mutate        also mutation-test the files (#494): `pnpm mutate`'s
+ *                   score per file; its cached score shows without the flag
  *   --base <ref>    compare against <ref> instead of origin/main
  *   --json          machine-readable output (schema in docs/conventions/testing.md)
  *
@@ -22,13 +24,8 @@ import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import libCoverage from 'istanbul-lib-coverage';
 import { e2eReachedFiles } from './e2e.mjs';
-import {
-    changedFiles,
-    churn,
-    defaultBaseRef,
-    expandPaths,
-    repoFiles,
-} from './files.mjs';
+import { churn, defaultBaseRef, repoFiles, resolveFileSet } from './files.mjs';
+import { cachedMutation, mutationTiers, runMutation } from './mutation.mjs';
 import {
     SKIPPED_DB_NOTICE,
     TIERS,
@@ -51,20 +48,10 @@ const notices = [];
 
 // ── Which files ────────────────────────────────────────────────────────
 const allFiles = repoFiles();
-let scope;
-let base = null;
-if (opts.all) scope = allFiles;
-else {
-    const named = expandPaths(opts.paths, allFiles);
-    for (const arg of named.unmatched) notices.push(`⚠ no such file: ${arg}`);
-    if (opts.only) scope = named.files;
-    else {
-        const changed = changedFiles(opts.base);
-        base = changed.base;
-        scope = [...changed.files, ...named.files];
-    }
-}
-const files = [...new Set(scope)].filter(isSource).sort();
+const fileSet = resolveFileSet(opts, allFiles);
+const { base } = fileSet;
+for (const arg of fileSet.unmatched) notices.push(`⚠ no such file: ${arg}`);
+const files = fileSet.files.filter(isSource).sort();
 
 // ── Coverage: cached where fresh, `vitest related` where stale ─────────
 const hasDb = !opts.unitOnly && hasDatabaseUrl();
@@ -184,9 +171,25 @@ for (const f of unparsed)
     if (records.some((r) => r.path === f && r.status === 'unmeasured'))
         notices.push(unparsedNotice([f]));
 
-// Each enricher adds fields to every record. The mutation step (#494) plugs
-// in here as one more enricher (e.g. `mutation: { killed, total }`).
-const ENRICHERS = [addE2e, addChurn, addStatus];
+// ── Mutation (#494): cached scores, or a fresh run with --mutate ───────
+// After coverage, never beside it: Stryker instruments the files in place.
+const mutationRun =
+    opts.mutate && files.length > 0
+        ? await runMutation(files, {
+              unitOnly: opts.unitOnly,
+              allFiles,
+              onProgress: progressLine(),
+          })
+        : null;
+if (mutationRun && process.stderr.isTTY) process.stderr.write('\r\x1b[2K');
+if (mutationRun?.failure)
+    notices.push('✗ mutation testing failed: its scores are missing below');
+const mutationResults =
+    mutationRun?.results ??
+    cachedMutation(files, mutationTiers({ unitOnly: opts.unitOnly }), allFiles);
+
+// Each enricher adds fields to every record.
+const ENRICHERS = [addE2e, addChurn, addStatus, addMutation];
 for (const enrich of ENRICHERS) enrich(records);
 
 // ── Output ─────────────────────────────────────────────────────────────
@@ -231,7 +234,7 @@ if (opts.json) {
     );
 } else printText();
 
-process.exit(failedRuns.length > 0 ? 1 : 0);
+process.exit(failedRuns.length > 0 || mutationRun?.failure ? 1 : 0);
 
 // ───────────────────────────────────────────────────────────────────────
 
@@ -249,11 +252,23 @@ function printText() {
     if (opts.risk) printRisk();
     else printFiles();
     for (const r of failedRuns) console.log(failureText(r, c));
+    if (mutationRun?.failure)
+        console.log(
+            `${c.red('mutation testing FAILED')}\n${mutationRun.failure}`
+        );
     const hint = opts.all ? null : hints(records);
     if (hint) console.log(c.dim(hint));
+    if (records.some((r) => r.mutation?.survived))
+        console.log(
+            c.dim(
+                '`pnpm mutate` (same file args) lists each surviving mutant, from the cache.'
+            )
+        );
     const ran = tierSummary
         .filter((t) => t.status === 'ran' || t.status === 'failed')
         .map((t) => `${t.name} ${t.status} ${t.seconds}s`);
+    if (mutationRun?.ran.length)
+        ran.push(`mutation ran ${mutationRun.seconds.toFixed(1)}s`);
     const scopeLabel = opts.all
         ? 'all source files'
         : opts.only
@@ -267,18 +282,30 @@ function printText() {
 }
 
 function printFiles() {
+    // The mutation column only appears once some file has a score.
+    const mut = records.some((r) => r.mutation)
+        ? (r) => `  ${mutationCell(r.mutation)}`
+        : () => '';
     for (const r of byWorst(records)) {
         if (r.status === 'unmeasured') {
-            console.log(`   —      —            ${label(r)}  ${r.path}`);
+            console.log(
+                `   —      —            ${mut(r)}${label(r)}  ${r.path}`
+            );
             continue;
         }
         const ranges = r.uncovered.length
             ? c.dim(`  L${formatRanges(r.uncovered)}`)
             : '';
         console.log(
-            `${pct(r.lines)} ${pct(r.branches)}  ${`${r.lines.covered}/${r.lines.total}`.padStart(9)}  ${label(r)}  ${r.path}${ranges}`
+            `${pct(r.lines)} ${pct(r.branches)}  ${`${r.lines.covered}/${r.lines.total}`.padStart(9)}${mut(r)}  ${label(r)}  ${r.path}${ranges}`
         );
     }
+}
+
+/** `mut 72.7%`: the share of mutants the tests killed. */
+function mutationCell(m) {
+    const text = m?.score == null ? '—' : `${m.score.toFixed(1)}%`;
+    return `mut ${text.padStart(6)}`;
 }
 
 function printRisk() {
@@ -362,6 +389,14 @@ function addChurn(recs) {
     }
 }
 
+/**
+ * `mutation`: `pnpm mutate`'s result for the file (score, killed, survived,
+ * noCoverage, total, survivors, …), or null when it has no fresh one.
+ */
+function addMutation(recs) {
+    for (const r of recs) r.mutation = mutationResults.get(r.path) ?? null;
+}
+
 function addStatus(recs) {
     for (const r of recs) {
         if (r.status === 'unmeasured') continue;
@@ -375,6 +410,12 @@ function addStatus(recs) {
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
+/** Stryker's progress on one rewritten stderr line, on a terminal only. */
+function progressLine() {
+    if (opts.json || !process.stderr.isTTY) return undefined;
+    return (text) => process.stderr.write(`\r\x1b[2K${c.dim(text)}`);
+}
+
 function parseArgs(argv) {
     const o = {
         paths: [],
@@ -383,6 +424,7 @@ function parseArgs(argv) {
         risk: false,
         json: false,
         unitOnly: false,
+        mutate: false,
         days: 90,
         limit: 20,
         base: null,
@@ -394,6 +436,7 @@ function parseArgs(argv) {
         else if (a === '--risk') o.risk = true;
         else if (a === '--json') o.json = true;
         else if (a === '--unit-only') o.unitOnly = true;
+        else if (a === '--mutate') o.mutate = true;
         else if (a === '--days') o.days = Number(argv[++i]);
         else if (a === '--limit') o.limit = Number(argv[++i]);
         else if (a === '--base') o.base = argv[++i];

@@ -21,42 +21,14 @@
  * apps/web/.env.local, so anything a test doesn't mock (e.g. an SQS publish)
  * still reaches the dev resources behind it.
  */
-import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import EmbeddedPostgres from 'embedded-postgres';
-
-const DATABASE = 'nexus';
-
-function freePort() {
-    return new Promise((resolve, reject) => {
-        const server = createServer();
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', () => {
-            const { port } = server.address();
-            server.close(() => resolve(port));
-        });
-    });
-}
-
-function run(command, args, env) {
-    return new Promise((resolve) => {
-        const child = spawn(command, args, {
-            stdio: 'inherit',
-            env: { ...process.env, ...env },
-        });
-        child.on('exit', (code, signal) => resolve(signal ? 1 : (code ?? 1)));
-    });
-}
+import { run, withThrowawayPostgres } from './throwaway-postgres.mjs';
 
 /**
  * The database started empty, so any user left after the run leaked (#491).
  * Every user-owned row cascades from `user`, so counting users covers them.
  */
-async function countLeakedUsers(pg) {
-    const client = pg.getPgClient(DATABASE, '127.0.0.1');
+async function countLeakedUsers(pg, database) {
+    const client = pg.getPgClient(database, '127.0.0.1');
     await client.connect();
     try {
         const { rows } = await client.query(
@@ -75,47 +47,23 @@ async function countLeakedUsers(pg) {
 }
 
 async function main() {
-    const dataDir = await mkdtemp(join(tmpdir(), 'nexus-integration-pg-'));
-    const port = await freePort();
-    const pg = new EmbeddedPostgres({
-        databaseDir: dataDir,
-        port,
-        user: 'postgres',
-        password: 'postgres',
-        persistent: false,
-        // initdb and the server log every step; only failures matter here.
-        onLog: () => {},
-        onError: (error) => console.error(String(error)),
-    });
-
-    // Ctrl-C reaches the child processes directly; staying alive lets the
-    // finally block below stop Postgres and delete its data.
+    // Ctrl-C reaches the child processes directly; staying alive lets
+    // withThrowawayPostgres stop Postgres and delete its data.
     process.on('SIGINT', () => {});
 
-    let exitCode = 1;
-    try {
-        await pg.initialise();
-        await pg.start();
-        await pg.createDatabase(DATABASE);
-        const env = {
-            DATABASE_URL: `postgres://postgres:postgres@127.0.0.1:${port}/${DATABASE}`,
-            DB_ENV: 'throwaway',
-        };
-        console.error(`throwaway Postgres on 127.0.0.1:${port}`);
-
-        exitCode = await run('pnpm', ['-F', '@nexus/db', 'db:migrate'], env);
-        if (exitCode === 0) {
-            exitCode = await run(
+    const exitCode = await withThrowawayPostgres(
+        async ({ env, pg, database }) => {
+            console.error(`throwaway Postgres at ${env.DATABASE_URL}`);
+            const code = await run(
                 'pnpm',
                 ['test:integration', ...process.argv.slice(2)],
                 env
             );
+            if (code === 0 && (await countLeakedUsers(pg, database)) > 0)
+                return 1;
+            return code;
         }
-        if (exitCode === 0 && (await countLeakedUsers(pg)) > 0) exitCode = 1;
-    } finally {
-        await pg.stop().catch(() => {});
-        await rm(dataDir, { recursive: true, force: true });
-    }
+    );
     process.exit(exitCode);
 }
 

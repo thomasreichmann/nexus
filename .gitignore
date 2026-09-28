@@ -30,6 +30,9 @@ apps/*/coverage/
 packages/*/coverage/
 packages/*/coverage-integration/
 playwright-report/
+# Written by Stryker's Vitest runner during `pnpm mutate` (#494); an
+# interrupted run can leave them.
+/stryker-setup-*.js
 
 # Terraform
 infra/terraform/.terraform/

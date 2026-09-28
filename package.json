@@ -11,6 +11,7 @@
         "check:verbose": "node scripts/check.mjs --verbose",
         "coverage": "node scripts/coverage.mjs",
         "cov:touched": "node scripts/coverage/touched.mjs",
+        "mutate": "node scripts/coverage/mutate.mjs",
         "test:coverage": "turbo test:coverage && node scripts/coverage-summary.mjs",
         "coverage:open": "node scripts/coverage-summary.mjs --open",
         "pr:size": "node scripts/pr-size.mjs",
@@ -22,6 +23,8 @@
         "capture": "pnpm --filter @nexus/capture exec tsx src/cli.ts"
     },
     "devDependencies": {
+        "@stryker-mutator/core": "10.0.0",
+        "@stryker-mutator/vitest-runner": "10.0.0",
         "embedded-postgres": "17.10.0-beta.17",
         "eslint": "^9.39.2",
         "eslint-plugin-import": "^2.32.0",

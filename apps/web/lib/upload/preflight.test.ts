@@ -46,6 +46,16 @@ describe('preflightQuota', () => {
         ).toBe('ok');
     });
 
+    it('exactly 100% projected is near-limit, not yet over it', () => {
+        expect(
+            preflightQuota({
+                pendingBytes: QUOTA * 0.25,
+                usedBytes: QUOTA * 0.75,
+                quotaBytes: QUOTA,
+            })
+        ).toBe('near-limit');
+    });
+
     it('is over-limit past 100% but inside the soft cap', () => {
         expect(
             preflightQuota({

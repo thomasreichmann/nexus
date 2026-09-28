@@ -18,7 +18,8 @@ The rest of this page is reference for each tier:
 [Integration](#integration-tests-real-database),
 [Unit](#unit-tests), [Smoke](#smoke-tests-for-pages) and
 [E2E](#authenticated-e2e-tests),
-[Coverage](#code-coverage) and [`pnpm cov:touched`](#after-coding-pnpm-covtouched).
+[Coverage](#code-coverage), [`pnpm cov:touched`](#after-coding-pnpm-covtouched)
+and [`pnpm mutate`](#mutation-testing-pnpm-mutate).
 
 ## Writing a test
 
@@ -41,9 +42,12 @@ Everything below serves that one rule.
    the `WHERE` term, delete the call, then revert. If the test stays green,
    it isn't testing that behaviour, so fix the test. Say what you broke in the
    PR.
-6. **Mutation testing, when available (#494):** run it on your changed
-   files. Each surviving mutant is either a missing test or an assertion that
-   needs tightening.
+6. **Run `pnpm mutate`** ([reference](#mutation-testing-pnpm-mutate)) on
+   your changed files. It makes step 5 systematic: every small break
+   (`>` → `>=`, a `where` → `{}`, a condition → `true`) that no test
+   notices is listed with its line. Each survivor is a missing test, an
+   assertion that needs tightening, or a change no one could notice
+   ([how to read them](#mutation-testing-pnpm-mutate)).
 
 Coverage shows which code no test runs. Only step 5 (and mutation testing)
 shows whether a test that runs the code would notice it breaking. On the
@@ -557,6 +561,7 @@ pnpm cov:touched lib/upload/*.ts    # ...plus these files, directories or globs
 pnpm cov:touched --only <paths...>  # exactly these files instead
 pnpm cov:touched --all              # every source file
 pnpm cov:touched --risk             # churn × coverage ranking of the changed set (--all: whole repo, top 20)
+pnpm cov:touched --mutate           # also mutation-test the files: a `mut` score column (see Mutation testing)
 ```
 
 ```
@@ -568,7 +573,9 @@ pnpm cov:touched --risk             # churn × coverage ranking of the changed s
 ```
 
 Columns: line %, branch %, covered/total lines, the tiers that execute the
-file, the path, and the uncovered line ranges.
+file, the path, and the uncovered line ranges. Once any file has a fresh
+mutation result (from `--mutate` or an earlier `pnpm mutate`), a
+`mut 72.7%` column shows the share of its mutants the tests killed.
 
 - **`untested`**: no unit or integration test runs a line of it, and no
   automated e2e spec reaches it. Start here.
@@ -634,13 +641,166 @@ are only added, never renamed:
             "e2e": true,
             "churn": 5, // commits in the risk window
             "risk": 2, // churn × uncovered line share
+            "mutation": null, // a file's `pnpm mutate` result (below) when fresh, else null
         },
     ],
 }
 ```
 
-It exits 1 only when a tier it had to run failed. The failure is printed
-below the table.
+It exits 1 only when a tier it had to run failed, or `--mutate` couldn't
+measure. The failure is printed below the table.
+
+### Mutation testing: `pnpm mutate`
+
+Coverage says which lines a test ran. Mutation testing says whether any test
+would notice them breaking. [Stryker](https://stryker-mutator.io) makes small
+changes to your code, one at a time: `>` becomes `>=`, a condition becomes
+`true`, a block is emptied, a `where` object becomes `{}`. For each change it
+runs the tests that execute that line. A change that turns some test red is
+**killed**. A change every test still passes on **survives**: a concrete
+behaviour your tests don't pin.
+
+Run it after `pnpm cov:touched`, on the code you changed:
+
+```bash
+pnpm mutate                    # source files changed vs origin/main (same file set as cov:touched)
+pnpm mutate lib/upload/*.ts    # ...plus these files, directories or globs
+pnpm mutate --only <paths...>  # exactly these files instead
+pnpm mutate --all              # every source file: slow, opt-in
+pnpm mutate --unit-only        # no Postgres: integration tests don't run, so real-DB-only kills read as survivors
+pnpm mutate --rerun            # ignore the cache
+```
+
+```
+ 72.7%   136/187  apps/web/server/services/retrieval.ts
+        L188  newRetrievals.length < filesToRestore.length → newRetrievals.length <= filesToRestore.length  EqualityOperator; 21 tests ran it: retrieval.integration.test.ts, retrieval.test.ts
+        L584  artifactWindowEnd(artifact.completedAt) <= new Date() → artifactWindowEnd(artifact.completedAt) < new Date()  EqualityOperator; 4 tests ran it: retrieval.test.ts
+        +45 more survivors (--json, or the HTML report)
+        no test runs L203-209,L564-568 (5 mutants)
+ 95.6%     43/45  packages/db/src/repositories/retrievals.ts
+        L93   { where: eq(schema.retrievals.userId, userId), } → {}  ObjectLiteral; 3 tests ran it: retrieval.integration.test.ts, retrievals.test.ts
+2 files · 232 mutants, 179 killed (77.2%; 78.9% of those a test runs) · named files · 79.4s
+```
+
+Per file: the score (killed / all mutants), then each survivor with its line,
+the code before → after, the mutator, and which test files ran that line.
+Mutants no test runs at all are summed up as line ranges; `pnpm cov:touched`
+already shows those as uncovered. The full report, every mutant in the
+source, is `coverage/mutation/mutation.html`.
+
+**Every tier judges every mutant.** All five Vitest tiers run in one Stryker
+run, so a repository mutant is killed by the db integration tests on a real
+Postgres or by the web service tests over it, whichever notices. The
+integration tiers run on a throwaway Postgres (as in
+`pnpm test:integration:fresh`), started and deleted for the run.
+`publish.integration.test.ts` is skipped (`INTEGRATION_SKIP_AWS`): it would
+send a real SQS message per mutant.
+
+**Reading survivors.** Each one is a question: would a user, or a caller,
+notice this change?
+
+- **Yes: that's a test gap.** Write the test that fails on the mutated
+  code, and check it does: make the change by hand, watch the test go red,
+  revert. A boundary survivor (`>` → `>=`) wants a test at exactly the
+  boundary. A `where: {…} → {}` survivor wants a test with a row the filter
+  must exclude (another user's, a deleted one): see "Integration Tests (real
+  database)".
+- **No: it's equivalent.** Some mutants can't change behaviour (a log
+  message, an optimisation that gives the same answer). Don't write a test
+  that pins them. If one keeps coming back, mark it where it lives:
+  `// Stryker disable next-line StringLiteral: log text only`.
+- **Not sure: it's a finding.** Mention it in the PR rather than guessing.
+
+`runs at import` means the mutated code runs when the module loads (a
+top-level constant, a factory's object literal), so every related test ran
+against it and none failed.
+
+**Speed.** Measured locally (16 cores; up to 8 Stryker workers), all tiers,
+from cold:
+
+| File set                                                               | Mutants | Time |
+| ---------------------------------------------------------------------- | ------: | ---: |
+| One `lib/` file (`preflight.ts`)                                       |      19 |   8s |
+| PR #466: a page, two components, `status.ts`                           |     625 |  17s |
+| PR #449: 7 files incl. `useUpload.ts` and `repositories/files.ts`      |    1551 |  46s |
+| A repository and the service over it (`retrievals.ts`, `retrieval.ts`) |     232 |  79s |
+
+Mutants no test runs cost nothing, so big untested files are cheap. Time
+goes into mutants that integration tests cover. Results are cached in
+`coverage/mutation/cache.json` per file, like `cov:touched`'s: a file is
+re-mutated when it, or any test or Vitest config, is newer than its result.
+
+**How it runs, and what to know.** Stryker instruments the files **in
+place** for the length of the run and restores them afterwards (on Ctrl-C
+too), so don't edit them while it runs. If a run is killed hard, the next
+one refuses to start on a file that still holds instrumentation, and says
+where the backup is. The why of each setting (in-place, no bail, one test at
+a time) is in `scripts/coverage/mutation.mjs`. Before mutating anything it
+runs the related tests once: a red test, or a test file that fails to
+import, stops the run with the failure. Stryker would silently skip that
+file and report its mutants as survivors.
+
+**In CI** the `Mutation report` job runs `pnpm mutate` on every PR's changed
+files against the Postgres service container, and writes the table and the
+survivors to the job summary, with the HTML report as an artifact. It is a
+report, not a gate: never a required check, and never red.
+
+**`--json`** (for the test-maintenance skill, #498). Fields are only added,
+never renamed. `--markdown` prints the CI summary instead.
+
+```jsonc
+{
+    "version": 1,
+    "mode": "changed", // "changed" | "only" | "all"
+    "base": "9c2ae16…", // merge-base sha, null unless mode is "changed"
+    "seconds": 79.4,
+    "tiers": [
+        "web unit",
+        "web integration",
+        "db unit",
+        "db integration",
+        "worker unit",
+    ],
+    "mutated": ["apps/web/server/services/retrieval.ts"], // files Stryker ran on this time; the rest came from the cache
+    "notices": [],
+    "failure": null, // why nothing was measured (red tests, Stryker error), else null
+    "killed": 179,
+    "total": 232,
+    "score": 77.2, // killed / total, percent; null when there are no mutants
+    "coveredScore": 78.9, // killed / mutants some test runs
+    "files": [
+        // worst first; a file whose run failed is { "path", "status": "unmeasured" }
+        {
+            "path": "packages/db/src/repositories/retrievals.ts",
+            "tested": true, // false when no test imports any file in the run (score, noCoverage, total are then null)
+            "score": 95.6,
+            "killed": 43, // Stryker's Killed + Timeout
+            "survived": 2,
+            "noCoverage": 0, // mutants no test runs
+            "total": 45, // killed + survived + noCoverage
+            "survivors": [
+                {
+                    "line": 93,
+                    "column": 41,
+                    "mutator": "ObjectLiteral",
+                    "original": "{ where: eq(schema.retrievals.userId, userId), }",
+                    "replacement": "{}",
+                    "static": false, // true: runs at import
+                    // A fake-DB test can't see a dropped `where` (#489).
+                    "coveredBy": [
+                        "retrievals.test.ts › retrievals repository findByUser returns all retrievals for user",
+                        "…",
+                    ],
+                },
+            ],
+            "noCoverageLines": [], // inclusive line ranges of mutants no test runs
+        },
+    ],
+}
+```
+
+It exits 1 when nothing could be measured (the `failure` above), else 0,
+survivors or not.
 
 ## Related
 
