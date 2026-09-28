@@ -174,7 +174,7 @@ jobs:
                       const body = [
                         '## :warning: This PR contains DB migration(s)',
                         '',
-                        'On merge, `post-merge.yml` applies these to the dev database, then to prod once the dev apply succeeds; the worker bundle deploys after each apply, and smoke tests run against dev. If any step fails, the workflow fails loudly.',
+                        'On merge, `post-merge.yml` applies these to the dev database, then to prod once the dev apply succeeds; the worker bundle deploys after each apply, and the smoke, admin and flows e2e tiers run against dev. If any step fails, the workflow fails loudly.',
                         '',
                         sqlBlocks,
                         '',

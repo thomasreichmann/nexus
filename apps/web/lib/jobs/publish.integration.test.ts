@@ -21,7 +21,13 @@ afterAll(async () => {
     }
 });
 
-describe('jobs.publish() integration', () => {
+// Set only by ci.yml, on fork PRs: GitHub withholds repo secrets from them, so
+// there are no AWS credentials to publish with. The workflow prints a warning
+// annotation on the run. Never set it locally; a missing queue URL there
+// should fail, not skip.
+const isAwsUnavailable = process.env.INTEGRATION_SKIP_AWS === '1';
+
+describe.skipIf(isAwsUnavailable)('jobs.publish() integration', () => {
     it('inserts a pending row and sends that row as the SQS message body', async () => {
         const testQueueUrl = requireTestQueueUrl();
 
