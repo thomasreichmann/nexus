@@ -332,16 +332,20 @@ async function initiateUpload(
 
 async function confirmUpload(db: DB, userId: string, fileId: string) {
     const fileRepo = createFileRepo(db);
+    // State transitions put the status check in the write itself
+    // (`UPDATE … WHERE status = 'uploading' RETURNING`). A read-then-update
+    // lets a racing cancel pass the same check and be overwritten (#381).
+    const claimed = await fileRepo.claimUpload(userId, fileId, 'available');
+    if (claimed) {
+        return { file: claimed };
+    }
+
+    // Lost the claim: either the file doesn't exist or it already moved on.
     const file = await fileRepo.findByUserAndId(userId, fileId);
     if (!file) {
         throw new NotFoundError('File', fileId);
     }
-
-    const updated = await fileRepo.update(fileId, {
-        status: 'available',
-    });
-
-    return { file: updated };
+    return { file };
 }
 
 // Export as namespace object — this is the public API
