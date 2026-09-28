@@ -63,20 +63,23 @@ jobs:
                   # s_client finishes the handshake even when verification
                   # fails, so an expired or untrusted cert still yields its
                   # notAfter. Empty when the host is unreachable.
-                  not_after=$(timeout 20 openssl s_client -connect "$host:443" \
-                      -servername "$host" </dev/null 2>/dev/null |
-                      openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2 || true)
-                  if [ -n "$not_after" ]; then
-                      secs_left=$(( $(date -d "$not_after" +%s) - $(date +%s) ))
-                      expires_on=$(date -u -d "$not_after" +'%Y-%m-%d %H:%M UTC')
-                      if [ "$secs_left" -le 0 ]; then
-                          cert_note="cert EXPIRED $expires_on"
+                  probe_cert() {
+                      not_after=$(timeout 20 openssl s_client -connect "$host:443" \
+                          -servername "$host" </dev/null 2>/dev/null |
+                          openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2 || true)
+                      if [ -n "$not_after" ]; then
+                          secs_left=$(( $(date -d "$not_after" +%s) - $(date +%s) ))
+                          expires_on=$(date -u -d "$not_after" +'%Y-%m-%d %H:%M UTC')
+                          if [ "$secs_left" -le 0 ]; then
+                              cert_note="cert EXPIRED $expires_on"
+                          else
+                              cert_note="cert expires $expires_on ($(( secs_left / 86400 ))d left)"
+                          fi
                       else
-                          cert_note="cert expires $expires_on ($(( secs_left / 86400 ))d left)"
+                          cert_note="cert unreadable"
                       fi
-                  else
-                      cert_note="cert unreadable"
-                  fi
+                  }
+                  probe_cert
 
                   # $1 short reason (Discord), $2 annotation title, $3 detail;
                   # $4=body appends the response body to the summary.
@@ -107,6 +110,14 @@ jobs:
                       took=$(( $(date +%s%3N) - started ))
                       curl_err=$(head -n 1 curl-err.txt)
                       if [ "$status" = "200" ]; then
+                          # The app answered, so an empty probe is most likely
+                          # a blip. Retry it like the GET before paging anyone.
+                          for p in $(seq 2 "$attempts"); do
+                              [ -n "$not_after" ] && break
+                              echo "cert probe $((p - 1))/$attempts: no certificate read; retrying in 10s"
+                              sleep 10
+                              probe_cert
+                          done
                           echo "attempt $i/$attempts: HTTP 200 in ${took}ms — $(cat body.txt) · $cert_note"
                           break
                       fi
@@ -145,12 +156,12 @@ jobs:
                       esac
                   fi
 
-                  # The app answered, so a missing cert here is a broken probe,
-                  # not an outage. Failing beats silently losing the expiry
-                  # check, which is how the #448 outage went unnoticed.
+                  # Still empty after every retry: the probe is broken, not the
+                  # app. Failing beats silently losing the expiry check, which
+                  # is how the #448 outage went unnoticed.
                   if [ -z "$not_after" ]; then
                       fail "could not read TLS certificate" "TLS certificate unreadable" \
-                          "GET $URL succeeded but openssl could not read the served certificate for $host"
+                          "GET $URL succeeded but openssl could not read the served certificate for $host in $attempts probes"
                   fi
                   if [ "$secs_left" -lt $(( EXPIRY_WARN_DAYS * 86400 )) ]; then
                       fail "TLS cert expires $expires_on" "TLS certificate expiring" \
