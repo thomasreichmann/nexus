@@ -12,8 +12,7 @@ import {
     insertUser,
     insertFile,
     insertStorageUsage,
-    deleteUserData,
-    deleteUserByEmail,
+    deleteUser,
     resetUserData,
     type Connection,
 } from '@nexus/db/test-db';
@@ -79,7 +78,7 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-    await deleteUserData(db, userId);
+    await deleteUser(db, userId);
 });
 
 function seedUploadingFiles(owner: string, count: number) {
@@ -137,7 +136,7 @@ describe('confirmUpload under concurrency', () => {
                 fileCount: CONCURRENCY,
             });
         } finally {
-            await deleteUserByEmail(db, fresh.email);
+            await deleteUser(db, fresh.id);
         }
     });
 });

@@ -71,10 +71,21 @@ export async function resetUserData(db: DB, userId: string): Promise<void> {
 }
 
 /**
- * Removes a user entirely. All domain tables (files, upload_batches,
- * storage_usage, retrievals, subscriptions) and BetterAuth tables (session,
- * account) cascade on user delete.
+ * Removes a user entirely, in one statement: every user-owned table cascades
+ * on user delete — domain (files, upload_batches, storage_usage, retrievals,
+ * retrieval_requests and through them their items and artifacts,
+ * subscriptions) and BetterAuth (session, account). The one reference that
+ * does not cascade is `invites.created_by`, so a user who created an invite
+ * must have it deleted first.
+ *
+ * The teardown for a user a test inserted: `deleteUserData` spares the user
+ * row, so a suite that ends on it leaks one user per run (#491).
  */
+export async function deleteUser(db: DB, id: string): Promise<void> {
+    await db.delete(schema.user).where(eq(schema.user.id, id));
+}
+
+/** `deleteUser` for a caller that only knows the email. */
 export async function deleteUserByEmail(db: DB, email: string): Promise<void> {
     await db.delete(schema.user).where(eq(schema.user.email, email));
 }
@@ -126,6 +137,27 @@ export async function deleteOrphanedRetrievalRequests(
             )
         )
     );
+}
+
+/**
+ * Rewrites a request's `created_at` — for a request the production path
+ * created, where the test can't pass the timestamp at insert time.
+ *
+ * The worker's scans (`findDirectDeliverable`, `findBuildable`) are global,
+ * oldest-first and limited. On a shared database a test's freshly created
+ * request sorts last, behind every older qualifying row, and falls outside
+ * the limit once enough of those exist. Backdating it past every real row
+ * puts it inside the limit regardless (#491).
+ */
+export async function backdateRetrievalRequest(
+    db: DB,
+    id: string,
+    createdAt: Date
+): Promise<void> {
+    await db
+        .update(schema.retrievalRequests)
+        .set({ createdAt })
+        .where(eq(schema.retrievalRequests.id, id));
 }
 
 export async function deleteJob(db: DB, id: string): Promise<void> {
