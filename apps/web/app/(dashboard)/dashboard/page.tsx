@@ -323,7 +323,11 @@ export default function DashboardPage() {
 
                 <Card className="lg:w-80 lg:shrink-0">
                     <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
+                        {/* Terse badge copy: the card is w-80 at lg and Badge
+                            is nowrap. flex-wrap is the backstop for longer
+                            translations — the badge drops below the title
+                            instead of overflowing the card. */}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                                 <RotateCw className="h-4 w-4 text-primary" />
                                 <CardTitle className="text-base">
@@ -331,7 +335,8 @@ export default function DashboardPage() {
                                 </CardTitle>
                             </div>
                             <Badge variant="secondary" className="text-xs">
-                                {restoringCount} in progress{readySuffix}
+                                {restoringCount} restoring
+                                {readyCount > 0 && ` · ${readyCount} ready`}
                             </Badge>
                         </div>
                     </CardHeader>

@@ -149,11 +149,18 @@ test(
         await expect(
             page.getByText('in progress · 1 ready to download', { exact: true })
         ).toBeVisible();
-        await expect(
-            page.getByText('1 in progress · 1 ready to download', {
-                exact: true,
-            })
-        ).toBeVisible();
         await expect(page.getByText(/\bactive$/)).toHaveCount(0);
+
+        // At lg the card is a fixed w-80 column and Badge is nowrap: the
+        // header badge must stay inside the card with both counts showing.
+        await page.setViewportSize({ width: 1024, height: 900 });
+        const badge = page.getByText('1 restoring · 1 ready', { exact: true });
+        await expect(badge).toBeVisible();
+        const card = page.locator('[data-slot="card"]', { has: badge });
+        const badgeBox = (await badge.boundingBox())!;
+        const cardBox = (await card.boundingBox())!;
+        expect(badgeBox.x + badgeBox.width).toBeLessThanOrEqual(
+            cardBox.x + cardBox.width
+        );
     }
 );
