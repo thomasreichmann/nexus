@@ -61,9 +61,9 @@ const test = base.extend<
                 userId,
                 name: `Browser Batch ${Date.now()}`,
             });
-            // Two archived files in the batch. B seeded with an earlier
-            // createdAt: the list sorts uploadedAt DESC, so A renders as the
-            // batch's first row — the shift-click range test anchors on it.
+            // Two archived files in the batch. Files within a group sort by
+            // name (#404), so A (`arch-photo-…`) renders as the batch's first
+            // row — the shift-click range test anchors on it.
             //
             // "Archived" is no longer a column (#416): it is derived from the
             // lifecycle policy, so these two have to be genuinely past the
@@ -93,7 +93,7 @@ const test = base.extend<
             });
             // One ungrouped warm file with a ready retrieval (#257 fast path):
             // renders "available" with a download window, exactly like a
-            // restored Deep Archive copy would (#259). Sorts newest.
+            // restored Deep Archive copy would (#259). Sorts last by name.
             const readyDoc = await insertFile(db, {
                 userId,
                 name: 'ready-doc-ccc.pdf',
@@ -109,9 +109,10 @@ const test = base.extend<
             });
             // One ungrouped warm file with no retrieval: archived with
             // Retrieve only (#256), and the all-warm estimate case. Under the
-            // 128KB floor, so it stays warm despite being the oldest row —
-            // seeded oldest so it sorts last, which the shift-click range
-            // test anchors on.
+            // 128KB floor, so it stays warm despite being the oldest row.
+            // `plain-doc-…` sorts first in the Ungrouped group (#404), so
+            // it's the third row overall — the shift-click range test ends
+            // on it.
             const standardDoc = await insertFile(db, {
                 userId,
                 name: 'plain-doc-ddd.txt',
@@ -291,8 +292,9 @@ test.describe('with a seeded library', () => {
                 fileName(page, seededLibrary.archivedA.name)
             ).toBeVisible();
 
-            // Click the first file's icon-checkbox, then shift-click the last
-            // row → range selection covers all three.
+            // Click the first file's icon-checkbox, then shift-click the third
+            // row (first of the Ungrouped group) → the range spans both groups
+            // and stops short of the fourth row.
             await page
                 .getByRole('button', {
                     name: `Select ${seededLibrary.archivedA.name}`,
@@ -301,7 +303,7 @@ test.describe('with a seeded library', () => {
             await expect(page.getByText('1 selected')).toBeVisible();
 
             await page
-                .locator('tr', { hasText: seededLibrary.readyDoc.name })
+                .locator('tr', { hasText: seededLibrary.standardDoc.name })
                 .click({ modifiers: ['Shift'] });
             await expect(page.getByText('3 selected')).toBeVisible();
 

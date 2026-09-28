@@ -572,6 +572,69 @@ describe('files repository', () => {
             ]);
         });
 
+        it('treats leading zeros as numerically equal and breaks the tie by upload time', async () => {
+            const batch = createUploadBatchFixture({ id: 'b' });
+            const older = new Date('2026-08-01T10:00:00Z');
+            const newer = new Date('2026-08-01T10:05:00Z');
+            // The numeric collator compares IMG_0001 and IMG_1 as equal, so
+            // their relative order comes from the tie-break, not the zeros.
+            const rows = [
+                { name: 'IMG_10.JPG', createdAt: older },
+                { name: 'IMG_0001.JPG', createdAt: newer },
+                { name: 'IMG_0002.JPG', createdAt: older },
+                { name: 'IMG_1.JPG', createdAt: older },
+            ].map(({ name, createdAt }) =>
+                buildGroupedRow(
+                    createFileFixture({
+                        id: name,
+                        batchId: 'b',
+                        name,
+                        createdAt,
+                    }),
+                    batch
+                )
+            );
+            mocks.orderBy.mockResolvedValue(rows);
+
+            const result = await repo.findByUserGroupedByBatch(TEST_USER_ID);
+
+            expect(result[0].files.map((f) => f.name)).toEqual([
+                'IMG_1.JPG',
+                'IMG_0001.JPG',
+                'IMG_0002.JPG',
+                'IMG_10.JPG',
+            ]);
+        });
+
+        it('orders mixed-case names numerically, lowercase first when only case differs', async () => {
+            const batch = createUploadBatchFixture({ id: 'b' });
+            const rows = [
+                'IMG_10.JPG',
+                'IMG_2.JPG',
+                'img_9.jpg',
+                'img_2.jpg',
+                'Img_1.jpg',
+            ].map((name) =>
+                buildGroupedRow(
+                    createFileFixture({ id: name, batchId: 'b', name }),
+                    batch
+                )
+            );
+            mocks.orderBy.mockResolvedValue(rows);
+
+            const result = await repo.findByUserGroupedByBatch(TEST_USER_ID);
+
+            // Case never outranks the number, so camera-name casing
+            // differences don't split a sequence apart.
+            expect(result[0].files.map((f) => f.name)).toEqual([
+                'Img_1.jpg',
+                'img_2.jpg',
+                'IMG_2.JPG',
+                'img_9.jpg',
+                'IMG_10.JPG',
+            ]);
+        });
+
         it('keeps batch order while sorting each batch independently', async () => {
             const newerBatch = createUploadBatchFixture({ id: 'b-new' });
             const olderBatch = createUploadBatchFixture({ id: 'b-old' });
