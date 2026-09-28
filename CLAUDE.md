@@ -13,6 +13,9 @@ Run these bare — never pipe through `tail`/`grep`/`head`. Output is already
 condensed for agents (one line on green, actionable-only on red); truncating
 it hides the error the wrapper surfaced. Noisy output is a wrapper bug to fix,
 not something to pipe around. More detail: `pnpm check --verbose`.
+`pnpm check` failing on a missing env var (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`, …)
+in a clean checkout or fresh worktree means `apps/web/.env.local` is missing or
+stale: copy it from the main checkout, or run `pnpm env:pull` (needs Vercel access).
 Full E2E tier table and test-selection gotchas: `apps/web/CLAUDE.md`.
 
 ## Database (Drizzle)

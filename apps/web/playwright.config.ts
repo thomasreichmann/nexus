@@ -4,6 +4,9 @@ import { config as loadEnv } from 'dotenv';
 // for why), so it never collides with a running `pnpm dev` on 3000.
 import { E2E_PORT, E2E_BASE_URL } from './e2e/helpers/server-url';
 import { WEBSERVER_LOG } from './e2e/helpers/webserver-log';
+// Importing this picks the run id in the main process, before any worker
+// starts, the same way E2E_PORT is picked (see run-id.ts).
+import { ADMIN_STATE_PATH } from './e2e/helpers/auth';
 
 const BASE_URL = E2E_BASE_URL;
 
@@ -31,13 +34,13 @@ if (process.env.E2E_DATABASE_URL) {
     // without a run (e2e:coverage), where this would be noise.
     console.warn(
         '[e2e] E2E_DATABASE_URL is not set — running against the shared ' +
-            'DATABASE_URL; destructive per-user resets are skipped.'
+            'DATABASE_URL.'
     );
 }
 
 const adminChrome = {
     ...devices['Desktop Chrome'],
-    storageState: 'e2e/.auth/admin.json',
+    storageState: ADMIN_STATE_PATH,
 };
 
 export default defineConfig({
@@ -56,9 +59,17 @@ export default defineConfig({
         trace: 'on-first-retry',
     },
     projects: [
+        // Every run signs up its own shared users and deletes them at the end
+        // (#484), so overlapping runs on the shared dev DB can't reset each
+        // other's. The global jobs table is still shared (#419).
         {
             name: 'setup',
             testMatch: /global\.setup\.ts/,
+            teardown: 'teardown',
+        },
+        {
+            name: 'teardown',
+            testMatch: /global\.teardown\.ts/,
         },
         {
             name: 'smoke',
@@ -105,11 +116,11 @@ export default defineConfig({
                 /admin\/invites\.spec\.ts/,
             ],
         },
-        // Interactive user flows with dedicated per-spec users (created in
-        // each spec's beforeAll via provisionDedicatedUser) — isolated from
-        // the shared regular/admin users so exact-count and empty-state
-        // assertions can't race other specs. Mutates only its own users'
-        // data.
+        // Interactive user flows with dedicated per-spec users (the
+        // `dedicatedUserConfig` fixture, one user per run and worker) —
+        // isolated from the shared regular/admin users so exact-count and
+        // empty-state assertions can't race other specs. Mutates only its
+        // own users' data.
         {
             name: 'flows',
             use: { ...devices['Desktop Chrome'] },

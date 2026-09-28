@@ -144,12 +144,11 @@ jobs:
     # Smoke, admin and flows e2e tiers against dev (#384). Post-merge only, by
     # decision: browser tiers flake for reasons unrelated to the change, so
     # they alert instead of gating (the integration tier is the pre-merge
-    # gate). One job, tiers in sequence, for two reasons: they share one
-    # install, browser setup and build, and the dev DB is shared, so running
-    # them side by side would have each tier's `setup` project reset the same
-    # e2e users under the other. Admin runs before flows because flows leaves
-    # generate-thumbnail rows in the global jobs table the admin jobs spec
-    # reads (#419).
+    # gate). One job, tiers in sequence: they share one install, browser setup
+    # and build. Each tier signs up its own e2e users (#484), so the tiers no
+    # longer reset each other's, but the global jobs table is still shared:
+    # admin runs before flows because flows leaves generate-thumbnail rows
+    # there that the admin jobs spec reads (#419).
     e2e-tests:
         name: E2E Tests
         needs: migrate
