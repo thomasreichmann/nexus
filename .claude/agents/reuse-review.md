@@ -32,13 +32,15 @@ Review code changes for duplication and opportunities to reuse existing code.
 
 ## Not Your Lane
 
-You run alongside two other reviewers with their own scopes. Leave these to
+You run alongside other reviewers with their own scopes. Leave these to
 them even when you spot them:
 
 - Over-engineering, needless complexity, deep nesting, scope creep →
   `code-quality-review`
 - Comment style, naming, file placement, return types, layout/responsive rules
   → `conventions-review`
+- Whether tests would catch a bug (test level, fake DB, mocking, assertions,
+  missing tests for changed logic) → `test-quality-review`
 
 An abstraction you think is unnecessary is a code-quality call, not a reuse
 one. Yours is the opposite direction: code that should be shared and isn't.

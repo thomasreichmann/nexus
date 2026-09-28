@@ -4,9 +4,10 @@ App-specific instructions for working on `apps/web/`.
 
 ## Required Reading
 
-| When                         | You MUST read                            |
-| ---------------------------- | ---------------------------------------- |
-| Before working on storage/S3 | `docs/guides/storage.md` - S3 module API |
+| When                               | You MUST read                                                                                              |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Before working on storage/S3       | `docs/guides/storage.md` - S3 module API                                                                   |
+| Before writing or reviewing a test | `docs/conventions/testing.md` § "Writing a test" - workflow, level, no fake DB, pillars, quadrants, smells |
 
 ## E2E Tests
 

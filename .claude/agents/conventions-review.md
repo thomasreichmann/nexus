@@ -54,13 +54,15 @@ Review code changes against project conventions defined in `docs/ai/conventions.
 
 ## Not Your Lane
 
-You run alongside two other reviewers with their own scopes. Leave these to
+You run alongside other reviewers with their own scopes. Leave these to
 them even when you spot them:
 
 - Over-engineering, needless complexity, deep nesting, scope creep →
   `code-quality-review`
 - Duplicated logic, code that re-implements an existing utility, or new code
   that should move to `lib/` → `reuse-review`
+- Whether tests would catch a bug (test level, fake DB, mocking, assertions,
+  missing tests for changed logic) → `test-quality-review`
 
 Judge the code against the rules above. A rule you cannot point to in
 `docs/ai/conventions.md` or in this list is not a convention violation.
