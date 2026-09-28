@@ -1,7 +1,7 @@
 ---
 title: Testing
 created: 2026-03-07
-updated: 2026-03-07
+updated: 2026-09-28
 status: active
 tags:
     - conventions
@@ -233,6 +233,43 @@ counterpart of `scripts/check.mjs`): one summary line on success; on failure,
 the trimmed error plus the `error-context.md` page-snapshot path. Flaky tests
 (passed only on retry) are named even on green runs. Full per-test output:
 `npx playwright test --reporter=list`; traces: `npx playwright show-report`.
+
+## Code Coverage
+
+```bash
+pnpm coverage     # combined line coverage: web unit + web integration + packages/db + worker
+```
+
+This is the repo's coverage number. It runs the four Vitest tiers in parallel
+(about a minute, most of it the integration tier's Postgres round trips),
+merges their maps, and prints a total, per-workspace rows, and the areas the
+test-quality epic (#502) tracks. The merged per-file map is written to
+`coverage/coverage-final.json`.
+
+- **Every source file counts.** Each Vitest config sets `coverage.include`, so
+  a file no test imports shows up at 0% instead of dropping out of the
+  denominator. Before #492 the web unit config reported 82% over the 67 files
+  tests happened to load; counting all of them it was 34%. When you add a
+  source directory outside the include globs (`apps/web/vitest.coverage.ts`,
+  `src/**` elsewhere), add it there.
+- **The integration tier needs `DATABASE_URL`** (env or
+  `apps/web/.env.local`). Without it the run is unit-only and the first line
+  says so; `packages/db` then reads low, since its queries are only exercised
+  against Postgres through the web integration tests.
+- **Warnings come first.** A skipped or failed tier, or a file Vitest couldn't
+  parse (usually an unbuilt workspace dependency: run `pnpm build`), is named
+  on the first lines. A failed tier exits 1 with its test failure below the
+  table.
+- Extra args go to every Vitest run, e.g.
+  `pnpm coverage --exclude '**/publish.integration.test.ts'`.
+- `pnpm test:coverage` is the older per-workspace **unit-only** report behind
+  `/dev/coverage`. Quote `pnpm coverage` when you mean the repo's coverage.
+
+Coverage is a report, not a merge gate. It says which code no test runs; it
+can't say whether the tests that do run would catch a bug.
+
+**Baseline (2026-09-28, lines):** 37.9% total (web 33.9%, `packages/db`
+40.5%, worker 69.1%). Details and the per-area table are in #492.
 
 ## Related
 

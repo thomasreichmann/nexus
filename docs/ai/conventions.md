@@ -76,6 +76,7 @@ Terse reference for AI agents. Detailed examples with code: [[../conventions/nam
 - Auth E2E tests use `storageState` pattern via Playwright `setup` project
 - Unit test utilities/pure functions only; skip presentational components
 - Test commands: `pnpm -F web test`, `test:e2e:smoke`, `test:e2e:admin`, `test:e2e`
+- Coverage: `pnpm coverage` (all tiers merged, every source file counted); a report, not a gate
 - Full details: [[../conventions/testing|Testing]]
 
 ## Layout / Responsive Safety

@@ -59,8 +59,11 @@ if (!hasData) {
     process.exit(1);
 }
 
-console.log('\nCoverage Summary');
-console.log('================\n');
+// Unit tier only, per workspace (feeds /dev/coverage). The repo's number,
+// with the integration tier merged in, is `pnpm coverage`.
+console.log('\nUnit Coverage by Workspace');
+console.log('==========================');
+console.log('Unit tier only. Combined with integration: `pnpm coverage`\n');
 printRow(header);
 printSep();
 
