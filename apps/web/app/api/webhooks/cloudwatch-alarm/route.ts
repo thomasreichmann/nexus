@@ -62,12 +62,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             );
         }
 
-        if (!isOpsAlertsTopic(body)) {
-            return NextResponse.json(
-                { error: 'Unexpected topic' },
-                { status: 403 }
-            );
-        }
+        const topicRejection = rejectUnexpectedTopic(body);
+        if (topicRejection) return topicRejection;
     }
 
     const messageType = body.Type as string;
@@ -165,31 +161,41 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
  *
  * Gates both message types, not just `SubscriptionConfirmation`: a foreign
  * subscription confirmed before this check shipped stays confirmed, so only
- * the Notification check actually closes it. Fails closed when the expected
- * ARN is unset.
+ * the Notification check actually closes it.
  *
  * Rejections are a log line and nothing else — a `webhook_events` row or an
  * alert per rejected message would hand a foreign topic back the same spam
- * channel this check exists to close.
+ * channel this check exists to close. Returns the rejection response, or
+ * null when the message is from our topic.
  */
-function isOpsAlertsTopic(body: Record<string, unknown>): boolean {
+function rejectUnexpectedTopic(
+    body: Record<string, unknown>
+): NextResponse | null {
     const expectedTopicArn = env.SNS_OPS_ALERTS_TOPIC_ARN;
     const logContext = { topicArn: body.TopicArn, type: body.Type };
 
     if (!expectedTopicArn) {
-        // Our misconfiguration, not an attack: every real alarm is being
-        // dropped too, hence louder than the foreign-topic warn below.
+        // Fail closed, but as our misconfiguration rather than an attack:
+        // every real alarm is being dropped too, hence `error` over `warn`,
+        // and a 5xx so SNS retries (then dead-letters) instead of discarding
+        // the alarm as a client error.
         log.error(
             logContext,
             'SNS_OPS_ALERTS_TOPIC_ARN is unset; rejecting SNS message'
         );
-        return false;
+        return NextResponse.json(
+            { error: 'Topic check not configured' },
+            { status: 503 }
+        );
     }
 
     if (body.TopicArn !== expectedTopicArn) {
         log.warn(logContext, 'Rejected SNS message from unexpected topic');
-        return false;
+        return NextResponse.json(
+            { error: 'Unexpected topic' },
+            { status: 403 }
+        );
     }
 
-    return true;
+    return null;
 }

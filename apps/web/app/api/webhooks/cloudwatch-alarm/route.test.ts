@@ -177,8 +177,10 @@ describe('POST /api/webhooks/cloudwatch-alarm', () => {
                 makeRequest(makeAlarmNotification(OPS_ALERTS_ARN))
             );
 
-            expect(confirmation.status).toBe(403);
-            expect(notification.status).toBe(403);
+            // 503, not 403: our misconfiguration, so SNS should retry and
+            // dead-letter the alarm rather than discard it as a client error.
+            expect(confirmation.status).toBe(503);
+            expect(notification.status).toBe(503);
             expectNoSideEffects();
             expect(hoisted.logger.error).toHaveBeenCalledWith(
                 expect.objectContaining({ type: 'Notification' }),

@@ -131,9 +131,11 @@ production code.
     | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1            |
 
     `SNS_OPS_ALERTS_TOPIC_ARN` is not optional in practice: the alarm webhook
-    rejects every message on a deployed tier while it is unset (#319), so
-    alarms stop reaching Discord — and in dev, where there is no email
-    subscription, nothing else notices.
+    rejects every message with a 503 on a deployed tier while it is unset
+    (#319). In prod, alarms stop reaching Discord and only the email
+    subscription still delivers. Dev has neither Discord
+    (`DISCORD_ALERT_WEBHOOK_URL` is prod-only) nor email, so there the only
+    trace is the missing `webhook_events` rows.
 
 6. **Confirm the alerts email** (prod only) — the apply creates an email
    subscription on `nexus-ops-alerts-prod` and reports success, but AWS leaves

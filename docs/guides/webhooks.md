@@ -184,7 +184,8 @@ compares the envelope's `TopicArn` (covered by the signature) against
 effect — no `SubscribeURL` fetch, no `webhook_events` row, no alert, just a
 warn log. The check applies to every message type, because a foreign
 subscription confirmed before it existed keeps delivering Notifications. An
-unset ARN on a deployed tier rejects everything (fail closed).
+unset ARN on a deployed tier rejects everything (fail closed) with a 503, so
+SNS retries and then dead-letters real alarms instead of discarding them.
 
 ## Idempotency
 
