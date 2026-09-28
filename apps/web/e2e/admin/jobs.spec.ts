@@ -1,9 +1,13 @@
-import { countJobsByStatus, type Job } from '@nexus/db/test-db';
+import { countJobsByStatus, findJob, type Job } from '@nexus/db/test-db';
 import { test, expect } from '../fixtures';
 import { USER_STATE_PATH } from '../helpers/auth';
 import { statusCells, waitForTableLoad } from '../helpers/table';
-import { waitForTrpcRequest } from '../helpers/trpc';
-import { seedJobs, cleanupJobs } from '../helpers/scenarios';
+import { isTrpcRequest, waitForTrpcRequest } from '../helpers/trpc';
+import {
+    seedJobs,
+    seedRetryableFailedJob,
+    cleanupJobs,
+} from '../helpers/scenarios';
 import type { Page } from '@playwright/test';
 
 const PAGE_URL = '/dashboard/admin/jobs';
@@ -239,9 +243,13 @@ test.describe('refresh', () => {
 
 test.describe('retry', () => {
     let seededJobs: Job[] = [];
+    let failedJob: Job;
 
     test.beforeAll(async ({ db }) => {
-        seededJobs = await seedJobs(db, { failed: 1, completed: 1 });
+        // The failed row is the one retried, and the retry reaches the real
+        // worker, so it must be a type the worker can run (#509).
+        failedJob = await seedRetryableFailedJob(db);
+        seededJobs = [...(await seedJobs(db, { completed: 1 })), failedJob];
     });
 
     test.afterAll(async ({ db }) => {
@@ -251,7 +259,7 @@ test.describe('retry', () => {
     test(
         'retry button appears only on failed jobs and triggers retry',
         { tag: ['@uc:admin-jobs-retry'] },
-        async ({ page }) => {
+        async ({ page, db }) => {
             await page.goto(PAGE_URL);
             await waitForTableLoad(page, 'No jobs found');
 
@@ -273,13 +281,26 @@ test.describe('retry', () => {
             const retryButton = page.getByRole('button', { name: 'Retry job' });
             await expect(retryButton.first()).toBeVisible();
 
-            // Click retry — job gets re-queued (status changes to pending)
+            // The list is newest first, so the first failed row is the seeded
+            // one. Wait for the mutation's own response: asserting on the
+            // table alone passed while the button was still on screen, and
+            // the test ended before the request landed, aborting it.
+            const retryResponse = page.waitForResponse((response) =>
+                isTrpcRequest(response.url(), 'admin.jobs.retry')
+            );
             await retryButton.first().click();
+            expect((await retryResponse).ok()).toBe(true);
 
-            // After retry, the job disappears from "Failed" filter (becomes pending)
-            await expect(
-                page.getByText('No jobs found').or(retryButton.first())
-            ).toBeVisible({ timeout: 10_000 });
+            // Retry resets the row and re-publishes it to the real dev queue.
+            // Completed proves both halves: the message was sent, and the
+            // deployed worker ran it without failing its batch (#509).
+            await expect
+                .poll(async () => (await findJob(db, failedJob.id))?.status, {
+                    // Inside the 30s test timeout, so a miss reports the
+                    // status it saw. A warm worker finishes in about a second.
+                    timeout: 20_000,
+                })
+                .toBe('completed');
         }
     );
 });
