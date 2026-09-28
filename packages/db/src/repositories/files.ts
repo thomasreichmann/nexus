@@ -226,16 +226,28 @@ export interface ThumbnailStatusCountOptions {
 }
 
 /**
- * Thumbnail-status counts across every user's visible files, for the nightly
- * health check (#409). Hidden rows are excluded: an `uploading` row hasn't
- * been enqueued yet, and a `deleted` one will never be shown. Every status is
- * present in the result, zero when no row has it.
+ * Thumbnail-status counts across every user's visible, really-uploaded files,
+ * for the nightly health check (#409). Every status is present in the result,
+ * zero when no row has it.
+ *
+ * - Hidden rows are excluded: an `uploading` row hasn't been enqueued yet, and
+ *   a `deleted` one will never be shown.
+ * - Only rows keyed the way `originalKey` keys them
+ *   (`<userId>/<batchId>/<fileId>/<name>`) count; the upload services are
+ *   its only callers. Seed, fixture and e2e rows are inserted directly, keyed
+ *   `seed/…`, `e2e/…` or `<userId>/<fileId>`, and never get a thumbnail job,
+ *   so they sit at `pending` for good. Counting them made the dev health
+ *   check call a working pipeline broken.
  */
 async function countThumbnailStatuses(
     db: DB,
     opts: ThumbnailStatusCountOptions = {}
 ): Promise<ThumbnailStatusCounts> {
-    const conditions = [notInArray(schema.files.status, HIDDEN_STATUSES)];
+    const conditions = [
+        notInArray(schema.files.status, HIDDEN_STATUSES),
+        sql`split_part(${schema.files.s3Key}, '/', 1) = ${schema.files.userId}`,
+        sql`split_part(${schema.files.s3Key}, '/', 3) = ${schema.files.id}`,
+    ];
     if (opts.createdAfter) {
         conditions.push(gte(schema.files.createdAt, opts.createdAfter));
     }
