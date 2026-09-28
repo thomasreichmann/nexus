@@ -27,6 +27,7 @@ apps/worker/worker.zip
 # Testing - coverage output at workspace roots only
 /coverage/
 apps/*/coverage/
+apps/*/coverage-integration/
 packages/*/coverage/
 packages/*/coverage-integration/
 playwright-report/

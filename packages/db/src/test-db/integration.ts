@@ -18,23 +18,29 @@
  *   user per test would cost more round trips than its isolation is worth.
  *   Its rows accumulate across the file's tests and go at the end.
  *
- * Rows that no user owns (`background_jobs`, `verification`) don't cascade:
- * a test that creates them deletes them itself.
+ * - `createJob`: a `background_jobs` row, deleted after the test. Jobs have
+ *   no user to cascade from, and a leftover one shows up in the admin jobs
+ *   table and crowds out e2e's seeded rows (#419).
+ *
+ * Other rows that no user owns (`verification`) don't cascade either: a test
+ * that creates them deletes them itself.
  *
  * Kept out of `@nexus/db/test-db`'s index on purpose: that entrypoint is
  * vitest-free so Playwright can load it, and this module imports `vitest`.
  */
 import { test } from 'vitest';
 import { createDb, type Connection } from '../connection';
+import { createNewJobFixture, type User } from '../repositories/fixtures';
+import { createJobRepo, type Job, type NewJob } from '../repositories/jobs';
 import { insertUser } from './inserts';
-import { deleteUsers } from './queries';
-import type { User } from '../repositories/fixtures';
+import { deleteJob, deleteUsers } from './queries';
 
 export interface IntegrationFixtures {
     db: Connection;
     createUser: (overrides?: Partial<User>) => Promise<User>;
     user: User;
     fileUser: User;
+    createJob: (overrides?: Partial<NewJob>) => Promise<Job>;
 }
 
 export const it = test.extend<IntegrationFixtures>({
@@ -76,6 +82,18 @@ export const it = test.extend<IntegrationFixtures>({
         },
         { scope: 'file' },
     ],
+
+    createJob: async ({ db }, use) => {
+        const ids: string[] = [];
+        await use(async (overrides) => {
+            const job = await createJobRepo(db).insert(
+                createNewJobFixture(overrides)
+            );
+            ids.push(job.id);
+            return job;
+        });
+        await Promise.all(ids.map((id) => deleteJob(db, id)));
+    },
 });
 
 // `vi` is deliberately not re-exported: `vi.mock` is only hoisted above the

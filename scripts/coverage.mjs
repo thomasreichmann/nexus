@@ -2,7 +2,7 @@
 /**
  * `pnpm coverage` — the repo's honest line-coverage number (#492).
  *
- * Runs web unit, web integration, db unit, db integration and worker with
+ * Runs the unit and integration tiers of web, db and worker with
  * coverage in parallel, merges their coverage-final.json maps, and prints a total plus
  * per-area rows. Every source file counts (each Vitest config has a
  * `coverage.include`), so an untested file drags the number down instead of
