@@ -78,6 +78,7 @@ Terse reference for AI agents. Detailed examples with code: [[../conventions/nam
 - Repository/query code: real-DB `*.integration.test.ts` next to the code, on the fixtures from `@nexus/db/test-db/integration` (`db`, `user`, `createUser`); never a mocked DB. Run with `pnpm test:integration` (dev DB) or `pnpm test:integration:fresh` (throwaway Postgres)
 - Test commands: `pnpm -F web test`, `test:e2e:smoke`, `test:e2e:admin`, `test:e2e`
 - Coverage: `pnpm coverage` (all tiers merged, every source file counted); a report, not a gate
+- After coding, before deciding which tests to add: `pnpm cov:touched` (coverage of the files you changed, worst first; `--risk` for churn × coverage)
 - Full details: [[../conventions/testing|Testing]]
 
 ## Layout / Responsive Safety
