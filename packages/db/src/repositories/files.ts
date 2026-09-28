@@ -545,7 +545,29 @@ async function findByUserGroupedByBatch(
         });
     }
 
+    // Row order within a batch is upload-start order, which the concurrent
+    // upload lanes make effectively random. Sort after grouping so the batch
+    // order and adjacent-duplicate skip above still rely on SQL order.
+    for (const group of groups.values()) {
+        group.files.sort(compareFilesByName);
+    }
+
     return Array.from(groups.values());
+}
+
+// Fixed locale so server output doesn't depend on the host's default;
+// `numeric` puts IMG_9.JPG before IMG_10.JPG, the order cameras write.
+const fileNameCollator = new Intl.Collator('en', { numeric: true });
+
+// Equal names (same file uploaded twice, or sibling camera folders
+// flattened into one batch) fall back to oldest-first, then id — explicit,
+// rather than inheriting the query's newest-first order.
+function compareFilesByName(a: File, b: File): number {
+    return (
+        fileNameCollator.compare(a.name, b.name) ||
+        a.createdAt.getTime() - b.createdAt.getTime() ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    );
 }
 
 async function uploadHistoryByDay(

@@ -8,7 +8,7 @@ import {
     TEST_USER_ID,
     TEST_FILE_ID,
 } from './fixtures';
-import { createFileRepo, originalKey, type FileRepo } from './files';
+import { createFileRepo, originalKey, type File, type FileRepo } from './files';
 
 describe('files repository', () => {
     let mocks: MockDbMocks;
@@ -393,6 +393,20 @@ describe('files repository', () => {
     });
 
     describe('findByUserGroupedByBatch', () => {
+        // Shape of one joined row as the query returns it (no retrieval)
+        function buildGroupedRow(
+            file: File,
+            batch: ReturnType<typeof createUploadBatchFixture> | null = null
+        ) {
+            return {
+                file,
+                batchName: batch?.name ?? null,
+                batchCreatedAt: batch?.createdAt ?? null,
+                retrievalStatus: null,
+                retrievalExpiresAt: null,
+            };
+        }
+
         it('groups files by batch and emits a null-batchId group for legacy files', async () => {
             const batch = createUploadBatchFixture({
                 id: 'batch-1',
@@ -500,6 +514,93 @@ describe('files repository', () => {
             expect(result[0].files).toEqual([
                 { ...f1, activeRetrieval: null },
                 { ...f2, activeRetrieval: null },
+            ]);
+        });
+
+        it('orders files within a batch by natural filename, not upload order (#404)', async () => {
+            const batch = createUploadBatchFixture({ id: 'b' });
+            // Query order (newest upload first), deliberately unlike name order
+            const uploadOrder = [
+                'IMG_2.JPG',
+                'IMG_10.JPG',
+                'IMG_1.JPG',
+                'IMG_9.JPG',
+            ].map((name, i) =>
+                createFileFixture({ id: `f${i}`, batchId: 'b', name })
+            );
+            mocks.orderBy.mockResolvedValue(
+                uploadOrder.map((file) => buildGroupedRow(file, batch))
+            );
+
+            const result = await repo.findByUserGroupedByBatch(TEST_USER_ID);
+
+            expect(result[0].files.map((f) => f.name)).toEqual([
+                'IMG_1.JPG',
+                'IMG_2.JPG',
+                'IMG_9.JPG',
+                'IMG_10.JPG',
+            ]);
+        });
+
+        it('breaks filename ties by upload time, then id, regardless of query order', async () => {
+            const batch = createUploadBatchFixture({ id: 'b' });
+            const older = new Date('2026-08-01T10:00:00Z');
+            const newer = new Date('2026-08-01T10:05:00Z');
+            const rows = [
+                { id: 'f-c', createdAt: newer },
+                { id: 'f-b', createdAt: older },
+                { id: 'f-a', createdAt: older },
+            ].map(({ id, createdAt }) =>
+                buildGroupedRow(
+                    createFileFixture({
+                        id,
+                        batchId: 'b',
+                        name: 'IMG_0001.JPG',
+                        createdAt,
+                    }),
+                    batch
+                )
+            );
+            mocks.orderBy.mockResolvedValue(rows);
+
+            const result = await repo.findByUserGroupedByBatch(TEST_USER_ID);
+
+            expect(result[0].files.map((f) => f.id)).toEqual([
+                'f-a',
+                'f-b',
+                'f-c',
+            ]);
+        });
+
+        it('keeps batch order while sorting each batch independently', async () => {
+            const newerBatch = createUploadBatchFixture({ id: 'b-new' });
+            const olderBatch = createUploadBatchFixture({ id: 'b-old' });
+            const buildRow = (
+                id: string,
+                batch: typeof newerBatch | null,
+                name: string
+            ) =>
+                buildGroupedRow(
+                    createFileFixture({ id, batchId: batch?.id ?? null, name }),
+                    batch
+                );
+            mocks.orderBy.mockResolvedValue([
+                buildRow('n2', newerBatch, 'b.jpg'),
+                buildRow('n1', newerBatch, 'a.jpg'),
+                buildRow('o2', olderBatch, 'd.jpg'),
+                buildRow('o1', olderBatch, 'c.jpg'),
+                buildRow('u2', null, 'f.jpg'),
+                buildRow('u1', null, 'e.jpg'),
+            ]);
+
+            const result = await repo.findByUserGroupedByBatch(TEST_USER_ID);
+
+            expect(
+                result.map((g) => [g.batchId, g.files.map((f) => f.id)])
+            ).toEqual([
+                ['b-new', ['n1', 'n2']],
+                ['b-old', ['o1', 'o2']],
+                [null, ['u1', 'u2']],
             ]);
         });
     });
