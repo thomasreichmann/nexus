@@ -8,9 +8,29 @@ import {
     FileVideo,
 } from 'lucide-react';
 import { formatDownloadWindow } from '@/lib/format';
-import type { FileWithRetrieval } from '@nexus/db/repo/files';
+import type {
+    ActiveRetrievalSummary,
+    File,
+    FileWithRetrieval,
+} from '@nexus/db/repo/files';
+import type { ActiveRetrievalWithFile } from '@nexus/db/repo/retrievals';
 
 export type DerivedStatus = 'archived' | 'retrieving' | 'available';
+
+/**
+ * The one spelling of each derived status a user sees (#358, #413). Every
+ * surface renders a file's status through this map, so the dashboard and the
+ * file browser can't drift into separate vocabularies again.
+ *
+ * `available` reads "Ready to download", never "Available": the DB's own
+ * `files.status = 'available'` means "archived, not downloadable", so the bare
+ * word named opposite states one click apart.
+ */
+export const STATUS_LABELS: Record<DerivedStatus, string> = {
+    archived: 'Archived',
+    retrieving: 'Retrieving',
+    available: 'Ready to download',
+};
 
 // Keep in lockstep with countStatusesByUser in
 // packages/db/src/repositories/files.ts — the library-wide stats bar bucket
@@ -32,6 +52,34 @@ export function deriveStatus(file: FileWithRetrieval): DerivedStatus {
     }
     if (file.status === 'restoring') return 'retrieving';
     return 'archived';
+}
+
+/**
+ * Pair plain file rows with the user's active retrievals, for a surface that
+ * loads the two separately — the dashboard preview reads `files.list` and the
+ * polled `retrievals.listActive`. Both retrieval sources filter on
+ * `activeRetrievalFilter`, so this yields the same `activeRetrieval` the file
+ * browser's join does, and it stays live while the retrieval list polls.
+ *
+ * If a race ever left two active rows for one file (#266), the first in list
+ * order wins — one row per file, like the join's dedupe, though not
+ * necessarily the same row.
+ */
+export function attachActiveRetrievals(
+    files: File[],
+    retrievals: Pick<
+        ActiveRetrievalWithFile,
+        'fileId' | 'status' | 'expiresAt'
+    >[]
+): FileWithRetrieval[] {
+    const byFileId = new Map<string, ActiveRetrievalSummary>();
+    for (const { fileId, status, expiresAt } of retrievals) {
+        if (!byFileId.has(fileId)) byFileId.set(fileId, { status, expiresAt });
+    }
+    return files.map((file) => ({
+        ...file,
+        activeRetrieval: byFileId.get(file.id) ?? null,
+    }));
 }
 
 export function getDownloadWindowLabel(file: FileWithRetrieval): string | null {

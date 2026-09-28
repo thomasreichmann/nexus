@@ -34,7 +34,7 @@ import { DeleteDialog } from '@/components/dashboard/DeleteDialog';
 import { toastContext } from '@/lib/trpc/error-link';
 import { getLivePollOptionsWhile } from '@/lib/trpc/polling';
 import { toastRetrievalRequested } from './retrievalFeedback';
-import { deriveStatus } from './status';
+import { deriveStatus, STATUS_LABELS } from './status';
 import { BatchHeader, BatchHeaderRow } from './BatchHeader';
 import { FileRow } from './FileRow';
 import { FileCard } from './FileCard';
@@ -299,7 +299,8 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                     {counts.archived > 0 && (
                         <span className="flex items-center gap-1.5">
                             <span className="size-1.5 rounded-full bg-muted-foreground/50" />
-                            {counts.archived} archived
+                            {counts.archived}{' '}
+                            {STATUS_LABELS.archived.toLowerCase()}
                         </span>
                     )}
                     {counts.retrieving > 0 && (
@@ -307,13 +308,15 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                             <span className="relative size-1.5 rounded-full bg-blue-500">
                                 <span className="absolute inset-0 animate-ping rounded-full bg-blue-500/60" />
                             </span>
-                            {counts.retrieving} retrieving
+                            {counts.retrieving}{' '}
+                            {STATUS_LABELS.retrieving.toLowerCase()}
                         </span>
                     )}
                     {counts.available > 0 && (
                         <span className="flex items-center gap-1.5">
                             <span className="size-1.5 rounded-full bg-emerald-500" />
-                            {counts.available} available
+                            {counts.available}{' '}
+                            {STATUS_LABELS.available.toLowerCase()}
                         </span>
                     )}
                 </div>

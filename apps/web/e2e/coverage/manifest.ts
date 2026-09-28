@@ -219,6 +219,18 @@ export const USE_CASES: UseCaseEntry[] = [
         manual: 'Needs a real upload to move the usage number; exercised by the validate tier',
     },
     {
+        id: 'dashboard-recent-uploads-status',
+        title: 'Recent Uploads shows the derived file status on desktop and mobile (#358, #413)',
+        area: 'dashboard',
+        routes: ['/dashboard'],
+    },
+    {
+        id: 'dashboard-retrievals-count',
+        title: 'Retrievals card counts in-progress restores apart from ready-to-download ones (#413)',
+        area: 'dashboard',
+        routes: ['/dashboard'],
+    },
+    {
         id: 'dashboard-ready-downloads',
         title: 'Completed restores surface as ready downloads linking to their parts',
         area: 'dashboard',
@@ -248,7 +260,7 @@ export const USE_CASES: UseCaseEntry[] = [
     },
     {
         id: 'files-stats-bar',
-        title: 'Library stats bar shows archived/retrieving/available counts',
+        title: 'Library stats bar shows archived/retrieving/ready-to-download counts',
         area: 'files',
         routes: ['/dashboard/files'],
     },

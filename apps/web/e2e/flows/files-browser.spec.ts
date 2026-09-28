@@ -165,7 +165,7 @@ test.describe('with a seeded library', () => {
             // The ready-retrieval file counts as available (#259); files
             // without one count as archived regardless of tier (#256).
             await expect(page.getByText('3 archived')).toBeVisible();
-            await expect(page.getByText('1 available')).toBeVisible();
+            await expect(page.getByText('1 ready to download')).toBeVisible();
         }
     );
 
@@ -426,11 +426,11 @@ test.describe('with a seeded library', () => {
             ).toBeVisible();
 
             // The synthetic 7-day window (#257) renders exactly like a real
-            // restore's: status "available" plus the expiry date.
+            // restore's: status "Ready to download" plus the expiry date.
             const row = page.locator('tr', {
                 hasText: seededLibrary.readyDoc.name,
             });
-            await expect(row.getByText('available')).toBeVisible();
+            await expect(row.getByText('Ready to download')).toBeVisible();
             await expect(row.getByText(/until /)).toBeVisible();
 
             // Already downloadable → doesn't count toward bulk Retrieve.

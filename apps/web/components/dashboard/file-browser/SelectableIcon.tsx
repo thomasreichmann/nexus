@@ -3,7 +3,7 @@
 import { Snowflake } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/cn';
-import { getFileTypeInfo, type DerivedStatus } from './status';
+import { getFileTypeInfo, STATUS_LABELS, type DerivedStatus } from './status';
 
 interface StatusDotProps {
     status: DerivedStatus;
@@ -11,9 +11,18 @@ interface StatusDotProps {
     isCold?: boolean;
 }
 
+/* The warm counterpart to ColdHint's label (#413): "Archived" alone covers
+   both a file that restores in seconds and one that takes hours. Same hedge —
+   it comes from the same `isProbablyCold` guess — but only a tooltip, since
+   the warm case is the unremarkable one. */
+const WARM_HINT = 'Probably still in warm storage — retrieval is usually quick';
+
 export function StatusDot({ status, isCold }: StatusDotProps) {
     return (
-        <span className="inline-flex items-center gap-1.5">
+        <span
+            className="inline-flex shrink-0 items-center gap-1.5"
+            title={status === 'archived' && !isCold ? WARM_HINT : undefined}
+        >
             <span
                 className={cn(
                     'relative inline-block size-2 rounded-full',
@@ -28,7 +37,7 @@ export function StatusDot({ status, isCold }: StatusDotProps) {
             </span>
             <span
                 className={cn(
-                    'text-xs capitalize',
+                    'text-xs',
                     status === 'archived' && 'text-muted-foreground',
                     status === 'retrieving' &&
                         'text-blue-600 dark:text-blue-400',
@@ -36,7 +45,7 @@ export function StatusDot({ status, isCold }: StatusDotProps) {
                         'text-emerald-600 dark:text-emerald-400'
                 )}
             >
-                {status}
+                {STATUS_LABELS[status]}
             </span>
             {isCold && <ColdHint />}
         </span>

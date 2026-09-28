@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { FileIcon, ArrowRight, RotateCw, Archive } from 'lucide-react';
+import { isProbablyCold } from '@nexus/db/objectState';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -25,6 +26,12 @@ import {
 } from '@/lib/format';
 import { getLivePollOptionsWhile } from '@/lib/trpc/polling';
 import { MiddleTruncateName } from '@/components/dashboard/MiddleTruncateName';
+import { StatusDot } from '@/components/dashboard/file-browser/SelectableIcon';
+import {
+    attachActiveRetrievals,
+    deriveStatus,
+    STATUS_LABELS,
+} from '@/components/dashboard/file-browser/status';
 import { ReadyDownloads } from '@/components/dashboard/ReadyDownloads';
 import { StorageUsageBar } from '@/components/dashboard/StorageUsageBar';
 import { StorageByType } from '@/components/dashboard/StorageByType';
@@ -59,6 +66,27 @@ export default function DashboardPage() {
     // artifact the card is waiting for begins to exist. A `ready` row stays in
     // this list for its download window, which spans the build.
     const isRestoreInFlight = (activeRetrievals?.length ?? 0) > 0;
+
+    // Same split, as user-facing counts (#413): a `ready` row is waiting on
+    // the user, not on S3, so calling it "active" overstated the work left.
+    const restoringCount =
+        activeRetrievals?.filter(isStillRestoring).length ?? 0;
+    const readyCount = (activeRetrievals?.length ?? 0) - restoringCount;
+    const readySuffix =
+        readyCount > 0
+            ? ` · ${readyCount} ${STATUS_LABELS.available.toLowerCase()}`
+            : '';
+
+    // `files.list` carries no retrieval state, so status is derived by
+    // pairing it with the retrieval list this page already polls — the same
+    // `deriveStatus` input the file browser gets from its join (#358).
+    const recentFiles = attachActiveRetrievals(
+        filesData?.files ?? [],
+        activeRetrievals ?? []
+    );
+    // Wait for both: rendering before the retrievals land would flash a
+    // ready file as Archived.
+    const isLoadingRecentFiles = isLoadingFiles || isLoadingRetrievals;
 
     return (
         <div className="mx-auto max-w-7xl space-y-8">
@@ -117,11 +145,11 @@ export default function DashboardPage() {
                             <Skeleton className="h-8 w-10" />
                         ) : (
                             <div className="text-2xl font-bold">
-                                {activeRetrievals?.length ?? 0}
+                                {restoringCount}
                             </div>
                         )}
                         <p className="mt-1 text-xs text-muted-foreground">
-                            active
+                            in progress{readySuffix}
                         </p>
                     </CardContent>
                 </Card>
@@ -161,7 +189,7 @@ export default function DashboardPage() {
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
-                        {isLoadingFiles ? (
+                        {isLoadingRecentFiles ? (
                             <div className="space-y-4">
                                 {Array.from({ length: 3 }).map((_, i) => (
                                     <div
@@ -176,11 +204,11 @@ export default function DashboardPage() {
                                     </div>
                                 ))}
                             </div>
-                        ) : filesData?.files && filesData.files.length > 0 ? (
+                        ) : recentFiles.length > 0 ? (
                             <ResponsiveRows
                                 mobile={
                                     <StackedList>
-                                        {filesData.files.map((file) => (
+                                        {recentFiles.map((file) => (
                                             <StackedListRow
                                                 key={file.id}
                                                 leading={
@@ -201,8 +229,13 @@ export default function DashboardPage() {
                                                     ),
                                                 ]}
                                                 trailing={
-                                                    <MobileFileStatus
-                                                        status={file.status}
+                                                    <StatusDot
+                                                        status={deriveStatus(
+                                                            file
+                                                        )}
+                                                        isCold={isProbablyCold(
+                                                            file
+                                                        )}
                                                     />
                                                 }
                                             />
@@ -229,7 +262,7 @@ export default function DashboardPage() {
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y">
-                                                {filesData.files.map((file) => (
+                                                {recentFiles.map((file) => (
                                                     <tr
                                                         key={file.id}
                                                         className="group"
@@ -264,12 +297,14 @@ export default function DashboardPage() {
                                                             )}
                                                         </td>
                                                         <td className="py-3 text-right whitespace-nowrap">
-                                                            <Badge
-                                                                variant="secondary"
-                                                                className="capitalize"
-                                                            >
-                                                                {file.status}
-                                                            </Badge>
+                                                            <StatusDot
+                                                                status={deriveStatus(
+                                                                    file
+                                                                )}
+                                                                isCold={isProbablyCold(
+                                                                    file
+                                                                )}
+                                                            />
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -288,7 +323,11 @@ export default function DashboardPage() {
 
                 <Card className="lg:w-80 lg:shrink-0">
                     <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
+                        {/* Terse badge copy: the card is w-80 at lg and Badge
+                            is nowrap. flex-wrap is the backstop for longer
+                            translations — the badge drops below the title
+                            instead of overflowing the card. */}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex items-center gap-2">
                                 <RotateCw className="h-4 w-4 text-primary" />
                                 <CardTitle className="text-base">
@@ -296,7 +335,8 @@ export default function DashboardPage() {
                                 </CardTitle>
                             </div>
                             <Badge variant="secondary" className="text-xs">
-                                {activeRetrievals?.length ?? 0} active
+                                {restoringCount} restoring
+                                {readyCount > 0 && ` · ${readyCount} ready`}
                             </Badge>
                         </div>
                     </CardHeader>
@@ -361,39 +401,17 @@ export default function DashboardPage() {
 function hasUnfinishedRestore(
     retrievals: ActiveRetrievalWithFile[] | undefined
 ): boolean {
-    return (retrievals ?? []).some((r) => r.status !== 'ready');
+    return (retrievals ?? []).some(isStillRestoring);
+}
+
+function isStillRestoring(retrieval: ActiveRetrievalWithFile): boolean {
+    return retrieval.status !== 'ready';
 }
 
 function getRetrievalBadge(
     status: Retrieval['status'],
     tier: Retrieval['tier']
 ): string {
-    if (status === 'ready') return 'Ready';
+    if (status === 'ready') return STATUS_LABELS.available;
     return tier.charAt(0).toUpperCase() + tier.slice(1);
-}
-
-interface MobileFileStatusProps {
-    status: string;
-}
-
-/* "Available" is the happy default — on mobile it stays understated as a dot
-   plus muted label (a bare dot leaves the status color-only for touch users,
-   where title/hover never fires). Transitional states get the fuller text
-   badge — those are the ones the user needs to notice — and restoring adds a
-   glyph so it differs from the rest by more than hue. */
-function MobileFileStatus({ status }: MobileFileStatusProps) {
-    if (status === 'available') {
-        return (
-            <span className="flex shrink-0 items-center gap-1.5 self-center text-xs text-muted-foreground">
-                <span className="size-2 rounded-full bg-emerald-500" />
-                Available
-            </span>
-        );
-    }
-    return (
-        <Badge variant="secondary" className="shrink-0 self-center capitalize">
-            {status === 'restoring' && <RotateCw aria-hidden />}
-            {status}
-        </Badge>
-    );
 }
