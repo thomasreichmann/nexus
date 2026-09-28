@@ -1,8 +1,10 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, defaultExclude } from 'vitest/config';
 
 export default defineConfig({
     test: {
         include: ['src/**/*.test.ts'],
+        // The real-DB tier has its own config and command (test:integration).
+        exclude: [...defaultExclude, '**/*.integration.test.ts'],
         coverage: {
             provider: 'v8',
             reporter: ['text', 'html', 'json-summary'],

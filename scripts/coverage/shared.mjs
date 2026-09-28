@@ -1,6 +1,6 @@
 /**
  * Plumbing shared by `pnpm coverage` (#492) and `pnpm cov:touched` (#493):
- * the four Vitest tiers, which source files each one measures, and running a
+ * the Vitest tiers, which source files each one measures, and running a
  * tier with coverage.
  */
 import { spawn } from 'node:child_process';
@@ -95,8 +95,24 @@ export const TIERS = [
         args: [],
         covers: isWorker,
         inputs: (f) =>
-            /^apps\/worker\/src\/.+\.test\.ts$/.test(f) ||
+            (/^apps\/worker\/src\/.+\.test\.ts$/.test(f) &&
+                !f.includes('.integration.test.')) ||
             f === 'apps/worker/vitest.config.ts',
+    },
+    {
+        name: 'worker integration',
+        kind: 'integration',
+        slug: 'worker-integration',
+        cwd: 'apps/worker',
+        args: ['--config', 'vitest.integration.config.ts'],
+        needsDb: true,
+        covers: isWorker,
+        inputs: (f) =>
+            /^apps\/worker\/src\/.+\.integration\.test\.ts$/.test(f) ||
+            /^apps\/worker\/(vitest\.config|vitest\.integration\.config|vitest\.integration\.setup)\.ts$/.test(
+                f
+            ) ||
+            f === 'packages/db/src/test-db/integration.ts',
     },
 ];
 

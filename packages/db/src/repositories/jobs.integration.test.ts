@@ -1,25 +1,6 @@
-import { it as base, expect, describe } from '../test-db/integration';
+import { it, expect, describe } from '../test-db/integration';
 import { createNewJobFixture, deleteJob, findJob } from '../test-db';
-import { createJobRepo, type NewJob, type Job } from './jobs';
-
-// `background_jobs` has no user to cascade from, so the jobs a test creates
-// go through this fixture and are deleted after it. A leftover one shows up in
-// the admin jobs table and crowds out e2e's seeded rows (#419).
-const it = base.extend<{
-    createJob: (overrides?: Partial<NewJob>) => Promise<Job>;
-}>({
-    createJob: async ({ db }, use) => {
-        const ids: string[] = [];
-        await use(async (overrides) => {
-            const job = await createJobRepo(db).insert(
-                createNewJobFixture(overrides)
-            );
-            ids.push(job.id);
-            return job;
-        });
-        await Promise.all(ids.map((id) => deleteJob(db, id)));
-    },
-});
+import { createJobRepo, type Job } from './jobs';
 
 // Both queries are global, and the dev database is shared with e2e runs that
 // write jobs. Assertions are scoped to this test's rows (findMany) or to the
@@ -51,15 +32,31 @@ describe('jobs repository', () => {
         expect(onlyFailed.total).toBeLessThan(all.total);
     });
 
-    it('countByStatus counts each status', async ({ db, createJob }) => {
-        const repo = createJobRepo(db);
-        const before = await repo.countByStatus();
+    // The count is table-wide, and other writers move jobs between statuses
+    // while it runs: e2e uploads, and the worker tier's processRecord test in
+    // parallel with this one. One REPEATABLE READ snapshot sees only this
+    // test's inserts between the two counts.
+    it('countByStatus counts each status', async ({ db }) => {
+        const { before, after, ids } = await db.transaction(
+            async (tx) => {
+                const repo = createJobRepo(tx);
+                const before = await repo.countByStatus();
+                const ids: string[] = [];
+                for (const status of [
+                    'processing',
+                    'failed',
+                    'failed',
+                ] as const) {
+                    ids.push(
+                        (await repo.insert(createNewJobFixture({ status }))).id
+                    );
+                }
+                return { before, after: await repo.countByStatus(), ids };
+            },
+            { isolationLevel: 'repeatable read' }
+        );
+        await Promise.all(ids.map((id) => deleteJob(db, id)));
 
-        await createJob({ status: 'processing' });
-        await createJob({ status: 'failed' });
-        await createJob({ status: 'failed' });
-
-        const after = await repo.countByStatus();
         expect(after.processing - before.processing).toBe(1);
         expect(after.failed - before.failed).toBe(2);
     });

@@ -1,184 +1,105 @@
-import { describe, expect, it } from 'vitest';
-import { initTRPC, TRPCError } from '@trpc/server';
+import { describe, expect, it, vi } from 'vitest';
+import { TRPCError } from '@trpc/server';
+
+const hoisted = await vi.hoisted(async () => {
+    const { createMockLogger } = await import('@/server/lib/logger/testing');
+    const { createMockSentry } = await import('@/lib/sentry/testing');
+    return { logger: createMockLogger(), sentry: createMockSentry() };
+});
+
+// The procedures under test are init.ts's own, so the middleware is the one
+// production runs, wired where production wires it. Stubbed: the DB pool and
+// auth server init.ts imports (neither is reached by these procedures), and
+// the logging middleware's sinks.
+vi.mock('@/server/db', () => ({ db: {} }));
+vi.mock('@/lib/auth/server', () => ({ auth: {} }));
+vi.mock('@sentry/nextjs', () => hoisted.sentry);
+vi.mock('@/server/lib/logger', () => ({
+    errorVerbosity: 'minimal',
+    isDev: false,
+    logger: hoisted.logger,
+}));
+
 import {
-    isDomainError,
     NotFoundError,
     ForbiddenError,
     InvalidStateError,
     QuotaExceededError,
     TrialExpiredError,
+    type DomainError,
 } from '@/server/errors';
 import { domainErrorFormatter } from '../error-formatter';
+import { buildContext, publicProcedure, router } from '../init';
+import type { Connection } from '@nexus/db';
 import type { TRPCDefaultErrorShape } from '@trpc/server';
 
-// Minimal tRPC setup for testing the middleware
-const t = initTRPC.create();
-
-// Create the error handler middleware - replicating init.ts pattern
-function createErrorHandlerMiddleware() {
-    return t.middleware(async ({ next }) => {
-        const result = await next();
-
-        if (!result.ok) {
-            // Check if the cause is a DomainError
-            const cause = result.error.cause;
-            if (isDomainError(cause)) {
-                throw new TRPCError({
-                    code: cause.trpcCode,
-                    message: cause.message,
-                    cause: cause,
-                });
-            }
-        }
-
-        return result;
-    });
+/** Call a public procedure whose resolver does `resolve`, the way a client would. */
+function callPublicProcedure<T>(resolve: () => T): Promise<T> {
+    const caller = router({
+        test: publicProcedure.query(resolve),
+    }).createCaller(buildContext({ db: {} as Connection, session: null }));
+    return caller.test();
 }
 
-const errorHandlerMiddleware = createErrorHandlerMiddleware();
-const baseProcedure = t.procedure.use(errorHandlerMiddleware);
+/** What the procedure rejects with when its resolver throws `error`. */
+function rejectionFor(error: Error): Promise<unknown> {
+    return callPublicProcedure(() => {
+        throw error;
+    }).catch((rejection: unknown) => rejection);
+}
 
 describe('errorHandlerMiddleware', () => {
-    it('maps NotFoundError to NOT_FOUND TRPCError', async () => {
-        const router = t.router({
-            test: baseProcedure.query(() => {
-                throw new NotFoundError('File', 'abc-123');
+    it.each<[string, DomainError, TRPCError['code']]>([
+        ['NotFoundError', new NotFoundError('File', 'abc-123'), 'NOT_FOUND'],
+        [
+            'ForbiddenError',
+            new ForbiddenError('Cannot access this resource'),
+            'FORBIDDEN',
+        ],
+        [
+            'InvalidStateError',
+            new InvalidStateError('Retrieval already in progress'),
+            'BAD_REQUEST',
+        ],
+        [
+            'QuotaExceededError',
+            new QuotaExceededError({
+                usedBytes: 100,
+                limitBytes: 50,
+                requestedBytes: 10,
             }),
-        });
+            'PRECONDITION_FAILED',
+        ],
+        ['TrialExpiredError', new TrialExpiredError(), 'FORBIDDEN'],
+    ])(
+        'maps %s to its TRPCError code and message',
+        async (_name, error, code) => {
+            const rejection = await rejectionFor(error);
 
-        const caller = router.createCaller({});
-
-        try {
-            await caller.test();
-            expect.fail('Should have thrown');
-        } catch (error) {
-            expect(error).toBeInstanceOf(TRPCError);
-            expect((error as TRPCError).code).toBe('NOT_FOUND');
-            expect((error as TRPCError).message).toBe(
-                'File not found: abc-123'
-            );
+            expect(rejection).toBeInstanceOf(TRPCError);
+            expect(rejection).toMatchObject({ code, message: error.message });
         }
+    );
+
+    it('keeps the original DomainError as the cause', async () => {
+        const error = new NotFoundError('File', 'abc-123');
+
+        const rejection = await rejectionFor(error);
+
+        expect((rejection as TRPCError).cause).toBe(error);
     });
 
-    it('maps ForbiddenError to FORBIDDEN TRPCError', async () => {
-        const router = t.router({
-            test: baseProcedure.query(() => {
-                throw new ForbiddenError('Cannot access this resource');
-            }),
-        });
+    it('leaves a non-domain error as INTERNAL_SERVER_ERROR', async () => {
+        const rejection = await rejectionFor(new Error('Something went wrong'));
 
-        const caller = router.createCaller({});
-
-        try {
-            await caller.test();
-            expect.fail('Should have thrown');
-        } catch (error) {
-            expect(error).toBeInstanceOf(TRPCError);
-            expect((error as TRPCError).code).toBe('FORBIDDEN');
-            expect((error as TRPCError).message).toBe(
-                'Cannot access this resource'
-            );
-        }
+        expect(rejection).toBeInstanceOf(TRPCError);
+        expect(rejection).toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
     });
 
-    it('maps InvalidStateError to BAD_REQUEST TRPCError', async () => {
-        const router = t.router({
-            test: baseProcedure.query(() => {
-                throw new InvalidStateError('Retrieval already in progress');
-            }),
-        });
-
-        const caller = router.createCaller({});
-
-        try {
-            await caller.test();
-            expect.fail('Should have thrown');
-        } catch (error) {
-            expect(error).toBeInstanceOf(TRPCError);
-            expect((error as TRPCError).code).toBe('BAD_REQUEST');
-            expect((error as TRPCError).message).toBe(
-                'Retrieval already in progress'
-            );
-        }
-    });
-
-    it('maps QuotaExceededError to PRECONDITION_FAILED TRPCError', async () => {
-        const router = t.router({
-            test: baseProcedure.query(() => {
-                throw new QuotaExceededError({
-                    usedBytes: 100,
-                    limitBytes: 50,
-                    requestedBytes: 10,
-                });
-            }),
-        });
-
-        const caller = router.createCaller({});
-
-        try {
-            await caller.test();
-            expect.fail('Should have thrown');
-        } catch (error) {
-            expect(error).toBeInstanceOf(TRPCError);
-            expect((error as TRPCError).code).toBe('PRECONDITION_FAILED');
-            expect((error as TRPCError).message).toContain(
-                'Not enough storage'
-            );
-        }
-    });
-
-    it('preserves original DomainError as cause', async () => {
-        const originalError = new NotFoundError('File', 'abc-123');
-
-        const router = t.router({
-            test: baseProcedure.query(() => {
-                throw originalError;
-            }),
-        });
-
-        const caller = router.createCaller({});
-
-        try {
-            await caller.test();
-            expect.fail('Should have thrown');
-        } catch (error) {
-            expect((error as TRPCError).cause).toBe(originalError);
-        }
-    });
-
-    it('wraps non-DomainError as INTERNAL_SERVER_ERROR', async () => {
-        const genericError = new Error('Something went wrong');
-
-        const router = t.router({
-            test: baseProcedure.query(() => {
-                throw genericError;
-            }),
-        });
-
-        const caller = router.createCaller({});
-
-        try {
-            await caller.test();
-            expect.fail('Should have thrown');
-        } catch (error) {
-            // tRPC wraps unknown errors as INTERNAL_SERVER_ERROR
-            expect(error).toBeInstanceOf(TRPCError);
-            expect((error as TRPCError).code).toBe('INTERNAL_SERVER_ERROR');
-        }
-    });
-
-    it('passes through successful results', async () => {
-        const router = t.router({
-            test: baseProcedure.query(() => {
-                return { success: true, data: 'test' };
-            }),
-        });
-
-        const caller = router.createCaller({});
-
-        const result = await caller.test();
-
-        expect(result).toEqual({ success: true, data: 'test' });
+    it('passes a successful result through', async () => {
+        await expect(
+            callPublicProcedure(() => ({ success: true, data: 'test' }))
+        ).resolves.toEqual({ success: true, data: 'test' });
     });
 });
 
