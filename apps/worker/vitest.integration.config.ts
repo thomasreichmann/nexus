@@ -11,8 +11,9 @@ export default defineConfig({
         include: ['src/**/*.integration.test.ts'],
         setupFiles: ['./vitest.integration.setup.ts'],
         // A real (often remote) Postgres: see apps/web's integration config
-        // for why 20s (#471).
+        // for why 20s (#471), and for hooks too (#484).
         testTimeout: 20_000,
+        hookTimeout: 20_000,
         coverage: {
             ...baseConfig.test?.coverage,
             // Vitest leaves out of coverage only the files this config's
