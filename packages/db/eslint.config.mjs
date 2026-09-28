@@ -20,10 +20,6 @@ const NO_FAKE_DB_MESSAGE =
 // goes. The list must end empty; nothing new is added to it.
 const FAKE_DB_EXEMPT = [
     'src/repositories/files.test.ts', // #489
-    'src/repositories/invites.test.ts', // #489
-    'src/repositories/jobs.test.ts', // #489
-    'src/repositories/retrievals.test.ts', // #489
-    'src/repositories/storage-usage.test.ts', // #489
 ];
 
 export default tseslint.config(
