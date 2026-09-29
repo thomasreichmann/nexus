@@ -1,0 +1,122 @@
+name: Thumbnail toolchain
+
+# Contract test for the thumbnail job's command lines (#523): runs
+# generateThumbnail.toolchain.integration.test.ts against the real ffmpeg,
+# ffprobe and perl/exiftool, the Lambda layer zips that
+# tooling/lambda-layers/*.sh build, unzipped to /opt the way Lambda mounts
+# them. No *_PATH overrides, so the handler's own defaults are what runs.
+#
+# NOT a required check. Only `Integration tests` gates merges ("keep CI
+# lean"), so this reports and doesn't block. It runs on the PRs that can break
+# the contract, and on every push to main: that run keeps the layer cache warm
+# (a PR can only restore caches saved on its own ref or on main) and catches,
+# after merge, breakage from changes outside the paths below.
+#
+# The layer binaries are built on AL2023 but need only libc, libm and libz
+# plus what the layers bundle, so they run on ubuntu-latest as they are
+# (verified in #523). No amazonlinux container needed.
+
+on:
+    pull_request:
+        paths:
+            - 'apps/worker/src/handlers/generateThumbnail*'
+            - 'apps/worker/src/handlers/__fixtures__/**'
+            - 'tooling/lambda-layers/**'
+            - '.github/workflows/thumbnail-toolchain.yml'
+    push:
+        branches: [main]
+    workflow_dispatch:
+
+concurrency:
+    group: thumbnail-toolchain-${{ github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+
+jobs:
+    toolchain:
+        name: Thumbnail toolchain
+        runs-on: ubuntu-latest
+        # A cache miss builds both layers (about 6 min in parallel).
+        timeout-minutes: 20
+        services:
+            postgres:
+                image: postgres:17
+                env:
+                    POSTGRES_USER: nexus
+                    POSTGRES_PASSWORD: nexus
+                    POSTGRES_DB: nexus
+                ports:
+                    - 5432:5432
+                options: >-
+                    --health-cmd pg_isready
+                    --health-interval 2s
+                    --health-timeout 5s
+                    --health-retries 15
+        env:
+            DATABASE_URL: postgres://nexus:nexus@localhost:5432/nexus
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            # Keyed on the build scripts: they pin every tool version, so the
+            # same scripts build the same layers. Restore and save are separate
+            # steps so a build is kept even when the tests then fail.
+            - name: Restore the layer zips
+              id: layers
+              uses: actions/cache/restore@v4
+              with:
+                  path: dist/layers
+                  key: lambda-layers-${{ hashFiles('tooling/lambda-layers/**') }}
+
+            - name: Build the layers (cache miss)
+              if: steps.layers.outputs.cache-hit != 'true'
+              run: |
+                  docker run --rm -v "$PWD:/src" -w /src amazonlinux:2023 \
+                      bash tooling/lambda-layers/build-ffmpeg-layer.sh dist/layers &
+                  ffmpeg=$!
+                  docker run --rm -v "$PWD:/src" -w /src amazonlinux:2023 \
+                      bash tooling/lambda-layers/build-exiftool-layer.sh dist/layers &
+                  exiftool=$!
+                  wait "$ffmpeg"
+                  wait "$exiftool"
+
+            - name: Save the layer zips
+              if: steps.layers.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: dist/layers
+                  key: ${{ steps.layers.outputs.cache-primary-key }}
+
+            # Lambda mounts layers at /opt, puts /opt/bin on PATH and /opt/lib
+            # on LD_LIBRARY_PATH (the exiftool layer bundles libcrypt.so.2).
+            - name: Unzip the layers to /opt
+              run: |
+                  for zip in dist/layers/*.zip; do sudo unzip -q -o "$zip" -d /opt; done
+                  echo /opt/bin >> "$GITHUB_PATH"
+
+            # The runner image may ship its own ffmpeg; the spec must not
+            # quietly run that one instead.
+            - name: Check the layer binaries run here
+              env:
+                  LD_LIBRARY_PATH: /opt/lib
+              run: |
+                  test "$(command -v ffmpeg)" = /opt/bin/ffmpeg
+                  test "$(command -v ffprobe)" = /opt/bin/ffprobe
+                  ffmpeg -hide_banner -version | head -1
+                  echo "exiftool $(/opt/perl/bin/perl /opt/exiftool/exiftool -ver)"
+
+            - name: Setup Node and pnpm
+              uses: ./.github/actions/setup-node-pnpm
+
+            - name: Apply migrations
+              run: pnpm -F db db:migrate
+
+            # REQUIRED turns the spec's "binaries missing" skip into a failure.
+            - name: Run the toolchain spec
+              env:
+                  LD_LIBRARY_PATH: /opt/lib
+                  THUMBNAIL_TOOLCHAIN_REQUIRED: '1'
+              run: pnpm -F @nexus/worker test:integration generateThumbnail.toolchain

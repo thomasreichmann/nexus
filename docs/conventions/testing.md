@@ -385,6 +385,29 @@ For a job handler, `apps/worker/src/handlers/generateThumbnail.integration.test.
 is the example: each outcome is read back from the row it writes, with S3
 faked at the client's `send` and ffmpeg/ffprobe/exiftool at `execFile`.
 
+The fakes can't judge the tools' command lines, so
+`generateThumbnail.toolchain.integration.test.ts` runs the same handler
+against the real binaries from the Lambda layers, on small fixtures in
+`handlers/__fixtures__/` (#523). The `Thumbnail toolchain` workflow runs it
+(not a required check). Without the binaries it skips with a notice, and
+with `THUMBNAIL_TOOLCHAIN_REQUIRED=1` it fails instead. To run it locally,
+unzip the layers to `/opt` the way Lambda mounts them. Take the zips from
+the `ffmpeg-layer` and `exiftool-layer` artifacts of the latest `Lambda Layers`
+run on main (`gh run download <run-id> -n ffmpeg-layer -n exiftool-layer -D dist/layers`),
+or build them with docker (`docker run --rm -v "$PWD:/src" -w /src amazonlinux:2023 bash tooling/lambda-layers/build-ffmpeg-layer.sh dist/layers`,
+and the same for `build-exiftool-layer.sh`). Then:
+
+```bash
+for zip in dist/layers/*.zip; do sudo unzip -q -o "$zip" -d /opt; done
+PATH=/opt/bin:$PATH LD_LIBRARY_PATH=/opt/lib pnpm -F @nexus/worker test:integration generateThumbnail.toolchain
+```
+
+`pnpm mutate` judges the argv only when run with that same `PATH` and
+`LD_LIBRARY_PATH`. CI's `Mutation report` job has no binaries, so it keeps
+listing the flags as survivors. The `FFMPEG_PATH`/`FFPROBE_PATH`/`PERL_PATH`/`EXIFTOOL_PATH`
+overrides run it against system binaries instead, but those aren't the
+layer's builds (Ubuntu's ffmpeg has encoders the layer leaves out).
+
 The unit configs exclude `*.integration.test.ts`, so `pnpm check` never needs
 a database.
 
