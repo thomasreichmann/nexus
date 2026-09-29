@@ -11,6 +11,7 @@ import {
 } from '@nexus/db/repo/uploadBatches';
 import { NotFoundError, InvalidStateError } from '@/server/errors';
 import { s3 } from '@/lib/storage';
+import { MULTIPART_CHUNK_SIZE } from '@/lib/upload/limits';
 import { PostHogEvent } from '@/lib/posthog/events';
 import { captureServerEvent } from '@/lib/posthog/server';
 import { quotaService } from './quota';
@@ -19,7 +20,6 @@ import type { Subscription } from '@nexus/db/repo/subscriptions';
 import type { DB } from '@nexus/db';
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 900; // 15 minutes
-const MULTIPART_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
 const MULTIPART_URL_EXPIRY_SECONDS = 3600; // 1 hour
 
 interface UploadInput {
