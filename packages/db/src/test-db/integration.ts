@@ -29,11 +29,15 @@
  * Other rows that no user owns (`verification`) don't cascade either: a test
  * that creates them deletes them itself.
  *
+ * `inRolledBackTransaction` is for a test whose query scans the whole table
+ * and whose rows another run of the same test would also seed (below).
+ *
  * Kept out of `@nexus/db/test-db`'s index on purpose: that entrypoint is
  * vitest-free so Playwright can load it, and this module imports `vitest`.
  */
+import { TransactionRollbackError } from 'drizzle-orm';
 import { test } from 'vitest';
-import { createDb, type Connection } from '../connection';
+import { createDb, type Connection, type Transaction } from '../connection';
 import { createNewJobFixture, type User } from '../repositories/fixtures';
 import { createJobRepo, type Job, type NewJob } from '../repositories/jobs';
 import { insertUser, insertWebhookEvent } from './inserts';
@@ -103,6 +107,30 @@ export const it = test.extend<IntegrationFixtures>({
         await deleteWebhookEvents(db, ids);
     },
 });
+
+/**
+ * Runs `fn` (arrange, act and assert) in a transaction that is always rolled
+ * back. Its rows are never committed, so no other connection ever sees them.
+ *
+ * Use it when the query scans the whole table (newest first, say) and the
+ * test's rows can't be told apart from another run's: `pnpm mutate`'s
+ * workers share one database, and so do engineers on dev. Two runs seeding
+ * the same far-future dates would each read the other's rows (#524). A
+ * failing assertion inside `fn` rolls back too, and fails the test as usual.
+ */
+export async function inRolledBackTransaction(
+    db: Connection,
+    fn: (tx: Transaction) => Promise<void>
+): Promise<void> {
+    try {
+        await db.transaction(async (tx) => {
+            await fn(tx);
+            tx.rollback();
+        });
+    } catch (error) {
+        if (!(error instanceof TransactionRollbackError)) throw error;
+    }
+}
 
 // `vi` is deliberately not re-exported: `vi.mock` is only hoisted above the
 // imports when `vi` comes from 'vitest' itself.

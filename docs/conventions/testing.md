@@ -417,9 +417,9 @@ needs. Seed with the typed insert helpers from `@nexus/db/test-db`.
 | `createWebhookEvent` | test   | A `webhook_events` row (`insertWebhookEvent`), deleted after the test. Webhook events have no user to cascade from either. Its default `externalId`/`eventType` are `test`-prefixed and unique, so it can't collide with a real delivery. |
 
 **The reference example.** Copy this one
-(`packages/db/src/repositories/uploadBatches.integration.test.ts`): seed the
-row the predicate must _exclude_, then assert on what the query returns, not
-on how it was built.
+(`packages/db/src/repositories/uploadBatches.integration.test.ts`): for each
+term of the predicate, seed a row that only that term _excludes_, then assert
+on what the query returns, not on how it was built.
 
 ```typescript
 import { it, expect, describe } from '../test-db/integration';
@@ -427,15 +427,20 @@ import { insertUploadBatch } from '../test-db';
 import { createUploadBatchRepo } from './uploadBatches';
 
 describe('findByUserAndId', () => {
-    it('returns the batch to its owner', async ({ db, user }) => {
-        const batch = await insertUploadBatch(db, { userId: user.id });
+    // Asking for each of two batches: without the id term, both lookups get
+    // the same one back, whichever row Postgres finds first.
+    it('returns the batch asked for, not the owner’s other one', async ({
+        db,
+        user,
+    }) => {
+        const [a, b] = await Promise.all([
+            insertUploadBatch(db, { userId: user.id }),
+            insertUploadBatch(db, { userId: user.id }),
+        ]);
+        const repo = createUploadBatchRepo(db);
 
-        const found = await createUploadBatchRepo(db).findByUserAndId(
-            user.id,
-            batch.id
-        );
-
-        expect(found?.id).toBe(batch.id);
+        expect((await repo.findByUserAndId(user.id, a.id))?.id).toBe(a.id);
+        expect((await repo.findByUserAndId(user.id, b.id))?.id).toBe(b.id);
     });
 
     it('does not return another user’s batch, even by its id', async ({
@@ -456,9 +461,13 @@ describe('findByUserAndId', () => {
 });
 ```
 
-Before you push, break the behaviour the test names (delete the
-`eq(uploadBatches.userId, userId)` above) and watch the test go red. If it
-stays green, it isn't testing that behaviour.
+Before you push, break each behaviour a test names and watch that test go
+red: delete `eq(uploadBatches.id, batchId)` and the first test fails; delete
+`eq(uploadBatches.userId, userId)` and the second does. If a test stays
+green, it isn't testing that behaviour. With one batch per test, the id term
+could go and nothing would notice (#524): a lookup that returns the owner's
+only batch is right whether or not it filtered on the id. The same goes for
+an `UPDATE`/`DELETE` by id: seed a bystander row and assert it's unchanged.
 
 **Rules of thumb:**
 
@@ -473,6 +482,15 @@ stays green, it isn't testing that behaviour.
   `backdateRetrievalRequest` in `retrieval.integration.test.ts`, #491).
   Otherwise older rows can push them out and the assertion passes or fails by
   accident.
+- **Another run of the same test can be live at the same time.**
+  `pnpm mutate`'s workers share one database, and engineers share dev. A test
+  that seeds fixed dates for a global scan reads the other run's rows too,
+  and under `pnpm mutate` that turns into spurious kills (#520). Give each
+  run a window of its own when the query takes one (the random slots in
+  `files.integration.test.ts`). When it wants the newest row in the table,
+  run the whole test in `inRolledBackTransaction(db, async (tx) => …)` from
+  the fixtures module: its rows are never committed, so no other run sees
+  them (`invites.integration.test.ts` `findMany`, #524).
 - **`describe.concurrent` is cheap speed.** Tests that each own their `user`
   can't collide in the DB, and on the pooler most of a test's time is round
   trips. `retrieval.integration.test.ts` runs its suites concurrently: 44 s

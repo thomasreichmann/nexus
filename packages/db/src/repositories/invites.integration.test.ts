@@ -1,5 +1,10 @@
 import { count, eq } from 'drizzle-orm';
-import { it, expect, describe } from '../test-db/integration';
+import {
+    it,
+    expect,
+    describe,
+    inRolledBackTransaction,
+} from '../test-db/integration';
 import { insertInvite, type DB } from '../test-db';
 import * as schema from '../schema';
 import { createInviteRepo, type Invite } from './invites';
@@ -97,73 +102,106 @@ describe.concurrent('claim', () => {
     });
 });
 
+// Invite validation and sponsored provisioning at signup both resolve the
+// token here: it must never resolve to some other invite.
+describe.concurrent('findByToken', () => {
+    it('returns the invite with that token, and nothing for an unknown one', async ({
+        db,
+        user,
+    }) => {
+        const repo = createInviteRepo(db);
+        const [a, b] = await Promise.all([
+            insertInvite(db, { createdBy: user.id }),
+            insertInvite(db, { createdBy: user.id }),
+        ]);
+
+        expect(await repo.findByToken(a.token)).toEqual(a);
+        expect(await repo.findByToken(b.token)).toEqual(b);
+        expect(
+            await repo.findByToken(`test-invite-${crypto.randomUUID()}`)
+        ).toBeUndefined();
+    });
+});
+
 describe.concurrent('revoke', () => {
-    it('revokes a pending invite but not a redeemed one', async ({
+    it('revokes that pending invite only, and not a redeemed one', async ({
         db,
         user,
         createUser,
     }) => {
         const repo = createInviteRepo(db);
         const redeemer = await createUser();
-        const pending = await insertInvite(db, { createdBy: user.id });
-        const redeemed = await insertInvite(db, {
-            createdBy: user.id,
-            status: 'redeemed',
-            redeemedByUserId: redeemer.id,
-            redeemedAt: PAST,
-        });
+        const [pending, bystander, redeemed] = await Promise.all([
+            insertInvite(db, { createdBy: user.id }),
+            insertInvite(db, { createdBy: user.id }),
+            insertInvite(db, {
+                createdBy: user.id,
+                status: 'redeemed',
+                redeemedByUserId: redeemer.id,
+                redeemedAt: PAST,
+            }),
+        ]);
 
         expect((await repo.revoke(pending.id))?.status).toBe('revoked');
+        expect(await repo.findById(bystander.id)).toEqual(bystander);
         expect(await repo.revoke(redeemed.id)).toBeUndefined();
         expect(await repo.findById(redeemed.id)).toEqual(redeemed);
     });
 });
 
-// Sequential: both tests own the newest rows in the table while they run.
-describe('findMany', () => {
-    it('filters the page and the total by status', async ({ db, user }) => {
-        const repo = createInviteRepo(db);
-        const seed = (status: Invite['status'], rank: number) =>
-            insertInvite(db, {
-                createdBy: user.id,
-                status,
-                createdAt: newest(rank),
-            });
-        const revokedA = await seed('revoked', 0);
-        await seed('pending', 1);
-        const revokedB = await seed('revoked', 2);
-        await seed('redeemed', 3);
-
-        const result = await repo.findMany({
-            limit: 2,
-            offset: 0,
-            status: 'revoked',
-        });
-
-        expect(result.invites.map((i) => i.id)).toEqual([
-            revokedA.id,
-            revokedB.id,
-        ]);
-        expect(result.total).toBe(await countWithStatus(db, 'revoked'));
-    });
-
-    it('pages newest first', async ({ db, user }) => {
-        const repo = createInviteRepo(db);
-        const invites = [];
-        for (const rank of [0, 1, 2]) {
-            invites.push(
-                await insertInvite(db, {
+// Each test owns the newest rows in the table while it runs, and so would the
+// same test in another run (`pnpm mutate`'s workers share a database), with
+// the same dates. The rows are never committed, so neither sees the other's.
+describe.concurrent('findMany', () => {
+    it('filters the page and the total by status', ({ db, user }) =>
+        inRolledBackTransaction(db, async (tx) => {
+            const seed = (status: Invite['status'], rank: number) =>
+                insertInvite(tx, {
                     createdBy: user.id,
+                    status,
                     createdAt: newest(rank),
-                })
-            );
-        }
+                });
+            const revokedA = await seed('revoked', 0);
+            await seed('pending', 1);
+            const revokedB = await seed('revoked', 2);
+            await seed('redeemed', 3);
+            // One more match than the page holds.
+            await seed('revoked', 4);
 
-        const page = await repo.findMany({ limit: 2, offset: 1 });
+            const result = await createInviteRepo(tx).findMany({
+                limit: 2,
+                offset: 0,
+                status: 'revoked',
+            });
 
-        expect(page.invites.map((i) => i.id)).toEqual([
-            invites[1]!.id,
-            invites[2]!.id,
-        ]);
-    });
+            expect(result.invites.map((i) => i.id)).toEqual([
+                revokedA.id,
+                revokedB.id,
+            ]);
+            expect(result.total).toBe(await countWithStatus(tx, 'revoked'));
+        }));
+
+    it('pages newest first', ({ db, user }) =>
+        inRolledBackTransaction(db, async (tx) => {
+            const invites = [];
+            // One more row than the offset and the page cover.
+            for (const rank of [0, 1, 2, 3]) {
+                invites.push(
+                    await insertInvite(tx, {
+                        createdBy: user.id,
+                        createdAt: newest(rank),
+                    })
+                );
+            }
+
+            const page = await createInviteRepo(tx).findMany({
+                limit: 2,
+                offset: 1,
+            });
+
+            expect(page.invites.map((i) => i.id)).toEqual([
+                invites[1]!.id,
+                invites[2]!.id,
+            ]);
+        }));
 });

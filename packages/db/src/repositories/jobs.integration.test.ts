@@ -81,17 +81,21 @@ describe('jobs repository', () => {
         ).toBeUndefined();
     });
 
-    it('markProcessing claims the job and counts the attempt', async ({
+    // The worker runs this for every SQS record: it must claim that job and
+    // leave every other one alone.
+    it('markProcessing claims the job and counts the attempt, and no other job', async ({
         db,
         createJob,
     }) => {
         const repo = createJobRepo(db);
         const job = await createJob({ attempts: 2 });
+        const bystander = await createJob();
 
         await repo.markProcessing(job.id);
 
         const stored = await findJob(db, job.id);
         expect(stored).toMatchObject({ status: 'processing', attempts: 3 });
         expect(stored?.startedAt).toBeInstanceOf(Date);
+        expect(await findJob(db, bystander.id)).toEqual(bystander);
     });
 });
