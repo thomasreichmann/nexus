@@ -49,6 +49,18 @@ describe('compareFilesByName', () => {
         expect(sorted(files).map((f) => f.id)).toEqual(['f-b', 'f-c', 'f-a']);
     });
 
+    // Same name, same upload time: only the id decides. Asserted on the comparator itself, in both directions and
+    // for equal rows, because a short sort only ever asks one way round and
+    // would hide a comparator that isn't consistent.
+    it('orders a full name-and-time tie by id, either way round', () => {
+        const low = file('IMG_0001.JPG', EARLIER, 'f-a');
+        const high = file('IMG_0001.JPG', EARLIER, 'f-b');
+
+        expect(compareFilesByName(low, high)).toBeLessThan(0);
+        expect(compareFilesByName(high, low)).toBeGreaterThan(0);
+        expect(compareFilesByName(low, { ...low })).toBe(0);
+    });
+
     // The numeric collator compares IMG_0001 and IMG_1 as equal, so their
     // relative order comes from the tie-break, not the zeros.
     it('treats leading zeros as numerically equal and breaks the tie by upload time', () => {

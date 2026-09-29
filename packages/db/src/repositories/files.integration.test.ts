@@ -213,25 +213,42 @@ describe.concurrent('file browser queries', () => {
         });
     });
 
+    it('search ignores whitespace around the term', async ({ db, user }) => {
+        await Promise.all(
+            ['holiday.jpg', 'receipt.pdf'].map((name) =>
+                insertFile(db, { userId: user.id, name })
+            )
+        );
+
+        const found = await createFileRepo(db).findByUser(user.id, {
+            limit: 50,
+            offset: 0,
+            search: '  holiday ',
+        });
+
+        expect(found.map((f) => f.name)).toEqual(['holiday.jpg']);
+    });
+
     it('findByUser sorts by the chosen column and pages through it', async ({
         db,
         user,
     }) => {
         const repo = createFileRepo(db);
         const base = Date.now();
-        const [c, a, b] = await Promise.all(
-            [
-                { name: 'c.pdf', size: 300 },
-                { name: 'a.pdf', size: 100 },
-                { name: 'b.pdf', size: 200 },
-            ].map((f, i) =>
-                insertFile(db, {
-                    userId: user.id,
-                    ...f,
-                    createdAt: new Date(base - i * 1000),
-                })
-            )
-        );
+        const add = (name: string, size: number, secondsAgo: number) =>
+            insertFile(db, {
+                userId: user.id,
+                name,
+                size,
+                createdAt: new Date(base - secondsAgo * 1000),
+            });
+        // Without an ORDER BY, rows come back in insertion order or in the
+        // (user_id, created_at desc) index's order: both are newest first
+        // here. Sizes don't follow upload time, so neither passes for the
+        // size sort.
+        const a = await add('a.pdf', 200, 0);
+        const b = await add('b.pdf', 300, 1);
+        await add('c.pdf', 100, 2);
         const names = (files: { name: string }[]) => files.map((f) => f.name);
 
         expect(
@@ -243,11 +260,11 @@ describe.concurrent('file browser queries', () => {
                     sortOrder: 'asc',
                 })
             )
-        ).toEqual([b.name, c.name]);
+        ).toEqual([a.name, b.name]);
         // Default: newest upload first.
         expect(
             names(await repo.findByUser(user.id, { limit: 2, offset: 0 }))
-        ).toEqual([c.name, a.name]);
+        ).toEqual([a.name, b.name]);
     });
 
     it('findExistingByNameAndSize matches committed files on name and size together, once each', async ({
@@ -322,14 +339,17 @@ describe.concurrent('findByUserGroupedByBatch', () => {
         ]);
         const add = (name: string, batchId: string | null, extra = {}) =>
             insertFile(db, { userId: user.id, name, batchId, ...extra });
+        // In each group the first name is the older upload, so the query's
+        // newest-first order is the reverse of the name order expected.
+        const [earlier, later] = [past(), new Date()];
         await Promise.all([
-            add('b.jpg', newer.id),
-            add('a.jpg', newer.id),
+            add('b.jpg', newer.id, { createdAt: later }),
+            add('a.jpg', newer.id, { createdAt: earlier }),
             add('hidden.jpg', newer.id, { status: 'uploading' }),
-            add('IMG_10.JPG', older.id),
-            add('IMG_9.JPG', older.id),
-            add('f.jpg', null),
-            add('e.jpg', null),
+            add('IMG_10.JPG', older.id, { createdAt: later }),
+            add('IMG_9.JPG', older.id, { createdAt: earlier }),
+            add('f.jpg', null, { createdAt: later }),
+            add('e.jpg', null, { createdAt: earlier }),
             insertFile(db, { userId: stranger.id, batchId: newer.id }),
         ]);
 
@@ -347,6 +367,36 @@ describe.concurrent('findByUserGroupedByBatch', () => {
             [newer.id, 'Silva Wedding', ['a.jpg', 'b.jpg']],
             [older.id, 'Old Shoot', ['IMG_9.JPG', 'IMG_10.JPG']],
             [null, null, ['e.jpg', 'f.jpg']],
+        ]);
+    });
+
+    it('includes uploading and deleted files when asked to', async ({
+        db,
+        user,
+    }) => {
+        await Promise.all([
+            insertFile(db, { userId: user.id, name: 'a.jpg' }),
+            insertFile(db, {
+                userId: user.id,
+                name: 'b.jpg',
+                status: 'uploading',
+            }),
+            insertFile(db, {
+                userId: user.id,
+                name: 'c.jpg',
+                status: 'deleted',
+            }),
+        ]);
+
+        const [group] = await createFileRepo(db).findByUserGroupedByBatch(
+            user.id,
+            { includeHidden: true }
+        );
+
+        expect(group!.files.map((f) => f.name)).toEqual([
+            'a.jpg',
+            'b.jpg',
+            'c.jpg',
         ]);
     });
 
@@ -453,43 +503,66 @@ describe.concurrent('writes by id', () => {
 });
 
 // Both scans are global, across every user. The dev database is shared, so
-// the rows here are dated where no real row is: counts are taken over a
-// window in 1990, and the latest thumbnail is one updated in 2100.
+// the rows here are dated where no real row is: counts are taken over windows
+// in the 1800s and 1900s (and rows updated after 2100), and the latest
+// thumbnail is one updated in 2100.
+//
+// Runs of this file also overlap: Stryker's workers share one database, and so
+// can engineers on dev. A fixed window would count the other run's rows too,
+// so each count test dates its rows from a random slot of its own.
+const DAY_MS = 24 * 60 * 60 * 1000;
+const randomSlot = () => Math.floor(Math.random() * 10_000);
+const daysAfter = (date: Date, days: number) =>
+    new Date(date.getTime() + days * DAY_MS);
+
 describe.concurrent('health-check scans (#409)', () => {
+    // A file keyed the way the upload services key it, the only kind the
+    // thumbnail count looks at.
+    const insertUploadedFile = async (
+        db: Parameters<typeof insertFile>[0],
+        userId: string,
+        extra: Parameters<typeof insertFile>[1]
+    ) => {
+        const batch = await insertUploadBatch(db, { userId });
+        const id = crypto.randomUUID();
+        const name = 'photo.jpg';
+        return insertFile(db, {
+            id,
+            userId,
+            batchId: batch.id,
+            name,
+            s3Key: originalKey({ userId, batchId: batch.id, id, name }),
+            ...extra,
+        });
+    };
+
     it('countThumbnailStatuses counts visible, really-uploaded files by thumbnail status', async ({
         db,
         user,
     }) => {
-        const batch = await insertUploadBatch(db, { userId: user.id });
-        const inWindow = new Date('1990-01-01T12:00:00Z');
-        const realUpload = (extra: Parameters<typeof insertFile>[1]) => {
-            const id = crypto.randomUUID();
-            const name = 'photo.jpg';
-            return insertFile(db, {
-                id,
-                userId: user.id,
-                batchId: batch.id,
-                name,
-                s3Key: originalKey({
-                    userId: user.id,
-                    batchId: batch.id,
-                    id,
-                    name,
-                }),
-                createdAt: inWindow,
-                ...extra,
-            });
-        };
+        // A one-day window; slots are three days apart, so another run's rows
+        // (half a day before its window to a day after) never reach this one.
+        const windowStart = daysAfter(
+            new Date('1900-01-01T00:00:00Z'),
+            3 * randomSlot()
+        );
+        const inWindow = daysAfter(windowStart, 0.5);
+        const realUpload = (extra: Parameters<typeof insertFile>[1]) =>
+            insertUploadedFile(db, user.id, { createdAt: inWindow, ...extra });
         await Promise.all([
             realUpload({ thumbnailStatus: 'ready' }),
             realUpload({ thumbnailStatus: 'ready' }),
             realUpload({ thumbnailStatus: 'failed_cold' }),
             // Not yet confirmed: hidden.
             realUpload({ thumbnailStatus: 'ready', status: 'uploading' }),
-            // Outside the window.
+            // Outside the window, on either side.
+            realUpload({
+                thumbnailStatus: 'skipped',
+                createdAt: daysAfter(windowStart, -0.5),
+            }),
             realUpload({
                 thumbnailStatus: 'failed',
-                createdAt: new Date('1990-01-03T00:00:00Z'),
+                createdAt: daysAfter(windowStart, 1),
             }),
             // Seeded directly, never enqueued: keyed `<userId>/<fileId>`.
             insertFile(db, {
@@ -500,13 +573,61 @@ describe.concurrent('health-check scans (#409)', () => {
         ]);
 
         const counts = await createFileRepo(db).countThumbnailStatuses({
-            createdAfter: new Date('1990-01-01T00:00:00Z'),
-            createdBefore: new Date('1990-01-02T00:00:00Z'),
+            createdAfter: windowStart,
+            createdBefore: daysAfter(windowStart, 1),
         });
 
         expect(counts).toEqual({
             pending: 0,
             ready: 2,
+            failed: 0,
+            failed_cold: 1,
+            skipped: 0,
+        });
+    });
+
+    // The failed_cold digest's call: a cohort start and a recent-activity
+    // cutoff, no end. Only rows updated after 2100 pass the cutoff, so no real
+    // row is counted. The later a run's cohort starts, the earlier its cutoff
+    // falls, so another run's rows are either created before this cohort or
+    // updated before this cutoff.
+    it('countThumbnailStatuses with updatedAfter counts only files updated since then', async ({
+        db,
+        user,
+    }) => {
+        const slot = randomSlot();
+        const cohortStart = daysAfter(
+            new Date('1800-01-01T00:00:00Z'),
+            3 * slot
+        );
+        const updatedAfter = daysAfter(
+            new Date('2200-01-01T00:00:00Z'),
+            -3 * slot
+        );
+        const realUpload = (extra: Parameters<typeof insertFile>[1]) =>
+            insertUploadedFile(db, user.id, {
+                thumbnailStatus: 'failed_cold',
+                createdAt: daysAfter(cohortStart, 0.5),
+                ...extra,
+            });
+        await Promise.all([
+            realUpload({ updatedAt: daysAfter(updatedAfter, 0.5) }),
+            realUpload({ updatedAt: daysAfter(updatedAfter, -0.5) }),
+            // Recently updated, but from before the cohort.
+            realUpload({
+                createdAt: daysAfter(cohortStart, -0.5),
+                updatedAt: daysAfter(updatedAfter, 0.5),
+            }),
+        ]);
+
+        const counts = await createFileRepo(db).countThumbnailStatuses({
+            createdAfter: cohortStart,
+            updatedAfter,
+        });
+
+        expect(counts).toEqual({
+            pending: 0,
+            ready: 0,
             failed: 0,
             failed_cold: 1,
             skipped: 0,
