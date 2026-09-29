@@ -27,6 +27,8 @@ const SCAN_LIMIT = 100;
 type ItemState = Partial<Retrieval> | null;
 /** `insertRetrieval`'s default: ready, with an open download window. */
 const READY: ItemState = {};
+/** Ready, but its download window has closed: the copy is back in Glacier. */
+const LAPSED: ItemState = { expiresAt: hoursAgo(1) };
 const PENDING: ItemState = { status: 'pending' };
 const NO_RETRIEVAL: ItemState = null;
 
@@ -214,23 +216,39 @@ describe.concurrent('worker scans', () => {
                 createdAt: BEFORE_ANY_REAL_ROW,
                 ...overrides,
             });
-        const [buildable, strangers, partial, missing, single, completed] =
-            await Promise.all([
-                seed(user.id, [READY, READY]),
-                // Every user's requests: the worker has no session to scope by.
-                seed(stranger.id, [READY, READY]),
-                seed(user.id, [READY, PENDING]),
-                // The null join `is not true` exists for: a plain `not` reads
-                // it as ready.
-                seed(user.id, [READY, NO_RETRIEVAL]),
-                // Below ZIP_DELIVERY_MIN_FILES: delivered directly, never zipped.
-                seed(user.id, [READY]),
-                seed(user.id, [READY, READY], { completedAt: new Date() }),
-            ]);
+        const [
+            buildable,
+            strangers,
+            partial,
+            lapsed,
+            missing,
+            single,
+            completed,
+        ] = await Promise.all([
+            seed(user.id, [READY, READY]),
+            // Every user's requests: the worker has no session to scope by.
+            seed(stranger.id, [READY, READY]),
+            seed(user.id, [READY, PENDING]),
+            // Status `ready` alone isn't enough: the zip would read objects
+            // that are back in Glacier.
+            seed(user.id, [READY, LAPSED]),
+            // The null join `is not true` exists for: a plain `not` reads
+            // it as ready.
+            seed(user.id, [READY, NO_RETRIEVAL]),
+            // Below ZIP_DELIVERY_MIN_FILES: delivered directly, never zipped.
+            seed(user.id, [READY]),
+            seed(user.id, [READY, READY], { completedAt: new Date() }),
+        ]);
         const ownIds = new Set(
-            [buildable, strangers, partial, missing, single, completed].map(
-                (seeded) => seeded.request.id
-            )
+            [
+                buildable,
+                strangers,
+                partial,
+                lapsed,
+                missing,
+                single,
+                completed,
+            ].map((seeded) => seeded.request.id)
         );
 
         const scanned = (
@@ -261,6 +279,21 @@ describe.concurrent('worker scans', () => {
         ).filter((id) => ownIds.has(id));
 
         expect(scanned).toEqual([older.request.id, newer.request.id]);
+    });
+
+    // One poll run's budget: past it, the rest wait for the next run.
+    it('findBuildable returns at most `limit` requests', async ({
+        db,
+        user,
+    }) => {
+        await Promise.all([
+            seedRequest(db, user.id, [READY, READY]),
+            seedRequest(db, user.id, [READY, READY]),
+        ]);
+
+        const scanned = await createRetrievalRequestRepo(db).findBuildable(1);
+
+        expect(scanned).toHaveLength(1);
     });
 
     it('findDirectDeliverable returns unfinished single-file requests whose file is ready', async ({

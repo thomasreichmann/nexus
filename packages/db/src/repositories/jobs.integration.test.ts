@@ -1,6 +1,16 @@
-import { it, expect, describe } from '../test-db/integration';
+import {
+    it,
+    expect,
+    describe,
+    inRolledBackTransaction,
+} from '../test-db/integration';
 import { createNewJobFixture, deleteJob, findJob } from '../test-db';
 import { createJobRepo, type Job } from './jobs';
+
+// Rows dated after every real one are the first page of the newest-first
+// admin table, whatever else is in there.
+const AFTER_ANY_REAL_ROW = new Date('2100-01-01T00:00:00Z').getTime();
+const newest = (rank: number) => new Date(AFTER_ANY_REAL_ROW - rank * 1000);
 
 // Both queries are global, and the dev database is shared with e2e runs that
 // write jobs. Assertions are scoped to this test's rows (findMany) or to the
@@ -10,16 +20,26 @@ describe('jobs repository', () => {
         db,
         createJob,
     }) => {
-        const repo = createJobRepo(db);
         const failed = await createJob({ status: 'failed' });
         const pending = await createJob({ status: 'pending' });
 
-        const all = await repo.findMany({ limit: 50, offset: 0 });
-        const onlyFailed = await repo.findMany({
-            limit: 50,
-            offset: 0,
-            status: 'failed',
-        });
+        // One snapshot for both pages: a failed job another run commits
+        // between two separate reads would put more in the filtered total
+        // than in the whole one.
+        const { all, onlyFailed } = await db.transaction(
+            async (tx) => {
+                const repo = createJobRepo(tx);
+                return {
+                    all: await repo.findMany({ limit: 50, offset: 0 }),
+                    onlyFailed: await repo.findMany({
+                        limit: 50,
+                        offset: 0,
+                        status: 'failed',
+                    }),
+                };
+            },
+            { isolationLevel: 'repeatable read' }
+        );
 
         const ids = (jobs: Job[]) => jobs.map((j) => j.id);
         expect(ids(all.jobs)).toEqual(
@@ -31,6 +51,29 @@ describe('jobs repository', () => {
         // At least this test's pending job is outside the filtered count.
         expect(onlyFailed.total).toBeLessThan(all.total);
     });
+
+    // The admin jobs table pages through this. Another run of this test would
+    // seed the same dates, so the rows are never committed.
+    it('findMany pages newest first', ({ db }) =>
+        inRolledBackTransaction(db, async (tx) => {
+            const repo = createJobRepo(tx);
+            const byRank: Job[] = [];
+            // One more row than the offset and the page cover. Inserted
+            // oldest first, so on an empty database a query that ignored the
+            // order would page through them oldest first.
+            for (const rank of [3, 2, 1, 0]) {
+                byRank[rank] = await repo.insert(
+                    createNewJobFixture({ createdAt: newest(rank) })
+                );
+            }
+
+            const page = await repo.findMany({ limit: 2, offset: 1 });
+
+            expect(page.jobs.map((j) => j.id)).toEqual([
+                byRank[1]!.id,
+                byRank[2]!.id,
+            ]);
+        }));
 
     // The count is table-wide, and other writers move jobs between statuses
     // while it runs: e2e uploads, and the worker tier's processRecord test in

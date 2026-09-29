@@ -177,6 +177,27 @@ describe('single-part upload', () => {
 
         expect(harness.row('a.jpg').status).toBe('paused');
     });
+
+    // S3 answered, so the connection isn't what failed, and a reconnect
+    // wouldn't fix it: pausing would leave the row waiting for nothing.
+    it('fails the row on a server error even when the browser is offline', async () => {
+        const harness = createQueueHarness();
+        await harness.queue.addFiles(picked(fakeFile('a.jpg', 1000)));
+        harness.backend.holdPuts();
+        const wave = harness.queue.startUpload();
+        await vi.waitFor(() =>
+            expect(harness.backend.inFlight()).toHaveLength(1)
+        );
+
+        harness.setOnline(false);
+        harness.backend.failPut(() => true, new UploadHttpError(500));
+        await wave;
+
+        expect(harness.row('a.jpg')).toMatchObject({
+            status: 'error',
+            error: 'Upload failed — try again',
+        });
+    });
 });
 
 describe('multipart upload', () => {
@@ -336,6 +357,35 @@ describe('multipart upload', () => {
         await wave;
 
         expect(harness.backend.putsFor(2)).toHaveLength(MAX_CHUNK_RETRIES + 1);
+    });
+
+    it('waits a second before retrying a failed part', async () => {
+        const harness = createQueueHarness();
+        harness.backend.holdPuts();
+        await harness.queue.addFiles(
+            picked(fakeFile('clip.mov', MULTIPART_SIZE))
+        );
+        const wave = harness.queue.startUpload();
+        await vi.waitFor(() =>
+            expect(harness.backend.inFlight()).toHaveLength(
+                MAX_CONCURRENT_CHUNKS
+            )
+        );
+        // Faked only now: with fake timers on, `vi.waitFor` moves the clock
+        // itself on every check.
+        vi.useFakeTimers({ toFake: ['setTimeout'] });
+
+        harness.backend.failPut(
+            (put) => put.partNumber === 2,
+            new UploadHttpError(500)
+        );
+        await vi.advanceTimersByTimeAsync(999);
+        expect(harness.backend.putsFor(2)).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(harness.backend.putsFor(2)).toHaveLength(2);
+
+        harness.backend.releasePuts();
+        await wave;
     });
 
     it('fails the row once the retries run out, leaving it resumable', async () => {

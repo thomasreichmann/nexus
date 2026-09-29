@@ -183,15 +183,15 @@ describe.concurrent('findMany', () => {
 
     it('pages newest first', ({ db, user }) =>
         inRolledBackTransaction(db, async (tx) => {
-            const invites = [];
-            // One more row than the offset and the page cover.
-            for (const rank of [0, 1, 2, 3]) {
-                invites.push(
-                    await insertInvite(tx, {
-                        createdBy: user.id,
-                        createdAt: newest(rank),
-                    })
-                );
+            const byRank: Invite[] = [];
+            // One more row than the offset and the page cover. Inserted
+            // oldest first, so on an empty database a query that ignored the
+            // order would page through them oldest first.
+            for (const rank of [3, 2, 1, 0]) {
+                byRank[rank] = await insertInvite(tx, {
+                    createdBy: user.id,
+                    createdAt: newest(rank),
+                });
             }
 
             const page = await createInviteRepo(tx).findMany({
@@ -200,8 +200,8 @@ describe.concurrent('findMany', () => {
             });
 
             expect(page.invites.map((i) => i.id)).toEqual([
-                invites[1]!.id,
-                invites[2]!.id,
+                byRank[1]!.id,
+                byRank[2]!.id,
             ]);
         }));
 });
