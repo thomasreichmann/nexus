@@ -82,13 +82,15 @@ it ran are in `survivors[]` with `coveredBy`. Use them this way:
 - **`timedOut`** mutants count as killed in the file's score, but no test is
   named. On a busy machine, real kills can time out. Grade those tests from
   the code, and don't read `ran: 0` as "untested".
-- **Mutation is ground truth, not the whole truth.** Stryker empties a whole
-  `where`, but never drops one term of an `and(...)` or removes a `limit`.
-  For each term of a predicate, look for the row that only that term
-  excludes. If there isn't one, it's a gap: break it by hand to confirm. The
-  2026-09-28 dry run found five this way (an id term next to an ownership
-  term, a bystander row for a single-row update, a `limit` that never
-  bites).
+- **Mutation is ground truth, not the whole truth.** `pnpm mutate` empties
+  a whole `where`, drops each term of a drizzle `and(...)` / `or(...)` and
+  each builder `.where(...)` (`DrizzleCondition`, #524), but never removes a
+  `limit`, an `orderBy` or a `set` field. For those, look for the rows that
+  would show the difference. If there aren't any, it's a gap: break it by
+  hand to confirm. The 2026-09-28 dry run found five gaps by hand (an id
+  term next to an ownership term, a bystander row for a single-row update,
+  a `limit` that never bites); `DrizzleCondition` now finds the first two
+  kinds.
 - **The regression pillar predicts mutation best.** Correlation with each
   test's kill ratio on the audit: regression pillar 0.65, the value product
   0.46, smell count 0.36, refactor 0.18, FIRST 0.12, quadrant 0.07. When the
