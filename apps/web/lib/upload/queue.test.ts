@@ -670,6 +670,17 @@ describe('resuming after a reload', () => {
         expect(harness.row('no-handle.mov').isQuickResumable).toBe(false);
     });
 
+    it('offers no one-click resume for a persisted handle on a browser that can’t reopen it', async () => {
+        await putUpload(record({ fileHandle: {} as FileSystemFileHandle }));
+        const harness = createQueueHarness({
+            isFileSystemAccessSupported: () => false,
+        });
+
+        await harness.queue.hydrate();
+
+        expect(harness.row('clip.mov').isQuickResumable).toBe(false);
+    });
+
     it('skips records with every part done, and adds nothing on a second pass', async () => {
         await putUpload(record());
         await putUpload(

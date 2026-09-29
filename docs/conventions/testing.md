@@ -731,6 +731,10 @@ dropped condition's line:
         L110  eq(schema.backgroundJobs.id, id) → ∅  DrizzleCondition, the whole .where(…) dropped; 3 tests ran it: jobs.integration.test.ts, handler.integration.test.ts
 ```
 
+It can't see terms built into an array and spread, `and(...conditions)`:
+it gets no per-term mutants. So write every term inline, an optional one as
+`opts.x ? cond : undefined` (#531).
+
 Run it after `pnpm cov:touched`, on the code you changed:
 
 ```bash

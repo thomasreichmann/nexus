@@ -1,5 +1,10 @@
 import { vi } from 'vitest';
-import { it, describe, expect } from '@nexus/db/test-db/integration';
+import {
+    it,
+    describe,
+    expect,
+    inRolledBackTransaction,
+} from '@nexus/db/test-db/integration';
 import {
     insertFile,
     insertRetrieval,
@@ -55,6 +60,10 @@ const readyNow = () => ({ readyAt: new Date(), expiresAt: future() });
 // drops out of the limit once there are enough of them. A `created_at` older
 // than any real row keeps a test's own rows inside it (#491).
 const BEFORE_ANY_REAL_ROW = new Date('2000-01-01T00:00:00Z');
+// Older still, for rows a test never commits (`inRolledBackTransaction`):
+// ahead of every committed writer's backdated rows, the db tier's 1980 ones
+// included, so none of those can push them out of the limit either.
+const BEFORE_ANY_COMMITTED_ROW = new Date('1970-01-01T00:00:00Z');
 
 // Every suite here is `describe.concurrent`: each test owns its `user`, so
 // their rows can't collide, and on the pooler the file runs in a fraction of
@@ -382,46 +391,51 @@ describe.concurrent(
         // The reason completeIfArtifactsReady could not be reused: at zero
         // artifacts its NOT EXISTS was vacuously true, so it would have completed
         // a single-file request the moment it was created — before the thaw.
-        it('never completes a single-file request while its item is pending', async ({
+        it('never completes a single-file request while its item is pending', ({
             db,
             user,
-        }) => {
-            const { requestId, retrievalId } = await singleFileRequest(
-                db,
-                user.id,
-                'cold.cr2'
-            );
-            await backdateRetrievalRequest(db, requestId, BEFORE_ANY_REAL_ROW);
-            const requestRepo = createRetrievalRequestRepo(db);
-            const scannedIds = async () =>
-                (await requestRepo.findDirectDeliverable(100)).map(
-                    (r) => r.requestId
+        }) =>
+            inRolledBackTransaction(db, async (tx) => {
+                const { requestId, retrievalId } = await singleFileRequest(
+                    tx,
+                    user.id,
+                    'cold.cr2'
                 );
+                await backdateRetrievalRequest(
+                    tx,
+                    requestId,
+                    BEFORE_ANY_COMMITTED_ROW
+                );
+                const requestRepo = createRetrievalRequestRepo(tx);
+                const scannedIds = async () =>
+                    (await requestRepo.findDirectDeliverable(100)).map(
+                        (r) => r.requestId
+                    );
 
-            expect(await requestRepo.completeIfDeliverable(requestId)).toBe(
-                undefined
-            );
-            expect((await requestRepo.findById(requestId))?.completedAt).toBe(
-                null
-            );
+                expect(await requestRepo.completeIfDeliverable(requestId)).toBe(
+                    undefined
+                );
+                expect(
+                    (await requestRepo.findById(requestId))?.completedAt
+                ).toBe(null);
 
-            // The same statement completes it once the item is downloadable.
-            await createRetrievalRepo(db).updateStatus(
-                retrievalId,
-                'ready',
-                readyNow()
-            );
-            // The control for the `not.toContain` below: deliverable and not yet
-            // completed, the scan does return it.
-            expect(await scannedIds()).toContain(requestId);
-            const completed =
-                await requestRepo.completeIfDeliverable(requestId);
-            expect(completed?.completedAt).toBeInstanceOf(Date);
+                // The same statement completes it once the item is downloadable.
+                await createRetrievalRepo(tx).updateStatus(
+                    retrievalId,
+                    'ready',
+                    readyNow()
+                );
+                // The control for the `not.toContain` below: deliverable and not yet
+                // completed, the scan does return it.
+                expect(await scannedIds()).toContain(requestId);
+                const completed =
+                    await requestRepo.completeIfDeliverable(requestId);
+                expect(completed?.completedAt).toBeInstanceOf(Date);
 
-            // And a completed request leaves the scan for good — a second poll
-            // run finds nothing to announce.
-            expect(await scannedIds()).not.toContain(requestId);
-        });
+                // And a completed request leaves the scan for good — a second poll
+                // run finds nothing to announce.
+                expect(await scannedIds()).not.toContain(requestId);
+            }));
 
         it('two concurrent completion attempts yield exactly one winner', async ({
             db,
@@ -447,75 +461,86 @@ describe.concurrent(
             expect(results.filter(Boolean)).toHaveLength(1);
         });
 
-        it('the scan returns exactly the deliverable single-file requests', async ({
+        // Never committed, and dated before every committed writer's rows, so
+        // neither side can crowd the other out of the scan's limit (#531).
+        it('the scan returns exactly the deliverable single-file requests', ({
             db,
             user,
-        }) => {
-            const retrievalRepo = createRetrievalRepo(db);
-            const requestRepo = createRetrievalRequestRepo(db);
+        }) =>
+            inRolledBackTransaction(db, async (tx) => {
+                const retrievalRepo = createRetrievalRepo(tx);
+                const requestRepo = createRetrievalRequestRepo(tx);
 
-            const [deliverable, stillPending, lapsed, zipA, zipB] =
-                await Promise.all([
-                    singleFileRequest(db, user.id, 'warm.cr2', 2_000_000),
-                    singleFileRequest(db, user.id, 'pending.cr2'),
-                    singleFileRequest(db, user.id, 'lapsed.cr2'),
-                    insertFile(db, { userId: user.id }),
-                    insertFile(db, { userId: user.id }),
+                const [deliverable, stillPending, lapsed, zipA, zipB] =
+                    await Promise.all([
+                        singleFileRequest(tx, user.id, 'warm.cr2', 2_000_000),
+                        singleFileRequest(tx, user.id, 'pending.cr2'),
+                        singleFileRequest(tx, user.id, 'lapsed.cr2'),
+                        insertFile(tx, { userId: user.id }),
+                        insertFile(tx, { userId: user.id }),
+                    ]);
+                await retrievalRepo.updateStatus(
+                    deliverable.retrievalId,
+                    'ready',
+                    readyNow()
+                );
+                await retrievalRepo.updateStatus(lapsed.retrievalId, 'ready', {
+                    readyAt: past(),
+                    expiresAt: past(),
+                });
+
+                // Two files, both thawed: zip-delivered, never the scan's to return.
+                const zipRequest = await retrievalService.requestBulkRetrieval(
+                    tx,
+                    user.id,
+                    [zipA.id, zipB.id],
+                    'bulk'
+                );
+                for (const row of await retrievalRepo.findByFileIds([
+                    zipA.id,
+                    zipB.id,
+                ])) {
+                    await retrievalRepo.updateStatus(
+                        row.id,
+                        'ready',
+                        readyNow()
+                    );
+                }
+
+                // Scoped to this test's rows: the scan is global, and other writers
+                // on a shared database leave their own requests in it. Backdated so
+                // all four sit inside the limit, which is what makes the three
+                // exclusions mean anything.
+                const ownIds = new Set([
+                    deliverable.requestId,
+                    stillPending.requestId,
+                    lapsed.requestId,
+                    zipRequest.requestId,
                 ]);
-            await retrievalRepo.updateStatus(
-                deliverable.retrievalId,
-                'ready',
-                readyNow()
-            );
-            await retrievalRepo.updateStatus(lapsed.retrievalId, 'ready', {
-                readyAt: past(),
-                expiresAt: past(),
-            });
+                for (const id of ownIds) {
+                    await backdateRetrievalRequest(
+                        tx,
+                        id,
+                        BEFORE_ANY_COMMITTED_ROW
+                    );
+                }
+                const scanned = (
+                    await requestRepo.findDirectDeliverable(100)
+                ).filter((r) => ownIds.has(r.requestId));
 
-            // Two files, both thawed: zip-delivered, never the scan's to return.
-            const zipRequest = await retrievalService.requestBulkRetrieval(
-                db,
-                user.id,
-                [zipA.id, zipB.id],
-                'bulk'
-            );
-            for (const row of await retrievalRepo.findByFileIds([
-                zipA.id,
-                zipB.id,
-            ])) {
-                await retrievalRepo.updateStatus(row.id, 'ready', readyNow());
-            }
-
-            // Scoped to this test's rows: the scan is global, and other writers
-            // on a shared database leave their own requests in it. Backdated so
-            // all four sit inside the limit, which is what makes the three
-            // exclusions mean anything.
-            const ownIds = new Set([
-                deliverable.requestId,
-                stillPending.requestId,
-                lapsed.requestId,
-                zipRequest.requestId,
-            ]);
-            for (const id of ownIds) {
-                await backdateRetrievalRequest(db, id, BEFORE_ANY_REAL_ROW);
-            }
-            const scanned = (
-                await requestRepo.findDirectDeliverable(100)
-            ).filter((r) => ownIds.has(r.requestId));
-
-            expect(scanned).toEqual([
-                {
-                    requestId: deliverable.requestId,
-                    userId: user.id,
-                    fileId: deliverable.file.id,
-                    fileName: 'warm.cr2',
-                    fileSize: 2_000_000,
-                    expiresAt: expect.any(Date),
-                    initiatedAt: expect.any(Date),
-                    readyAt: expect.any(Date),
-                },
-            ]);
-        });
+                expect(scanned).toEqual([
+                    {
+                        requestId: deliverable.requestId,
+                        userId: user.id,
+                        fileId: deliverable.file.id,
+                        fileName: 'warm.cr2',
+                        fileSize: 2_000_000,
+                        expiresAt: expect.any(Date),
+                        initiatedAt: expect.any(Date),
+                        readyAt: expect.any(Date),
+                    },
+                ]);
+            }));
 
         // The intended behavior change for zips: completion now asserts the thawed
         // originals are still live, so a build that outlasted its own restore

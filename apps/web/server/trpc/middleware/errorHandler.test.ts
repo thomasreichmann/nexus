@@ -119,7 +119,7 @@ describe('domainErrorFormatter', () => {
         } as TRPCDefaultErrorShape;
     }
 
-    it('adds domainCode when error.cause is a DomainError', () => {
+    it('adds domainCode and marks the error expected when error.cause is a DomainError', () => {
         const cause = new TrialExpiredError();
         const error = new TRPCError({
             code: 'FORBIDDEN',
@@ -130,6 +130,7 @@ describe('domainErrorFormatter', () => {
         const shaped = domainErrorFormatter({ shape: makeShape(), error });
 
         expect(shaped.data.domainCode).toBe('TRIAL_EXPIRED');
+        expect(shaped.data.expected).toBe(true);
     });
 
     it('preserves all original shape fields', () => {
@@ -165,15 +166,18 @@ describe('domainErrorFormatter', () => {
         expect(shaped.data.domainCode).toBeUndefined();
     });
 
-    it('omits domainCode for generic Error causes', () => {
+    it('omits domainCode and marks the error unexpected for generic Error causes', () => {
+        // A `code` of its own (as Node's system errors have), so only the
+        // missing `trpcCode` keeps it from passing for a DomainError.
         const error = new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
-            cause: new Error('boom'),
+            cause: Object.assign(new Error('boom'), { code: 'ECONNRESET' }),
         });
 
         const shaped = domainErrorFormatter({ shape: makeShape(), error });
 
         expect(shaped.data.domainCode).toBeUndefined();
+        expect(shaped.data.expected).toBe(false);
     });
 
     it('distinguishes TrialExpiredError from generic ForbiddenError (same tRPC code)', () => {

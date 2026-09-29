@@ -290,28 +290,30 @@ async function countThumbnailStatuses(
     db: DB,
     opts: ThumbnailStatusCountOptions = {}
 ): Promise<ThumbnailStatusCounts> {
-    const conditions = [
-        notInArray(schema.files.status, HIDDEN_STATUSES),
-        sql`split_part(${schema.files.s3Key}, '/', 1) = ${schema.files.userId}`,
-        sql`split_part(${schema.files.s3Key}, '/', 3) = ${schema.files.id}`,
-    ];
-    if (opts.createdAfter) {
-        conditions.push(gte(schema.files.createdAt, opts.createdAfter));
-    }
-    if (opts.createdBefore) {
-        conditions.push(lt(schema.files.createdAt, opts.createdBefore));
-    }
-    if (opts.updatedAfter) {
-        conditions.push(gte(schema.files.updatedAt, opts.updatedAfter));
-    }
-
+    // Every term inline, an unset option as `undefined` (which `and` leaves
+    // out), so `pnpm mutate` can drop each one on its own (#531).
     const rows = await db
         .select({
             status: schema.files.thumbnailStatus,
             count: sql<number>`count(*)::int`,
         })
         .from(schema.files)
-        .where(and(...conditions))
+        .where(
+            and(
+                notInArray(schema.files.status, HIDDEN_STATUSES),
+                sql`split_part(${schema.files.s3Key}, '/', 1) = ${schema.files.userId}`,
+                sql`split_part(${schema.files.s3Key}, '/', 3) = ${schema.files.id}`,
+                opts.createdAfter
+                    ? gte(schema.files.createdAt, opts.createdAfter)
+                    : undefined,
+                opts.createdBefore
+                    ? lt(schema.files.createdAt, opts.createdBefore)
+                    : undefined,
+                opts.updatedAfter
+                    ? gte(schema.files.updatedAt, opts.updatedAfter)
+                    : undefined
+            )
+        )
         .groupBy(schema.files.thumbnailStatus);
 
     const counts: ThumbnailStatusCounts = {
@@ -358,16 +360,16 @@ function buildUserFilesWhereClause(
     search?: string
 ) {
     const trimmed = search?.trim();
-    const conditions = [eq(schema.files.userId, userId)];
-    if (!includeHidden) {
-        conditions.push(notInArray(schema.files.status, HIDDEN_STATUSES));
-    }
-    if (trimmed) {
-        conditions.push(
-            ilike(schema.files.name, `%${escapeLikePattern(trimmed)}%`)
-        );
-    }
-    return and(...conditions);
+    // Inline terms, as in countThumbnailStatuses: each is its own mutant.
+    return and(
+        eq(schema.files.userId, userId),
+        !includeHidden
+            ? notInArray(schema.files.status, HIDDEN_STATUSES)
+            : undefined,
+        trimmed
+            ? ilike(schema.files.name, `%${escapeLikePattern(trimmed)}%`)
+            : undefined
+    );
 }
 
 function findByUser(

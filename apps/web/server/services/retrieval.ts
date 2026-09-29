@@ -450,9 +450,7 @@ function toReadyRequest(row: DownloadableRequest): ReadyRetrievalRequest {
         requestId: row.id,
         tier: row.tier,
         fileCount: row.fileCount,
-        // `sum` comes back from postgres as a bigint string; the driver hands
-        // it over as-is rather than as a number.
-        totalBytes: Number(row.totalBytes),
+        totalBytes: row.totalBytes,
         partCount: row.partCount,
         completedAt: row.completedAt,
         expiresAt: artifactWindowEnd(row.builtAt),

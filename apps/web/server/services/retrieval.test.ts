@@ -770,8 +770,7 @@ describe('retrieval service', () => {
                 completedAt: new Date('2026-08-30T10:05:00Z'),
                 fileCount: 12,
                 partCount: 2,
-                // bigint comes back from postgres as a string.
-                totalBytes: '4000',
+                totalBytes: 4000,
                 builtAt: BUILT_AT,
                 ...overrides,
             };
