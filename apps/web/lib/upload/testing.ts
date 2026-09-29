@@ -153,6 +153,12 @@ export interface FakeUploadBackend {
     /** Settles held PUTs matching `where` (all by default), oldest first. */
     completePuts(where?: (put: InFlightPut) => boolean): number;
     failPut(where: (put: InFlightPut) => boolean, error: unknown): void;
+    /**
+     * Held PUTs matching `where` land in S3 but stay in flight, their
+     * response not yet back: an abort now still rejects them in the tab,
+     * and S3 keeps the part.
+     */
+    landWithoutResponse(where: (put: InFlightPut) => boolean): void;
     /** Held PUTs matching `where` report `loaded` bytes sent so far. */
     reportProgress(where: (put: InFlightPut) => boolean, loaded: number): void;
     /** The next `times` PUTs matching `where` fail with `error`. */
@@ -376,6 +382,18 @@ export function createFakeUploadBackend(): FakeUploadBackend {
             : { fileId: path[1] };
     };
 
+    /** S3 takes the PUT's bytes: the part (or object) now exists. */
+    const land = (entry: PutEntry): string => {
+        const file = getFile(entry.fileId);
+        const etag = `"${entry.fileId}-${entry.partNumber ?? 0}-${++seq}"`;
+        if (entry.partNumber === undefined) {
+            file.object = entry.body;
+        } else {
+            file.parts.set(entry.partNumber, { etag, range: entry.body });
+        }
+        return etag;
+    };
+
     const settle = (entry: PutEntry, error?: unknown): void => {
         const index = inFlight.indexOf(entry);
         if (index === -1) return;
@@ -384,18 +402,12 @@ export function createFakeUploadBackend(): FakeUploadBackend {
             entry.reject(error);
             return;
         }
-        const file = getFile(entry.fileId);
         // S3 rejects a PUT to a session that no longer exists.
-        if (file.status !== 'uploading') {
+        if (getFile(entry.fileId).status !== 'uploading') {
             entry.reject(new UploadHttpError(404));
             return;
         }
-        const etag = `"${entry.fileId}-${entry.partNumber ?? 0}-${++seq}"`;
-        if (entry.partNumber === undefined) {
-            file.object = entry.body;
-        } else {
-            file.parts.set(entry.partNumber, { etag, range: entry.body });
-        }
+        const etag = land(entry);
         const size = entry.body.end - entry.body.start;
         entry.onProgress?.(size, size);
         entry.resolve({ etag });
@@ -490,6 +502,9 @@ export function createFakeUploadBackend(): FakeUploadBackend {
         },
         failPut: (where, error) => {
             inFlight.filter(where).forEach((entry) => settle(entry, error));
+        },
+        landWithoutResponse: (where) => {
+            inFlight.filter(where).forEach(land);
         },
         reportProgress: (where, loaded) => {
             for (const entry of inFlight.filter(where)) {

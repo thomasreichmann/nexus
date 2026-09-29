@@ -1,7 +1,9 @@
+import { vi } from 'vitest';
 import {
     it,
     expect,
     describe,
+    afterEach,
     inRolledBackTransaction,
 } from '../test-db/integration';
 import { insertFile, insertRetrieval, insertUploadBatch } from '../test-db';
@@ -504,8 +506,12 @@ describe.concurrent('writes by id', () => {
 
         const deleted = await repo.softDeleteMany([target.id]);
 
-        expect(deleted.map((f) => [f.id, f.status])).toEqual([
-            [target.id, 'deleted'],
+        expect(deleted).toEqual([
+            expect.objectContaining({
+                id: target.id,
+                status: 'deleted',
+                deletedAt: expect.any(Date),
+            }),
         ]);
         expect(await repo.findById(bystander.id)).toEqual(bystander);
     });
@@ -564,6 +570,8 @@ describe.concurrent('health-check scans (#409)', () => {
             realUpload({ thumbnailStatus: 'ready' }),
             realUpload({ thumbnailStatus: 'ready' }),
             realUpload({ thumbnailStatus: 'failed_cold' }),
+            // At the window start: "after" includes it.
+            realUpload({ thumbnailStatus: 'ready', createdAt: windowStart }),
             // Not yet confirmed: hidden.
             realUpload({ thumbnailStatus: 'ready', status: 'uploading' }),
             // Outside the window, on either side.
@@ -599,7 +607,7 @@ describe.concurrent('health-check scans (#409)', () => {
 
         expect(counts).toEqual({
             pending: 0,
-            ready: 2,
+            ready: 3,
             failed: 0,
             failed_cold: 1,
             skipped: 0,
@@ -632,6 +640,8 @@ describe.concurrent('health-check scans (#409)', () => {
             });
         await Promise.all([
             realUpload({ updatedAt: daysAfter(updatedAfter, 0.5) }),
+            // At the cutoff itself: "since" includes it.
+            realUpload({ updatedAt: updatedAfter }),
             realUpload({ updatedAt: daysAfter(updatedAfter, -0.5) }),
             // Recently updated, but from before the cohort.
             realUpload({
@@ -649,7 +659,7 @@ describe.concurrent('health-check scans (#409)', () => {
             pending: 0,
             ready: 0,
             failed: 0,
-            failed_cold: 1,
+            failed_cold: 2,
             skipped: 0,
         });
     });
@@ -692,4 +702,171 @@ describe.concurrent('health-check scans (#409)', () => {
                 { id: latest.id, userId: user.id }
             );
         }));
+
+    // The nightly check and the reaper (#330). Every stale upload in the
+    // table comes back; only this test's rows are asserted on.
+    it('findStaleUploads returns uploads still uploading from before the cutoff', async ({
+        db,
+        user,
+    }) => {
+        const cutoff = daysAfter(new Date(), -1);
+        const twoDaysAgo = daysAfter(new Date(), -2);
+        const [stale, atCutoff, fresh, finished] = await Promise.all([
+            insertFile(db, {
+                userId: user.id,
+                status: 'uploading',
+                createdAt: twoDaysAgo,
+            }),
+            // Not older than the cutoff: not yet stale.
+            insertFile(db, {
+                userId: user.id,
+                status: 'uploading',
+                createdAt: cutoff,
+            }),
+            insertFile(db, { userId: user.id, status: 'uploading' }),
+            insertFile(db, {
+                userId: user.id,
+                status: 'available',
+                createdAt: twoDaysAgo,
+            }),
+        ]);
+        const own = new Set([stale.id, atCutoff.id, fresh.id, finished.id]);
+
+        const found = await createFileRepo(db).findStaleUploads(cutoff);
+
+        expect(found.filter((f) => own.has(f.id)).map((f) => f.id)).toEqual([
+            stale.id,
+        ]);
+    });
+});
+
+// The dashboard's per-user summaries. Each seeds a row that exactly one term
+// of the query's WHERE keeps out.
+describe.concurrent('dashboard aggregates', () => {
+    it('countStatusesByUser buckets visible files by their active retrieval, then their own status', async ({
+        db,
+        user,
+        createUser,
+    }) => {
+        const stranger = await createUser();
+        const [warm, lapsed, thawing, deleted] = await Promise.all([
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id, status: 'deleted' }),
+            // No retrieval: archived.
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: stranger.id }),
+        ]);
+        await Promise.all([
+            insertRetrieval(db, { userId: user.id, fileId: warm.id }),
+            // Only the hidden-status filter keeps it out of `available`.
+            insertRetrieval(db, { userId: user.id, fileId: deleted.id }),
+            // Its restored copy is gone: archived again, not available.
+            insertRetrieval(db, {
+                userId: user.id,
+                fileId: lapsed.id,
+                expiresAt: past(),
+            }),
+            insertRetrieval(db, {
+                userId: user.id,
+                fileId: thawing.id,
+                status: 'pending',
+                expiresAt: null,
+            }),
+        ]);
+
+        expect(await createFileRepo(db).countStatusesByUser(user.id)).toEqual({
+            archived: 2,
+            retrieving: 1,
+            available: 1,
+        });
+    });
+
+    it('sumStorageByMimeCategory totals the user’s visible files per category, largest first', async ({
+        db,
+        user,
+        createUser,
+    }) => {
+        const stranger = await createUser();
+        await Promise.all([
+            insertFile(db, {
+                userId: user.id,
+                mimeType: 'image/jpeg',
+                size: 100,
+            }),
+            insertFile(db, {
+                userId: user.id,
+                mimeType: 'image/png',
+                size: 50,
+            }),
+            insertFile(db, {
+                userId: user.id,
+                mimeType: 'video/mp4',
+                size: 400,
+            }),
+            insertFile(db, {
+                userId: user.id,
+                mimeType: 'image/jpeg',
+                size: 800,
+                status: 'uploading',
+            }),
+            insertFile(db, {
+                userId: stranger.id,
+                mimeType: 'image/jpeg',
+                size: 1600,
+            }),
+        ]);
+
+        expect(
+            await createFileRepo(db).sumStorageByMimeCategory(user.id)
+        ).toEqual([
+            { category: 'Videos', totalBytes: 400, fileCount: 1 },
+            { category: 'Images', totalBytes: 150, fileCount: 2 },
+        ]);
+    });
+});
+
+// Sequential, because it freezes the clock: the window starts at the query's
+// own `now`, and a concurrent test would read the frozen time too.
+describe('uploadHistoryByDay', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('sums the user’s visible uploads per day, oldest first, from exactly 30 days back', async ({
+        db,
+        user,
+        createUser,
+    }) => {
+        const stranger = await createUser();
+        vi.useFakeTimers({
+            toFake: ['Date'],
+            now: new Date('2026-06-15T12:00:00Z'),
+        });
+        // How the query sets its window start, local-time days and all.
+        const since = new Date();
+        since.setDate(since.getDate() - 30);
+        const at = (iso: string) => new Date(iso);
+        const upload = (size: number, createdAt: Date, extra = {}) =>
+            insertFile(db, { userId: user.id, size, createdAt, ...extra });
+        await Promise.all([
+            upload(10, since),
+            upload(20, new Date(since.getTime() - 1)),
+            upload(100, at('2026-06-13T10:00:00Z')),
+            upload(200, at('2026-06-13T14:00:00Z')),
+            upload(50, at('2026-06-14T12:00:00Z')),
+            upload(800, at('2026-06-13T12:00:00Z'), { status: 'uploading' }),
+            insertFile(db, {
+                userId: stranger.id,
+                size: 1600,
+                createdAt: at('2026-06-13T12:00:00Z'),
+            }),
+        ]);
+
+        // The column holds UTC, so each day is the UTC one.
+        expect(await createFileRepo(db).uploadHistoryByDay(user.id)).toEqual([
+            { date: since.toISOString().slice(0, 10), totalBytes: 10 },
+            { date: '2026-06-13', totalBytes: 300 },
+            { date: '2026-06-14', totalBytes: 50 },
+        ]);
+    });
 });

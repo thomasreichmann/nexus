@@ -517,7 +517,8 @@ async function findDownloadableByUser(
             partCount: sql<number>`count(${schema.retrievalArtifacts.id})::int`,
             // coalesce: size_bytes is nullable on a row that never finished,
             // and one null would poison the whole sum.
-            totalBytes: sql<number>`coalesce(sum(${schema.retrievalArtifacts.sizeBytes}), 0)::bigint`,
+            // The driver hands a bigint over as a string; converted below.
+            totalBytes: sql<string>`coalesce(sum(${schema.retrievalArtifacts.sizeBytes}), 0)::bigint`,
             builtAt: sql<unknown>`min(${schema.retrievalArtifacts.completedAt})`,
         })
         .from(schema.retrievalRequests)
@@ -548,6 +549,7 @@ async function findDownloadableByUser(
     return rows.map((row) => ({
         ...row,
         completedAt: row.completedAt!,
+        totalBytes: Number(row.totalBytes),
         builtAt: toDate(row.builtAt)!,
     }));
 }

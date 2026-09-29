@@ -1,4 +1,6 @@
-import { it, expect, describe } from '../test-db/integration';
+import { vi } from 'vitest';
+import { it, expect, describe, afterEach } from '../test-db/integration';
+import { artifactWindowStart } from '../objectState';
 import {
     insertFile,
     insertRetrieval,
@@ -636,12 +638,7 @@ describe.concurrent('findDownloadableByUser', () => {
             db
         ).findDownloadableByUser(user.id);
 
-        expect(
-            downloadable.map((row) => ({
-                ...row,
-                totalBytes: Number(row.totalBytes),
-            }))
-        ).toEqual([
+        expect(downloadable).toEqual([
             {
                 id: newer.request.id,
                 tier: newer.request.tier,
@@ -697,6 +694,49 @@ describe.concurrent('findDownloadableByUser', () => {
         ).findDownloadableByUser(user.id, wanted.request.id);
 
         expect(downloadable.map((row) => row.id)).toEqual([wanted.request.id]);
+    });
+});
+
+// Sequential, because it freezes the clock: the window is measured from the
+// query's own `now`, and a concurrent test would read the frozen time too.
+describe('findDownloadableByUser window boundary', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('drops a request whose first part was built exactly one retention period ago', async ({
+        db,
+        user,
+    }) => {
+        vi.useFakeTimers({ toFake: ['Date'], now: new Date() });
+        const windowStart = artifactWindowStart();
+        // The first, built exactly at the window start, has expired.
+        const [, justInside] = await Promise.all(
+            [windowStart, new Date(windowStart.getTime() + 1)].map(
+                async (builtAt) => {
+                    const { request } = await seedRequest(
+                        db,
+                        user.id,
+                        [READY],
+                        {
+                            completedAt: new Date(),
+                        }
+                    );
+                    await insertRetrievalArtifact(db, {
+                        requestId: request.id,
+                        position: 0,
+                        status: 'ready',
+                        sizeBytes: 100,
+                        completedAt: builtAt,
+                    });
+                    return request;
+                }
+            )
+        );
+
+        const downloadable = await createRetrievalRequestRepo(
+            db
+        ).findDownloadableByUser(user.id);
+
+        expect(downloadable.map((row) => row.id)).toEqual([justInside.id]);
     });
 });
 
