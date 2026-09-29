@@ -213,10 +213,15 @@ jobs:
               if: ${{ !cancelled() }}
               run: pnpm -F web test:e2e:admin
 
+            # Two workers, not the config's CI default of one: every flows spec
+            # file has its own dedicated user, so files run side by side safely.
+            # Measured on this runner (#499): the test phase went from ~128 s at
+            # 1 worker to ~78 s at 2, and 3-4 bought only ~3 s more, because
+            # the multipart-budget spec (~50 s) is then the floor.
             - name: Run flows tests
               id: flows
               if: ${{ !cancelled() }}
-              run: pnpm -F web test:e2e:flows
+              run: pnpm -F web test:e2e:flows --workers=2
 
             # Same raw-curl Discord rail as uptime.yml; an unset secret
             # degrades to a no-op, and the red run stays the primary alert.
