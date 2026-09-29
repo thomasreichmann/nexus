@@ -16,13 +16,32 @@ ephemeral port, so they build before running and coexist with `pnpm dev`.
 
 Pick the smallest tier that covers your change:
 
-| Command                            | Covers                             | Run when you changed                              |
-| ---------------------------------- | ---------------------------------- | ------------------------------------------------- |
-| `pnpm -F web test:e2e:smoke`       | page renders + light flows         | any page/component (REQUIRED)                     |
-| `pnpm -F web test:e2e:flows`       | file browser + upload interactions | files/upload UI or their routers                  |
-| `pnpm -F web test:e2e:admin`       | admin jobs/files/dev-tools         | admin features                                    |
-| `pnpm -F web test:e2e`             | all of the above                   | cross-cutting changes (auth, tRPC client, layout) |
-| `pnpm -F web e2e:coverage --check` | coverage gate (no browsers)        | added a page, use-case, or test                   |
+| Command                            | Covers                             | Run when you changed                              | In CI                     |
+| ---------------------------------- | ---------------------------------- | ------------------------------------------------- | ------------------------- |
+| `pnpm -F web test:e2e:smoke`       | page renders + light flows         | any page/component (REQUIRED)                     | post-merge, 1 worker      |
+| `pnpm -F web test:e2e:flows`       | file browser + upload interactions | files/upload UI or their routers                  | post-merge, 2 workers     |
+| `pnpm -F web test:e2e:admin`       | admin jobs/files/dev-tools         | admin features                                    | post-merge, chained specs |
+| `pnpm -F web test:e2e`             | all of the above                   | cross-cutting changes (auth, tRPC client, layout) | —                         |
+| `pnpm -F web e2e:coverage --check` | coverage gate (no browsers)        | added a page, use-case, or test                   | pre-merge, in `Checks`    |
+
+**Only `Checks` and `Integration tests` gate a PR.** Smoke, admin and flows
+run after merge, in sequence in one `E2E Tests` job
+(`.github/workflows/post-merge.yml`). A red run posts to Discord, and you fix
+forward. Flows was weighed as a pre-merge gate and stays post-merge (#499;
+smoke likewise, #500):
+
+- **Cost.** Even split and on 2 workers, the flows test phase is ~78 s in CI.
+  A gate job adds install, browsers and a production build (~1.5 min) before
+  that, on every push to every PR. The integration tier already gates the
+  server and SQL logic flows leans on, in ~35 s.
+- **Flake.** Browser tiers fail for reasons outside the change: the live dev
+  services and global tables every run shares (the jobs table, #419). A flaky
+  required check blocks unrelated PRs.
+- **Secrets.** Flows runs against the real dev environment, and fork PRs don't
+  get its secrets, so the gate could only cover same-repo PRs.
+
+Revisit if post-merge flows starts catching regressions a PR should have been
+blocked on.
 
 **One run per tier.** A tier subsumes every spec inside it — if the full tier
 is required anyway, don't run a single spec first "to check": that doubles
