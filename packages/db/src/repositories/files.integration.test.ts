@@ -1,4 +1,9 @@
-import { it, expect, describe } from '../test-db/integration';
+import {
+    it,
+    expect,
+    describe,
+    inRolledBackTransaction,
+} from '../test-db/integration';
 import { insertFile, insertRetrieval, insertUploadBatch } from '../test-db';
 import { createFileRepo, originalKey } from './files';
 
@@ -509,7 +514,8 @@ describe.concurrent('writes by id', () => {
 //
 // Runs of this file also overlap: Stryker's workers share one database, and so
 // can engineers on dev. A fixed window would count the other run's rows too,
-// so each count test dates its rows from a random slot of its own.
+// so each count test dates its rows from a random slot of its own. The latest
+// thumbnail test keeps its rows in a transaction it rolls back.
 const DAY_MS = 24 * 60 * 60 * 1000;
 const randomSlot = () => Math.floor(Math.random() * 10_000);
 const daysAfter = (date: Date, days: number) =>
@@ -634,33 +640,42 @@ describe.concurrent('health-check scans (#409)', () => {
         });
     });
 
-    it('findLatestReadyThumbnail picks the most recently updated visible ready thumbnail', async ({
+    // Another run's rows would carry the same 2100 dates, and there is no
+    // window to move: the query wants the newest row in the table. So they
+    // are seeded where no other run can see them.
+    it('findLatestReadyThumbnail picks the most recently updated visible ready thumbnail', ({
         db,
         user,
-    }) => {
-        const at = (day: number) => new Date(Date.UTC(2100, 0, day));
-        const [latest] = await Promise.all([
-            insertFile(db, {
+    }) =>
+        inRolledBackTransaction(db, async (tx) => {
+            const at = (day: number) => new Date(Date.UTC(2100, 0, day));
+            // Inserted first, so it's the row found first without the
+            // newest-first sort, and the oldest one with it reversed: on an
+            // empty database neither can pass as `latest`.
+            await insertFile(tx, {
                 userId: user.id,
                 thumbnailStatus: 'ready',
                 updatedAt: at(1),
-            }),
-            insertFile(db, {
+            });
+            const latest = await insertFile(tx, {
+                userId: user.id,
+                thumbnailStatus: 'ready',
+                updatedAt: at(2),
+            });
+            await insertFile(tx, {
                 userId: user.id,
                 thumbnailStatus: 'ready',
                 status: 'deleted',
-                updatedAt: at(2),
-            }),
-            insertFile(db, {
+                updatedAt: at(3),
+            });
+            await insertFile(tx, {
                 userId: user.id,
                 thumbnailStatus: 'pending',
-                updatedAt: at(3),
-            }),
-        ]);
+                updatedAt: at(4),
+            });
 
-        expect(await createFileRepo(db).findLatestReadyThumbnail()).toEqual({
-            id: latest.id,
-            userId: user.id,
-        });
-    });
+            expect(await createFileRepo(tx).findLatestReadyThumbnail()).toEqual(
+                { id: latest.id, userId: user.id }
+            );
+        }));
 });
