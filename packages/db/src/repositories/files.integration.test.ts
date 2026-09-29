@@ -61,7 +61,7 @@ describe.concurrent('ownership', () => {
     }) => {
         const repo = createFileRepo(db);
         const stranger = await createUser();
-        const [live, alreadyDeleted, theirs] = await Promise.all([
+        const [live, alreadyDeleted, theirs, notAsked] = await Promise.all([
             insertFile(db, { userId: user.id }),
             insertFile(db, {
                 userId: user.id,
@@ -69,6 +69,9 @@ describe.concurrent('ownership', () => {
                 deletedAt: LONG_AGO,
             }),
             insertFile(db, { userId: stranger.id }),
+            // The user's, live, and not in the list: without the id filter,
+            // deleting one file would delete the whole vault.
+            insertFile(db, { userId: user.id }),
         ]);
 
         const deleted = await repo.softDeleteForUser(user.id, [
@@ -84,6 +87,7 @@ describe.concurrent('ownership', () => {
         });
         // Status and deletedAt as they were, and nothing else written either.
         expect(await repo.findById(theirs.id)).toEqual(theirs);
+        expect(await repo.findById(notAsked.id)).toEqual(notAsked);
         // An already-deleted file keeps the time it was first deleted.
         expect((await repo.findById(alreadyDeleted.id))?.deletedAt).toEqual(
             LONG_AGO
@@ -555,6 +559,7 @@ describe.concurrent('health-check scans (#409)', () => {
         const inWindow = daysAfter(windowStart, 0.5);
         const realUpload = (extra: Parameters<typeof insertFile>[1]) =>
             insertUploadedFile(db, user.id, { createdAt: inWindow, ...extra });
+        const seededId = crypto.randomUUID();
         await Promise.all([
             realUpload({ thumbnailStatus: 'ready' }),
             realUpload({ thumbnailStatus: 'ready' }),
@@ -574,6 +579,15 @@ describe.concurrent('health-check scans (#409)', () => {
             insertFile(db, {
                 userId: user.id,
                 thumbnailStatus: 'pending',
+                createdAt: inWindow,
+            }),
+            // A seed key with the file id third, like an upload's: only the
+            // key's first segment, which isn't the owner, keeps it out.
+            insertFile(db, {
+                id: seededId,
+                userId: user.id,
+                s3Key: `seed/${user.id}/${seededId}`,
+                thumbnailStatus: 'ready',
                 createdAt: inWindow,
             }),
         ]);

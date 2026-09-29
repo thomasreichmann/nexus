@@ -5,6 +5,9 @@ import { createRetrievalRepo } from './retrievals';
 const HOUR_MS = 60 * 60 * 1000;
 const past = () => new Date(Date.now() - HOUR_MS);
 const future = () => new Date(Date.now() + HOUR_MS);
+// Earlier than the web tier's 2000-01-01 and retrievalRequests' 1990-01-01,
+// so this file's rows never compete with theirs for the same slots.
+const BEFORE_ANY_REAL_ROW = new Date('1980-01-01T00:00:00Z');
 
 describe.concurrent('retrievals repository', () => {
     // A `ready` row past `expiresAt` is expired by predicate, not by stored
@@ -318,5 +321,45 @@ describe.concurrent('retrievals repository', () => {
         expect(
             await repo.updateStatus(crypto.randomUUID(), 'failed')
         ).toBeUndefined();
+    });
+
+    // The poll's whole work list: the worker HEADs every row it returns, so a
+    // finished row in it is an S3 request on every run, forever (#416).
+    it('findPendingWithFiles returns only rows still waiting on S3', async ({
+        db,
+        user,
+    }) => {
+        const statuses = [
+            'pending',
+            'in_progress',
+            'ready',
+            'expired',
+            'failed',
+            'cancelled',
+        ] as const;
+        const rows = await Promise.all(
+            statuses.map(async (status) =>
+                insertRetrieval(db, {
+                    userId: user.id,
+                    fileId: (await insertFile(db, { userId: user.id })).id,
+                    status,
+                    // The scan is global, oldest first, under a LIMIT: dated
+                    // before any real row so all six sit inside it.
+                    createdAt: BEFORE_ANY_REAL_ROW,
+                })
+            )
+        );
+        const ownIds = new Set(rows.map((r) => r.id));
+
+        const due = await createRetrievalRepo(db).findPendingWithFiles(
+            1000,
+            // Every row is past its horizon, so only the status decides.
+            { expedited: 0, standard: 0, bulk: 0 }
+        );
+
+        const [pending, inProgress] = rows;
+        expect(
+            new Set(due.map((r) => r.id).filter((id) => ownIds.has(id)))
+        ).toEqual(new Set([pending!.id, inProgress!.id]));
     });
 });

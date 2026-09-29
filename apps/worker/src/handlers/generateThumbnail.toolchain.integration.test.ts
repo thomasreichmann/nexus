@@ -21,6 +21,8 @@
  * Fixtures, in __fixtures__/:
  * - landscape.jpg (1200x800) and portrait.png (600x900) are longer than 512px,
  *   so the scale filter has work to do.
+ * - small.png (300x200, landscape.jpg scaled down) is shorter than 512px on
+ *   both edges, so the filter must leave its size alone.
  * - clip.mp4 is 4s long: black for 2s, then white.
  * - d80-head.nef is the first 1,412,146 bytes of a CC0 Nikon D80 NEF from
  *   raw.pixls.us (DSC_1114.NEF, sha256 745cb067…b1d066), which ends where its
@@ -284,6 +286,27 @@ describe.skipIf(missing.length > 0)(
                 expect(uploadedFormat(file)).toBe('WEBP');
             }
         );
+
+        // Scaling up adds no detail, only blur and bytes.
+        it('keeps an image smaller than 512px at its own size', async ({
+            db,
+            user,
+        }) => {
+            const file = await insertFixture(
+                db,
+                user.id,
+                'icon.png',
+                'small.png'
+            );
+
+            const row = await runJob(db, file);
+
+            expect(row).toMatchObject({
+                thumbnailStatus: 'ready',
+                thumbnailWidth: 300,
+                thumbnailHeight: 200,
+            });
+        });
 
         it('thumbnails an MP4 read over HTTP ranges, and records its size and duration', async ({
             db,
