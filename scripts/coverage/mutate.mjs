@@ -14,12 +14,14 @@
  *   --json          machine-readable output (schema in docs/conventions/testing.md)
  *   --markdown      a Markdown summary (CI's job summary)
  *
- * Stryker mutates the files (flips `>` to `>=`, empties a block, drops a
- * condition…) and runs the tests that cover each mutant. A mutant no test
- * fails on "survives": a concrete change the tests don't notice. How and why
- * it runs the way it does: scripts/coverage/mutation.mjs.
+ * Stryker mutates the files (flips `>` to `>=`, empties a block, drops one
+ * term of a query's `and(…)` or its whole `.where(…)`…) and runs the tests
+ * that cover each mutant. A mutant no test fails on "survives": a concrete
+ * change the tests don't notice. How and why it runs the way it does:
+ * scripts/coverage/mutation.mjs.
  */
 import { relative } from 'node:path';
+import { NAME as DRIZZLE_CONDITION } from './drizzle-condition.mjs';
 import { defaultBaseRef, repoFiles, resolveFileSet } from './files.mjs';
 import { reportHtml, runMutation } from './mutation.mjs';
 import { color, isSource, root } from './shared.mjs';
@@ -95,13 +97,29 @@ function totals(recs) {
     const killed = sum('killed');
     const total = sum('total');
     const reached = total - sum('noCoverage');
+    const byMutator = {};
+    for (const r of measured)
+        for (const [name, counts] of Object.entries(r.byMutator)) {
+            byMutator[name] ??= { killed: 0, survived: 0, noCoverage: 0 };
+            for (const [key, n] of Object.entries(counts))
+                byMutator[name][key] += n;
+        }
     return {
         killed,
         total,
         score: percent(killed, total),
         // Of the mutants some test runs: how good the tests that exist are.
         coveredScore: percent(killed, reached),
+        byMutator,
     };
+}
+
+/** "12 DrizzleCondition (10 killed)": the one mutator that is ours. */
+function ownMutantsText(t) {
+    const own = t.byMutator[DRIZZLE_CONDITION];
+    if (!own) return '';
+    const count = own.killed + own.survived + own.noCoverage;
+    return `${count} ${DRIZZLE_CONDITION} (${own.killed} killed)`;
 }
 
 function percent(part, whole) {
@@ -152,11 +170,13 @@ function printText(run) {
         t.score === null
             ? ''
             : `, ${t.killed} killed (${t.score}%; ${t.coveredScore ?? 0}% of those a test runs)`;
+    const own = ownMutantsText(t);
+    const ownText = own ? ` · ${own}` : '';
     const cached = files.length - run.ran.length;
     const cachedText = cached ? ` · ${cached} cached` : '';
     console.log(
         c.dim(
-            `${files.length === 1 ? '1 file' : `${files.length} files`} · ${t.total} mutants${scoreText} · ${scopeLabel()}${cachedText} · ${run.seconds.toFixed(1)}s`
+            `${files.length === 1 ? '1 file' : `${files.length} files`} · ${t.total} mutants${scoreText}${ownText} · ${scopeLabel()}${cachedText} · ${run.seconds.toFixed(1)}s`
         )
     );
     if (recs.some((r) => r.survived > 0))
@@ -172,9 +192,18 @@ function printText(run) {
 
 function survivorLine(s) {
     const where = `L${s.line}`.padEnd(6);
-    const change = `${c.red(s.original || '∅')} → ${c.green(s.replacement || '∅')}`;
+    const change = `${c.red(s.original || '∅')} → ${c.green(replacement(s))}`;
     const by = coveredBy(s);
-    return `${where}${change}  ${c.dim(`${s.mutator}; ${by}`)}`;
+    return `${where}${change}  ${c.dim(`${mutatorLabel(s)}; ${by}`)}`;
+}
+
+// A DrizzleCondition mutant's `undefined` is how drizzle drops a condition.
+function replacement(s) {
+    return s.description ? '∅' : s.replacement || '∅';
+}
+
+function mutatorLabel(s) {
+    return s.description ? `${s.mutator}, ${s.description}` : s.mutator;
 }
 
 function coveredBy(s) {
@@ -200,7 +229,7 @@ function markdown(run) {
     const out = [
         `### Mutation testing: ${t.score === null ? 'no mutants' : `${t.score}% of ${t.total} mutants killed`}`,
         '',
-        `${scopeLabel()} · ${run.tiers.map((x) => x.name).join(', ')} · ${run.seconds.toFixed(0)}s. A survivor is a change no test noticed; see "Mutation testing" in \`docs/conventions/testing.md\`. Not a merge gate.`,
+        `${[scopeLabel(), run.tiers.map((x) => x.name).join(', '), ownMutantsText(t)].filter(Boolean).join(' · ')} · ${run.seconds.toFixed(0)}s. A survivor is a change no test noticed; see "Mutation testing" in \`docs/conventions/testing.md\`. Not a merge gate.`,
         '',
     ];
     for (const n of notices) out.push(`> ${n}`, '');
@@ -228,7 +257,7 @@ function markdown(run) {
         );
         for (const s of r.survivors)
             out.push(
-                `- L${s.line} \`${s.original.replaceAll('`', "'")}\` → \`${s.replacement.replaceAll('`', "'")}\` (${s.mutator}; ${coveredBy(s)})`
+                `- L${s.line} \`${s.original.replaceAll('`', "'")}\` → \`${replacement(s).replaceAll('`', "'")}\` (${mutatorLabel(s)}; ${coveredBy(s)})`
             );
         out.push('', '</details>');
     }
@@ -248,7 +277,13 @@ function jsonOutput(run) {
         failure: run?.failure ?? null,
         ...(run
             ? totals(recs)
-            : { killed: 0, total: 0, score: null, coveredScore: null }),
+            : {
+                  killed: 0,
+                  total: 0,
+                  score: null,
+                  coveredScore: null,
+                  byMutator: {},
+              }),
         files: recs.map(({ unmeasured, ...r }) =>
             unmeasured ? { path: r.path, status: 'unmeasured' } : r
         ),
