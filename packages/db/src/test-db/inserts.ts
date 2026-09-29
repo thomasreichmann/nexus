@@ -28,6 +28,7 @@ import {
     createStorageUsageFixture,
     createJobFixture,
     createInviteFixture,
+    createWebhookEventFixture,
     type User,
     type StorageUsage,
 } from '../repositories/fixtures';
@@ -44,6 +45,7 @@ import type {
 import type { Subscription } from '../repositories/subscriptions';
 import type { Job } from '../repositories/jobs';
 import type { Invite } from '../repositories/invites';
+import type { WebhookEvent } from '../repositories/webhooks';
 
 /**
  * Writes ONLY the `user` row — no BetterAuth `account`/password. A user that
@@ -209,6 +211,32 @@ export async function insertInvite(
     if (overrides.token === undefined) row.token = `test-invite-${row.id}`;
     const [invite] = await db.insert(schema.invites).values(row).returning();
     return invite!;
+}
+
+/**
+ * `webhook_events` rows belong to no user, so nothing cascades them away:
+ * delete what you insert (`deleteWebhookEvents`, or the integration tier's
+ * `createWebhookEvent` fixture, which does it for you).
+ *
+ * Unless overridden, `externalId` and `eventType` are derived from the fresh
+ * id and prefixed `test`, so a seeded row can't take a real delivery's slot on
+ * the (source, external_id) unique index, and reads as a test row if a health
+ * sweep on the shared dev database catches it mid-test.
+ */
+export async function insertWebhookEvent(
+    db: DB,
+    overrides: Partial<WebhookEvent> = {}
+): Promise<WebhookEvent> {
+    const row = createWebhookEventFixture(overrides);
+    if (overrides.id === undefined) row.id = crypto.randomUUID();
+    if (overrides.externalId === undefined)
+        row.externalId = `evt_test_${row.id}`;
+    if (overrides.eventType === undefined) row.eventType = `test.${row.id}`;
+    const [event] = await db
+        .insert(schema.webhookEvents)
+        .values(row)
+        .returning();
+    return event!;
 }
 
 export interface PasswordResetTokenOptions {

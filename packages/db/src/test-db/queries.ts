@@ -187,6 +187,17 @@ export async function deleteJob(db: DB, id: string): Promise<void> {
         .where(eq(schema.backgroundJobs.id, id));
 }
 
+/** The teardown for `insertWebhookEvent`: those rows have no user to cascade from. */
+export async function deleteWebhookEvents(
+    db: DB,
+    ids: string[]
+): Promise<void> {
+    if (ids.length === 0) return;
+    await db
+        .delete(schema.webhookEvents)
+        .where(inArray(schema.webhookEvents.id, ids));
+}
+
 export async function deleteInvite(db: DB, id: string): Promise<void> {
     await db.delete(schema.invites).where(eq(schema.invites.id, id));
 }

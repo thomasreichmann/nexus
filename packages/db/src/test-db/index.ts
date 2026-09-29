@@ -34,3 +34,4 @@ export type {
 export type { Subscription } from '../repositories/subscriptions';
 export type { Job, NewJob } from '../repositories/jobs';
 export type { Invite } from '../repositories/invites';
+export type { WebhookEvent } from '../repositories/webhooks';

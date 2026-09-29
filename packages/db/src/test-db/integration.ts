@@ -17,6 +17,9 @@
  * - `createJob`: a `background_jobs` row, deleted after the test. Jobs have
  *   no user to cascade from, and a leftover one shows up in the admin jobs
  *   table and crowds out e2e's seeded rows (#419).
+ * - `createWebhookEvent`: inserts a `webhook_events` row (`insertWebhookEvent`)
+ *   and deletes it after the test. Those rows belong to no user either, so
+ *   `user`'s teardown never reaches them.
  *
  * There is no file-scoped user: Vitest 4 runs a file-scoped fixture against
  * the file's context, where the worker-scoped `db` never lands, so it would
@@ -33,14 +36,18 @@ import { test } from 'vitest';
 import { createDb, type Connection } from '../connection';
 import { createNewJobFixture, type User } from '../repositories/fixtures';
 import { createJobRepo, type Job, type NewJob } from '../repositories/jobs';
-import { insertUser } from './inserts';
-import { deleteJob, deleteUsers } from './queries';
+import { insertUser, insertWebhookEvent } from './inserts';
+import { deleteJob, deleteUsers, deleteWebhookEvents } from './queries';
+import type { WebhookEvent } from '../repositories/webhooks';
 
 export interface IntegrationFixtures {
     db: Connection;
     createUser: (overrides?: Partial<User>) => Promise<User>;
     user: User;
     createJob: (overrides?: Partial<NewJob>) => Promise<Job>;
+    createWebhookEvent: (
+        overrides?: Partial<WebhookEvent>
+    ) => Promise<WebhookEvent>;
 }
 
 export const it = test.extend<IntegrationFixtures>({
@@ -84,6 +91,16 @@ export const it = test.extend<IntegrationFixtures>({
             return job;
         });
         await Promise.all(ids.map((id) => deleteJob(db, id)));
+    },
+
+    createWebhookEvent: async ({ db }, use) => {
+        const ids: string[] = [];
+        await use(async (overrides) => {
+            const event = await insertWebhookEvent(db, overrides);
+            ids.push(event.id);
+            return event;
+        });
+        await deleteWebhookEvents(db, ids);
     },
 });
 

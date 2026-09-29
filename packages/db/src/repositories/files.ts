@@ -682,11 +682,11 @@ async function findByUserGroupedByBatch(
             };
             groups.set(key, group);
         }
-        // The service guards against concurrent duplicate active retrievals,
-        // but nothing at the DB level does yet (#266) — if a race slips two
-        // active rows in, the join fans out. Keep the first row (duplicates
-        // are adjacent: ordering is by file columns only) rather than
-        // duplicating the file in the UI.
+        // Two active retrievals for one file would fan the join out. The
+        // partial unique index `retrievals_active_file_id_idx` (#266) now
+        // rules that out, so this skip is a guard that shouldn't fire: keep
+        // the first row (duplicates are adjacent: ordering is by file columns
+        // only) rather than duplicating the file in the UI.
         if (group.files.at(-1)?.id === row.file.id) continue;
         group.files.push({
             ...row.file,

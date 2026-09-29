@@ -408,12 +408,13 @@ logic that never reaches SQL (`compareFilesByName` in
 `../test-db/integration` inside `packages/db`) and ask for what the test
 needs. Seed with the typed insert helpers from `@nexus/db/test-db`.
 
-| Fixture      | Scope  | What you get                                                                                                                                                                                   |
-| ------------ | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `db`         | worker | One connection pool per Vitest worker, closed at the end. Never call `createDb` in a test.                                                                                                     |
-| `user`       | test   | A fresh user. After the test, it and every row it owns are deleted in one statement (`deleteUsers`: every user-owned table cascades from `user`; invites it created go in the same statement). |
-| `createUser` | test   | More users for this test, e.g. the other owner in an ownership test. Torn down with `user`, in that same statement.                                                                            |
-| `createJob`  | test   | A `background_jobs` row (`createNewJobFixture` defaults), deleted after the test. Jobs have no user to cascade from, and a leftover one crowds the admin jobs table (#419).                    |
+| Fixture              | Scope  | What you get                                                                                                                                                                                                                              |
+| -------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db`                 | worker | One connection pool per Vitest worker, closed at the end. Never call `createDb` in a test.                                                                                                                                                |
+| `user`               | test   | A fresh user. After the test, it and every row it owns are deleted in one statement (`deleteUsers`: every user-owned table cascades from `user`; invites it created go in the same statement).                                            |
+| `createUser`         | test   | More users for this test, e.g. the other owner in an ownership test. Torn down with `user`, in that same statement.                                                                                                                       |
+| `createJob`          | test   | A `background_jobs` row (`createNewJobFixture` defaults), deleted after the test. Jobs have no user to cascade from, and a leftover one crowds the admin jobs table (#419).                                                               |
+| `createWebhookEvent` | test   | A `webhook_events` row (`insertWebhookEvent`), deleted after the test. Webhook events have no user to cascade from either. Its default `externalId`/`eventType` are `test`-prefixed and unique, so it can't collide with a real delivery. |
 
 **The reference example.** Copy this one
 (`packages/db/src/repositories/uploadBatches.integration.test.ts`): seed the
@@ -462,8 +463,9 @@ stays green, it isn't testing that behaviour.
 **Rules of thumb:**
 
 - **Every row belongs to a fixture user.** Rows no user owns
-  (`background_jobs`, `verification`) don't cascade. A test that creates them
-  deletes them itself.
+  (`background_jobs`, `verification`, `webhook_events`) don't cascade. A test
+  that creates them deletes them itself; for jobs and webhook events,
+  `createJob` and `createWebhookEvent` do it for you.
 - **The dev database is shared** with e2e runs, other engineers' runs and
   manual use. Scope assertions to your own rows (by id or by your `user`),
   never to a table-wide count. A global scan that sorts oldest-first with a
