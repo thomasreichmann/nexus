@@ -24,6 +24,24 @@
  * - A throwaway Postgres (`scripts/throwaway-postgres.mjs`): each mutant
  *   re-runs the integration tests that cover it, ~10x faster locally than
  *   over the dev pooler, and nobody else's rows.
+ * - Our own mutator, `DrizzleCondition` (`drizzle-condition.mjs`, #524):
+ *   one `and()`/`or()` term, or a builder's whole `.where(…)`, dropped. No
+ *   built-in mutator makes these, and Stryker 10 has no mutator plugin
+ *   kind. `stryker-plugin.mjs` appends it to the instrumenter's built-in
+ *   list at run time, from an Ignore plugin. So its mutants get everything
+ *   Stryker's get: mutation switching, per-test coverage and `killedBy`,
+ *   `// Stryker disable` comments, report.json and the HTML report, and
+ *   `summarize()` below. The alternatives cost more:
+ *   - A `pnpm patch` of the instrumenter adding it to `allMutators` gets the
+ *     same, but the mutator then lives in a diff of Stryker's dist code, and
+ *     reaches into the same internals anyway.
+ *   - A companion pass (write each variant, run its tests) is one Vitest
+ *     run per mutant, and re-implements per-test attribution and reports.
+ *   - Rewriting the source so a built-in mutator makes the drop needs every
+ *     reported line, column and `original` mapped back.
+ *   The cost of the plugin: it relies on `allMutators` and the NodeMutator
+ *   shape, which aren't public API. If a Stryker upgrade moves them, the
+ *   run fails and says so; it never quietly measures without the mutants.
  */
 import { spawn } from 'node:child_process';
 import {
@@ -38,6 +56,7 @@ import {
 import { availableParallelism } from 'node:os';
 import { basename, join, relative, resolve } from 'node:path';
 import { withThrowawayPostgres } from '../throwaway-postgres.mjs';
+import { NAME as DRIZZLE_CONDITION } from './drizzle-condition.mjs';
 import { TIERS, formatFailure, outDir, root } from './shared.mjs';
 
 export const mutationDir = join(outDir, 'mutation');
@@ -50,6 +69,9 @@ const cacheFile = join(mutationDir, 'cache.json');
 const INSTRUMENTED = 'stryNS_9fa48';
 // Each Stryker worker opens its own pools, beyond Postgres's default 100.
 const PG_FLAGS = ['-c', 'max_connections=500'];
+const STRYKER_PLUGIN = join(root, 'scripts/coverage/stryker-plugin.mjs');
+// A change to what our mutator generates re-measures every file.
+const OWN_MUTATORS = 'scripts/coverage/drizzle-condition.mjs';
 
 /** Every tier, minus the integration ones with `unitOnly`. */
 export function mutationTiers({ unitOnly = false } = {}) {
@@ -57,12 +79,13 @@ export function mutationTiers({ unitOnly = false } = {}) {
 }
 
 /**
- * Cached results that are still fresh: newer than the file and than every
- * test and config of the tiers, and measured with at least those tiers.
+ * Cached results that are still fresh: newer than the file, than every test
+ * and config of the tiers and than our mutator, and measured with at least
+ * those tiers.
  */
 export function cachedMutation(files, tiers, allFiles) {
     const inputsAt = Math.max(
-        0,
+        mtime(OWN_MUTATORS),
         ...allFiles.filter((f) => tiers.some((t) => t.inputs(f))).map(mtime)
     );
     const names = tiers.map((t) => t.name);
@@ -74,8 +97,10 @@ export function cachedMutation(files, tiers, allFiles) {
             entry &&
             entry.at > Math.max(mtime(f), inputsAt) &&
             names.every((n) => entry.tiers.includes(n)) &&
-            // Cached before the per-test tally existed (#498): measure again.
-            Array.isArray(entry.result.tests)
+            // Cached before the per-test tally (#498) or DrizzleCondition
+            // (#524) existed: measure again.
+            Array.isArray(entry.result.tests) &&
+            entry.result.byMutator
         )
             fresh.set(f, entry.result);
     }
@@ -286,7 +311,9 @@ async function mutate(files, vitestConfig, tiers, env, onProgress) {
 function strykerOptions(files, vitestConfig) {
     return {
         testRunner: 'vitest',
-        plugins: ['@stryker-mutator/vitest-runner'],
+        plugins: ['@stryker-mutator/vitest-runner', STRYKER_PLUGIN],
+        // Creating this "ignorer" adds DrizzleCondition; it ignores nothing.
+        ignorers: [DRIZZLE_CONDITION],
         vitest: { configFile: vitestConfig, related: true },
         coverageAnalysis: 'perTest',
         inPlace: true,
@@ -404,6 +431,7 @@ function noTestsResult() {
         survivors: [],
         noCoverageLines: [],
         tests: [],
+        byMutator: {},
     };
 }
 
@@ -417,6 +445,9 @@ function noTestsResult() {
  * covering test runs, so `killedBy` names every test that noticed. Static
  * mutants (every related test "runs" them) are left out. A timeout names no
  * test, so it's counted apart, in `timedOut`, for each test that covers it.
+ *
+ * `byMutator` splits killed, survived and noCoverage by mutator name. A
+ * DrizzleCondition survivor also gets a `description` of what it dropped.
  */
 function summarize(entry, tests) {
     const result = {
@@ -429,12 +460,22 @@ function summarize(entry, tests) {
         survivors: [],
         noCoverageLines: [],
         tests: [],
+        byMutator: {},
     };
     if (!entry) return result;
     const source = entry.source.split('\n');
     const unreached = [];
     const perTest = new Map();
     for (const m of entry.mutants) {
+        const kind = STATUS_KIND[m.status];
+        if (kind) {
+            result.byMutator[m.mutatorName] ??= {
+                killed: 0,
+                survived: 0,
+                noCoverage: 0,
+            };
+            result.byMutator[m.mutatorName][kind]++;
+        }
         if (!m.static && ['Killed', 'Survived', 'Timeout'].includes(m.status))
             for (const id of m.coveredBy ?? []) {
                 const t = perTest.get(id) ?? { ran: 0, killed: 0, timedOut: 0 };
@@ -452,6 +493,9 @@ function summarize(entry, tests) {
                 line: m.location.start.line,
                 column: m.location.start.column,
                 mutator: m.mutatorName,
+                ...(m.mutatorName === DRIZZLE_CONDITION && {
+                    description: dropped(source, m.location),
+                }),
                 original: snippet(originalText(source, m.location)),
                 replacement: snippet(m.replacement ?? ''),
                 static: Boolean(m.static),
@@ -478,6 +522,27 @@ function summarize(entry, tests) {
         }))
         .sort((a, b) => ratio(a) - ratio(b) || a.test.localeCompare(b.test));
     return result;
+}
+
+const STATUS_KIND = {
+    Killed: 'killed',
+    Timeout: 'killed',
+    Survived: 'survived',
+    NoCoverage: 'noCoverage',
+};
+
+/**
+ * A DrizzleCondition mutant replaces a condition with `undefined`: the
+ * argument of a builder's `.where(`, or one term of an `and(` / `or(`.
+ */
+function dropped(source, { start }) {
+    const before = [
+        ...source.slice(Math.max(0, start.line - 4), start.line - 1),
+        source[start.line - 1].slice(0, start.column - 1),
+    ].join('\n');
+    return /\.where\(\s*$/.test(before)
+        ? 'the whole .where(…) dropped'
+        : 'one and()/or() term dropped';
 }
 
 // A test whose only mutants timed out sorts with the strongest.

@@ -712,10 +712,24 @@ measure. The failure is printed below the table.
 Coverage says which lines a test ran. Mutation testing says whether any test
 would notice them breaking. [Stryker](https://stryker-mutator.io) makes small
 changes to your code, one at a time: `>` becomes `>=`, a condition becomes
-`true`, a block is emptied, a `where` object becomes `{}`. For each change it
-runs the tests that execute that line. A change that turns some test red is
-**killed**. A change every test still passes on **survives**: a concrete
-behaviour your tests don't pin.
+`true`, a block is emptied, a `where` object becomes `{}`, one term of a
+drizzle `and(…)` / `or(…)` is dropped, a query builder's whole `.where(…)`
+is dropped. For each change it runs the tests that execute that line. A
+change that turns some test red is **killed**. A change every test still
+passes on **survives**: a concrete behaviour your tests don't pin.
+
+The last two are ours, not Stryker's (#524): the `DrizzleCondition`
+mutator, the #489 bug class of a query that lost one condition. It makes
+one mutant per term of an `and`/`or` imported from drizzle-orm (nested
+calls included) and one per `.where(…)` on an `update`, `delete` or
+`select … from` chain. It drops a condition by replacing it with
+`undefined`, which drizzle leaves out, so the survivor sits on the
+dropped condition's line:
+
+```
+        L16   eq(schema.uploadBatches.id, batchId) → ∅  DrizzleCondition, one and()/or() term dropped; 8 tests ran it: uploadBatches.integration.test.ts, files.test.ts, +1
+        L110  eq(schema.backgroundJobs.id, id) → ∅  DrizzleCondition, the whole .where(…) dropped; 3 tests ran it: jobs.integration.test.ts, handler.integration.test.ts
+```
 
 Run it after `pnpm cov:touched`, on the code you changed:
 
@@ -761,11 +775,15 @@ notice this change?
   revert. A boundary survivor (`>` → `>=`) wants a test at exactly the
   boundary. A `where: {…} → {}` survivor wants a test with a row the filter
   must exclude (another user's, a deleted one): see "Integration Tests (real
-  database)".
+  database)". A dropped `and()`/`or()` term wants a row that only that term
+  excludes: another user's, another id's, another status's. A dropped
+  `.where(…)` wants a bystander row the statement must leave alone (an
+  update or delete), or must not return (a select).
 - **No: it's equivalent.** Some mutants can't change behaviour (a log
   message, an optimisation that gives the same answer). Don't write a test
   that pins them. If one keeps coming back, mark it where it lives:
-  `// Stryker disable next-line StringLiteral: log text only`.
+  `// Stryker disable next-line StringLiteral: log text only`, or
+  `// Stryker disable next-line DrizzleCondition: the rows are filtered again below`.
 - **Not sure: it's a finding.** Mention it in the PR rather than guessing.
 
 `runs at import` means the mutated code runs when the module loads (a
@@ -781,11 +799,17 @@ from cold:
 | PR #466: a page, two components, `status.ts`                           |     625 |  17s |
 | PR #449: 7 files incl. `useUpload.ts` and `repositories/files.ts`      |    1551 |  46s |
 | A repository and the service over it (`retrievals.ts`, `retrieval.ts`) |     232 |  79s |
+| Every repository (`packages/db/src/repositories`), load average 13–50  |     596 |  ~3m |
+
+`DrizzleCondition` only adds mutants where there are drizzle queries: 127
+on top of 469 across the repositories, about a quarter more test runs. On a
+loaded machine that stayed inside the run-to-run noise (#524).
 
 Mutants no test runs cost nothing, so big untested files are cheap. Time
 goes into mutants that integration tests cover. Results are cached in
 `coverage/mutation/cache.json` per file, like `cov:touched`'s: a file is
-re-mutated when it, or any test or Vitest config, is newer than its result.
+re-mutated when it, any test or Vitest config, or the `DrizzleCondition`
+mutator (`scripts/coverage/drizzle-condition.mjs`) is newer than its result.
 
 **How it runs, and what to know.** Stryker instruments the files **in
 place** for the length of the run and restores them afterwards (on Ctrl-C
@@ -825,6 +849,13 @@ never renamed. `--markdown` prints the CI summary instead.
     "total": 232,
     "score": 77.2, // killed / total, percent; null when there are no mutants
     "coveredScore": 78.9, // killed / mutants some test runs
+    // The counts split by mutator name (killed includes Timeout), summed
+    // over the files; each file has its own. DrizzleCondition is ours.
+    "byMutator": {
+        "ObjectLiteral": { "killed": 20, "survived": 1, "noCoverage": 0 },
+        "DrizzleCondition": { "killed": 11, "survived": 1, "noCoverage": 0 },
+        "…": {},
+    },
     "files": [
         // worst first; a file whose run failed is { "path", "status": "unmeasured" }
         {
@@ -848,6 +879,18 @@ never renamed. `--markdown` prints the CI summary instead.
                         "retrievals.test.ts › retrievals repository findByUser returns all retrievals for user",
                         "…",
                     ],
+                },
+                {
+                    "line": 131,
+                    "column": 17,
+                    "mutator": "DrizzleCondition",
+                    // Only on DrizzleCondition survivors: "one and()/or() term
+                    // dropped" or "the whole .where(…) dropped".
+                    "description": "one and()/or() term dropped",
+                    "original": "eq(schema.retrievals.userId, userId)", // the dropped condition
+                    "replacement": "undefined", // how drizzle drops it
+                    "static": false,
+                    "coveredBy": ["…"],
                 },
             ],
             "noCoverageLines": [], // inclusive line ranges of mutants no test runs
