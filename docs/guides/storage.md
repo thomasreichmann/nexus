@@ -66,7 +66,10 @@ const url = await s3.presigned.put('uploads/photo.jpg', {
 
 #### `s3.presigned.get(key, options?)`
 
-Generate a presigned URL for downloading an object.
+Generate a signed URL for downloading an object. With the files bucket's
+CloudFront distribution configured, it is a CloudFront signed URL; otherwise an
+S3 presigned GET. See [CloudFront delivery](#cloudfront-delivery). Same options
+either way.
 
 | Option      | Type     | Default | Description                         |
 | ----------- | -------- | ------- | ----------------------------------- |
@@ -140,6 +143,41 @@ ordering); callers must gate on this and hide the download surface.
 Mint these on the click, never ahead of it: the link lives an hour while the
 archive behind it stays downloadable for `RETRIEVAL_ARTIFACT_RETENTION_DAYS`,
 which is why the ready email deep-links into the app instead of carrying a URL.
+
+Like `presigned.get`, this signs for the artifacts bucket's CloudFront
+distribution when one is configured.
+
+### CloudFront delivery
+
+Every byte a user downloads leaves AWS. Straight from S3 that is $0.09/GB past
+an account-wide 100 GB/month. Through CloudFront the S3 -> edge leg is free and
+the first 1 TB/month to users is free (#345). So both download paths sign for a
+CloudFront distribution when theirs is configured:
+
+| Caller          | Bucket              | Distribution env              |
+| --------------- | ------------------- | ----------------------------- |
+| `presigned.get` | files               | `CLOUDFRONT_FILES_DOMAIN`     |
+| `artifacts.get` | retrieval artifacts | `CLOUDFRONT_ARTIFACTS_DOMAIN` |
+| `derived.get`   | derived             | none; thumbnails stay on S3   |
+
+Both distributions trust one key pair, `CLOUDFRONT_KEY_PAIR_ID` and
+`CLOUDFRONT_PRIVATE_KEY`. The internals live in `lib/storage/cloudfront.ts`.
+
+- **Unset domain: S3 presigned GET**, exactly as before. That is the rollout
+  order: code first, distributions next, env last.
+- **Domain set without the key pair: throws** on the first download, instead
+  of quietly falling back to S3 egress.
+- **The URL path is the object key**, one distribution per bucket, so nothing
+  at the edge rewrites it. Keys ending in a user's filename stay intact
+  whatever characters they hold.
+- **Nothing is cached.** Restores are downloaded about once and the copies are
+  private, so the saving is transfer price, not cache hits.
+- **What still works:** `filename` (forwarded to S3 as
+  `response-content-disposition`, covered by the signature, so it can't be
+  edited), `Range` (resumable downloads), and `expiresIn`.
+
+`lib/storage/cloudfront.integration.test.ts` checks all of this against the
+real dev distributions. The infrastructure is `infra/terraform/cloudfront.tf`.
 
 ### Glacier Operations
 

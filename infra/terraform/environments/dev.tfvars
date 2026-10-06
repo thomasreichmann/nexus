@@ -37,6 +37,21 @@ cors_allowed_origins = [
 resend_from_email = "noreply@nexus.thomasar.dev"
 posthog_key       = "phc_zQAczyqqiupW6zDxQ6i28Ez4oWpKR6r9QMfo8SX3pxxE"
 
+# CloudFront URL-signing key, public half (#345). The private half was generated
+# alongside it (README.md "CloudFront signing key") and lives only in the app's
+# env as CLOUDFRONT_PRIVATE_KEY.
+cloudfront_public_key_pem = <<-EOT
+  -----BEGIN PUBLIC KEY-----
+  MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqFaeJil4GSTXu2yuXN2M
+  6pEWDhH2noI5YIpwo4mKAF3rCi5CgJL9BeEVEttZtDVPdorVstWe3Fs2aA3OTU52
+  0Zh7zQvHCVzAcY5p5flgjARjZIXiROMXl/T/tLcHrFRBrtrjw5pFZJphxNAawz3J
+  FLlUjTnevi9mN5PIl3w1sUib2HzsE+JvC30KU2I6lR1KlRmk6GbedVcYV4kFDeK6
+  rbqXlWZm5iEPuRqxQ5Z4rjtgtT2YAxhBenCql93Uo3kiIpb2hsIon7L7eDc0V5KT
+  Fx6BecV1oB0SQtXXOF9IkGXw2CovCsIc/NFfvHaaSy6ktDt+IEX2y/Xdy6ds08V9
+  VQIDAQAB
+  -----END PUBLIC KEY-----
+  EOT
+
 # database_url and resend_api_key are intentionally absent: pass via
 # TF_VAR_database_url (the dev Supabase transaction-pooler URL, port 6543) and
 # TF_VAR_resend_api_key. Never commit them.
