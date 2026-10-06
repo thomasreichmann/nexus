@@ -165,8 +165,8 @@ function BuildingCard() {
             }
             title="Your files are still being prepared"
         >
-            {/* The honest included promise for the Bulk default (#406), not the
-                "within 12 hours" the old copy claimed. */}
+            {/* The honest promise for the Bulk default (#406), the same one the
+                retrieve dialog and the landing page make (#363). */}
             Restoring from archive takes up to 48 hours. This page updates on
             its own, and we&apos;ll email you the moment the download is ready.
         </StatusCard>

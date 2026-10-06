@@ -13,7 +13,7 @@ const plans = [
         features: [
             '1 TB storage',
             'Unlimited uploads & retrievals',
-            'Files ready within 12 hours',
+            'Files ready within 48 hours',
             '30-day free trial',
         ],
         cta: 'Start free trial',
@@ -28,7 +28,7 @@ const plans = [
         features: [
             '5 TB storage',
             'Unlimited uploads & retrievals',
-            'Files ready within 12 hours',
+            'Files ready within 48 hours',
             '30-day free trial',
         ],
         cta: 'Start free trial',
@@ -43,7 +43,7 @@ const plans = [
         features: [
             '10 TB storage',
             'Unlimited uploads & retrievals',
-            'Files ready within 12 hours',
+            'Files ready within 48 hours',
             '30-day free trial',
         ],
         cta: 'Start free trial',
