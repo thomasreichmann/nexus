@@ -83,11 +83,22 @@ test(
     'files page does not overflow horizontally with adversarial filenames',
     { tag: ['@page:/dashboard/files', '@uc:mobile-no-horizontal-overflow'] },
     async ({ page, adversarialLibrary }) => {
+        // The library: the newest card carries the longest batch name.
         await page.goto('/dashboard/files');
+        await expect(
+            page.getByRole('button', {
+                name: `Open ${adversarialLibrary.batches[0]!.name}`,
+            })
+        ).toBeVisible();
+        await expectNoHorizontalOverflow(page);
+
+        // An open batch: the deep link lands on the long-name file's tile.
+        await page.goto(
+            `/dashboard/files?file=${adversarialLibrary.longNameFile.id}`
+        );
         await expect(
             page.getByText(adversarialLibrary.longNameFile.name).first()
         ).toBeVisible();
-
         await expectNoHorizontalOverflow(page);
     }
 );
