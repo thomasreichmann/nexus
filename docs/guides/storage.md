@@ -197,8 +197,11 @@ unless the caller names one:
 | Tier        | Deep Archive | Cost       | Use case                      |
 | ----------- | ------------ | ---------- | ----------------------------- |
 | `expedited` | unavailable  | Highest    | Glacier Flexible only         |
-| `standard`  | 12-48 hrs    | $0.02/GB   | Upsell candidate, not default |
-| `bulk`      | 48 hrs       | $0.0025/GB | **The default** (#406)        |
+| `standard`  | ≤12 hrs      | $0.02/GB   | Upsell candidate, not default |
+| `bulk`      | ≤48 hrs      | $0.0025/GB | **The default** (#406)        |
+
+Both times are AWS's "typically within", not a guarantee. User-facing copy
+promises "up to 48 hours", the Bulk figure (#363).
 
 The `Days` a restore is kept comes from the retrieval row's
 `restoreDaysToKeep`, written on the request path: a single-file restore is

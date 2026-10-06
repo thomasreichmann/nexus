@@ -23,9 +23,9 @@
 /**
  * Glacier restore tier values — determines retrieval speed and cost.
  *
- * For Deep Archive (MVP default):
+ * For Deep Archive (MVP default), AWS's "typically within" times:
  * - expedited: Not available for Deep Archive
- * - standard: 12-48 hours
+ * - standard: 12 hours
  * - bulk: 48 hours (cheapest)
  *
  * For Glacier Flexible Retrieval:

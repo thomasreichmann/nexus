@@ -41,7 +41,7 @@ describe('getRetrievalEstimate', () => {
     it('is slow for an all-cold batch', () => {
         expect(getRetrievalEstimate([cold, cold])).toEqual({
             speed: 'slow',
-            label: 'Ready in up to 12 hours',
+            label: 'Ready in up to 48 hours',
         });
     });
 

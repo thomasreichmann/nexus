@@ -101,15 +101,16 @@ Surfaced and deferred during planning, so they don't sneak back in as scope cree
 
 - **Pricing optimization** — current $3/$12/$20 tiers are intentionally low to remove pricing as an objection; revisit after the test using observed retrieval data
 - **Unit economics protection** (allowance/overage pricing) — worst-case AWS exposure at this scale is a rounding error; revisit at 50+ paying users
-- **i18n / Portuguese localization** — testers are bilingual enough; revisit only if a tester explicitly asks
+- **i18n / Portuguese localization** — testers are bilingual enough (confirmed with the cohort 2026-10-06, which deferred #272); revisit only if a tester explicitly asks
 - **Folder / tag / label systems** beyond batch grouping — over-built without user pull
 
 ## Pre-test work
 
 Required before onboarding tester #1:
 
-- [ ] Batch primitive (upload session = batch, restore by batch) — see batch issue (TBD)
-- [ ] Stripe test products configured for trial subscriptions
-- [ ] Onboarding script (what you say in the first 30 minutes)
-- [ ] Diagnostic interview questions written and committed — `docs/planning/diagnostic-interview-questions.md` (TBD)
+- [x] Batch primitive (upload session = batch, restore by batch): #217, with a multi-file restore as one request since #406
+- [x] ~~Stripe test products configured for trial subscriptions~~: superseded. Alpha testers get free full access through a sponsored invite (#239, #246, #247), so their journey has no checkout
+- [x] Onboarding script (what you say in the first 30 minutes): `docs/planning/onboarding-script.md`
+- [x] Diagnostic interview questions written and committed: `docs/planning/diagnostic-interview-questions.md`
 - [ ] This validation plan reviewed and signed off
+- [ ] On tester #1's onboarding day: commit the decision date (six weeks out) under [Decision date](#decision-date) and tell at least one external person what it is

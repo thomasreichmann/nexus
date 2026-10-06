@@ -33,7 +33,7 @@ export default function UploadPage() {
                     <CardContent>
                         <CardDescription>
                             Files are archived to deep storage. Retrieval takes
-                            3-12 hours when you need them.
+                            up to 48 hours when you need them.
                         </CardDescription>
                     </CardContent>
                 </Card>

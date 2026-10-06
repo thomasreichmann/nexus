@@ -46,7 +46,7 @@ export function getRetrievalEstimate(
     const isAllWarm = files.length > 0 && !files.some((f) => isProbablyCold(f));
     return isAllWarm
         ? { speed: 'fast', label: 'Ready in ~minutes' }
-        : { speed: 'slow', label: 'Ready in up to 12 hours' };
+        : { speed: 'slow', label: 'Ready in up to 48 hours' };
 }
 
 interface RetrieveDialogProps {
