@@ -2,6 +2,13 @@ import { z } from 'zod';
 
 export const logErrorVerbositySchema = z.enum(['minimal', 'standard', 'full']);
 
+// A bare hostname: the signer prepends `https://` itself, so a pasted scheme
+// or path would produce a URL that can never resolve.
+const cloudfrontDomain = z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9.-]+$/i, 'expected a bare hostname, no scheme or path');
+
 // Server-side env vars (not exposed to client)
 export const serverSchema = z.object({
     DATABASE_URL: z.string().url(),
@@ -19,6 +26,22 @@ export const serverSchema = z.object({
     // `s3.artifacts.isConfigured()`. Note the app can only *read* this bucket —
     // the zip worker is its sole writer.
     S3_RETRIEVAL_ARTIFACTS_BUCKET: z.string().min(1).optional(),
+    // CloudFront download distributions (#345), one per bucket, from the
+    // `cloudfront_*` Terraform outputs. Optional for rollout ordering: a
+    // bucket whose domain is unset keeps serving S3 presigned GETs, so the code
+    // can land before the distributions exist. A domain without the key pair
+    // is a misconfiguration and throws on the first download
+    // (lib/storage/cloudfront.ts) rather than silently paying S3 egress.
+    CLOUDFRONT_FILES_DOMAIN: cloudfrontDomain.optional(),
+    CLOUDFRONT_ARTIFACTS_DOMAIN: cloudfrontDomain.optional(),
+    CLOUDFRONT_KEY_PAIR_ID: z.string().trim().min(1).optional(),
+    // PEM. Accepts literal `\n` escapes too, the form a PEM takes when it is
+    // pasted into a single-line env field.
+    CLOUDFRONT_PRIVATE_KEY: z
+        .string()
+        .min(1)
+        .transform((pem) => pem.replace(/\\n/g, '\n'))
+        .optional(),
     SQS_QUEUE_URL: z.string().url(),
     // Zip-build queue (#424). Optional for the same reason as
     // S3_DERIVED_BUCKET: deploys must not break between this code landing and

@@ -99,6 +99,26 @@ resource "aws_iam_user_policy" "app_sqs_integration_test" {
   })
 }
 
+# cloudfront.integration.test.ts (#345) downloads a real object from each
+# download distribution, so it has to put one there first. The files bucket
+# grant above already covers it. On the artifacts bucket the app is read-only,
+# so dev gets write and delete on a scratch prefix and nothing else.
+resource "aws_iam_user_policy" "app_s3_integration_test" {
+  count = var.environment == "dev" ? 1 : 0
+
+  name = "nexus-s3-integration-test-${var.environment}"
+  user = aws_iam_user.app.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["s3:PutObject", "s3:DeleteObject"]
+      Resource = "${aws_s3_bucket.retrieval_artifacts.arn}/integration-test/*"
+    }]
+  })
+}
+
 # Nightly-CI IAM user (#318)
 #
 # Exists so the s3-event-health workflow never needs the app user's key: that

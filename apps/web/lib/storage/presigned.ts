@@ -1,6 +1,7 @@
 import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { client, bucket } from './client';
+import { getFilesDistribution, signGet } from './cloudfront';
 import type { PutPresignOptions, GetPresignOptions } from './types';
 
 /**
@@ -38,7 +39,9 @@ export function contentDisposition(filename?: string): string | undefined {
 }
 
 /**
- * Generate a presigned URL for downloading an object
+ * Generate a presigned URL for downloading an object. Signed for the files
+ * bucket's CloudFront distribution when one is configured (#345), an S3
+ * presigned GET otherwise.
  * @param key - S3 object key
  * @param options - Optional expiration and download filename
  * @returns Presigned download URL (default expiration: 1 hour)
@@ -47,12 +50,21 @@ export async function get(
     key: string,
     options?: GetPresignOptions
 ): Promise<string> {
+    const disposition = contentDisposition(options?.filename);
+    const expiresIn = options?.expiresIn ?? 3600;
+
+    const distribution = getFilesDistribution();
+    if (distribution) {
+        return signGet(distribution, key, {
+            expiresIn,
+            contentDisposition: disposition,
+        });
+    }
+
     const command = new GetObjectCommand({
         Bucket: bucket,
         Key: key,
-        ResponseContentDisposition: contentDisposition(options?.filename),
+        ResponseContentDisposition: disposition,
     });
-    return getSignedUrl(client, command, {
-        expiresIn: options?.expiresIn ?? 3600,
-    });
+    return getSignedUrl(client, command, { expiresIn });
 }

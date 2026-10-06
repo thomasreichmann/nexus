@@ -106,14 +106,27 @@ jobs:
                     --health-retries 15
         env:
             DATABASE_URL: postgres://nexus:nexus@localhost:5432/nexus
-            # Only publish.integration.test.ts touches AWS: it sends a real SQS
-            # message to the consumer-less dev queue and reads it back (#442).
-            # Fork PRs get empty secrets; they skip that one test (next step),
-            # and the placeholder fallback keeps `@/lib/env` loadable for the
-            # rest. The queue URL is not a secret.
+            # Two tests touch real dev AWS: publish.integration.test.ts sends an
+            # SQS message to the consumer-less dev queue and reads it back
+            # (#442), and cloudfront.integration.test.ts downloads scratch
+            # objects through the dev CloudFront distributions (#345). Fork PRs
+            # get empty secrets; they skip both (next step), and the placeholder
+            # fallbacks keep `@/lib/env` loadable for the rest. Everything here
+            # but the two secrets is a public identifier. The CloudFront vars
+            # are job-wide, so any integration test that reaches
+            # `presigned.get`/`artifacts.get` signs a real CloudFront URL. On a
+            # fork PR the 'ci' key makes that throw, so such a test needs the
+            # same INTEGRATION_SKIP_AWS gate.
             AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID || 'ci' }}
             AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY || 'ci' }}
             SQS_INTEGRATION_TEST_QUEUE_URL: https://sqs.us-east-1.amazonaws.com/391615358272/nexus-integration-test-jobs-dev
+            S3_BUCKET: nexus-storage-files-dev
+            S3_RETRIEVAL_ARTIFACTS_BUCKET: nexus-retrieval-artifacts-dev
+            CLOUDFRONT_FILES_DOMAIN: d37re86bcgtedj.cloudfront.net
+            CLOUDFRONT_ARTIFACTS_DOMAIN: d2d7mpy5kkht7u.cloudfront.net
+            CLOUDFRONT_KEY_PAIR_ID: KGB1C7D3OKW3T
+            # The dev signing key (infra/terraform/README.md).
+            CLOUDFRONT_PRIVATE_KEY: ${{ secrets.CLOUDFRONT_PRIVATE_KEY || 'ci' }}
 
         steps:
             - name: Checkout
@@ -124,10 +137,10 @@ jobs:
 
             # Keyed on the fork flag, not on an empty secret: on this repo's
             # own PRs a missing secret must fail the publish test, not skip it.
-            - name: Skip the AWS test on fork PRs
+            - name: Skip the AWS tests on fork PRs
               if: github.event.pull_request.head.repo.fork
               run: |
-                  echo "::warning title=Publish integration test skipped::Fork PRs get no repo secrets, so publish.integration.test.ts (real SQS) is skipped. Every other integration test ran."
+                  echo "::warning title=AWS integration tests skipped::Fork PRs get no repo secrets, so publish.integration.test.ts (real SQS) and cloudfront.integration.test.ts (real CloudFront) are skipped. Every other integration test ran."
                   echo "INTEGRATION_SKIP_AWS=1" >> "$GITHUB_ENV"
 
             - name: Apply migrations

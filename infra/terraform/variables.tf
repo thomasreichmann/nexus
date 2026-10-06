@@ -57,6 +57,16 @@ variable "resend_from_email" {
   type        = string
 }
 
+variable "cloudfront_public_key_pem" {
+  description = "Public half of this environment's CloudFront URL-signing key (#345), PEM. Committed in the tfvars: it is public by definition, and the private half never enters Terraform (README.md \"CloudFront signing key\")."
+  type        = string
+
+  validation {
+    condition     = startswith(trimspace(var.cloudfront_public_key_pem), "-----BEGIN PUBLIC KEY-----")
+    error_message = "cloudfront_public_key_pem must be a PEM public key (openssl rsa -pubout), not a private key."
+  }
+}
+
 variable "posthog_key" {
   description = "PostHog project key for the worker's server-side events — the same public `phc_...` key the app ships as NEXT_PUBLIC_POSTHOG_KEY for this environment. Empty leaves worker analytics off (the client is never constructed)."
   type        = string
