@@ -347,7 +347,7 @@ test.describe('with a seeded library', () => {
             const dialog = page.getByRole('alertdialog');
             await expect(dialog.getByText('Retrieve 2 files?')).toBeVisible();
             await expect(
-                dialog.getByText('Ready in up to 12 hours')
+                dialog.getByText('Ready in up to 48 hours')
             ).toBeVisible();
             await dialog.getByRole('button', { name: 'Retrieve' }).click();
 
@@ -379,7 +379,7 @@ test.describe('with a seeded library', () => {
             const dialog = page.getByRole('alertdialog');
             await expect(dialog.getByText('Retrieve 1 file?')).toBeVisible();
             await expect(
-                dialog.getByText('Ready in up to 12 hours')
+                dialog.getByText('Ready in up to 48 hours')
             ).toBeVisible();
             await dialog.getByRole('button', { name: 'Retrieve' }).click();
 

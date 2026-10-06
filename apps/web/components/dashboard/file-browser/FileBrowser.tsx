@@ -272,7 +272,7 @@ export function FileBrowser({ focusFileId }: FileBrowserProps) {
                 </h3>
                 <p className="mt-1.5 max-w-xs text-center text-sm text-muted-foreground">
                     Upload files to archive them in deep cold storage. Retrieval
-                    takes 3-12 hours when you need them.
+                    takes up to 48 hours when you need them.
                 </p>
                 <Button
                     nativeButton={false}

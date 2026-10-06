@@ -17,7 +17,7 @@ const steps = [
         icon: Download,
         title: 'Retrieve',
         description:
-            'Request files anytime. Ready within 12 hours, then downloadable for 7 days.',
+            'Request files anytime. Ready within 48 hours, then downloadable for 7 days.',
     },
 ];
 

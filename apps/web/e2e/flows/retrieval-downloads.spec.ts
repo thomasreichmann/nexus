@@ -210,9 +210,8 @@ test(
                 name: 'Your files are still being prepared',
             })
         ).toBeVisible();
-        // 48 hours because Bulk is the default tier (#406). This is this
-        // card's own copy, written new here; the "within 12 hours" string
-        // elsewhere in the app is still #363's to fix.
+        // 48 hours because Bulk is the default tier (#406), the same promise
+        // the retrieve dialog and the landing page make (#363).
         await expect(page.getByText('up to 48 hours')).toBeVisible();
     }
 );
