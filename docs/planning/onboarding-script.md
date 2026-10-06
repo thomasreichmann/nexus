@@ -11,8 +11,7 @@ Most founders ruin their first onboarding sessions by talking too much, fixing t
 ## Pre-session prep
 
 - Confirm tester has brought a real archive — ideally 50GB+ of files they care about, not test files
-- Their Nexus account either pre-created or ready to create (don't burn 10 minutes on email-confirmation flows)
-- Stripe test card numbers handy in case they hit checkout
+- Their invite created at `/dashboard/admin/invites` with their email filled in, sent shortly before the session so Task 1 starts from their inbox (subject: "You've been given free access to Nexus"). Sponsored access means no plan choice and no checkout, and sign-up has no email-confirmation step
 - Recording set up (with consent)
 - Notepad open for verbatim quotes
 - Your fix-it instinct disabled. You will see things break. That is data, not a problem.
@@ -33,12 +32,12 @@ Establish ground rules:
 
 Give one at a time. Do **not** present them as a list.
 
-### Task 1: Sign up and reach the upload screen
+### Task 1: Open the invite and reach the upload screen
 
 Watch:
 
-- Do they understand the plan tiers? Did they pick correctly?
-- Did Stripe checkout in test mode confuse them?
+- Did they find the invite email, or did it land in spam?
+- Did the invite page make sense ("Sponsored access", "storage is on us")?
 - Where did they hesitate?
 
 ### Task 2: Upload a real folder
@@ -69,8 +68,7 @@ Watch:
 Watch:
 
 - How do they pick the file/batch?
-- Do they understand restore takes hours?
-- Are they surprised by the tier choices?
+- Do they understand it can take up to 48 hours, and that an email arrives when it's ready?
 
 ### Task 5: Future use (if time)
 
@@ -106,11 +104,12 @@ Set expectations:
 - Write up verbatim notes
 - List 3 things that surprised you
 - List any bugs/blockers — but **do not fix them yet.** Wait until you've watched 2-3 testers do the same flow. A "bug" the first tester hits might be an "obvious workflow" the next tester completes effortlessly. You can't tell which until you have multiple data points.
+- The Task 4 restore finishes a day or two after the session. At the first check-in, note whether they saw the ready email and got the file back without help.
 
 ## Notes log
 
 Per-tester session notes go here, or in a linked doc:
 
-- Tester 0 (mother), session date: TBD
+- Tester 0 (mother), session held by 2026-09-07 (exact date not recorded); her feedback became the batch epic, #456
 - Cohort tester #1, session date: TBD
 - Cohort tester #2, session date: TBD
