@@ -3,35 +3,35 @@ import { Download, RotateCw, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/cn';
-import { formatBytes } from '@/lib/format';
+import { countLabel, formatBytes, formatCount } from '@/lib/format';
+import { BATCH_PAGE_SIZE } from '@/lib/library/paging';
 import { BatchMosaic } from './BatchMosaic';
 import {
-    countLabel,
     formatBatchDate,
-    formatCount,
     formatTimeLeft,
-    type BatchSummary,
+    restoringPercent,
+    type BatchView,
 } from './batchSummary';
-
-export interface LibraryCounts {
-    archived: number;
-    retrieving: number;
-    available: number;
-}
+import type { StatusCategoryCounts } from '@nexus/db/repo/files';
 
 interface LibraryViewProps {
-    batches: BatchSummary[];
+    batches: BatchView[];
     /** Batches matching the search; equals libraryBatchCount without one. */
     totalBatchCount: number;
     /** The stats line is library-wide, like the status counts beside it. */
     libraryBatchCount: number;
-    counts: LibraryCounts;
+    counts: StatusCategoryCounts;
     thumbnailUrls: Record<string, string>;
     search: string;
     onSearchChange: (value: string) => void;
     activeSearch: string;
+    /** The search's results haven't landed yet: the old ones are showing. */
+    isSearching: boolean;
     onOpen: (key: string) => void;
+    /** A pointer or focus on a card: the batch is likely to open next. */
+    onIntent: (key: string) => void;
     onShowMore: () => void;
+    isLoadingMore: boolean;
 }
 
 // Memoized for the same reason as BatchPane: it stays mounted (hidden)
@@ -47,8 +47,11 @@ function LibraryViewContent({
     search,
     onSearchChange,
     activeSearch,
+    isSearching,
     onOpen,
+    onIntent,
     onShowMore,
+    isLoadingMore,
 }: LibraryViewProps) {
     const libraryTotal = counts.archived + counts.retrieving + counts.available;
     const remaining = totalBatchCount - batches.length;
@@ -62,7 +65,7 @@ function LibraryViewContent({
             >
                 <span className="font-medium text-foreground">
                     {countLabel(libraryTotal, 'file')} in{' '}
-                    {countLabel(libraryBatchCount, 'batch')}
+                    {countLabel(libraryBatchCount, 'batch', 'batches')}
                 </span>
                 <span className="hidden h-3.5 w-px bg-border sm:block" />
                 {counts.archived > 0 && (
@@ -99,7 +102,7 @@ function LibraryViewContent({
                 </span>
             </div>
 
-            {batches.length === 0 && (
+            {batches.length === 0 && !isSearching && (
                 <div className="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
                     <Search className="mb-3 size-5 text-muted-foreground/60" />
                     <p className="max-w-full px-4 text-sm wrap-break-word text-muted-foreground">
@@ -109,13 +112,20 @@ function LibraryViewContent({
             )}
 
             {batches.length > 0 && (
-                <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+                <div
+                    aria-busy={isSearching}
+                    className={cn(
+                        'grid grid-cols-2 gap-3 transition-opacity sm:gap-4 lg:grid-cols-3 xl:grid-cols-4',
+                        isSearching && 'opacity-60'
+                    )}
+                >
                     {batches.map((batch) => (
                         <BatchCard
                             key={batch.key}
                             batch={batch}
                             thumbnailUrls={thumbnailUrls}
                             onOpen={() => onOpen(batch.key)}
+                            onIntent={() => onIntent(batch.key)}
                         />
                     ))}
                 </div>
@@ -135,8 +145,11 @@ function LibraryViewContent({
                             variant="outline"
                             size="sm"
                             onClick={onShowMore}
+                            disabled={isLoadingMore}
                         >
-                            Show {formatCount(Math.min(remaining, 12))} more
+                            {isLoadingMore
+                                ? 'Loading…'
+                                : `Show ${formatCount(Math.min(remaining, BATCH_PAGE_SIZE))} more`}
                         </Button>
                     )}
                 </div>
@@ -179,17 +192,20 @@ export function SearchField({ value, onChange, className }: SearchFieldProps) {
 }
 
 interface BatchCardProps {
-    batch: BatchSummary;
+    batch: BatchView;
     thumbnailUrls: Record<string, string>;
     onOpen: () => void;
+    onIntent: () => void;
 }
 
-function BatchCard({ batch, thumbnailUrls, onOpen }: BatchCardProps) {
+function BatchCard({ batch, thumbnailUrls, onOpen, onIntent }: BatchCardProps) {
     return (
         <button
             type="button"
             data-fx-card={batch.key}
             onClick={onOpen}
+            onPointerEnter={onIntent}
+            onFocus={onIntent}
             aria-label={`Open ${batch.name}`}
             className={cn(
                 'relative block min-w-0 cursor-pointer overflow-hidden rounded-xl border bg-card p-0 text-left',
@@ -225,7 +241,7 @@ function BatchCard({ batch, thumbnailUrls, onOpen }: BatchCardProps) {
     );
 }
 
-function CardStatusLine({ batch }: { batch: BatchSummary }) {
+function CardStatusLine({ batch }: { batch: BatchView }) {
     const base =
         'mt-2 hidden h-4 items-center gap-1.5 text-xs text-muted-foreground sm:flex';
     if (batch.status === 'restoring') {
@@ -263,7 +279,7 @@ const PILL_STYLES = {
     ready: { Icon: Download, tone: 'text-emerald-600 dark:text-emerald-300' },
 };
 
-function StatusPill({ batch }: { batch: BatchSummary }) {
+function StatusPill({ batch }: { batch: BatchView }) {
     if (batch.status === 'archived') return null;
     const { Icon, tone } = PILL_STYLES[batch.status];
     const { full, short } = pillLabels(batch);
@@ -284,8 +300,8 @@ function StatusPill({ batch }: { batch: BatchSummary }) {
 
 // The phone card is half as wide, so its pill drops the words around the
 // numbers.
-function pillLabels(batch: BatchSummary): { full: string; short: string } {
-    const total = formatCount(batch.totalFileCount);
+function pillLabels(batch: BatchView): { full: string; short: string } {
+    const total = formatCount(batch.fileCount);
     if (batch.status === 'restoring') {
         const restoring = formatCount(batch.restoringCount);
         return {
@@ -298,14 +314,10 @@ function pillLabels(batch: BatchSummary): { full: string; short: string } {
     return { full: timeLeft ? `${ready} · ${timeLeft}` : ready, short: ready };
 }
 
-export function restoringPercent(batch: BatchSummary): number {
-    return Math.max(3, (batch.restoringCount / batch.totalFileCount) * 100);
-}
-
-function cardMeta(batch: BatchSummary): string {
-    let count = countLabel(batch.totalFileCount, 'file');
-    if (batch.files.length < batch.totalFileCount) {
-        count = `${formatCount(batch.files.length)} of ${count} match`;
+function cardMeta(batch: BatchView): string {
+    let count = countLabel(batch.fileCount, 'file');
+    if (batch.matchCount !== null) {
+        count = `${formatCount(batch.matchCount)} of ${count} match`;
     }
     return [
         count,

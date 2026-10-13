@@ -1,88 +1,55 @@
-import { deriveStatus } from '@/components/dashboard/file-browser/status';
-import type { FileBatchGroup, FileWithRetrieval } from '@nexus/db/repo/files';
+import { countLabel } from '@/lib/format';
+import type {
+    LibraryBatchSummary,
+    LibraryCoverFile,
+} from '@nexus/db/repo/library';
 
 export type BatchStatus = 'archived' | 'restoring' | 'ready';
 
-export interface BatchSummary {
+/** A batch as the library renders it, from the server's summary (#455). */
+export interface BatchView {
     /** batchId, or a synthetic key for the legacy null-batch group. */
     key: string;
     batchId: string | null;
     name: string;
-    /** The files this view shows — every file, or only the search matches. */
-    files: FileWithRetrieval[];
-    /** The batch's full size, regardless of search. */
-    totalFileCount: number;
+    fileCount: number;
     totalBytes: number;
     createdAt: Date | null;
     restoringCount: number;
     readyCount: number;
+    /** Files with nothing in flight or ready: what "Restore batch" asks for. */
+    archivedCount: number;
+    archivedProbablyColdCount: number;
     /** Earliest expiry among the ready files: the window the batch reads as. */
     readyUntil: Date | null;
     status: BatchStatus;
+    /**
+     * Searching, and in the results for its files: how many match. Null when
+     * the whole batch shows.
+     */
+    matchCount: number | null;
     /** Up to three files whose thumbnails make the cover mosaic. */
-    coverFiles: FileWithRetrieval[];
+    coverFiles: LibraryCoverFile[];
 }
 
 export const UNGROUPED_KEY = 'ungrouped';
-const COVER_SIZE = 3;
 
-/**
- * Prototype stand-in for #455's aggregate batch query: the summaries are
- * derived in the browser from `files.listGrouped`, which still loads the whole
- * library. The shape is what the paged server summary would return.
- */
-export function summarizeBatches(
-    groups: FileBatchGroup[],
-    search: string
-): BatchSummary[] {
-    const query = search.trim().toLowerCase();
-    const summaries: BatchSummary[] = [];
-    for (const group of groups) {
-        const name = group.batchName ?? 'Ungrouped';
-        const isNameMatch = !query || name.toLowerCase().includes(query);
-        // A batch-name match shows the whole batch; otherwise only the files
-        // whose names match (#455 § Search).
-        const files = isNameMatch
-            ? group.files
-            : group.files.filter((f) => f.name.toLowerCase().includes(query));
-        if (files.length === 0) continue;
-        summaries.push(summarize(group, name, files));
-    }
-    return summaries;
+export function batchKeyOf(batchId: string | null): string {
+    return batchId ?? UNGROUPED_KEY;
 }
 
-function summarize(
-    group: FileBatchGroup,
-    name: string,
-    files: FileWithRetrieval[]
-): BatchSummary {
-    let restoringCount = 0;
-    let readyCount = 0;
-    let readyUntil: Date | null = null;
-    for (const file of group.files) {
-        const status = deriveStatus(file);
-        if (status === 'retrieving') restoringCount++;
-        if (status === 'available') {
-            readyCount++;
-            const expiresAt = file.activeRetrieval?.expiresAt;
-            if (expiresAt && (!readyUntil || expiresAt < readyUntil)) {
-                readyUntil = new Date(expiresAt);
-            }
-        }
-    }
+export function batchIdOf(key: string): string | null {
+    return key === UNGROUPED_KEY ? null : key;
+}
+
+export function toBatchView(summary: LibraryBatchSummary): BatchView {
+    const { batchId, name, fileCount, restoringCount, readyCount } = summary;
     return {
-        key: group.batchId ?? UNGROUPED_KEY,
-        batchId: group.batchId,
-        name,
-        files,
-        totalFileCount: group.files.length,
-        totalBytes: group.files.reduce((sum, f) => sum + (f.size ?? 0), 0),
-        createdAt: group.batchCreatedAt,
-        restoringCount,
-        readyCount,
-        readyUntil,
+        ...summary,
+        key: batchKeyOf(batchId),
+        name: name ?? 'Ungrouped',
+        archivedCount: fileCount - restoringCount - readyCount,
         status: batchStatus(restoringCount, readyCount),
-        coverFiles: pickCoverFiles(files),
     };
 }
 
@@ -94,16 +61,9 @@ function batchStatus(restoringCount: number, readyCount: number): BatchStatus {
     return 'archived';
 }
 
-// Thumbnailed files first, so a batch that opens with a PDF still gets a
-// photo cover; anything short of three fills from the rest in order.
-function pickCoverFiles(files: FileWithRetrieval[]): FileWithRetrieval[] {
-    const withThumbnail = files.filter((f) => f.thumbnailStatus === 'ready');
-    const cover = withThumbnail.slice(0, COVER_SIZE);
-    for (const file of files) {
-        if (cover.length >= COVER_SIZE) break;
-        if (!cover.includes(file)) cover.push(file);
-    }
-    return cover;
+/** The folder row's label: its path, or where top-level files sit. */
+export function folderLabel(subpath: string | null): string {
+    return subpath ?? 'Top level';
 }
 
 export function formatTimeLeft(until: Date | null): string | null {
@@ -126,9 +86,7 @@ export function formatBatchDate(date: Date | null): string | null {
     });
 }
 
-export const formatCount = (n: number): string => n.toLocaleString('en-US');
-
-/** "1 file", "1,204 files". */
-export function countLabel(n: number, noun: string): string {
-    return `${formatCount(n)} ${n === 1 ? noun : `${noun}s`}`;
+/** How far the restore bar fills: never so little it reads as empty. */
+export function restoringPercent(batch: BatchView): number {
+    return Math.max(3, (batch.restoringCount / batch.fileCount) * 100);
 }

@@ -1,15 +1,23 @@
 'use client';
 
-import { memo, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import {
+    memo,
+    useRef,
+    useState,
+    type MouseEvent as ReactMouseEvent,
+} from 'react';
+import {
+    ChevronRight,
     Download,
+    Folder,
     LayoutGrid,
     LayoutList,
+    Loader2,
     MoreHorizontal,
     RotateCw,
     Trash2,
 } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
+import { useIsMutating, useMutation } from '@tanstack/react-query';
 import { isProbablyCold } from '@nexus/db/objectState';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -28,7 +36,7 @@ import {
     FileActions,
     useFileActions,
 } from '@/components/dashboard/file-browser/FileActions';
-import { StatusDot } from '@/components/dashboard/file-browser/SelectableIcon';
+import { StatusDot } from '@/components/dashboard/file-browser/StatusDot';
 import { toastRetrievalRequested } from '@/components/dashboard/file-browser/retrievalFeedback';
 import {
     deriveStatus,
@@ -36,30 +44,48 @@ import {
     type DerivedStatus,
 } from '@/components/dashboard/file-browser/status';
 import { cn } from '@/lib/cn';
-import { formatBytes } from '@/lib/format';
+import { countLabel, formatBytes, formatCount } from '@/lib/format';
+import { FILE_PAGE_SIZE } from '@/lib/library/paging';
 import { useTRPC } from '@/lib/trpc/client';
 import { toastContext } from '@/lib/trpc/error-link';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
-import { restoringPercent } from './LibraryView';
 import {
-    countLabel,
+    folderLabel,
     formatBatchDate,
-    formatCount,
     formatTimeLeft,
-    type BatchSummary,
+    restoringPercent,
+    type BatchView,
 } from './batchSummary';
-import type { FileWithRetrieval } from '@nexus/db/repo/files';
+import type { BatchSection } from './useBatchFiles';
+import type { LibraryFile } from '@nexus/db/repo/library';
 
 export type PaneViewMode = 'grid' | 'list';
 
+/**
+ * What's selected in the open batch: the whole of it, loaded or not, which
+ * runs its actions on the server by batch id (#455); or files picked one by
+ * one. Picked files are kept whole, not as ids, so a pick in a folder that's
+ * since been collapsed still goes with the selection's actions.
+ */
+export interface PaneSelection {
+    isWholeBatch: boolean;
+    files: Map<string, LibraryFile>;
+}
+
 interface BatchPaneProps {
-    batch: BatchSummary;
+    batch: BatchView;
+    /** Null while the batch's structure is still loading. */
+    sections: BatchSection[] | null;
+    /** The loaded files of every expanded section. */
+    loadedCount: number;
     thumbnailUrls: Record<string, string>;
-    fileLimit: number;
-    onShowMoreFiles: () => void;
-    selectedIds: Set<string>;
-    onToggleFile: (index: number, shiftKey: boolean) => void;
+    selection: PaneSelection;
+    onToggleFile: (fileId: string, shiftKey: boolean) => void;
     onToggleAll: () => void;
+    onToggleFolder: (sectionKey: string) => void;
+    onLoadNext: (sectionKey: string) => void;
+    onLoadPrevious: (sectionKey: string) => void;
+    onRetrySection: (sectionKey: string) => void;
     viewMode: PaneViewMode;
     onViewModeChange: (mode: PaneViewMode) => void;
     /** Opens the file viewer; `aspect` is the tile thumbnail's, if loaded. */
@@ -73,24 +99,24 @@ export const BatchPane = memo(BatchPaneContent);
 
 function BatchPaneContent({
     batch,
+    sections,
+    loadedCount,
     thumbnailUrls,
-    fileLimit,
-    onShowMoreFiles,
-    selectedIds,
+    selection,
     onToggleFile,
     onToggleAll,
+    onToggleFolder,
+    onLoadNext,
+    onLoadPrevious,
+    onRetrySection,
     viewMode,
     onViewModeChange,
     onOpenFile,
     onBatchDeleted,
 }: BatchPaneProps) {
-    const shownFiles = batch.files.slice(0, fileLimit);
-    const isAllSelected =
-        batch.files.length > 0 && selectedIds.size === batch.files.length;
-    const hasSelection = selectedIds.size > 0;
+    const hasSelection = selection.isWholeBatch || selection.files.size > 0;
     const date = formatBatchDate(batch.createdAt);
-    const isSearchSubset = batch.files.length < batch.totalFileCount;
-    const FileItem = FILE_ITEMS[viewMode];
+    const restore = useBatchRestore(batch);
 
     return (
         <section
@@ -110,25 +136,22 @@ function BatchPaneContent({
                         data-fx="pane-chrome"
                         className="mt-0.5 text-[13px] text-muted-foreground tabular-nums"
                     >
-                        {countLabel(batch.totalFileCount, 'file')} ·{' '}
+                        {countLabel(batch.fileCount, 'file')} ·{' '}
                         {formatBytes(batch.totalBytes)}
                         {date && ` · uploaded ${date}`}
                     </p>
-                    <BatchStatusLine batch={batch} />
+                    <BatchStatusLine batch={batch} restore={restore} />
                 </div>
                 <div
                     data-fx="pane-chrome"
                     className="flex shrink-0 flex-wrap items-center gap-2"
                 >
-                    <label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border border-input bg-foreground/4 px-2.5 text-[13px] font-medium tabular-nums">
-                        <Checkbox
-                            checked={isAllSelected}
-                            onCheckedChange={onToggleAll}
-                        />
-                        {isSearchSubset
-                            ? `Select ${formatCount(batch.files.length)} matches`
-                            : `Select all ${formatCount(batch.files.length)}`}
-                    </label>
+                    <SelectAll
+                        batch={batch}
+                        loadedCount={loadedCount}
+                        selection={selection}
+                        onToggle={onToggleAll}
+                    />
                     <div className="hidden rounded-lg border p-0.5 sm:flex">
                         <ViewModeButton
                             mode="list"
@@ -141,46 +164,277 @@ function BatchPaneContent({
                             onChange={onViewModeChange}
                         />
                     </div>
-                    <BatchMenu batch={batch} onDeleted={onBatchDeleted} />
+                    <BatchMenu
+                        batch={batch}
+                        restore={restore}
+                        onDeleted={onBatchDeleted}
+                    />
                 </div>
             </div>
 
-            <div data-fx="tiles" className={TILE_LAYOUTS[viewMode]}>
-                {shownFiles.map((file, index) => {
-                    const tileProps = {
-                        file,
-                        thumbnailUrl: thumbnailUrls[file.id],
-                        isSelected: selectedIds.has(file.id),
-                        hasSelection,
-                        onToggle: (shiftKey: boolean) =>
-                            onToggleFile(index, shiftKey),
-                        onActivate: (e: ReactMouseEvent<HTMLElement>) => {
-                            // Shift extends a range, Cmd/Ctrl toggles one,
-                            // and once anything is selected a plain click
-                            // keeps selecting. Otherwise a click opens.
-                            if (e.shiftKey) onToggleFile(index, true);
-                            else if (e.metaKey || e.ctrlKey || hasSelection)
-                                onToggleFile(index, false);
-                            else
-                                onOpenFile(
-                                    file.id,
-                                    readAspect(e.currentTarget)
-                                );
-                        },
-                        onOpen: (e: ReactMouseEvent<HTMLElement>) =>
-                            onOpenFile(file.id, readAspect(e.currentTarget)),
-                    };
-                    return <FileItem key={file.id} {...tileProps} />;
-                })}
-            </div>
-
-            <PagingFooter
-                shownCount={shownFiles.length}
-                totalCount={batch.files.length}
-                isSearchSubset={isSearchSubset}
-                onShowMore={onShowMoreFiles}
-            />
+            {sections === null ? (
+                <PaneLoading />
+            ) : (
+                sections.map((section) => (
+                    <FileSection
+                        key={section.key}
+                        section={section}
+                        isSearchSubset={batch.matchCount !== null}
+                        thumbnailUrls={thumbnailUrls}
+                        selection={selection}
+                        hasSelection={hasSelection}
+                        viewMode={viewMode}
+                        onToggleFile={onToggleFile}
+                        onToggleFolder={onToggleFolder}
+                        onLoadNext={onLoadNext}
+                        onLoadPrevious={onLoadPrevious}
+                        onRetry={onRetrySection}
+                        onOpenFile={onOpenFile}
+                    />
+                ))
+            )}
         </section>
+    );
+}
+
+/**
+ * The pane's select-all. With every file showing it selects the whole batch,
+ * loaded or not (#455). A search's matches are selected as loaded rows, and
+ * when some aren't loaded yet the label says so.
+ */
+interface SelectAllProps {
+    batch: BatchView;
+    loadedCount: number;
+    selection: PaneSelection;
+    onToggle: () => void;
+}
+
+function SelectAll({
+    batch,
+    loadedCount,
+    selection,
+    onToggle,
+}: SelectAllProps) {
+    const isSubset = batch.matchCount !== null;
+    let label = `Select all ${formatCount(batch.fileCount)}`;
+    let isChecked = selection.isWholeBatch;
+    if (isSubset) {
+        const matchCount = batch.matchCount ?? 0;
+        label =
+            loadedCount < matchCount
+                ? `Select ${formatCount(loadedCount)} loaded matches`
+                : `Select ${formatCount(matchCount)} matches`;
+        isChecked = loadedCount > 0 && selection.files.size === loadedCount;
+    }
+    return (
+        <label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border border-input bg-foreground/4 px-2.5 text-[13px] font-medium tabular-nums">
+            <Checkbox
+                checked={isChecked}
+                onCheckedChange={onToggle}
+                aria-label={label}
+            />
+            {label}
+        </label>
+    );
+}
+
+function PaneLoading() {
+    return (
+        <div
+            role="status"
+            className="flex items-center justify-center gap-2 border-t px-5 py-16 text-sm text-muted-foreground"
+        >
+            <Loader2 className="size-4 animate-spin" />
+            Loading files...
+        </div>
+    );
+}
+
+interface SectionErrorProps {
+    onRetry: () => void;
+}
+
+// A page that failed after its retries: in place of the files when it was
+// the first, under them when it was one more.
+function SectionError({ onRetry }: SectionErrorProps) {
+    return (
+        <div
+            role="alert"
+            className="flex items-center justify-center gap-3 px-5 pt-2.5 pb-3.5 text-sm text-muted-foreground"
+        >
+            Couldn&rsquo;t load these files.
+            <Button variant="outline" size="sm" onClick={onRetry}>
+                Try again
+            </Button>
+        </div>
+    );
+}
+
+interface FileSectionProps {
+    section: BatchSection;
+    isSearchSubset: boolean;
+    thumbnailUrls: Record<string, string>;
+    selection: PaneSelection;
+    hasSelection: boolean;
+    viewMode: PaneViewMode;
+    onToggleFile: (fileId: string, shiftKey: boolean) => void;
+    onToggleFolder: (sectionKey: string) => void;
+    onLoadNext: (sectionKey: string) => void;
+    onLoadPrevious: (sectionKey: string) => void;
+    onRetry: (sectionKey: string) => void;
+    onOpenFile: (fileId: string, aspect: number | null) => void;
+}
+
+/**
+ * A run of the batch's files: the whole of a flat batch, or one folder of a
+ * batch with structure inside (#405), under a row that collapses it.
+ */
+function FileSection({
+    section,
+    isSearchSubset,
+    thumbnailUrls,
+    selection,
+    hasSelection,
+    viewMode,
+    onToggleFile,
+    onToggleFolder,
+    onLoadNext,
+    onLoadPrevious,
+    onRetry,
+    onOpenFile,
+}: FileSectionProps) {
+    const FileItem = FILE_ITEMS[viewMode];
+    const isEmpty = section.files.length === 0;
+    const isEmptyLoading = section.isLoading && isEmpty;
+    const error = section.isError && (
+        <SectionError onRetry={() => onRetry(section.key)} />
+    );
+    return (
+        <div className={cn(section.folder && 'border-t')}>
+            {section.folder && (
+                <FolderRow
+                    section={section}
+                    isSearchSubset={isSearchSubset}
+                    onToggle={() => onToggleFolder(section.key)}
+                />
+            )}
+            {section.isExpanded && (
+                <>
+                    {section.hasPrevious && (
+                        <div
+                            data-fx="paging"
+                            className="flex justify-center px-5 pt-3 pb-1"
+                        >
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => onLoadPrevious(section.key)}
+                                disabled={section.isLoading}
+                            >
+                                Show earlier files
+                            </Button>
+                        </div>
+                    )}
+                    {isEmptyLoading && <PaneLoading />}
+                    {isEmpty && error}
+                    {!isEmpty && (
+                        <div data-fx="tiles" className={TILE_LAYOUTS[viewMode]}>
+                            {section.files.map((file) => (
+                                <FileItem
+                                    key={file.id}
+                                    file={file}
+                                    thumbnailUrl={thumbnailUrls[file.id]}
+                                    isSelected={
+                                        selection.isWholeBatch ||
+                                        selection.files.has(file.id)
+                                    }
+                                    hasSelection={hasSelection}
+                                    onToggle={(shiftKey) =>
+                                        onToggleFile(file.id, shiftKey)
+                                    }
+                                    onActivate={(e) => {
+                                        // Shift extends a range, Cmd/Ctrl
+                                        // toggles one, and once anything is
+                                        // selected a plain click keeps
+                                        // selecting. Otherwise a click opens.
+                                        if (e.shiftKey)
+                                            onToggleFile(file.id, true);
+                                        else if (
+                                            e.metaKey ||
+                                            e.ctrlKey ||
+                                            hasSelection
+                                        )
+                                            onToggleFile(file.id, false);
+                                        else
+                                            onOpenFile(
+                                                file.id,
+                                                readAspect(e.currentTarget)
+                                            );
+                                    }}
+                                    onOpen={(e) =>
+                                        onOpenFile(
+                                            file.id,
+                                            readAspect(e.currentTarget)
+                                        )
+                                    }
+                                />
+                            ))}
+                        </div>
+                    )}
+                    {!isEmpty && error}
+                    {!isEmptyLoading && !section.isError && (
+                        <PagingFooter
+                            section={section}
+                            isSearchSubset={isSearchSubset}
+                            onShowMore={() => onLoadNext(section.key)}
+                        />
+                    )}
+                </>
+            )}
+        </div>
+    );
+}
+
+interface FolderRowProps {
+    section: BatchSection;
+    isSearchSubset: boolean;
+    onToggle: () => void;
+}
+
+function FolderRow({ section, isSearchSubset, onToggle }: FolderRowProps) {
+    const folder = section.folder!;
+    const label = folderLabel(folder.subpath);
+    const count =
+        isSearchSubset && folder.matchCount !== null
+            ? `${formatCount(folder.matchCount)} of ${countLabel(folder.fileCount, 'file')} match`
+            : countLabel(folder.fileCount, 'file');
+    return (
+        <button
+            type="button"
+            data-fx="folder"
+            aria-expanded={section.isExpanded}
+            aria-label={`${label}, ${count}`}
+            onClick={onToggle}
+            className="flex w-full min-w-0 items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors hover:bg-foreground/3 sm:px-5"
+        >
+            <ChevronRight
+                className={cn(
+                    'size-4 shrink-0 text-muted-foreground transition-transform',
+                    section.isExpanded && 'rotate-90'
+                )}
+            />
+            <Folder className="size-4 shrink-0 text-muted-foreground" />
+            <MiddleTruncateName
+                name={label}
+                className={cn(
+                    'min-w-0 flex-1 font-medium',
+                    folder.subpath === null && 'text-muted-foreground'
+                )}
+            />
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                {count}
+            </span>
+        </button>
     );
 }
 
@@ -191,33 +445,46 @@ const TILE_LAYOUTS: Record<PaneViewMode, string> = {
     list: 'grid grid-cols-1 border-t',
 };
 
-function PagingFooter({
-    shownCount,
-    totalCount,
-    isSearchSubset,
-    onShowMore,
-}: {
-    shownCount: number;
-    totalCount: number;
+interface PagingFooterProps {
+    section: BatchSection;
     isSearchSubset: boolean;
     onShowMore: () => void;
-}) {
+}
+
+function PagingFooter({
+    section,
+    isSearchSubset,
+    onShowMore,
+}: PagingFooterProps) {
     const base =
         'flex items-center justify-center gap-3 px-5 pt-2.5 pb-3.5 text-xs text-muted-foreground tabular-nums';
-    if (shownCount < totalCount) {
+    const shownCount = section.files.length;
+    const totalCount = section.total;
+    if (section.hasNext || section.hasPrevious) {
+        const remaining = totalCount - shownCount;
         return (
             <div data-fx="paging" className={base}>
                 <span>
                     Showing {formatCount(shownCount)} of{' '}
                     {formatCount(totalCount)}
                 </span>
-                <Button variant="outline" size="sm" onClick={onShowMore}>
-                    Show next{' '}
-                    {formatCount(Math.min(100, totalCount - shownCount))}
-                </Button>
+                {section.hasNext && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={onShowMore}
+                        disabled={section.isLoading}
+                    >
+                        {section.isLoading
+                            ? 'Loading…'
+                            : `Show next ${formatCount(Math.min(FILE_PAGE_SIZE, remaining))}`}
+                    </Button>
+                )}
             </div>
         );
     }
+    // A folder's row already says how many files it holds.
+    if (section.folder) return <div className="pb-2" />;
     let summary = `All ${countLabel(shownCount, 'file')}`;
     if (isSearchSubset) summary = countLabel(shownCount, 'matching file');
     else if (shownCount === 1) summary = '1 file';
@@ -228,7 +495,12 @@ function PagingFooter({
     );
 }
 
-function BatchStatusLine({ batch }: { batch: BatchSummary }) {
+interface BatchStatusLineProps {
+    batch: BatchView;
+    restore: BatchRestore;
+}
+
+function BatchStatusLine({ batch, restore }: BatchStatusLineProps) {
     const base =
         'mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px] tabular-nums';
     if (batch.status === 'restoring') {
@@ -240,7 +512,7 @@ function BatchStatusLine({ batch }: { batch: BatchSummary }) {
                 <RotateCw className="size-3.5" />
                 <span className="whitespace-nowrap">
                     Restoring {formatCount(batch.restoringCount)} of{' '}
-                    {formatCount(batch.totalFileCount)} · ready within 48 hours
+                    {formatCount(batch.fileCount)} · ready within 48 hours
                 </span>
                 <span className="h-1 w-27.5 overflow-hidden rounded-full bg-foreground/8">
                     <span
@@ -276,57 +548,95 @@ function BatchStatusLine({ batch }: { batch: BatchSummary }) {
             <span className="whitespace-nowrap">
                 Archived · retrieval takes up to 48 hours
             </span>
-            <RestoreBatchButton batch={batch} />
+            <RestoreBatchButton batch={batch} restore={restore} />
         </div>
     );
 }
 
-function useBatchRestore(batch: BatchSummary) {
+export interface BatchRestore {
+    /** A restore of this batch is on its way, asked for here or elsewhere. */
+    isPending: boolean;
+    restore: () => void;
+}
+
+/**
+ * The whole batch's restore, by batch id on the server (#455): its archived
+ * files, however many the browser has loaded. The legacy Ungrouped group
+ * restores the same way, with no id.
+ */
+export function useBatchRestore(
+    batch: BatchView,
+    onRestored?: () => void
+): BatchRestore {
     const trpc = useTRPC();
     const invalidateFileList = useInvalidateFileList();
-    const onSuccess = (result: { fileCount: number }) => {
-        invalidateFileList();
-        toastRetrievalRequested(result.fileCount);
-    };
-    const batchMutation = useMutation(
+    const mutation = useMutation(
         trpc.files.requestBatchRetrieval.mutationOptions({
             trpc: toastContext({
                 errorMessage: 'Failed to request batch retrieval',
             }),
-            onSuccess,
+            onSuccess(result) {
+                invalidateFileList();
+                toastRetrievalRequested(result.fileCount);
+                onRestored?.();
+            },
         })
     );
-    // The legacy null-batch group has no id to restore by.
-    const filesMutation = useMutation(
-        trpc.files.requestBulkRetrieval.mutationOptions({
-            trpc: toastContext({
-                errorMessage: 'Failed to request retrievals',
-            }),
-            onSuccess,
-        })
-    );
-    const eligibleFiles = batch.files.filter(
-        (f) => deriveStatus(f) === 'archived'
-    );
+    const pendingCount = useIsMutating({
+        mutationKey: trpc.files.requestBatchRetrieval.mutationKey(),
+        predicate: (m) => isForBatch(m.state.variables, batch.batchId),
+    });
     return {
-        eligibleFiles,
-        isPending: batchMutation.isPending || filesMutation.isPending,
+        isPending: pendingCount > 0,
         // No tier: the router's default is the one place the restore tier is
         // decided (#423).
-        restore() {
-            if (batch.batchId) {
-                batchMutation.mutate({ batchId: batch.batchId });
-                return;
-            }
-            filesMutation.mutate({ fileIds: eligibleFiles.map((f) => f.id) });
-        },
+        restore: () => mutation.mutate({ batchId: batch.batchId }),
     };
 }
 
-function RestoreBatchButton({ batch }: { batch: BatchSummary }) {
+// The pane's status line and menu and the selection bar each start a batch
+// action; one in flight from any of them holds the others.
+function isForBatch(variables: unknown, batchId: string | null): boolean {
+    const input = variables as { batchId?: string | null } | undefined;
+    return input?.batchId === batchId;
+}
+
+interface BatchRetrieveDialogProps {
+    batch: BatchView;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    onConfirm: () => void;
+}
+
+/** The confirm step every whole-batch restore goes through. */
+export function BatchRetrieveDialog({
+    batch,
+    open,
+    onOpenChange,
+    onConfirm,
+}: BatchRetrieveDialogProps) {
+    return (
+        <RetrieveDialog
+            open={open}
+            onOpenChange={onOpenChange}
+            fileCount={batch.archivedCount}
+            probablyColdCount={batch.archivedProbablyColdCount}
+            onConfirm={onConfirm}
+        />
+    );
+}
+
+interface RestoreBatchButtonProps {
+    batch: BatchView;
+    restore: BatchRestore;
+}
+
+function RestoreBatchButton({
+    batch,
+    restore: { isPending, restore },
+}: RestoreBatchButtonProps) {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
-    const { eligibleFiles, isPending, restore } = useBatchRestore(batch);
-    if (eligibleFiles.length === 0) return null;
+    if (batch.archivedCount === 0) return null;
     return (
         <>
             <button
@@ -341,31 +651,34 @@ function RestoreBatchButton({ batch }: { batch: BatchSummary }) {
                 />
                 {isPending ? 'Requesting…' : 'Restore batch'}
             </button>
-            <RetrieveDialog
+            <BatchRetrieveDialog
+                batch={batch}
                 open={isDialogOpen}
                 onOpenChange={setIsDialogOpen}
-                files={eligibleFiles}
-                fileCount={eligibleFiles.length}
                 onConfirm={restore}
             />
         </>
     );
 }
 
-function BatchMenu({
-    batch,
-    onDeleted,
-}: {
-    batch: BatchSummary;
-    onDeleted: () => void;
-}) {
+export interface BatchDelete {
+    /** A delete of this batch is on its way, asked for here or elsewhere. */
+    isPending: boolean;
+    remove: () => void;
+}
+
+/**
+ * The whole batch's delete, by batch id on the server (#455), behind #403's
+ * confirm with the batch's file count.
+ */
+export function useBatchDelete(
+    batch: BatchView,
+    onDeleted: () => void
+): BatchDelete {
     const trpc = useTRPC();
     const invalidateFileList = useInvalidateFileList();
-    const [isRetrieveOpen, setIsRetrieveOpen] = useState(false);
-    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-    const { eligibleFiles, restore } = useBatchRestore(batch);
-    const deleteMutation = useMutation(
-        trpc.files.deleteMany.mutationOptions({
+    const mutation = useMutation(
+        trpc.files.deleteBatch.mutationOptions({
             trpc: toastContext({ errorMessage: 'Failed to delete batch' }),
             onSuccess() {
                 invalidateFileList();
@@ -373,24 +686,39 @@ function BatchMenu({
             },
         })
     );
+    const pendingCount = useIsMutating({
+        mutationKey: trpc.files.deleteBatch.mutationKey(),
+        predicate: (m) => isForBatch(m.state.variables, batch.batchId),
+    });
+    return {
+        isPending: pendingCount > 0,
+        remove: () => mutation.mutate({ batchId: batch.batchId }),
+    };
+}
+
+interface BatchMenuProps {
+    batch: BatchView;
+    restore: BatchRestore;
+    onDeleted: () => void;
+}
+
+function BatchMenu({ batch, restore, onDeleted }: BatchMenuProps) {
+    const [isRetrieveOpen, setIsRetrieveOpen] = useState(false);
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+    const { isPending: isDeleting, remove } = useBatchDelete(batch, onDeleted);
     return (
         <>
-            <RetrieveDialog
+            <BatchRetrieveDialog
+                batch={batch}
                 open={isRetrieveOpen}
                 onOpenChange={setIsRetrieveOpen}
-                files={eligibleFiles}
-                fileCount={eligibleFiles.length}
-                onConfirm={restore}
+                onConfirm={restore.restore}
             />
             <DeleteDialog
                 open={isDeleteOpen}
                 onOpenChange={setIsDeleteOpen}
-                fileCount={batch.files.length}
-                onConfirm={() =>
-                    deleteMutation.mutate({
-                        ids: batch.files.map((f) => f.id),
-                    })
-                }
+                fileCount={batch.fileCount}
+                onConfirm={remove}
             />
             <DropdownMenu>
                 <DropdownMenuTrigger
@@ -409,7 +737,9 @@ function BatchMenu({
                     <DropdownMenuContent>
                         <DropdownMenuItem
                             onClick={() => setIsRetrieveOpen(true)}
-                            disabled={eligibleFiles.length === 0}
+                            disabled={
+                                batch.archivedCount === 0 || restore.isPending
+                            }
                         >
                             <RotateCw className="mr-2 size-4" />
                             Restore batch
@@ -418,10 +748,10 @@ function BatchMenu({
                         <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
                             onClick={() => setIsDeleteOpen(true)}
-                            disabled={deleteMutation.isPending}
+                            disabled={isDeleting}
                         >
                             <Trash2 className="mr-2 size-4" />
-                            Delete {countLabel(batch.files.length, 'file')}
+                            Delete batch
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenuPositioner>
@@ -430,15 +760,13 @@ function BatchMenu({
     );
 }
 
-function ViewModeButton({
-    mode,
-    current,
-    onChange,
-}: {
+interface ViewModeButtonProps {
     mode: PaneViewMode;
     current: PaneViewMode;
     onChange: (mode: PaneViewMode) => void;
-}) {
+}
+
+function ViewModeButton({ mode, current, onChange }: ViewModeButtonProps) {
     const { Icon, label } = VIEW_MODES[mode];
     return (
         <button
@@ -459,7 +787,7 @@ const VIEW_MODES = {
 };
 
 interface FileItemProps {
-    file: FileWithRetrieval;
+    file: LibraryFile;
     thumbnailUrl: string | undefined;
     isSelected: boolean;
     hasSelection: boolean;
@@ -518,9 +846,11 @@ function FileTile({
                     )}
                 />
                 <StatusBadge status={status} />
-                <span
+                <FileCheckbox
+                    name={file.name}
+                    isSelected={isSelected}
+                    onToggle={onToggle}
                     data-fx-decor
-                    onClick={(e) => e.stopPropagation()}
                     // flex: Base UI's checkbox root is an inline span, so its
                     // size-4 only applies as a flex item.
                     className={cn(
@@ -529,14 +859,8 @@ function FileTile({
                             ? 'opacity-100'
                             : 'opacity-0 group-hover/tile:opacity-100'
                     )}
-                >
-                    <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={() => onToggle(false)}
-                        aria-label={`Select ${file.name}`}
-                        className="bg-background/80"
-                    />
-                </span>
+                    checkboxClassName="bg-background/80"
+                />
                 <span
                     data-fx-decor
                     onClick={(e) => e.stopPropagation()}
@@ -544,12 +868,69 @@ function FileTile({
                 >
                     <FileActions status={status} file={file} {...actions} />
                 </span>
-                <ExpandButton fileName={file.name} onOpen={onOpen} />
+                <ExpandButton
+                    fileName={file.name}
+                    hasSelection={hasSelection}
+                    onOpen={onOpen}
+                />
             </div>
             <figcaption className="mt-1.25 min-w-0 text-xs text-foreground/80">
                 <MiddleTruncateName name={file.name} />
             </figcaption>
         </figure>
+    );
+}
+
+interface FileCheckboxProps {
+    name: string;
+    isSelected: boolean;
+    onToggle: (shiftKey: boolean) => void;
+    className?: string;
+    checkboxClassName?: string;
+    'data-fx-decor'?: boolean;
+}
+
+/**
+ * A file's checkbox. Its change event carries no modifier keys, so Shift is
+ * read off the pointer on its way in: a shift-click on a checkbox extends the
+ * range, as one on the file does. The pointer, not the click: Base UI toggles
+ * by clicking its hidden input, and that click passes through here too, with
+ * no Shift on it.
+ */
+function FileCheckbox({
+    name,
+    isSelected,
+    onToggle,
+    className,
+    checkboxClassName,
+    'data-fx-decor': isDecor,
+}: FileCheckboxProps) {
+    const isShiftClick = useRef(false);
+    return (
+        <span
+            data-fx-decor={isDecor}
+            onPointerDownCapture={(e) => {
+                isShiftClick.current = e.shiftKey;
+            }}
+            // A shift-press that never became a click (dragged off) mustn't
+            // turn the next toggle, from the keyboard, into a range.
+            onKeyDownCapture={() => {
+                isShiftClick.current = false;
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className={className}
+        >
+            <Checkbox
+                checked={isSelected}
+                onCheckedChange={() => {
+                    const isRange = isShiftClick.current;
+                    isShiftClick.current = false;
+                    onToggle(isRange);
+                }}
+                aria-label={`Select ${name}`}
+                className={checkboxClassName}
+            />
+        </span>
     );
 }
 
@@ -593,19 +974,23 @@ function StatusBadge({ status }: { status: DerivedStatus }) {
     );
 }
 
+interface ExpandButtonProps {
+    fileName: string;
+    hasSelection: boolean;
+    onOpen: (e: ReactMouseEvent<HTMLElement>) => void;
+}
+
 /**
  * The tile's "open" affordance. A plain click on the photo opens it too,
  * but in selection mode a click selects, so this is the one way in that
  * never changes. It rises in with the hover, and its two arrows spring out
  * to their corners: the icon acts out the expand it triggers.
+ *
+ * Out of selection mode the photo's own button already says "Open", so this
+ * one stays out of the tab order and the accessibility tree: one stop and
+ * one name per file.
  */
-function ExpandButton({
-    fileName,
-    onOpen,
-}: {
-    fileName: string;
-    onOpen: (e: ReactMouseEvent<HTMLElement>) => void;
-}) {
+function ExpandButton({ fileName, hasSelection, onOpen }: ExpandButtonProps) {
     const arm =
         'transition-[translate] delay-75 duration-300 ease-[cubic-bezier(.34,1.56,.64,1)] group-hover/tile:translate-x-0 group-hover/tile:translate-y-0 group-focus-visible/expand:translate-x-0 group-focus-visible/expand:translate-y-0 motion-reduce:transition-none';
     return (
@@ -614,6 +999,7 @@ function ExpandButton({
             data-fx-decor
             onClick={onOpen}
             aria-label={`Open ${fileName}`}
+            {...(!hasSelection && { tabIndex: -1, 'aria-hidden': true })}
             className={cn(
                 'group/expand absolute bottom-1 left-1 grid size-8 place-items-center rounded-md bg-background/75 text-foreground shadow-sm backdrop-blur-sm',
                 'translate-y-1 scale-90 opacity-0 transition-[opacity,translate,scale,background-color] duration-200 ease-[cubic-bezier(.2,0,0,1)]',
@@ -675,13 +1061,12 @@ function FileListRow({
                 isSelected && 'bg-primary/8'
             )}
         >
-            <span className="flex" onClick={(e) => e.stopPropagation()}>
-                <Checkbox
-                    checked={isSelected}
-                    onCheckedChange={() => onToggle(false)}
-                    aria-label={`Select ${file.name}`}
-                />
-            </span>
+            <FileCheckbox
+                name={file.name}
+                isSelected={isSelected}
+                onToggle={onToggle}
+                className="flex"
+            />
             <div
                 data-fx="tile-media"
                 className="relative size-10 shrink-0 overflow-hidden rounded-md"
@@ -721,7 +1106,7 @@ function FileMedia({
     thumbnailUrl,
     isZoomable = false,
 }: {
-    file: FileWithRetrieval;
+    file: LibraryFile;
     thumbnailUrl: string | undefined;
     /** Leans in on hover: the tile opens into the viewer. */
     isZoomable?: boolean;
@@ -739,7 +1124,8 @@ function FileMedia({
                 <TypeIcon className="size-6 opacity-60" strokeWidth={1.5} />
             </span>
             {thumbnailUrl && (
-                // Presigned S3 URL — see SelectableIcon for why not next/image.
+                // Presigned S3 URL: next/image would need remotePatterns per
+                // bucket domain and re-proxy the bytes. A plain img is the point.
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                     src={thumbnailUrl}

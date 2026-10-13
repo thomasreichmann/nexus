@@ -28,6 +28,7 @@ import {
 } from '@nexus/db/test-db';
 import { test as base, expect } from '../../fixtures';
 import { type TestUser } from '../../helpers/auth';
+import { batchCard } from '../../helpers/fileBrowser';
 import { expectNoHorizontalOverflow } from '../../helpers/overflow';
 
 const SPEC_USER: TestUser = {
@@ -86,9 +87,7 @@ test(
         // The library: the newest card carries the longest batch name.
         await page.goto('/dashboard/files');
         await expect(
-            page.getByRole('button', {
-                name: `Open ${adversarialLibrary.batches[0]!.name}`,
-            })
+            batchCard(page, adversarialLibrary.batches[0]!.name)
         ).toBeVisible();
         await expectNoHorizontalOverflow(page);
 

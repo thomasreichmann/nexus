@@ -52,7 +52,7 @@ const RADII = {
 
 const fx = (name: string) => `[data-fx="${name}"]`;
 const LIB_CHROME = fx('lib-chrome');
-const PANE_CHROME = `${fx('pane-chrome')}, ${fx('paging')}`;
+const PANE_CHROME = `${fx('pane-chrome')}, ${fx('paging')}, ${fx('folder')}`;
 
 const $ = (selector: string, root: ParentNode): HTMLElement | null =>
     root.querySelector<HTMLElement>(selector);
@@ -419,6 +419,14 @@ export function createBatchTransitions(
             A(el, [{ opacity: 0 }, { opacity: 1 }], {
                 d: 300,
                 delay: lastDelay + 200,
+            })
+        );
+        // A batch's folder rows (#405) come in with its first tiles, in one
+        // beat: a cascade down thirty camera folders would trail the open.
+        $$(fx('folder'), pane).forEach((el) =>
+            A(el, [{ opacity: 0 }, { opacity: 1 }], {
+                d: 300,
+                delay: o.tiles,
             })
         );
         const bar = $(fx('status-bar'), pane);

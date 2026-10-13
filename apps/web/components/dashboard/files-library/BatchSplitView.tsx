@@ -2,26 +2,28 @@ import type { ReactNode } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
-import { formatBytes } from '@/lib/format';
+import { countLabel, formatBytes, formatCount } from '@/lib/format';
+import { BATCH_PAGE_SIZE } from '@/lib/library/paging';
 import { BatchMosaic } from './BatchMosaic';
 import { SearchField } from './LibraryView';
 import {
     formatBatchDate,
-    formatCount,
     formatTimeLeft,
-    type BatchSummary,
+    type BatchView,
 } from './batchSummary';
 
 interface BatchSplitViewProps {
-    openBatch: BatchSummary;
-    batches: BatchSummary[];
+    openBatch: BatchView;
+    batches: BatchView[];
     totalBatchCount: number;
     thumbnailUrls: Record<string, string>;
     search: string;
     onSearchChange: (value: string) => void;
     onBack: () => void;
     onSelect: (key: string) => void;
+    onIntent: (key: string) => void;
     onShowMore: () => void;
+    isLoadingMore: boolean;
     /** The open batch's pane. */
     children: ReactNode;
 }
@@ -35,7 +37,9 @@ export function BatchSplitView({
     onSearchChange,
     onBack,
     onSelect,
+    onIntent,
     onShowMore,
+    isLoadingMore,
     children,
 }: BatchSplitViewProps) {
     const remaining = totalBatchCount - batches.length;
@@ -77,6 +81,7 @@ export function BatchSplitView({
                                 isCurrent={batch.key === openBatch.key}
                                 thumbnailUrls={thumbnailUrls}
                                 onSelect={() => onSelect(batch.key)}
+                                onIntent={() => onIntent(batch.key)}
                             />
                         ))}
                     </div>
@@ -93,8 +98,11 @@ export function BatchSplitView({
                                 variant="outline"
                                 size="sm"
                                 onClick={onShowMore}
+                                disabled={isLoadingMore}
                             >
-                                Show {formatCount(Math.min(remaining, 12))} more
+                                {isLoadingMore
+                                    ? 'Loading…'
+                                    : `Show ${formatCount(Math.min(remaining, BATCH_PAGE_SIZE))} more`}
                             </Button>
                         )}
                     </div>
@@ -106,10 +114,11 @@ export function BatchSplitView({
 }
 
 interface BatchRowProps {
-    batch: BatchSummary;
+    batch: BatchView;
     isCurrent: boolean;
     thumbnailUrls: Record<string, string>;
     onSelect: () => void;
+    onIntent: () => void;
 }
 
 function BatchRow({
@@ -117,6 +126,7 @@ function BatchRow({
     isCurrent,
     thumbnailUrls,
     onSelect,
+    onIntent,
 }: BatchRowProps) {
     return (
         <button
@@ -124,6 +134,8 @@ function BatchRow({
             data-fx-row={batch.key}
             aria-current={isCurrent}
             onClick={onSelect}
+            onPointerEnter={onIntent}
+            onFocus={onIntent}
             className="flex w-full items-center gap-3 border-b border-border/60 px-3 py-2.5 text-left transition-colors last:border-b-0 hover:bg-foreground/3 aria-current:bg-muted"
         >
             <BatchMosaic
@@ -146,7 +158,7 @@ function BatchRow({
     );
 }
 
-function RowStatus({ batch }: { batch: BatchSummary }) {
+function RowStatus({ batch }: { batch: BatchView }) {
     const base =
         'flex items-center gap-1.5 truncate text-xs text-muted-foreground tabular-nums';
     if (batch.status === 'restoring') {
@@ -154,7 +166,7 @@ function RowStatus({ batch }: { batch: BatchSummary }) {
             <span className={cn(base, 'text-blue-600 dark:text-blue-300')}>
                 <span className="size-1.5 shrink-0 rounded-full bg-blue-500" />
                 Restoring {formatCount(batch.restoringCount)} of{' '}
-                {formatCount(batch.totalFileCount)}
+                {formatCount(batch.fileCount)}
             </span>
         );
     }
@@ -172,7 +184,7 @@ function RowStatus({ batch }: { batch: BatchSummary }) {
     }
     return (
         <span className={base}>
-            {formatCount(batch.totalFileCount)} files ·{' '}
+            {countLabel(batch.fileCount, 'file')} ·{' '}
             {formatBytes(batch.totalBytes)}
         </span>
     );

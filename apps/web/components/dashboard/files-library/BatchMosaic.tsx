@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { getFileTypeInfo } from '@/components/dashboard/file-browser/status';
-import type { FileWithRetrieval } from '@nexus/db/repo/files';
-import type { BatchSummary } from './batchSummary';
+import type { LibraryCoverFile } from '@nexus/db/repo/library';
+import type { BatchView } from './batchSummary';
 
 interface BatchMosaicProps {
-    batch: BatchSummary;
+    batch: BatchView;
     thumbnailUrls: Record<string, string>;
     /** `cover` tops a library card; `thumb` is the 40px list-row version. */
     variant: 'cover' | 'thumb';
@@ -52,7 +52,7 @@ export function BatchMosaic({
 }
 
 interface MosaicPieceProps {
-    file: FileWithRetrieval | undefined;
+    file: LibraryCoverFile | undefined;
     thumbnailUrl: string | undefined;
     isThumb: boolean;
     className?: string;
@@ -88,7 +88,8 @@ function MosaicPiece({
                 />
             </span>
             {thumbnailUrl && (
-                // Presigned S3 URL — see SelectableIcon for why not next/image.
+                // Presigned S3 URL: next/image would need remotePatterns per
+                // bucket domain and re-proxy the bytes.
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                     src={thumbnailUrl}

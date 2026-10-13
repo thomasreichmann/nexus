@@ -44,6 +44,7 @@ import { test as base, expect } from '../fixtures';
 import { invokePoll, retrievalStatuses } from '../helpers/aws';
 import { createTestS3, type TestS3 } from '../helpers/s3';
 import { type TestUser } from '../helpers/auth';
+import { openBatch, toggleFile } from '../helpers/fileBrowser';
 import type { File } from '@nexus/db/test-db';
 
 const RESTORE_USER: TestUser = {
@@ -128,10 +129,10 @@ test(
         test.setTimeout(300_000);
         const userId = dedicatedUser!.userId;
 
+        // The file has no batch: it opens as Ungrouped.
         await page.goto('/dashboard/files');
-        const selectAll = page.getByRole('checkbox', { name: 'Select all' });
-        await expect(selectAll).toBeVisible();
-        await selectAll.click();
+        await openBatch(page, 'Ungrouped');
+        await toggleFile(page, FILE_NAME);
 
         await page.getByRole('button', { name: 'Retrieve' }).click();
         const dialog = page.getByRole('alertdialog');
@@ -209,15 +210,11 @@ test(
         expect(artifactCount.value).toBe(0);
 
         // The deep link the ready email points at (`?file=`, the sibling of
-        // the zip spec's `?request=`): the file browser scrolls to and
-        // highlights the restored file, ready for its Download action.
+        // the zip spec's `?request=`): the file browser opens the restored
+        // file's batch and the file itself, ready for its Download action.
         await page.goto(`/dashboard/files?file=${seededRestoreFile.id}`);
-        // The row, not the name text: MiddleTruncateName keeps the full name
-        // in an sr-only span (hidden by design), so hasText finds it while
-        // toBeVisible on the text node itself never could.
-        await expect(
-            page.getByRole('row').filter({ hasText: FILE_NAME })
-        ).toBeVisible();
+        const viewer = page.getByRole('dialog', { name: FILE_NAME });
+        await expect(viewer.getByText('Ready to download')).toBeVisible();
         await page.screenshot({
             path: `${SCREENSHOTS}/02-deep-link.png`,
             fullPage: true,

@@ -4,12 +4,9 @@ import {
     describe,
     inRolledBackTransaction,
 } from '../test-db/integration';
-import { insertFile, insertRetrieval, insertUploadBatch } from '../test-db';
+import { insertFile, insertUploadBatch } from '../test-db';
 import { createFileRepo, originalKey } from './files';
 
-const HOUR_MS = 60 * 60 * 1000;
-const past = () => new Date(Date.now() - HOUR_MS);
-const future = () => new Date(Date.now() + HOUR_MS);
 const LONG_AGO = new Date('2026-01-01T00:00:00Z');
 
 // Every file a user reaches by id goes through one of these. Without the
@@ -94,7 +91,7 @@ describe.concurrent('ownership', () => {
         );
     });
 
-    it('findByUserAndBatch returns the user’s files in that batch only', async ({
+    it('findVisibleByUserAndBatch returns the user’s visible files in that batch only', async ({
         db,
         user,
         createUser,
@@ -107,17 +104,108 @@ describe.concurrent('ownership', () => {
         const [inBatch] = await Promise.all([
             insertFile(db, { userId: user.id, batchId: batch.id }),
             insertFile(db, { userId: user.id, batchId: otherBatch.id }),
+            insertFile(db, { userId: user.id }),
+            // Mid-upload and deleted rows aren't part of the batch a user
+            // sees, and would fail a whole-batch restore (#455).
+            insertFile(db, {
+                userId: user.id,
+                batchId: batch.id,
+                status: 'uploading',
+            }),
+            insertFile(db, {
+                userId: user.id,
+                batchId: batch.id,
+                status: 'deleted',
+            }),
             // Nothing in the schema stops a row pointing at someone else's
             // batch; the query's own userId filter is what keeps it out.
             insertFile(db, { userId: stranger.id, batchId: batch.id }),
         ]);
 
-        const found = await createFileRepo(db).findByUserAndBatch(
+        const found = await createFileRepo(db).findVisibleByUserAndBatch(
             user.id,
             batch.id
         );
 
         expect(found.map((f) => f.id)).toEqual([inBatch.id]);
+    });
+
+    it('findVisibleByUserAndBatch with no batch returns the user’s legacy unbatched files', async ({
+        db,
+        user,
+        createUser,
+    }) => {
+        const stranger = await createUser();
+        const batch = await insertUploadBatch(db, { userId: user.id });
+        const [legacy] = await Promise.all([
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id, batchId: batch.id }),
+            insertFile(db, { userId: stranger.id }),
+        ]);
+
+        const found = await createFileRepo(db).findVisibleByUserAndBatch(
+            user.id,
+            null
+        );
+
+        expect(found.map((f) => f.id)).toEqual([legacy.id]);
+    });
+
+    it('softDeleteBatchForUser deletes the batch’s visible files and nothing else', async ({
+        db,
+        user,
+        createUser,
+    }) => {
+        const repo = createFileRepo(db);
+        const stranger = await createUser();
+        const [batch, otherBatch] = await Promise.all([
+            insertUploadBatch(db, { userId: user.id }),
+            insertUploadBatch(db, { userId: user.id }),
+        ]);
+        const [a, b, uploading, elsewhere, legacy, theirs] = await Promise.all([
+            insertFile(db, { userId: user.id, batchId: batch.id, size: 100 }),
+            insertFile(db, { userId: user.id, batchId: batch.id, size: 200 }),
+            insertFile(db, {
+                userId: user.id,
+                batchId: batch.id,
+                status: 'uploading',
+            }),
+            insertFile(db, { userId: user.id, batchId: otherBatch.id }),
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: stranger.id, batchId: batch.id }),
+        ]);
+
+        const deleted = await repo.softDeleteBatchForUser(user.id, batch.id);
+
+        expect([...deleted].sort((x, y) => x.size - y.size)).toEqual([
+            { id: a.id, size: 100 },
+            { id: b.id, size: 200 },
+        ]);
+        expect(await repo.findById(a.id)).toMatchObject({
+            status: 'deleted',
+            deletedAt: expect.any(Date),
+        });
+        // An upload in flight keeps its row for releaseUpload to clean up.
+        for (const bystander of [uploading, elsewhere, legacy, theirs]) {
+            expect(await repo.findById(bystander.id)).toEqual(bystander);
+        }
+    });
+
+    it('softDeleteBatchForUser with no batch deletes only the legacy unbatched files', async ({
+        db,
+        user,
+    }) => {
+        const repo = createFileRepo(db);
+        const batch = await insertUploadBatch(db, { userId: user.id });
+        const [legacy, batched] = await Promise.all([
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id, batchId: batch.id }),
+        ]);
+
+        const deleted = await repo.softDeleteBatchForUser(user.id, null);
+
+        expect(deleted.map((f) => f.id)).toEqual([legacy.id]);
+        expect(await repo.findById(batched.id)).toEqual(batched);
     });
 
     // The status predicate under concurrency is raced in apps/web's
@@ -328,132 +416,6 @@ describe.concurrent('file browser queries', () => {
             { name: 'clip.mp4', size: 5 },
             { name: 'IMG_0001.CR2', size: 100 },
         ]);
-    });
-});
-
-describe.concurrent('findByUserGroupedByBatch', () => {
-    it('groups visible files by batch, newest batch first and legacy files last, each in name order', async ({
-        db,
-        user,
-        createUser,
-    }) => {
-        const stranger = await createUser();
-        const [newer, older] = await Promise.all([
-            insertUploadBatch(db, { userId: user.id, name: 'Silva Wedding' }),
-            insertUploadBatch(db, {
-                userId: user.id,
-                name: 'Old Shoot',
-                createdAt: past(),
-            }),
-        ]);
-        const add = (name: string, batchId: string | null, extra = {}) =>
-            insertFile(db, { userId: user.id, name, batchId, ...extra });
-        // In each group the first name is the older upload, so the query's
-        // newest-first order is the reverse of the name order expected.
-        const [earlier, later] = [past(), new Date()];
-        await Promise.all([
-            add('b.jpg', newer.id, { createdAt: later }),
-            add('a.jpg', newer.id, { createdAt: earlier }),
-            add('hidden.jpg', newer.id, { status: 'uploading' }),
-            add('IMG_10.JPG', older.id, { createdAt: later }),
-            add('IMG_9.JPG', older.id, { createdAt: earlier }),
-            add('f.jpg', null, { createdAt: later }),
-            add('e.jpg', null, { createdAt: earlier }),
-            insertFile(db, { userId: stranger.id, batchId: newer.id }),
-        ]);
-
-        const groups = await createFileRepo(db).findByUserGroupedByBatch(
-            user.id
-        );
-
-        expect(
-            groups.map((g) => [
-                g.batchId,
-                g.batchName,
-                g.files.map((f) => f.name),
-            ])
-        ).toEqual([
-            [newer.id, 'Silva Wedding', ['a.jpg', 'b.jpg']],
-            [older.id, 'Old Shoot', ['IMG_9.JPG', 'IMG_10.JPG']],
-            [null, null, ['e.jpg', 'f.jpg']],
-        ]);
-    });
-
-    it('includes uploading and deleted files when asked to', async ({
-        db,
-        user,
-    }) => {
-        await Promise.all([
-            insertFile(db, { userId: user.id, name: 'a.jpg' }),
-            insertFile(db, {
-                userId: user.id,
-                name: 'b.jpg',
-                status: 'uploading',
-            }),
-            insertFile(db, {
-                userId: user.id,
-                name: 'c.jpg',
-                status: 'deleted',
-            }),
-        ]);
-
-        const [group] = await createFileRepo(db).findByUserGroupedByBatch(
-            user.id,
-            { includeHidden: true }
-        );
-
-        expect(group!.files.map((f) => f.name)).toEqual([
-            'a.jpg',
-            'b.jpg',
-            'c.jpg',
-        ]);
-    });
-
-    it('attaches each file’s active retrieval, and none for a lapsed one', async ({
-        db,
-        user,
-    }) => {
-        const add = (name: string) => insertFile(db, { userId: user.id, name });
-        const [ready, lapsed, pending] = await Promise.all([
-            add('ready.jpg'),
-            add('lapsed.jpg'),
-            add('pending.jpg'),
-            add('plain.jpg'),
-        ]);
-        const expiresAt = future();
-        await Promise.all([
-            insertRetrieval(db, {
-                userId: user.id,
-                fileId: ready.id,
-                status: 'ready',
-                expiresAt,
-            }),
-            insertRetrieval(db, {
-                userId: user.id,
-                fileId: lapsed.id,
-                status: 'ready',
-                expiresAt: past(),
-            }),
-            insertRetrieval(db, {
-                userId: user.id,
-                fileId: pending.id,
-                status: 'pending',
-            }),
-        ]);
-
-        const [group] = await createFileRepo(db).findByUserGroupedByBatch(
-            user.id
-        );
-
-        const byName = Object.fromEntries(
-            group!.files.map((f) => [f.name, f.activeRetrieval])
-        );
-        expect(byName).toEqual({
-            'ready.jpg': { status: 'ready', expiresAt },
-            'lapsed.jpg': null,
-            'pending.jpg': expect.objectContaining({ status: 'pending' }),
-            'plain.jpg': null,
-        });
     });
 });
 

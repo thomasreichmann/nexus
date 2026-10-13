@@ -3,30 +3,53 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Loader2, Snowflake } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import {
+    keepPreviousData,
+    skipToken,
+    useInfiniteQuery,
+    useQuery,
+    useQueryClient,
+} from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { deriveStatus } from '@/components/dashboard/file-browser/status';
 import { cn } from '@/lib/cn';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
+import { BATCH_PAGE_SIZE } from '@/lib/library/paging';
 import { useTRPC } from '@/lib/trpc/client';
 import { getLivePollOptionsWhile } from '@/lib/trpc/polling';
-import { BatchPane, type PaneViewMode } from './BatchPane';
+import { BatchPane, type PaneSelection, type PaneViewMode } from './BatchPane';
 import { BatchSplitView } from './BatchSplitView';
-import { FileViewer, type ViewerPhase } from './FileViewer';
+import { FileViewer, type ViewerPhase, type ViewerPlace } from './FileViewer';
 import { LibraryHeading, LibraryView } from './LibraryView';
 import { SelectionBar } from './SelectionBar';
-import { summarizeBatches, type BatchSummary } from './batchSummary';
+import {
+    batchIdOf,
+    batchKeyOf,
+    toBatchView,
+    type BatchView,
+} from './batchSummary';
 import {
     createBatchTransitions,
     type BatchTransitions,
 } from './batchTransition';
-import { useOrderedThumbnailUrls } from './useOrderedThumbnailUrls';
+import {
+    batchFilesInput,
+    firstFolderOf,
+    useBatchFiles,
+    type BatchAnchor,
+} from './useBatchFiles';
+import {
+    useOrderedThumbnailUrls,
+    useThumbnailUrlsByPage,
+} from './useOrderedThumbnailUrls';
 import { useStableCallback } from './useStableCallback';
+import type { LibraryBatch, LibraryFile } from '@nexus/db/repo/library';
 
 const SEARCH_DEBOUNCE_MS = 300;
 const NO_COUNTS = { archived: 0, retrieving: 0, available: 0 };
-const BATCH_PAGE = 12;
-const FILE_PAGE = 100;
+const NO_SELECTION: PaneSelection = { isWholeBatch: false, files: new Map() };
+// The viewer asks for a section's next page this close to its loaded edge,
+// so browsing a long batch file by file never waits on one.
+const PREFETCH_EDGE = 10;
 
 /*
  * `library` and `split` are at rest. The others are mid-choreography: React
@@ -48,15 +71,32 @@ interface ViewState {
     nextKey?: string;
 }
 
+const pollWhileBatchesRestore = getLivePollOptionsWhile<{
+    pages: { batches: { restoringCount: number }[] }[];
+}>(
+    (data) =>
+        data?.pages.some((page) =>
+            page.batches.some((batch) => batch.restoringCount > 0)
+        ) ?? false
+);
+const pollWhileBatchRestores = getLivePollOptionsWhile<LibraryBatch | null>(
+    (batch) => (batch?.restoringCount ?? 0) > 0
+);
+
 /**
- * Prototype of the #455 file browser: a library of batch cards that opens
- * into a batch list + batch pane, with the motion study's choreography
- * between them. The URL is the source of truth for which batch is open —
- * `?batch=<key>`, or `?file=<id>` from a retrieval-ready email — so the
- * browser's back button closes a batch like "All batches" does.
+ * The #455 file browser: a library of batch cards that opens into a batch
+ * list + batch pane, with the motion study's choreography between them. The
+ * library loads as keyset-paged summaries from the server, and an open
+ * batch's files a page at a time, folder by folder when it has structure
+ * inside (#405), so nothing here grows with the size of the library.
+ *
+ * The URL is the source of truth for which batch is open — `?batch=<key>`, or
+ * `?file=<id>` from a retrieval-ready email — so the browser's back button
+ * closes a batch like "All batches" does.
  */
 export function FilesLibrary() {
     const trpc = useTRPC();
+    const queryClient = useQueryClient();
     const searchParams = useSearchParams();
 
     const { data: countsData } = useQuery(
@@ -67,59 +107,108 @@ export function FilesLibrary() {
     );
     const counts = countsData ?? NO_COUNTS;
 
-    const { data: groupsData, isLoading } = useQuery(
-        trpc.files.listGrouped.queryOptions(
-            {},
-            getLivePollOptionsWhile((groups) =>
-                (groups ?? []).some((group) =>
-                    group.files.some(
-                        (file) => deriveStatus(file) === 'retrieving'
-                    )
-                )
-            )
-        )
-    );
-    const groups = useMemo(() => groupsData ?? [], [groupsData]);
-
     const [search, setSearch] = useState('');
     const activeSearch = useDebouncedValue(search, SEARCH_DEBOUNCE_MS).trim();
+    const searchInput = activeSearch || undefined;
+
+    // The library, a page of cards at a time. A new search keeps showing the
+    // old results until its own land, rather than flashing empty.
+    const batchesQuery = useInfiniteQuery(
+        trpc.files.listBatches.infiniteQueryOptions(
+            { search: searchInput, limit: BATCH_PAGE_SIZE },
+            {
+                getNextPageParam: (page) => page.nextCursor ?? undefined,
+                placeholderData: keepPreviousData,
+                ...pollWhileBatchesRestore,
+            }
+        )
+    );
+    const batchPages = batchesQuery.data?.pages;
     const batches = useMemo(
-        () => summarizeBatches(groups, activeSearch),
-        [groups, activeSearch]
+        () =>
+            batchPages?.flatMap((page) => page.batches.map(toBatchView)) ?? [],
+        [batchPages]
     );
-    const allBatches = useMemo(
-        () => (activeSearch ? summarizeBatches(groups, '') : batches),
-        [groups, activeSearch, batches]
+    const totalBatchCount = batchPages?.[0]?.total ?? batches.length;
+    const isSearching = batchesQuery.isPlaceholderData;
+
+    // The stats line counts the whole library, searching or not: remember
+    // the count the last unsearched page reported.
+    const [libraryBatchCount, setLibraryBatchCount] = useState<number | null>(
+        null
     );
-    const [batchLimit, setBatchLimit] = useState(BATCH_PAGE);
-    const visibleBatches = useMemo(
-        () => batches.slice(0, batchLimit),
-        [batches, batchLimit]
+    const unsearchedTotal =
+        !searchInput && !isSearching ? batchPages?.[0]?.total : undefined;
+    if (unsearchedTotal != null && unsearchedTotal !== libraryBatchCount) {
+        setLibraryBatchCount(unsearchedTotal);
+    }
+
+    // A `?file=` this page has to find before it can open it: the one it
+    // landed on, or one Back/Forward brought back that isn't loaded. The
+    // server says which batch and folder it sits in, and the pane opens at
+    // the page holding it. Asked once: the answer anchors the pane's pages,
+    // and a refetch moving it (the file deleted since) would reset them.
+    const batchParam = searchParams.get('batch');
+    const fileParam = searchParams.get('file');
+    const [landingFileId, setLandingFileId] = useState<string | null>(
+        fileParam
+    );
+    const locateQuery = useQuery(
+        trpc.files.locate.queryOptions(
+            landingFileId ? { fileId: landingFileId } : skipToken,
+            { staleTime: Infinity }
+        )
+    );
+    const located = landingFileId ? locateQuery.data : undefined;
+    const isLocating = !!landingFileId && locateQuery.isPending;
+    const anchor = useMemo<(BatchAnchor & { key: string }) | null>(
+        () =>
+            located && landingFileId
+                ? {
+                      key: batchKeyOf(located.batchId),
+                      fileId: landingFileId,
+                      subpath: located.subpath,
+                      pageStartId: located.pageStartId,
+                  }
+                : null,
+        [located, landingFileId]
     );
 
-    // Which batch the URL asks for: an explicit `?batch=`, else the batch
-    // holding a deep-linked `?file=`. A key that no longer exists (deleted,
-    // or a stale link) asks for the library.
-    const fileParam = searchParams.get('file');
-    const targetKey = useMemo(() => {
-        const key = searchParams.get('batch');
-        if (key) return allBatches.some((b) => b.key === key) ? key : null;
-        if (fileParam)
-            return (
-                allBatches.find((b) => b.files.some((f) => f.id === fileParam))
-                    ?.key ?? null
-            );
-        return null;
-    }, [searchParams, fileParam, allBatches]);
+    // Which batch the URL asks for: an explicit `?batch=`, else the one the
+    // `?file=` being looked up sits in. Only while it's still the URL's: Back
+    // to a `?batch=` page, or to the bare library, drops the landing's batch.
+    // A key that no longer exists (deleted, or a stale link) asks for the
+    // library.
+    let targetKey = batchParam;
+    if (targetKey === null && fileParam && fileParam === landingFileId) {
+        targetKey = anchor?.key ?? null;
+    }
+    const targetQuery = useQuery(
+        trpc.files.getBatch.queryOptions(
+            targetKey !== null
+                ? { batchId: batchIdOf(targetKey), search: searchInput }
+                : skipToken,
+            pollWhileBatchRestores
+        )
+    );
+    const listedBatch = (key: string | null): BatchView | null =>
+        key === null ? null : (batches.find((b) => b.key === key) ?? null);
+    // Undefined while it's still being looked up.
+    let resolvedTarget: string | null | undefined = null;
+    if (isLocating) resolvedTarget = undefined;
+    else if (targetKey !== null) {
+        if (listedBatch(targetKey) || targetQuery.data) {
+            resolvedTarget = targetKey;
+        } else if (targetQuery.isPending) {
+            resolvedTarget = undefined;
+        }
+    }
 
     const [view, setView] = useState<ViewState>({
         phase: 'library',
         key: null,
     });
-    const [fileLimit, setFileLimit] = useState(FILE_PAGE);
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(
-        () => new Set()
-    );
+    const [selection, setSelection] = useState<PaneSelection>(NO_SELECTION);
     const [viewMode, setViewMode] = useState<PaneViewMode>('grid');
     // The file viewer over the open batch. `?file=` drives it the way
     // `?batch=` drives the batch: a deep link from a retrieval-ready email
@@ -140,12 +229,18 @@ export function FilesLibrary() {
         string | null | undefined
     >(undefined);
     // Shift-click anchor, tagged with its batch so a switch drops it.
-    const lastToggled = useRef<{ key: string; index: number } | null>(null);
+    const lastToggled = useRef<{ key: string; fileId: string } | null>(null);
 
-    function showBatch(next: ViewState, limit = FILE_PAGE) {
+    function showBatch(next: ViewState) {
         setView(next);
-        setFileLimit(limit);
-        setSelectedIds(new Set());
+        setSelection(NO_SELECTION);
+    }
+
+    // A selection is of what the pane shows: a new search changes that.
+    const [selectionSearch, setSelectionSearch] = useState(activeSearch);
+    if (selectionSearch !== activeSearch) {
+        setSelectionSearch(activeSearch);
+        setSelection(NO_SELECTION);
     }
 
     // Reconcile the URL into the view, during render (React's "adjust state
@@ -153,43 +248,69 @@ export function FilesLibrary() {
     // Only from rest: mid-transition changes wait, and are picked up by the
     // render that settles the phase.
     const [hasInitialized, setHasInitialized] = useState(false);
-    if (!isLoading && !hasInitialized) {
-        setHasInitialized(true);
-        if (targetKey) {
-            // Landing on a batch (reload, deep link) skips the choreography,
-            // and opens far enough into the batch to show the linked file.
-            const batch = allBatches.find((b) => b.key === targetKey);
-            const index =
-                batch?.files.findIndex((f) => f.id === fileParam) ?? -1;
-            showBatch(
-                { phase: 'split', key: targetKey },
-                Math.ceil((index + 1) / FILE_PAGE) * FILE_PAGE || FILE_PAGE
-            );
+    if (!hasInitialized) {
+        if (!batchesQuery.isPending && resolvedTarget !== undefined) {
+            setHasInitialized(true);
+            // Landing on a batch (reload, deep link) skips the choreography.
+            if (resolvedTarget)
+                showBatch({ phase: 'split', key: resolvedTarget });
         }
-    } else if (hasInitialized) {
-        if (view.phase === 'library' && targetKey) {
-            showBatch({ phase: 'opening', key: targetKey });
-        } else if (view.phase === 'split' && !targetKey) {
+    } else if (resolvedTarget !== undefined) {
+        if (view.phase === 'library' && resolvedTarget) {
+            showBatch({ phase: 'opening', key: resolvedTarget });
+        } else if (view.phase === 'split' && !resolvedTarget) {
             setView({ phase: 'closing', key: view.key });
         } else if (
             view.phase === 'split' &&
-            targetKey &&
-            targetKey !== view.key
+            resolvedTarget &&
+            resolvedTarget !== view.key
         ) {
-            setView({ ...view, phase: 'switching-out', nextKey: targetKey });
+            setView({
+                ...view,
+                phase: 'switching-out',
+                nextKey: resolvedTarget,
+            });
         }
     }
 
-    // The search-filtered summary when the batch matches, else the full one:
-    // a search that excludes the open batch shouldn't empty its pane.
+    // The open batch: its summary and folders. The library's own summary
+    // stands in while it loads, and the last one shown stays up while a
+    // batch that just went away closes. Never another search's: its folders
+    // and match counts would page the new search's files wrongly.
+    const viewBatchId = view.key === null ? undefined : batchIdOf(view.key);
+    const openQuery = useQuery(
+        trpc.files.getBatch.queryOptions(
+            viewBatchId !== undefined
+                ? { batchId: viewBatchId, search: searchInput }
+                : skipToken,
+            pollWhileBatchRestores
+        )
+    );
+    const detail = openQuery.data ?? undefined;
+    const freshBatch = useMemo(
+        () =>
+            detail
+                ? toBatchView(detail)
+                : (batches.find((b) => b.key === view.key) ?? null),
+        [detail, batches, view.key]
+    );
+    const [shownBatch, setShownBatch] = useState<BatchView | null>(null);
+    if (freshBatch && freshBatch !== shownBatch) setShownBatch(freshBatch);
     const openBatch =
-        batches.find((b) => b.key === view.key) ??
-        allBatches.find((b) => b.key === view.key) ??
-        null;
+        freshBatch ?? (shownBatch?.key === view.key ? shownBatch : null);
 
-    // Same reconcile for the viewer: only over a batch at rest, only for a
-    // file that batch shows, and with the file's tile rendered so the photo
-    // has somewhere to rise from and return to.
+    const isSearchSubset = detail?.matchCount != null;
+    const batchFiles = useBatchFiles({
+        batch: detail,
+        search: isSearchSubset ? searchInput : undefined,
+        anchor: anchor?.key === view.key ? anchor : null,
+    });
+
+    // Same reconcile for the viewer: only over a batch at rest, and only for
+    // a file the pane has loaded, so the photo has a tile to rise from and
+    // return to. A `?file=` the pane hasn't loaded (Back to a file further
+    // into the batch) is looked up like a deep link, and opens once its page
+    // lands.
     //
     // In-app actions (a click, Esc, the arrows) drive the viewer directly and
     // write the URL alongside, because the router only reports a pushState
@@ -198,10 +319,7 @@ export function FilesLibrary() {
     // catches up, the URL is our own write, not news. Only a URL we didn't
     // write (Back/Forward, a deep link) is reconciled into the viewer.
     let viewerTarget: string | null = null;
-    if (
-        view.phase === 'split' &&
-        openBatch?.files.some((f) => f.id === fileParam)
-    ) {
+    if (view.phase === 'split' && fileParam && batchFiles.locate(fileParam)) {
         viewerTarget = fileParam;
     }
     const isAwaitingUrl = writtenFileParam !== undefined;
@@ -212,10 +330,8 @@ export function FilesLibrary() {
         setViewer(null);
     } else if (view.phase === 'split' && openBatch && !isAwaitingUrl) {
         if (viewerTarget && !viewer) {
-            revealFile(openBatch, viewerTarget);
             setViewer({ id: viewerTarget, phase: 'opening' });
         } else if (viewer?.phase === 'open' && !viewerTarget) {
-            revealFile(openBatch, viewer.id);
             setViewer({ ...viewer, phase: 'closing' });
         } else if (
             viewer?.phase === 'open' &&
@@ -223,26 +339,29 @@ export function FilesLibrary() {
             viewerTarget !== viewer.id
         ) {
             setViewer({ id: viewerTarget, phase: 'open' });
+        } else if (
+            fileParam &&
+            !viewerTarget &&
+            !viewer &&
+            fileParam !== landingFileId &&
+            batchFiles.sections.every((s) => !s.isLoading)
+        ) {
+            setLandingFileId(fileParam);
         }
-    }
-    function revealFile(batch: BatchSummary, fileId: string) {
-        const index = batch.files.findIndex((f) => f.id === fileId);
-        if (index >= fileLimit)
-            setFileLimit(Math.ceil((index + 1) / FILE_PAGE) * FILE_PAGE);
     }
 
     const coverFiles = useMemo(() => {
-        const files = visibleBatches.flatMap((b) => b.coverFiles);
-        if (openBatch && !visibleBatches.includes(openBatch))
+        const files = batches.flatMap((b) => b.coverFiles);
+        if (openBatch && !batches.some((b) => b.key === openBatch.key))
             files.push(...openBatch.coverFiles);
         return files;
-    }, [visibleBatches, openBatch]);
-    const paneFiles = useMemo(
-        () => openBatch?.files.slice(0, fileLimit) ?? [],
-        [openBatch, fileLimit]
+    }, [batches, openBatch]);
+    const pageChunks = useMemo(
+        () => batchFiles.sections.flatMap((s) => s.pageFiles),
+        [batchFiles.sections]
     );
     const coverUrls = useOrderedThumbnailUrls(coverFiles);
-    const paneUrls = useOrderedThumbnailUrls(paneFiles);
+    const paneUrls = useThumbnailUrlsByPage(pageChunks);
     // A cover photo that lands on its own tile (phone) keeps its URL, so the
     // tile shows the image that was in flight instead of re-fetching it.
     const tileUrls = useMemo(
@@ -257,7 +376,9 @@ export function FilesLibrary() {
     const fxRef = useRef<HTMLDivElement>(null);
     const engineRef = useRef<BatchTransitions | null>(null);
     const libraryScrollTop = useRef(0);
-    const pushedHistory = useRef(false);
+    const hasPushedHistory = useRef(false);
+    // The file whose tile takes focus once the viewer over it is gone.
+    const focusOnViewerClose = useRef<string | null>(null);
 
     useLayoutEffect(() => {
         const { phase, key, nextKey } = view;
@@ -315,8 +436,10 @@ export function FilesLibrary() {
 
     // `?batch=` changes go through the URL; the render-time reconcile above
     // turns them into transitions. Opening pushes a history entry so the
-    // browser's back button closes the batch.
+    // browser's back button closes the batch. Choosing a batch in the app
+    // retires any deep link the page landed on.
     function navigate(key: string | null, mode: 'push' | 'replace') {
+        setLandingFileId(null);
         const params = new URLSearchParams(window.location.search);
         if (key) params.set('batch', key);
         else params.delete('batch');
@@ -330,13 +453,13 @@ export function FilesLibrary() {
     // during a choreography is honored once it settles, never dropped.
     function openFromLibrary(key: string) {
         if (targetKey) return;
-        pushedHistory.current = true;
+        hasPushedHistory.current = true;
         navigate(key, 'push');
     }
     function backToLibrary() {
         if (!targetKey) return;
-        if (pushedHistory.current) {
-            pushedHistory.current = false;
+        if (hasPushedHistory.current) {
+            hasPushedHistory.current = false;
             window.history.back();
         } else {
             navigate(null, 'replace');
@@ -347,9 +470,34 @@ export function FilesLibrary() {
         navigate(key, 'replace');
     }
 
+    // Opening a card fetches its batch and first page; hovering or focusing
+    // it first starts that early, so the pane usually deals in loaded.
+    function prefetchBatch(key: string) {
+        const input = { batchId: batchIdOf(key), search: searchInput };
+        queryClient
+            .fetchQuery(trpc.files.getBatch.queryOptions(input))
+            .then((batch) => {
+                if (!batch) return;
+                const subsetSearch =
+                    batch.matchCount !== null ? searchInput : undefined;
+                return queryClient.prefetchQuery(
+                    trpc.files.listBatchFiles.queryOptions(
+                        batchFilesInput(
+                            batch,
+                            firstFolderOf(batch),
+                            subsetSearch
+                        )
+                    )
+                );
+            })
+            .catch(() => {
+                // A prefetch is a guess; the open fetches for real.
+            });
+    }
+
     // The viewer's URL keeps `?batch=` explicit, so closing a viewer that a
     // `?file=`-only deep link opened leaves the batch open behind it.
-    const pushedViewerHistory = useRef(false);
+    const hasPushedViewerHistory = useRef(false);
     function navigateFile(fileId: string | null, mode: 'push' | 'replace') {
         const params = new URLSearchParams(window.location.search);
         if (view.key) params.set('batch', view.key);
@@ -359,26 +507,37 @@ export function FilesLibrary() {
         if (mode === 'push') window.history.pushState(null, '', url);
         else window.history.replaceState(null, '', url);
     }
+    // Near the loaded edge of its section, the next page starts loading.
+    function prefetchAround(fileId: string) {
+        const found = batchFiles.locate(fileId);
+        if (!found) return;
+        const { section } = found;
+        const at = section.files.findIndex((f) => f.id === fileId);
+        if (section.hasNext && at >= section.files.length - PREFETCH_EDGE)
+            batchFiles.loadNext(section.key);
+        if (section.hasPrevious && at < PREFETCH_EDGE)
+            batchFiles.loadPrevious(section.key);
+    }
     function openFile(fileId: string, aspect: number | null) {
         if (viewer || view.phase !== 'split') return;
         setOpenedAspect(aspect ? { fileId, aspect } : null);
         setViewer({ id: fileId, phase: 'opening' });
         setWrittenFileParam(fileId);
-        pushedViewerHistory.current = true;
+        hasPushedViewerHistory.current = true;
         navigateFile(fileId, 'push');
+        prefetchAround(fileId);
     }
     function closeFile() {
         if (!viewer || viewer.phase === 'closing' || !openBatch) return;
         if (viewer.isCloseQueued) return;
-        revealFile(openBatch, viewer.id);
         // An Esc mid-open is honoured, not dropped: the open finishes its
         // flight (a reversed spring mid-air reads as a glitch) and closes.
         if (viewer.phase === 'opening')
             setViewer({ ...viewer, isCloseQueued: true });
         else setViewer({ ...viewer, phase: 'closing' });
         setWrittenFileParam(null);
-        if (pushedViewerHistory.current) {
-            pushedViewerHistory.current = false;
+        if (hasPushedViewerHistory.current) {
+            hasPushedViewerHistory.current = false;
             window.history.back();
         } else {
             navigateFile(null, 'replace');
@@ -389,6 +548,30 @@ export function FilesLibrary() {
         setViewer({ id: fileId, phase: 'open' });
         setWrittenFileParam(fileId);
         navigateFile(fileId, 'replace');
+        prefetchAround(fileId);
+    }
+    function placeOf(fileId: string): ViewerPlace | null {
+        const found = batchFiles.locate(fileId);
+        if (!found) return null;
+        const { section, index } = found;
+        return {
+            index,
+            total: section.total,
+            folder: section.folder ? section.folder.subpath : undefined,
+            isBeforeGap: section.hasNext && section.files.at(-1)?.id === fileId,
+            isAfterGap: section.hasPrevious && section.files[0]?.id === fileId,
+            isLoading: section.isLoading,
+        };
+    }
+    // The viewer's step past a gap. A page that failed is asked for again:
+    // the pane's retry is behind the viewer.
+    function loadAround(fileId: string, direction: 'next' | 'previous') {
+        const found = batchFiles.locate(fileId);
+        if (!found) return;
+        const { key, isError } = found.section;
+        if (isError) batchFiles.retry(key);
+        else if (direction === 'next') batchFiles.loadNext(key);
+        else batchFiles.loadPrevious(key);
     }
     function findTileMedia(fileId: string): HTMLElement | null {
         return (
@@ -402,77 +585,113 @@ export function FilesLibrary() {
         if (viewer.phase === 'opening') {
             const next = viewer.isCloseQueued ? 'closing' : 'open';
             setViewer({ id: viewer.id, phase: next });
+            // A deep link opens the viewer without a click: start the next
+            // page here too, so browsing on from its file never waits.
+            if (next === 'open') prefetchAround(viewer.id);
             return;
         }
-        // Back on the grid, keyboard focus returns to the photo's tile.
-        findTileMedia(viewer.id)
-            ?.closest('[data-fx="tile"]')
-            ?.querySelector<HTMLElement>('[data-open-file]')
-            ?.focus({ preventScroll: true });
+        focusOnViewerClose.current = viewer.id;
         setViewer(null);
     }
+    // Back on the grid, keyboard focus returns to the photo's tile: once the
+    // viewer is gone, and the page behind it no longer inert.
+    useLayoutEffect(() => {
+        const fileId = focusOnViewerClose.current;
+        if (viewer || !fileId) return;
+        focusOnViewerClose.current = null;
+        splitRef.current
+            ?.querySelector<HTMLElement>(
+                `[data-fx="tile"][data-file-id="${CSS.escape(fileId)}"] [data-open-file]`
+            )
+            ?.focus({ preventScroll: true });
+    }, [viewer]);
 
     /* ---- Selection ---- */
-    function toggleFile(index: number, shiftKey: boolean) {
+    // Clicking one file out of a whole-batch selection leaves the loaded
+    // files picked, minus that one: the batch's unloaded rest can't be
+    // picked one by one.
+    function toggleFile(fileId: string, shiftKey: boolean) {
         if (!view.key) return;
+        const loaded = batchFiles.files;
+        const ids = loaded.map((f) => f.id);
         const last =
             lastToggled.current?.key === view.key
-                ? lastToggled.current.index
+                ? lastToggled.current.fileId
                 : null;
-        setSelectedIds((prev) => {
-            const next = new Set(prev);
-            if (shiftKey && last !== null && last !== index) {
-                const [start, end] = [
-                    Math.min(last, index),
-                    Math.max(last, index),
-                ];
-                paneFiles.slice(start, end + 1).forEach((f) => next.add(f.id));
-                return next;
+        setSelection((prev) => {
+            const next = prev.isWholeBatch ? byId(loaded) : new Map(prev.files);
+            const from = last ? ids.indexOf(last) : -1;
+            const to = ids.indexOf(fileId);
+            if (shiftKey && from >= 0 && to >= 0 && from !== to) {
+                const [start, end] = [Math.min(from, to), Math.max(from, to)];
+                loaded.slice(start, end + 1).forEach((f) => next.set(f.id, f));
+            } else if (next.has(fileId)) {
+                next.delete(fileId);
+            } else if (to >= 0) {
+                next.set(fileId, loaded[to]);
             }
-            const id = paneFiles[index].id;
-            if (next.has(id)) next.delete(id);
-            else next.add(id);
-            return next;
+            return { isWholeBatch: false, files: next };
         });
-        lastToggled.current = { key: view.key, index };
+        lastToggled.current = { key: view.key, fileId };
     }
-    function toggleFileById(fileId: string) {
-        setSelectedIds((prev) => {
-            const next = new Set(prev);
-            if (next.has(fileId)) next.delete(fileId);
-            else next.add(fileId);
-            return next;
-        });
-    }
+    // The whole batch, loaded or not, when every file shows; a search's
+    // matches only as the loaded rows (the pane's label says which).
     function toggleAll() {
         if (!openBatch) return;
-        setSelectedIds((prev) =>
-            prev.size === openBatch.files.length
-                ? new Set()
-                : new Set(openBatch.files.map((f) => f.id))
+        if (openBatch.matchCount === null) {
+            setSelection((prev) =>
+                prev.isWholeBatch
+                    ? NO_SELECTION
+                    : { isWholeBatch: true, files: new Map() }
+            );
+            return;
+        }
+        const loaded = batchFiles.files;
+        setSelection((prev) =>
+            loaded.length > 0 && prev.files.size === loaded.length
+                ? NO_SELECTION
+                : { isWholeBatch: false, files: byId(loaded) }
         );
     }
-    const selectedFiles =
-        openBatch?.files.filter((f) => selectedIds.has(f.id)) ?? [];
+    const viewerSelectedIds = useMemo(
+        () =>
+            new Set(
+                selection.isWholeBatch
+                    ? batchFiles.files.map((f) => f.id)
+                    : selection.files.keys()
+            ),
+        [selection, batchFiles.files]
+    );
+    const selectedCount = selection.isWholeBatch
+        ? (openBatch?.fileCount ?? 0)
+        : selection.files.size;
+    // Picked files as they load now, so the bar's actions see a restore
+    // that's started since; one out of view (its folder collapsed) as it was.
+    const selectedFiles = useMemo(() => {
+        const loaded = byId(batchFiles.files);
+        return [...selection.files.values()].map((f) => loaded.get(f.id) ?? f);
+    }, [batchFiles.files, selection]);
 
     // Stable identities for the memoized pane and library, so opening,
     // browsing and closing the viewer don't re-render them.
     const onToggleFile = useStableCallback(toggleFile);
     const onToggleAll = useStableCallback(toggleAll);
+    const onToggleFolder = useStableCallback(batchFiles.toggleFolder);
+    const onLoadNext = useStableCallback(batchFiles.loadNext);
+    const onLoadPrevious = useStableCallback(batchFiles.loadPrevious);
+    const onRetrySection = useStableCallback(batchFiles.retry);
     const onOpenFile = useStableCallback(openFile);
     const onOpenBatch = useStableCallback(openFromLibrary);
+    const onIntent = useStableCallback(prefetchBatch);
     const onBatchDeleted = useStableCallback(() => navigate(null, 'replace'));
-    const showMoreBatches = useStableCallback(() =>
-        setBatchLimit((n) => n + BATCH_PAGE)
-    );
-    const showMoreFiles = useStableCallback(() =>
-        setFileLimit((n) => n + FILE_PAGE)
-    );
+    const showMoreBatches = useStableCallback(() => {
+        void batchesQuery.fetchNextPage();
+    });
     // The viewer calls this from the effect that started its animation, a
     // few renders ago; it must still see a close queued since then.
     const onViewerSettled = useStableCallback(settleViewer);
 
-    if (isLoading) {
+    if (!hasInitialized) {
         return (
             <div className="space-y-4">
                 <LibraryHeading />
@@ -489,7 +708,7 @@ export function FilesLibrary() {
         );
     }
 
-    if (groups.length === 0) {
+    if (libraryBatchCount === 0) {
         return (
             <div className="space-y-4">
                 <LibraryHeading />
@@ -503,32 +722,41 @@ export function FilesLibrary() {
         view.phase === 'switching-out' ||
         view.phase === 'switching-in';
     const isSplitRendered = openBatch !== null && view.phase !== 'library';
+    const hasSelection = selection.isWholeBatch || selection.files.size > 0;
+    // The viewer is modal: the page behind it is out of reach of Tab and of
+    // assistive tech while it's up.
+    const isBehindViewer = viewer !== null;
 
     return (
         <div ref={stageRef} data-phase={view.phase} className="relative">
             <div
                 ref={libraryRef}
                 hidden={isAtSplit}
+                inert={isBehindViewer}
                 className={cn(
                     view.phase === 'closing' && 'absolute inset-x-0 top-0'
                 )}
             >
                 <LibraryView
-                    batches={visibleBatches}
-                    totalBatchCount={batches.length}
-                    libraryBatchCount={allBatches.length}
+                    batches={batches}
+                    totalBatchCount={totalBatchCount}
+                    libraryBatchCount={libraryBatchCount ?? totalBatchCount}
                     counts={counts}
                     thumbnailUrls={coverUrls}
                     search={search}
                     onSearchChange={setSearch}
                     activeSearch={activeSearch}
+                    isSearching={isSearching}
                     onOpen={onOpenBatch}
+                    onIntent={onIntent}
                     onShowMore={showMoreBatches}
+                    isLoadingMore={batchesQuery.isFetchingNextPage}
                 />
             </div>
             {isSplitRendered && (
                 <div
                     ref={splitRef}
+                    inert={isBehindViewer}
                     className={cn(
                         'z-1',
                         view.phase === 'opening'
@@ -538,23 +766,29 @@ export function FilesLibrary() {
                 >
                     <BatchSplitView
                         openBatch={openBatch}
-                        batches={visibleBatches}
-                        totalBatchCount={batches.length}
+                        batches={batches}
+                        totalBatchCount={totalBatchCount}
                         thumbnailUrls={coverUrls}
                         search={search}
                         onSearchChange={setSearch}
                         onBack={backToLibrary}
                         onSelect={selectFromList}
+                        onIntent={onIntent}
                         onShowMore={showMoreBatches}
+                        isLoadingMore={batchesQuery.isFetchingNextPage}
                     >
                         <BatchPane
                             batch={openBatch}
+                            sections={detail ? batchFiles.sections : null}
+                            loadedCount={batchFiles.files.length}
                             thumbnailUrls={tileUrls}
-                            fileLimit={fileLimit}
-                            onShowMoreFiles={showMoreFiles}
-                            selectedIds={selectedIds}
+                            selection={selection}
                             onToggleFile={onToggleFile}
                             onToggleAll={onToggleAll}
+                            onToggleFolder={onToggleFolder}
+                            onLoadNext={onLoadNext}
+                            onLoadPrevious={onLoadPrevious}
+                            onRetrySection={onRetrySection}
                             viewMode={viewMode}
                             onViewModeChange={setViewMode}
                             onOpenFile={onOpenFile}
@@ -565,13 +799,17 @@ export function FilesLibrary() {
             )}
             {viewer && openBatch && view.phase === 'split' && (
                 <FileViewer
-                    batch={openBatch}
+                    batchName={openBatch.name}
+                    files={batchFiles.files}
                     fileId={viewer.id}
                     phase={viewer.phase}
-                    preferredUrls={coverUrls}
+                    placeOf={placeOf}
+                    onLoadMore={loadAround}
+                    urls={tileUrls}
                     initialAspect={openedAspect}
-                    selectedIds={selectedIds}
-                    onToggleSelect={toggleFileById}
+                    selectedIds={viewerSelectedIds}
+                    selectedCount={selectedCount}
+                    onToggleSelect={(fileId) => toggleFile(fileId, false)}
                     onNavigate={browseFile}
                     onClose={closeFile}
                     onSettled={onViewerSettled}
@@ -583,14 +821,23 @@ export function FilesLibrary() {
                 aria-hidden
                 className="pointer-events-none absolute inset-0 z-10"
             />
-            {selectedFiles.length > 0 && isAtSplit && (
-                <SelectionBar
-                    selectedFiles={selectedFiles}
-                    onClear={() => setSelectedIds(new Set())}
-                />
+            {hasSelection && isAtSplit && openBatch && (
+                <div inert={isBehindViewer}>
+                    <SelectionBar
+                        batch={openBatch}
+                        isWholeBatch={selection.isWholeBatch}
+                        selectedFiles={selectedFiles}
+                        onClear={() => setSelection(NO_SELECTION)}
+                        onBatchDeleted={onBatchDeleted}
+                    />
+                </div>
             )}
         </div>
     );
+}
+
+function byId(files: LibraryFile[]): Map<string, LibraryFile> {
+    return new Map(files.map((f) => [f.id, f]));
 }
 
 function findScrollParent(el: HTMLElement): HTMLElement | null {

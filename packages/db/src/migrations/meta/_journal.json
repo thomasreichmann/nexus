@@ -162,6 +162,20 @@
       "when": 1788134641354,
       "tag": "0022_flat_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791849492455,
+      "tag": "0023_natural_collation",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791850532809,
+      "tag": "0024_flowery_richard_fisk",
+      "breakpoints": true
     }
   ]
 }

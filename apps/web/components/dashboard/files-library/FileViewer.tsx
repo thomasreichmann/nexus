@@ -40,9 +40,14 @@ import {
     getFileTypeInfo,
 } from '@/components/dashboard/file-browser/status';
 import { cn } from '@/lib/cn';
-import { formatBytes, formatDate, formatDuration } from '@/lib/format';
+import {
+    formatBytes,
+    formatCount,
+    formatDate,
+    formatDuration,
+} from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
-import { formatCount, formatTimeLeft, type BatchSummary } from './batchSummary';
+import { folderLabel, formatTimeLeft } from './batchSummary';
 import {
     describeKind,
     findCompanions,
@@ -56,20 +61,40 @@ import {
     spring,
     type Rect,
 } from './motion';
-import { useOrderedThumbnailUrls } from './useOrderedThumbnailUrls';
-import type { FileWithRetrieval } from '@nexus/db/repo/files';
+import { useStableCallback } from './useStableCallback';
+import type { LibraryFile } from '@nexus/db/repo/library';
 
 export type ViewerPhase = 'opening' | 'open' | 'closing';
 
+/** Where a file sits in the open batch, for the viewer's "12 of 312". */
+export interface ViewerPlace {
+    /** Its place among its section's files: the batch's, or its folder's. */
+    index: number;
+    total: number;
+    /** Its folder, in a batch with structure inside; undefined when flat. */
+    folder: string | null | undefined;
+    /** Files not loaded yet come right after it (before it) in its section. */
+    isBeforeGap: boolean;
+    isAfterGap: boolean;
+    /** A page of its section is on its way. */
+    isLoading: boolean;
+}
+
 interface FileViewerProps {
-    batch: BatchSummary;
+    batchName: string;
+    /** The open batch's loaded files, in the order the pane shows them. */
+    files: LibraryFile[];
     fileId: string;
     phase: ViewerPhase;
-    /** URLs the tiles already show (covers): the hero reuses the same image. */
-    preferredUrls: Record<string, string>;
+    placeOf: (fileId: string) => ViewerPlace | null;
+    /** Load the page past a gap next to `fileId`. */
+    onLoadMore: (fileId: string, direction: 'next' | 'previous') => void;
+    /** URLs the tiles already show: the hero reuses the same image. */
+    urls: Record<string, string>;
     /** Aspect ratio measured from the clicked tile's loaded thumbnail. */
     initialAspect: { fileId: string; aspect: number } | null;
     selectedIds: Set<string>;
+    selectedCount: number;
     onToggleSelect: (fileId: string) => void;
     onNavigate: (fileId: string) => void;
     onClose: () => void;
@@ -78,7 +103,6 @@ interface FileViewerProps {
     findTileMedia: (fileId: string) => HTMLElement | null;
 }
 
-const PAGE = 100;
 const SWIPE_PX = 60;
 
 // Open/close timings in ms. The photo rides a stiff, nearly critically
@@ -115,32 +139,40 @@ const CLOSE = {
  * Selection lives here too, so a photographer can walk a shoot and pick the
  * frames worth restoring without leaving the viewer.
  */
-export function FileViewer({
-    batch,
+export function FileViewer(props: FileViewerProps) {
+    // The file on show stays on show when it drops out of the loaded files
+    // (deleted elsewhere, its page refetched without it), with nowhere to
+    // step to until it's closed, rather than the viewer jumping to whichever
+    // file is loaded first.
+    const found = props.files.find((f) => f.id === props.fileId);
+    const [lastFound, setLastFound] = useState(found ?? null);
+    if (found && found !== lastFound) setLastFound(found);
+    const file = found ?? (lastFound?.id === props.fileId ? lastFound : null);
+    if (!file) return null;
+    return <FileViewerContent {...props} file={file} />;
+}
+
+function FileViewerContent({
+    batchName,
+    files,
+    file,
     fileId,
     phase,
-    preferredUrls,
+    placeOf,
+    onLoadMore,
+    urls,
     initialAspect,
     selectedIds,
+    selectedCount,
     onToggleSelect,
     onNavigate,
     onClose,
     onSettled,
     findTileMedia,
-}: FileViewerProps) {
-    const files = batch.files;
-    const index = files.findIndex((f) => f.id === fileId);
-    const file = files[Math.max(0, index)];
-
-    // Thumbnails for the 100-file pages around this one, chunked exactly like
-    // the pane's (same page boundaries -> same query keys -> cache hits).
-    const pageStart = Math.floor(Math.max(0, index) / PAGE) * PAGE;
-    const windowFiles = useMemo(
-        () => files.slice(Math.max(0, pageStart - PAGE), pageStart + 2 * PAGE),
-        [files, pageStart]
-    );
-    const windowUrls = useOrderedThumbnailUrls(windowFiles);
-    const urls = { ...windowUrls, ...preferredUrls };
+}: FileViewerProps & { file: LibraryFile }) {
+    const index = files.findIndex((f) => f.id === file.id);
+    const isListed = index >= 0;
+    const place = placeOf(file.id);
 
     const rootRef = useRef<HTMLDivElement>(null);
     const backdropRef = useRef<HTMLDivElement>(null);
@@ -212,13 +244,61 @@ export function FileViewer({
 
     /* ---- Navigation ---- */
     const direction = useRef<1 | -1>(1);
+    // A step past the loaded part of a section, waiting on the page there.
+    const [pendingStep, setPendingStep] = useState<{
+        fromId: string;
+        dir: 1 | -1;
+    } | null>(null);
     function goTo(nextIndex: number) {
+        if (!isListed) return;
+        // Stepping past the loaded part of a section loads the page there
+        // and takes the step once it lands, instead of skipping to whatever
+        // is loaded after it.
+        if (nextIndex === index + 1 && place?.isBeforeGap) {
+            setPendingStep({ fromId: file.id, dir: 1 });
+            onLoadMore(file.id, 'next');
+            return;
+        }
+        if (nextIndex === index - 1 && place?.isAfterGap) {
+            setPendingStep({ fromId: file.id, dir: -1 });
+            onLoadMore(file.id, 'previous');
+            return;
+        }
         if (nextIndex < 0 || nextIndex >= files.length || nextIndex === index)
             return;
-        direction.current = nextIndex > index ? 1 : -1;
-        launchOutgoingGhost(direction.current);
-        onNavigate(files[nextIndex].id);
+        step(files[nextIndex].id, nextIndex > index ? 1 : -1);
     }
+    function step(toId: string, dir: 1 | -1) {
+        setPendingStep(null);
+        direction.current = dir;
+        launchOutgoingGhost(dir);
+        onNavigate(toId);
+    }
+    // The page a step asked for has landed: take it. One that failed, or a
+    // viewer that moved on or is closing meanwhile, drops it.
+    const settlePendingStep = useStableCallback(() => {
+        if (!pendingStep) return;
+        const isAtGap =
+            pendingStep.dir === 1 ? place?.isBeforeGap : place?.isAfterGap;
+        const neighbour = files[index + pendingStep.dir];
+        if (
+            phase === 'open' &&
+            pendingStep.fromId === file.id &&
+            !isAtGap &&
+            neighbour
+        ) {
+            step(neighbour.id, pendingStep.dir);
+        } else {
+            setPendingStep(null);
+        }
+    });
+    const isPendingStepSettled = pendingStep !== null && !place?.isLoading;
+    useEffect(() => {
+        if (isPendingStepSettled) settlePendingStep();
+    }, [isPendingStepSettled, settlePendingStep]);
+    const hasPrevious = isListed && (index > 0 || !!place?.isAfterGap);
+    const hasNext =
+        isListed && (index < files.length - 1 || !!place?.isBeforeGap);
 
     // The outgoing photo slides off as a ghost; the incoming one (the real
     // hero, re-rendered with the new file) slides in from the other side.
@@ -278,7 +358,7 @@ export function FileViewer({
     // Preload the neighbours so browsing never waits on a thumbnail.
     const previousUrl = urlOf(files[index - 1]);
     const nextUrl = urlOf(files[index + 1]);
-    function urlOf(neighbour: FileWithRetrieval | undefined) {
+    function urlOf(neighbour: LibraryFile | undefined) {
         return neighbour && urls[neighbour.id];
     }
     useEffect(() => {
@@ -545,7 +625,7 @@ export function FileViewer({
     function confirmDelete() {
         // Move on before the row disappears, so the viewer never points at
         // a file that's gone.
-        const neighbour = files[index + 1] ?? files[index - 1];
+        const neighbour = isListed && (files[index + 1] ?? files[index - 1]);
         if (neighbour) {
             direction.current = files[index + 1] ? 1 : -1;
             onNavigate(neighbour.id);
@@ -555,7 +635,6 @@ export function FileViewer({
         actions.onDelete();
     }
 
-    if (index < 0) return null;
     const status = deriveStatus(file);
     const isSelected = selectedIds.has(file.id);
 
@@ -597,17 +676,21 @@ export function FileViewer({
                     </Button>
                     <div className="min-w-0">
                         <p className="truncate text-sm font-medium">
-                            {batch.name}
+                            {batchName}
                         </p>
-                        <p className="text-xs text-muted-foreground tabular-nums">
-                            {formatCount(index + 1)} of{' '}
-                            {formatCount(files.length)}
-                        </p>
+                        {place && (
+                            <p className="text-xs text-muted-foreground tabular-nums">
+                                {formatCount(place.index + 1)} of{' '}
+                                {formatCount(place.total)}
+                                {place.folder !== undefined &&
+                                    ` · ${folderLabel(place.folder)}`}
+                            </p>
+                        )}
                     </div>
-                    {selectedIds.size > 0 && (
+                    {selectedCount > 0 && (
                         <span className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-full bg-primary/15 px-2.5 text-xs font-medium text-blue-600 tabular-nums dark:text-blue-300">
                             <Check className="size-3.5" />
-                            {formatCount(selectedIds.size)} selected
+                            {formatCount(selectedCount)} selected
                         </span>
                     )}
                 </header>
@@ -653,12 +736,12 @@ export function FileViewer({
                     )}
                     <NavButton
                         side="left"
-                        disabled={index === 0}
+                        disabled={!hasPrevious}
                         onClick={() => goTo(index - 1)}
                     />
                     <NavButton
                         side="right"
-                        disabled={index === files.length - 1}
+                        disabled={!hasNext}
                         onClick={() => goTo(index + 1)}
                     />
                 </div>
@@ -679,9 +762,10 @@ export function FileViewer({
                 className="relative w-full shrink-0 cursor-auto border-t bg-card/80 backdrop-blur-xl lg:w-85 lg:overflow-y-auto lg:border-t-0 lg:border-l"
             >
                 <DetailsPanel
-                    batch={batch}
+                    batchName={batchName}
+                    files={files}
                     file={file}
-                    index={index}
+                    place={place}
                     status={status}
                     isSelected={isSelected}
                     originalKind={originalKind}
@@ -727,7 +811,7 @@ export function FileViewer({
 /* ------------------------------------------------------------------ */
 
 interface HeroMediaProps {
-    file: FileWithRetrieval;
+    file: LibraryFile;
     thumbnailUrl: string | undefined;
     original: { url: string; kind: OriginalKind } | null;
     onSize: (size: { w: number; h: number }) => void;
@@ -767,7 +851,8 @@ function HeroMedia({ file, thumbnailUrl, original, onSize }: HeroMediaProps) {
     }
     return (
         <>
-            {/* Presigned S3 URLs — see SelectableIcon for why not next/image. */}
+            {/* Presigned S3 URLs: next/image would need remotePatterns per
+                bucket domain and re-proxy the bytes. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
                 src={thumbnailUrl}
@@ -838,7 +923,7 @@ const NAV_SIDES = {
 };
 
 interface FilmstripProps {
-    files: FileWithRetrieval[];
+    files: LibraryFile[];
     index: number;
     urls: Record<string, string>;
     selectedIds: Set<string>;
@@ -869,6 +954,7 @@ function Filmstrip({
     });
     const isFirstScroll = useRef(true);
     useEffect(() => {
+        if (index < 0) return;
         virtualizer.scrollToIndex(index, {
             align: 'center',
             behavior: isFirstScroll.current ? 'auto' : 'smooth',
@@ -944,9 +1030,10 @@ function StripThumb({ name, url }: { name: string; url: string | undefined }) {
 }
 
 interface DetailsPanelProps {
-    batch: BatchSummary;
-    file: FileWithRetrieval;
-    index: number;
+    batchName: string;
+    files: LibraryFile[];
+    file: LibraryFile;
+    place: ViewerPlace | null;
     status: ReturnType<typeof deriveStatus>;
     isSelected: boolean;
     originalKind: OriginalKind | null;
@@ -962,9 +1049,10 @@ interface DetailsPanelProps {
 }
 
 function DetailsPanel({
-    batch,
+    batchName,
+    files,
     file,
-    index,
+    place,
     status,
     isSelected,
     originalKind,
@@ -979,8 +1067,8 @@ function DetailsPanel({
     onJumpTo,
 }: DetailsPanelProps) {
     const companions = useMemo(
-        () => findCompanions(batch.files, file),
-        [batch.files, file]
+        () => findCompanions(files, file),
+        [files, file]
     );
     const isCold = isProbablyCold(file);
     const ext = getFileExtension(file.name);
@@ -1045,12 +1133,21 @@ function DetailsPanel({
                     })}
                 </DetailRow>
                 <DetailRow label="Batch">
-                    <span className="wrap-break-word">{batch.name}</span>
+                    <span className="wrap-break-word">{batchName}</span>
                 </DetailRow>
-                <DetailRow label="Position">
-                    {formatCount(index + 1)} of{' '}
-                    {formatCount(batch.files.length)}
-                </DetailRow>
+                {place && place.folder !== undefined && (
+                    <DetailRow label="Folder">
+                        <span className="wrap-break-word">
+                            {folderLabel(place.folder)}
+                        </span>
+                    </DetailRow>
+                )}
+                {place && (
+                    <DetailRow label="Position">
+                        {formatCount(place.index + 1)} of{' '}
+                        {formatCount(place.total)}
+                    </DetailRow>
+                )}
                 <DetailRow label="Size">
                     <span title={`${formatCount(file.size)} bytes`}>
                         {formatBytes(file.size)}
@@ -1112,7 +1209,7 @@ function DetailsPanel({
 }
 
 interface StatusCardProps {
-    file: FileWithRetrieval;
+    file: LibraryFile;
     status: ReturnType<typeof deriveStatus>;
     isCold: boolean;
     originalKind: OriginalKind | null;
@@ -1300,7 +1397,7 @@ function fitRect(
 }
 
 function storedPreviewDims(
-    file: FileWithRetrieval
+    file: LibraryFile
 ): { w: number; h: number } | undefined {
     if (!file.thumbnailWidth || !file.thumbnailHeight) return undefined;
     return { w: file.thumbnailWidth, h: file.thumbnailHeight };

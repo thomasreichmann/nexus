@@ -56,6 +56,11 @@ export interface UploadRow extends UploadFile {
     // Folder gesture that queued this row, when it came from one. Consulted
     // only for rows still awaiting a batch — it names the batch they land in.
     folderOrigin?: FolderOrigin;
+    // Where the file sat in what was dropped (`PickedFile.folderPath`), and
+    // the part of it the server stores (#405), resolved at the Upload click
+    // with the batch and kept for a retry, which re-inits the file.
+    folderPath?: string;
+    subpath?: string;
     uploadId?: string;
     chunkSize?: number;
     totalParts?: number;
@@ -143,4 +148,31 @@ export function resolveUnanimousFolderName(
     return rows.every((row) => row.folderOrigin?.gestureId === origin.gestureId)
         ? origin.name
         : undefined;
+}
+
+/**
+ * The folder a file is stored under (#405), relative to its batch. A batch
+ * named after the one folder it came from *is* that folder, so its name is
+ * dropped: `Shoot/104CANON` stores `104CANON`, and `Shoot`'s own top-level
+ * files store nothing. Any other batch keeps the whole path, so two dropped
+ * folders that each hold a `104CANON` (two cards of one camera) stay apart.
+ */
+export function resolveSubpath(
+    folderPath: string | undefined,
+    isBatchNamedAfterFolder: boolean
+): string | undefined {
+    if (!folderPath) return undefined;
+    if (!isBatchNamedAfterFolder) return folderPath;
+    return folderPath.split('/').slice(1).join('/') || undefined;
+}
+
+/**
+ * A subpath the way the server stores it: `104CANON/` and `/104CANON` are one
+ * folder with `104CANON`, and a path of only slashes, or none, is no folder.
+ * Normalized on the way in so the library's folder rows can group by equality.
+ */
+export function normalizeSubpath(
+    subpath: string | undefined
+): string | undefined {
+    return subpath?.split('/').filter(Boolean).join('/') || undefined;
 }

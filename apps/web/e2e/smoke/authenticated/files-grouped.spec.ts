@@ -11,6 +11,7 @@ import {
     deleteUserData,
 } from '@nexus/db/test-db';
 import { test as base, expect } from '../../fixtures';
+import { batchCard } from '../../helpers/fileBrowser';
 
 const test = base.extend<{ groupedFiles: { batchName: string } }>({
     groupedFiles: async ({ db, seedUserId }, use) => {
@@ -67,20 +68,14 @@ test.describe('grouped files page', () => {
             // The library shows each batch as a card: the seeded batch with
             // its "2 files · 300 Bytes · ..." metadata, and a synthetic
             // Ungrouped card for the legacy file.
-            const batchCard = page.getByRole('button', {
-                name: `Open ${groupedFiles.batchName}`,
-            });
-            await expect(batchCard).toBeVisible();
-            await expect(
-                batchCard.getByText(/2 files · 300 Bytes/)
-            ).toBeVisible();
-            await expect(
-                page.getByRole('button', { name: 'Open Ungrouped' })
-            ).toBeVisible();
+            const card = batchCard(page, groupedFiles.batchName);
+            await expect(card).toBeVisible();
+            await expect(card.getByText(/2 files · 300 Bytes/)).toBeVisible();
+            await expect(batchCard(page, 'Ungrouped')).toBeVisible();
 
             // Batches start closed; opening one shows its files and the
             // restore action (both files are glacier+available).
-            await batchCard.click();
+            await card.click();
             await expect(
                 page.getByRole('heading', { name: groupedFiles.batchName })
             ).toBeVisible();

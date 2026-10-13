@@ -1,5 +1,5 @@
 import { getFileExtension } from '@/components/dashboard/file-browser/status';
-import type { FileWithRetrieval } from '@nexus/db/repo/files';
+import type { LibraryFile } from '@nexus/db/repo/library';
 
 const KINDS: Record<string, string> = {
     jpg: 'JPEG image',
@@ -53,12 +53,17 @@ const stem = (name: string) => name.replace(/\.[^.]+$/, '').toLowerCase();
 /**
  * The other files of the same shot: a camera shooting RAW+JPEG writes
  * `DSC_0001.NEF` and `DSC_0001.JPG` side by side, and a photographer thinks
- * of them as one photo in two formats.
+ * of them as one photo in two formats. Side by side means the same folder:
+ * the next card's `DSC_0001` is another photo (#405).
  */
-export function findCompanions(
-    files: FileWithRetrieval[],
-    file: FileWithRetrieval
-): FileWithRetrieval[] {
+export function findCompanions<
+    T extends Pick<LibraryFile, 'id' | 'name' | 'subpath'>,
+>(files: T[], file: T): T[] {
     const own = stem(file.name);
-    return files.filter((f) => f.id !== file.id && stem(f.name) === own);
+    return files.filter(
+        (f) =>
+            f.id !== file.id &&
+            f.subpath === file.subpath &&
+            stem(f.name) === own
+    );
 }
