@@ -39,6 +39,7 @@ export function createFileFixture(overrides: Partial<File> = {}): File {
         userId: TEST_USER_ID,
         batchId: null,
         name: 'test-document.pdf',
+        subpath: null,
         size: 1024000,
         mimeType: 'application/pdf',
         s3Key: `${TEST_USER_ID}/${TEST_FILE_ID}`,

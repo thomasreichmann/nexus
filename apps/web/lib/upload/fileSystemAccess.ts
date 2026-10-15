@@ -15,6 +15,15 @@ import { MAX_FILES_PER_DROP } from './limits';
 export interface PickedFile {
     file: File;
     handle?: FileSystemFileHandle;
+    /**
+     * The folder the file sat in, from the dropped or picked folder down,
+     * that folder's own name included: `Shoot/104CANON` for a nested file,
+     * `Shoot` for one at its top. Unset for a loose file. Which part of it is
+     * kept as the file's subpath (#405) is decided at the Upload click, once
+     * it's known whether the batch is named after that folder
+     * (`resolveSubpath`).
+     */
+    folderPath?: string;
 }
 
 /**
@@ -103,25 +112,31 @@ function flagEmptySelection(
 
 /**
  * Depth-first walk of a directory handle, collecting every visible file with
- * its handle so walked files resume exactly like picked ones. An entry that
- * can't be read (moved or locked mid-walk) is skipped rather than sinking the
- * whole folder.
+ * its handle so walked files resume exactly like picked ones, and the path of
+ * the folder it sat in. An entry that can't be read (moved or locked
+ * mid-walk) is skipped rather than sinking the whole folder.
  */
 async function walkDirectoryHandle(
     directory: FileSystemDirectoryHandle,
-    sink: PickedFileBatch
+    sink: PickedFileBatch,
+    folderPath = directory.name
 ): Promise<void> {
     for await (const entry of directory.values()) {
         if (sink.truncated) return;
         if (isHiddenEntryName(entry.name)) continue;
         if (entry.kind === 'directory') {
-            await walkDirectoryHandle(entry, sink);
+            await walkDirectoryHandle(
+                entry,
+                sink,
+                `${folderPath}/${entry.name}`
+            );
             continue;
         }
         try {
             pushPickedFile(sink, {
                 file: await entry.getFile(),
                 handle: entry,
+                folderPath,
             });
         } catch {
             // Skip the unreadable entry.
@@ -137,7 +152,8 @@ async function walkDirectoryHandle(
  */
 async function walkDirectoryEntry(
     directory: FileSystemDirectoryEntry,
-    sink: PickedFileBatch
+    sink: PickedFileBatch,
+    folderPath = directory.name
 ): Promise<void> {
     const reader = directory.createReader();
     for (;;) {
@@ -151,7 +167,8 @@ async function walkDirectoryEntry(
             if (entry.isDirectory) {
                 await walkDirectoryEntry(
                     entry as FileSystemDirectoryEntry,
-                    sink
+                    sink,
+                    `${folderPath}/${entry.name}`
                 );
                 continue;
             }
@@ -160,7 +177,7 @@ async function walkDirectoryEntry(
                 const file = await new Promise<File>((resolve, reject) =>
                     (entry as FileSystemFileEntry).file(resolve, reject)
                 );
-                pushPickedFile(sink, { file });
+                pushPickedFile(sink, { file, folderPath });
             } catch {
                 // Skip the unreadable entry.
             }
@@ -277,7 +294,13 @@ export function pickedFilesFromDirectoryInput(
                     .slice(1)
                     .some(isHiddenEntryName)
         )
-        .map((file) => ({ file }));
+        .map((file): PickedFile => {
+            const folderPath = file.webkitRelativePath
+                .split('/')
+                .slice(0, -1)
+                .join('/');
+            return folderPath ? { file, folderPath } : { file };
+        });
     const sink: PickedFileBatch =
         files.length > MAX_FILES_PER_DROP
             ? { files: files.slice(0, MAX_FILES_PER_DROP), truncated: true }

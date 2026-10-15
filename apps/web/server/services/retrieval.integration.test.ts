@@ -5,6 +5,7 @@ import {
     insertRetrieval,
     insertRetrievalRequest,
     insertRetrievalArtifact,
+    insertUploadBatch,
     backdateRetrievalRequest,
     type DB,
 } from '@nexus/db/test-db';
@@ -108,6 +109,88 @@ describe.concurrent('active-retrieval expiry predicate', () => {
         await expect(
             retrievalService.getDownloadUrl(db, user.id, file.id)
         ).rejects.toThrow(InvalidStateError);
+    });
+});
+
+// The file browser restores a whole batch by id (#455), so the batch's file
+// set is the server's to decide: what the user sees as the batch, never its
+// uploads still in flight or its deleted files.
+describe.concurrent('restoring a whole batch', () => {
+    it('restores the batch’s visible files, skipping uploads in flight and deleted files', async ({
+        db,
+        user,
+    }) => {
+        const batch = await insertUploadBatch(db, { userId: user.id });
+        const [a, b, uploading, deleted] = await Promise.all([
+            insertFile(db, { userId: user.id, batchId: batch.id }),
+            insertFile(db, { userId: user.id, batchId: batch.id }),
+            insertFile(db, {
+                userId: user.id,
+                batchId: batch.id,
+                status: 'uploading',
+            }),
+            insertFile(db, {
+                userId: user.id,
+                batchId: batch.id,
+                status: 'deleted',
+            }),
+        ]);
+
+        const result = await retrievalService.requestBatchRetrieval(
+            db,
+            user.id,
+            batch.id
+        );
+
+        expect(result.fileCount).toBe(2);
+        const restored = await createRetrievalRepo(db).findByFileIds([
+            a.id,
+            b.id,
+            uploading.id,
+            deleted.id,
+        ]);
+        expect(restored.map((r) => r.fileId).sort()).toEqual(
+            [a.id, b.id].sort()
+        );
+        const request = await createRetrievalRequestRepo(db).findByUserAndId(
+            user.id,
+            result.requestId
+        );
+        expect(request?.uploadBatchId).toBe(batch.id);
+    });
+
+    it('restores the legacy Ungrouped files when given no batch', async ({
+        db,
+        user,
+    }) => {
+        const batch = await insertUploadBatch(db, { userId: user.id });
+        const [legacy, batched] = await Promise.all([
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: user.id, batchId: batch.id }),
+        ]);
+
+        const result = await retrievalService.requestBatchRetrieval(
+            db,
+            user.id,
+            null
+        );
+
+        expect(result.fileCount).toBe(1);
+        const restored = await createRetrievalRepo(db).findByFileIds([
+            legacy.id,
+            batched.id,
+        ]);
+        expect(restored.map((r) => r.fileId)).toEqual([legacy.id]);
+    });
+
+    it('refuses another user’s batch', async ({ db, user, createUser }) => {
+        const stranger = await createUser();
+        const theirs = await insertUploadBatch(db, { userId: stranger.id });
+        await insertFile(db, { userId: stranger.id, batchId: theirs.id });
+
+        await expect(
+            retrievalService.requestBatchRetrieval(db, user.id, theirs.id)
+        ).rejects.toBeInstanceOf(NotFoundError);
     });
 });
 

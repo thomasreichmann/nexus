@@ -1,6 +1,11 @@
 import { vi } from 'vitest';
 import { it, describe, expect, afterEach } from '@nexus/db/test-db/integration';
-import { insertFile, insertStorageUsage, type DB } from '@nexus/db/test-db';
+import {
+    insertFile,
+    insertStorageUsage,
+    insertUploadBatch,
+    type DB,
+} from '@nexus/db/test-db';
 
 // The database is real — that's the point: this pins the atomicity of the
 // `usedBytes + n` upsert in storage-usage and of the upload status claims,
@@ -15,6 +20,9 @@ const s3Mocks = vi.hoisted(() => {
         removeObject: vi.fn(roundTrip),
         completeMultipart: vi.fn(),
         abortMultipart: vi.fn(),
+        presignedPut: vi.fn(async () => 'https://s3.test/put'),
+        createMultipart: vi.fn(async () => ({ uploadId: 'upload-1' })),
+        signParts: vi.fn(async () => ['https://s3.test/part/1']),
     };
 });
 
@@ -25,7 +33,10 @@ vi.mock('@/lib/posthog/server', () => ({ captureServerEvent: vi.fn() }));
 vi.mock('@/lib/storage', () => ({
     s3: {
         objects: { remove: s3Mocks.removeObject },
+        presigned: { put: s3Mocks.presignedPut },
         multipart: {
+            create: s3Mocks.createMultipart,
+            signParts: s3Mocks.signParts,
             complete: s3Mocks.completeMultipart,
             abort: s3Mocks.abortMultipart,
         },
@@ -33,6 +44,7 @@ vi.mock('@/lib/storage', () => ({
 }));
 
 import { createFileRepo } from '@nexus/db/repo/files';
+import { NotFoundError } from '@/server/errors';
 import { fileService } from './files';
 
 /**
@@ -72,6 +84,12 @@ async function readUsage(db: DB, owner: string) {
         usedBytes: Number(usage?.usedBytes ?? 0),
         fileCount: usage?.fileCount ?? 0,
     };
+}
+
+function readFiles(db: DB, ids: string[]) {
+    return db.query.files.findMany({
+        where: (f, { inArray }) => inArray(f.id, ids),
+    });
 }
 
 describe('confirmUpload under concurrency', () => {
@@ -127,12 +145,6 @@ describe('upload transitions under concurrency (#381)', () => {
         uploadId: 'upload-1',
         parts: [{ partNumber: 1, etag: '"etag-1"' }],
     };
-
-    function readFiles(db: DB, ids: string[]) {
-        return db.query.files.findMany({
-            where: (f, { inArray }) => inArray(f.id, ids),
-        });
-    }
 
     // The heart of the fix at its narrowest: two claims on one row with
     // opposite targets. Postgres serializes them and the loser re-checks the
@@ -286,5 +298,151 @@ describe('upload transitions under concurrency (#381)', () => {
             usedBytes: FILE_SIZE,
             fileCount: 1,
         });
+    });
+});
+
+// #455: a whole batch by id, however much of it a browser has paged in.
+describe('deleteBatch', () => {
+    it('deletes the batch’s visible files and gives their bytes back to usage', async ({
+        db,
+        user,
+    }) => {
+        const [batch, other] = await Promise.all([
+            insertUploadBatch(db, { userId: user.id }),
+            insertUploadBatch(db, { userId: user.id }),
+        ]);
+        const [a, b, uploading, elsewhere] = await Promise.all([
+            insertFile(db, { userId: user.id, batchId: batch.id, size: 100 }),
+            insertFile(db, { userId: user.id, batchId: batch.id, size: 200 }),
+            // Never counted, and still owed its S3 cleanup by releaseUpload.
+            insertFile(db, {
+                userId: user.id,
+                batchId: batch.id,
+                size: 400,
+                status: 'uploading',
+            }),
+            insertFile(db, { userId: user.id, batchId: other.id, size: 800 }),
+            insertStorageUsage(db, {
+                userId: user.id,
+                usedBytes: 1100,
+                fileCount: 3,
+            }),
+        ]);
+
+        const result = await fileService.deleteBatch(db, user.id, batch.id);
+
+        expect(result).toEqual({ deletedCount: 2 });
+        expect(
+            Object.fromEntries(
+                (
+                    await readFiles(db, [
+                        a.id,
+                        b.id,
+                        uploading.id,
+                        elsewhere.id,
+                    ])
+                ).map((f) => [f.id, f.status])
+            )
+        ).toEqual({
+            [a.id]: 'deleted',
+            [b.id]: 'deleted',
+            [uploading.id]: 'uploading',
+            [elsewhere.id]: 'available',
+        });
+        expect(await readUsage(db, user.id)).toEqual({
+            usedBytes: 800,
+            fileCount: 1,
+        });
+    });
+
+    it('refuses another user’s batch and deletes nothing', async ({
+        db,
+        user,
+        createUser,
+    }) => {
+        const stranger = await createUser();
+        const theirs = await insertUploadBatch(db, { userId: stranger.id });
+        // A row of the user's own filed under the stranger's batch: the
+        // owner-scoped delete alone would take it, the batch check refuses.
+        const [file, mine] = await Promise.all([
+            insertFile(db, { userId: stranger.id, batchId: theirs.id }),
+            insertFile(db, { userId: user.id, batchId: theirs.id }),
+        ]);
+
+        await expect(
+            fileService.deleteBatch(db, user.id, theirs.id)
+        ).rejects.toBeInstanceOf(NotFoundError);
+        const after = await readFiles(db, [file.id, mine.id]);
+        expect(after.map((f) => f.status)).toEqual(['available', 'available']);
+    });
+
+    it('deletes the legacy Ungrouped files when given no batch', async ({
+        db,
+        user,
+    }) => {
+        const batch = await insertUploadBatch(db, { userId: user.id });
+        const [legacy, batched] = await Promise.all([
+            insertFile(db, { userId: user.id, size: 10 }),
+            insertFile(db, { userId: user.id, batchId: batch.id, size: 20 }),
+            insertStorageUsage(db, {
+                userId: user.id,
+                usedBytes: 30,
+                fileCount: 2,
+            }),
+        ]);
+
+        expect(await fileService.deleteBatch(db, user.id, null)).toEqual({
+            deletedCount: 1,
+        });
+        expect(
+            (await readFiles(db, [legacy.id, batched.id])).map((f) => [
+                f.id,
+                f.status,
+            ])
+        ).toEqual(
+            expect.arrayContaining([
+                [legacy.id, 'deleted'],
+                [batched.id, 'available'],
+            ])
+        );
+        expect(await readUsage(db, user.id)).toEqual({
+            usedBytes: 20,
+            fileCount: 1,
+        });
+    });
+});
+
+// #405: the folder a file sat in, as the upload queue resolved it, lands on
+// the row both engines insert.
+describe('the folder a file is uploaded from', () => {
+    it.for(['initiateUpload', 'initiateMultipartUpload'] as const)(
+        '%s stores it',
+        async (initiate, { db, user }) => {
+            const { fileId } = await fileService[initiate](
+                db,
+                user.id,
+                {
+                    name: 'IMG_0001.JPG',
+                    sizeBytes: 1000,
+                    subpath: '104CANON',
+                },
+                undefined
+            );
+
+            const [file] = await readFiles(db, [fileId]);
+            expect(file.subpath).toBe('104CANON');
+        }
+    );
+
+    it('stores no folder for a file uploaded loose', async ({ db, user }) => {
+        const { fileId } = await fileService.initiateUpload(
+            db,
+            user.id,
+            { name: 'loose.txt', sizeBytes: 1000 },
+            undefined
+        );
+
+        const [file] = await readFiles(db, [fileId]);
+        expect(file.subpath).toBeNull();
     });
 });

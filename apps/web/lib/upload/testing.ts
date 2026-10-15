@@ -99,6 +99,8 @@ export interface ServerFile {
     size: number;
     mimeType?: string;
     batchId?: string;
+    /** The folder the file was stored under (#405). */
+    subpath?: string;
     engine: 'single' | 'multipart';
     status: ServerFileStatus;
     uploadId?: string;
@@ -244,6 +246,7 @@ export function createFakeUploadBackend(): FakeUploadBackend {
             sizeBytes: number;
             mimeType?: string;
             batchId?: string;
+            subpath?: string;
         }
     ): ServerFile => {
         const file: ServerFile = {
@@ -252,6 +255,7 @@ export function createFakeUploadBackend(): FakeUploadBackend {
             size: input.sizeBytes,
             mimeType: input.mimeType,
             batchId: input.batchId,
+            subpath: input.subpath,
             engine,
             status: 'uploading',
             parts: new Map(),

@@ -250,6 +250,100 @@ describe('the Upload click', () => {
         ]);
     });
 
+    // #405, through both engines: each one's init carries the folder.
+    it('stores each file’s folder relative to the batch named after the dropped folder', async () => {
+        const harness = createQueueHarness();
+        await harness.queue.addFiles(
+            [
+                { file: fakeFile('notes.txt', 10), folderPath: 'Shoot' },
+                {
+                    file: fakeFile('IMG_0001.JPG', 10),
+                    folderPath: 'Shoot/104CANON',
+                },
+                {
+                    file: fakeFile('clip.mov', MULTIPART_SIZE),
+                    folderPath: 'Shoot/104CANON/VIDEO',
+                },
+            ],
+            'Shoot'
+        );
+
+        await harness.queue.startUpload();
+
+        expect(
+            Object.fromEntries(
+                harness.backend.files.map((file) => [file.name, file.subpath])
+            )
+        ).toEqual({
+            'notes.txt': undefined,
+            'IMG_0001.JPG': '104CANON',
+            'clip.mov': '104CANON/VIDEO',
+        });
+    });
+
+    // Two cards of one camera, each dropped as its own folder before one
+    // click: one unnamed batch, so only the folders' own names tell the two
+    // IMG_0001s apart.
+    it('keeps the dropped folders’ own names when one batch holds two of them', async () => {
+        const harness = createQueueHarness();
+        await harness.queue.addFiles(
+            [
+                {
+                    file: fakeFile('IMG_0001.JPG', 10),
+                    folderPath: 'Loja 1/104CANON',
+                },
+            ],
+            'Loja 1'
+        );
+        await harness.queue.addFiles(
+            [
+                {
+                    file: fakeFile('IMG_0001.JPG', 20),
+                    folderPath: 'Loja 2/104CANON',
+                },
+            ],
+            'Loja 2'
+        );
+        await harness.queue.addFiles(picked(fakeFile('loose.txt', 10)));
+
+        await harness.queue.startUpload();
+
+        expect(harness.backend.batches).toEqual([
+            { batchId: expect.any(String), name: undefined },
+        ]);
+        expect(harness.backend.files.map((file) => file.subpath)).toEqual([
+            'Loja 1/104CANON',
+            'Loja 2/104CANON',
+            undefined,
+        ]);
+    });
+
+    it('every file is stored under its folder even before its row writes are visible', async () => {
+        const harness = createQueueHarness({ commit: 'next-task' });
+        await harness.queue.addFiles(
+            [
+                {
+                    file: fakeFile('a.jpg', 10),
+                    folderPath: 'Shoot/104CANON',
+                },
+                {
+                    file: fakeFile('clip.mov', MULTIPART_SIZE),
+                    folderPath: 'Shoot/105CANON',
+                },
+            ],
+            'Shoot'
+        );
+        await flushMicrotasks();
+
+        await harness.queue.startUpload();
+
+        expect(
+            Object.fromEntries(
+                harness.backend.files.map((file) => [file.name, file.subpath])
+            )
+        ).toEqual({ 'a.jpg': '104CANON', 'clip.mov': '105CANON' });
+    });
+
     it('uploads without a session batch when creating one fails', async () => {
         const harness = createQueueHarness();
         harness.backend.failNext('createBatch', new Error('db down'));
@@ -263,6 +357,27 @@ describe('the Upload click', () => {
         expect(harness.backend.files.map((file) => file.batchId)).toEqual([
             undefined,
             undefined,
+        ]);
+    });
+
+    // No batch got the folder's name, so the folder's name stays in the path.
+    it('keeps a dropped folder’s own name when its batch couldn’t be created', async () => {
+        const harness = createQueueHarness();
+        harness.backend.failNext('createBatch', new Error('db down'));
+        await harness.queue.addFiles(
+            [
+                {
+                    file: fakeFile('IMG_0001.JPG', 10),
+                    folderPath: 'Shoot/104CANON',
+                },
+            ],
+            'Shoot'
+        );
+
+        await harness.queue.startUpload();
+
+        expect(harness.backend.files.map((file) => file.subpath)).toEqual([
+            'Shoot/104CANON',
         ]);
     });
 
@@ -413,6 +528,25 @@ describe('Retry', () => {
             { status: 'confirmed', batchId },
         ]);
         expect(harness.backend.batches).toHaveLength(1);
+    });
+
+    // A single-part retry inserts a fresh row, so the folder has to come
+    // from the queue row, resolved at the first click.
+    it('re-sends the file’s folder with the retried attempt', async () => {
+        const harness = createQueueHarness();
+        harness.backend.failNext('confirmUpload', new Error('db down'));
+        await harness.queue.addFiles(
+            [{ file: fakeFile('a.jpg', 10), folderPath: 'Shoot/104CANON' }],
+            'Shoot'
+        );
+        await harness.queue.startUpload();
+
+        await harness.queue.retryFile(harness.row('a.jpg').id);
+
+        expect(harness.backend.filesNamed('a.jpg')).toMatchObject([
+            { status: 'abandoned', subpath: '104CANON' },
+            { status: 'confirmed', subpath: '104CANON' },
+        ]);
     });
 
     it('a row retried while the pool is full waits as queued, out of the Upload count', async () => {

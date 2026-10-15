@@ -6,14 +6,16 @@ import {
     sql,
     notInArray,
     inArray,
+    isNull,
     ne,
     gte,
     lt,
     ilike,
+    type SQL,
 } from 'drizzle-orm';
 import * as schema from '../schema';
 import { createRepository } from './create';
-import { activeRetrievalFilter } from './retrievals';
+import { buildActiveRetrievalJoin } from './retrievals';
 import type { DB } from '../connection';
 
 export type File = typeof schema.files.$inferSelect;
@@ -163,17 +165,39 @@ function findManyByUserAndIds(
     });
 }
 
-function findByUserAndBatch(
+/**
+ * A batch's files as the browser lists them (null: the legacy files with no
+ * batch), for the actions that run on a whole batch by id (#455) rather than
+ * on the files a browser happened to load. An `uploading` or `deleted` row is
+ * no part of what the user sees as the batch.
+ */
+function findVisibleByUserAndBatch(
     db: DB,
     userId: string,
-    batchId: string
+    batchId: string | null
 ): Promise<File[]> {
     return db.query.files.findMany({
-        where: and(
-            eq(schema.files.batchId, batchId),
-            eq(schema.files.userId, userId)
-        ),
+        where: and(buildVisibleFilesFilter(userId), buildBatchFilter(batchId)),
     });
+}
+
+/**
+ * Soft-delete a batch's visible files in one statement (null: the legacy
+ * Ungrouped ones), returning what usage has to give back. By predicate, not
+ * by id list: the batch can be a whole ~9k-file folder drop (#402) the
+ * browser never loaded. Uploads still in flight are left alone; releasing
+ * them is `releaseUpload`'s job, with its S3 cleanup.
+ */
+function softDeleteBatchForUser(
+    db: DB,
+    userId: string,
+    batchId: string | null
+): Promise<Pick<File, 'id' | 'size'>[]> {
+    return db
+        .update(schema.files)
+        .set({ status: 'deleted', deletedAt: new Date() })
+        .where(and(buildVisibleFilesFilter(userId), buildBatchFilter(batchId)))
+        .returning({ id: schema.files.id, size: schema.files.size });
 }
 
 /** The identity the vault check matches on — no mtime, no checksum (#401). */
@@ -352,23 +376,56 @@ function escapeLikePattern(s: string): string {
     return s.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
+/**
+ * The ILIKE pattern that finds `search` as a literal substring, whitespace
+ * around it trimmed; null for no search. Shared with the library repo, whose
+ * search matches the same way.
+ */
+export function buildContainsPattern(
+    search: string | undefined
+): string | null {
+    const trimmed = search?.trim();
+    return trimmed ? `%${escapeLikePattern(trimmed)}%` : null;
+}
+
 function buildUserFilesWhereClause(
     userId: string,
     includeHidden: boolean,
     search?: string
 ) {
-    const trimmed = search?.trim();
+    const pattern = buildContainsPattern(search);
     const conditions = [eq(schema.files.userId, userId)];
     if (!includeHidden) {
         conditions.push(notInArray(schema.files.status, HIDDEN_STATUSES));
     }
-    if (trimmed) {
-        conditions.push(
-            ilike(schema.files.name, `%${escapeLikePattern(trimmed)}%`)
-        );
+    if (pattern) {
+        conditions.push(ilike(schema.files.name, pattern));
     }
     return and(...conditions);
 }
+
+/** The user's files as every list shows them: hidden statuses left out. */
+export function buildVisibleFilesFilter(userId: string): SQL {
+    // and() is only `undefined` when called with no arguments
+    return buildUserFilesWhereClause(userId, false)!;
+}
+
+/** A batch's files; null is the legacy files that have no batch. */
+export function buildBatchFilter(batchId: string | null): SQL {
+    if (batchId === null) return isNull(schema.files.batchId);
+    return eq(schema.files.batchId, batchId);
+}
+
+// A file's derived status over the active-retrieval join, in SQL: the twin of
+// deriveStatus in apps/web/components/dashboard/file-browser/status.ts. The
+// active retrieval wins: ready is downloadable, queued or restoring is in
+// flight. Without one, a file still marked restoring is in flight too, and an
+// available one is archived. Both the stats bar and a batch's summary count
+// with these, so they can't disagree with each other; keep them in lockstep
+// with deriveStatus, or the counts disagree with the tiles.
+export const FILE_IS_READY = sql`(${schema.retrievals.status} = 'ready')`;
+export const FILE_IS_RESTORING = sql`(${schema.retrievals.status} in ('pending', 'in_progress') or (${schema.retrievals.id} is null and ${schema.files.status} = 'restoring'))`;
+export const FILE_IS_ARCHIVED = sql`(${schema.retrievals.id} is null and ${schema.files.status} = 'available')`;
 
 function findByUser(
     db: DB,
@@ -410,13 +467,11 @@ async function countByUser(
 }
 
 /**
- * Library-wide status bucket counts for a user. Mirrors deriveStatus in
- * apps/web/components/dashboard/file-browser/status.ts — keep the two in lockstep
- * or UI counts will disagree with per-row status dots. Hidden statuses
- * (`uploading`, `deleted`) are always excluded since they don't fit any
- * bucket and would produce a NULL category from the CASE below. Buckets are
- * derived from the file's active retrieval first (ready → available,
- * queued/restoring → retrieving), so both tiers count identically (#259).
+ * Library-wide status bucket counts for a user, by the derived status above
+ * (FILE_IS_READY and friends). Hidden statuses (`uploading`, `deleted`) are
+ * always excluded since they don't fit any bucket and would produce a NULL
+ * category from the CASE below. Buckets are derived from the file's active
+ * retrieval first, so both tiers count identically (#259).
  */
 async function countStatusesByUser(
     db: DB,
@@ -426,10 +481,9 @@ async function countStatusesByUser(
         .select({
             category: sql<keyof StatusCategoryCounts | null>`
                 CASE
-                    WHEN ${schema.retrievals.status} = 'ready' THEN 'available'
-                    WHEN ${schema.retrievals.status} IN ('pending', 'in_progress') THEN 'retrieving'
-                    WHEN ${schema.files.status} = 'restoring' THEN 'retrieving'
-                    WHEN ${schema.files.status} = 'available' THEN 'archived'
+                    WHEN ${FILE_IS_READY} THEN 'available'
+                    WHEN ${FILE_IS_RESTORING} THEN 'retrieving'
+                    WHEN ${FILE_IS_ARCHIVED} THEN 'archived'
                     ELSE NULL
                 END`.as('category'),
             // DISTINCT guards against join fan-out from duplicate active
@@ -439,13 +493,7 @@ async function countStatusesByUser(
             ),
         })
         .from(schema.files)
-        .leftJoin(
-            schema.retrievals,
-            and(
-                eq(schema.retrievals.fileId, schema.files.id),
-                activeRetrievalFilter()
-            )
-        )
+        .leftJoin(schema.retrievals, buildActiveRetrievalJoin())
         .where(buildUserFilesWhereClause(userId, false))
         .groupBy(sql`category`);
 
@@ -625,109 +673,6 @@ export interface DailyUploadVolume {
     totalBytes: number;
 }
 
-export interface FileBatchGroup {
-    // `null` when the group holds legacy files with no batch — the UI
-    // synthesizes the "Ungrouped" label so presentation stays in the UI.
-    batchId: string | null;
-    batchName: string | null;
-    batchCreatedAt: Date | null;
-    files: FileWithRetrieval[];
-}
-
-// Postgres defaults DESC to NULLS FIRST; we want orphan (null-batch) rows
-// to land at the end of the result, hence the explicit `NULLS LAST`.
-async function findByUserGroupedByBatch(
-    db: DB,
-    userId: string,
-    opts: { includeHidden?: boolean } = {}
-): Promise<FileBatchGroup[]> {
-    const rows = await db
-        .select({
-            file: schema.files,
-            batchName: schema.uploadBatches.name,
-            batchCreatedAt: schema.uploadBatches.createdAt,
-            retrievalStatus: schema.retrievals.status,
-            retrievalExpiresAt: schema.retrievals.expiresAt,
-        })
-        .from(schema.files)
-        .leftJoin(
-            schema.uploadBatches,
-            eq(schema.files.batchId, schema.uploadBatches.id)
-        )
-        .leftJoin(
-            schema.retrievals,
-            and(
-                eq(schema.retrievals.fileId, schema.files.id),
-                activeRetrievalFilter()
-            )
-        )
-        .where(buildUserFilesWhereClause(userId, opts.includeHidden ?? false))
-        .orderBy(
-            sql`${schema.uploadBatches.createdAt} DESC NULLS LAST`,
-            desc(schema.files.createdAt),
-            desc(schema.files.id)
-        );
-
-    const NULL_KEY = '\0';
-    const groups = new Map<string, FileBatchGroup>();
-    for (const row of rows) {
-        const key = row.file.batchId ?? NULL_KEY;
-        let group = groups.get(key);
-        if (!group) {
-            group = {
-                batchId: row.file.batchId,
-                batchName: row.batchName,
-                batchCreatedAt: row.batchCreatedAt,
-                files: [],
-            };
-            groups.set(key, group);
-        }
-        // Two active retrievals for one file would fan the join out. The
-        // partial unique index `retrievals_active_file_id_idx` (#266) now
-        // rules that out, so this skip is a guard that shouldn't fire: keep
-        // the first row (duplicates are adjacent: ordering is by file columns
-        // only) rather than duplicating the file in the UI.
-        if (group.files.at(-1)?.id === row.file.id) continue;
-        group.files.push({
-            ...row.file,
-            activeRetrieval: row.retrievalStatus
-                ? {
-                      status: row.retrievalStatus,
-                      expiresAt: row.retrievalExpiresAt,
-                  }
-                : null,
-        });
-    }
-
-    // Row order within a batch is upload-start order, which the concurrent
-    // upload lanes make effectively random. Sort after grouping so the batch
-    // order and adjacent-duplicate skip above still rely on SQL order.
-    for (const group of groups.values()) {
-        group.files.sort(compareFilesByName);
-    }
-
-    return Array.from(groups.values());
-}
-
-// Fixed locale so server output doesn't depend on the host's default;
-// `numeric` puts IMG_9.JPG before IMG_10.JPG, the order cameras write.
-const fileNameCollator = new Intl.Collator('en', { numeric: true });
-
-// Equal names (same file uploaded twice, or sibling camera folders
-// flattened into one batch) fall back to oldest-first, then id — explicit,
-// rather than inheriting the query's newest-first order. Exported for its
-// unit test: the ordering rules are plain JS and need no database.
-export function compareFilesByName(
-    a: Pick<File, 'name' | 'createdAt' | 'id'>,
-    b: Pick<File, 'name' | 'createdAt' | 'id'>
-): number {
-    return (
-        fileNameCollator.compare(a.name, b.name) ||
-        a.createdAt.getTime() - b.createdAt.getTime() ||
-        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
-    );
-}
-
 async function uploadHistoryByDay(
     db: DB,
     userId: string,
@@ -768,10 +713,10 @@ export const createFileRepo = createRepository({
     findByS3Key,
     findByUserAndId,
     findManyByUserAndIds,
-    findByUserAndBatch,
+    findVisibleByUserAndBatch,
+    softDeleteBatchForUser,
     findExistingByNameAndSize,
     findByUser,
-    findByUserGroupedByBatch,
     countByUser,
     countStatusesByUser,
     findStaleUploads,
