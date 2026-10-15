@@ -32,6 +32,9 @@ interface UploadInput {
     batchId?: string;
     // Optional folder/session label. Falls back to a timestamp when omitted.
     batchName?: string;
+    // The folder the file sat in, relative to its batch (#405). Display
+    // metadata only: never part of the S3 key.
+    subpath?: string;
 }
 
 // UTC and minute-precision so labels are deterministic across timezones.
@@ -143,6 +146,7 @@ async function initiateUpload(
         userId,
         batchId,
         name: input.name,
+        subpath: input.subpath ?? null,
         size: input.sizeBytes,
         mimeType: input.mimeType ?? null,
         s3Key,
@@ -239,6 +243,7 @@ async function initiateMultipartUpload(
         userId,
         batchId,
         name: input.name,
+        subpath: input.subpath ?? null,
         size: input.sizeBytes,
         mimeType: input.mimeType ?? null,
         s3Key,
@@ -540,6 +545,49 @@ async function deleteUserFile(
     return Array.isArray(fileIdOrIds) ? deleted : deleted[0];
 }
 
+interface DeleteBatchResult {
+    deletedCount: number;
+}
+
+/**
+ * Delete a whole batch (null: the legacy Ungrouped files), by id on the server
+ * rather than by the file ids a browser has paged in (#455). One UPDATE and
+ * one usage decrement in a transaction: every row it deletes was visible, so
+ * every one was counted in storage_usage.
+ *
+ * The batch row itself stays. An empty batch drops out of the library on its
+ * own, and an upload still landing in it would otherwise lose its batch.
+ */
+async function deleteBatch(
+    db: DB,
+    userId: string,
+    batchId: string | null
+): Promise<DeleteBatchResult> {
+    return db.transaction(async (tx) => {
+        if (batchId !== null) {
+            const batch = await createUploadBatchRepo(tx).findByUserAndId(
+                userId,
+                batchId
+            );
+            if (!batch) throw new NotFoundError('UploadBatch', batchId);
+        }
+
+        const deleted = await createFileRepo(tx).softDeleteBatchForUser(
+            userId,
+            batchId
+        );
+        if (deleted.length > 0) {
+            const totalBytes = deleted.reduce((sum, f) => sum + f.size, 0);
+            await createStorageUsageRepo(tx).decrementUsage(
+                userId,
+                totalBytes,
+                deleted.length
+            );
+        }
+        return { deletedCount: deleted.length };
+    });
+}
+
 export const fileService = {
     createBatch,
     initiateUpload,
@@ -551,5 +599,6 @@ export const fileService = {
     abortMultipartUpload,
     abandonUpload,
     deleteUserFile,
+    deleteBatch,
     getThumbnailUrls,
 } as const;

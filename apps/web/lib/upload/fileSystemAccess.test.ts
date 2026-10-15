@@ -239,7 +239,7 @@ describe('pickedFilesFromDataTransfer', () => {
         });
     });
 
-    it('walks a dropped directory recursively, skipping hidden entries', async () => {
+    it('walks a dropped directory recursively, skipping hidden entries and noting each file’s folder', async () => {
         (window as { showOpenFilePicker?: unknown }).showOpenFilePicker =
             () => {};
         const imgA = makeFile('IMG_1.NEF', 1, 1);
@@ -264,8 +264,8 @@ describe('pickedFilesFromDataTransfer', () => {
         const picked = await pickedFilesFromDataTransfer(dataTransfer);
         expect(picked).toEqual({
             files: [
-                { file: imgA, handle: handleA },
-                { file: imgB, handle: handleB },
+                { file: imgA, handle: handleA, folderPath: 'shoot' },
+                { file: imgB, handle: handleB, folderPath: 'shoot/day2' },
             ],
             truncated: false,
             folderName: 'shoot',
@@ -316,7 +316,10 @@ describe('pickedFilesFromDataTransfer', () => {
         ]);
 
         const picked = await pickedFilesFromDataTransfer(dataTransfer);
-        expect(picked.files).toHaveLength(2);
+        expect(picked.files).toEqual([
+            { file: loose, handle: looseHandle },
+            { file: img, handle: imgHandle, folderPath: 'shoot' },
+        ]);
         expect(picked.folderName).toBeUndefined();
     });
 
@@ -356,7 +359,7 @@ describe('pickedFilesFromDataTransfer', () => {
         ]);
 
         expect(await pickedFilesFromDataTransfer(dataTransfer)).toEqual({
-            files: [{ file: img }],
+            files: [{ file: img, folderPath: 'shoot' }],
             truncated: false,
             folderName: 'shoot',
         });
@@ -389,7 +392,11 @@ describe('pickedFilesFromDataTransfer', () => {
 
         const picked = await pickedFilesFromDataTransfer(dataTransfer);
         expect(picked).toEqual({
-            files: [{ file: loose }, { file: imgA }, { file: imgB }],
+            files: [
+                { file: loose },
+                { file: imgA, folderPath: 'shoot' },
+                { file: imgB, folderPath: 'shoot/day2' },
+            ],
             truncated: false,
         });
     });
@@ -410,7 +417,7 @@ describe('pickFolderWithHandles', () => {
             vi.fn(async () => stubDirectoryHandle('shoot', [handle]));
 
         expect(await pickFolderWithHandles()).toEqual({
-            files: [{ file: img, handle }],
+            files: [{ file: img, handle, folderPath: 'shoot' }],
             truncated: false,
             folderName: 'shoot',
         });
@@ -446,7 +453,7 @@ describe('pickedFilesFromDirectoryInput', () => {
         return file;
     }
 
-    it('maps files, filtering hidden entries below the chosen root', () => {
+    it('maps files with their folders, filtering hidden entries below the chosen root', () => {
         const imgA = makeTreeFile('IMG_1.NEF', 'shoot/IMG_1.NEF');
         const imgB = makeTreeFile('IMG_2.NEF', 'shoot/day2/IMG_2.NEF');
         const fileList = [
@@ -457,7 +464,10 @@ describe('pickedFilesFromDirectoryInput', () => {
         ] as unknown as FileList;
 
         expect(pickedFilesFromDirectoryInput(fileList)).toEqual({
-            files: [{ file: imgA }, { file: imgB }],
+            files: [
+                { file: imgA, folderPath: 'shoot' },
+                { file: imgB, folderPath: 'shoot/day2' },
+            ],
             truncated: false,
             folderName: 'shoot',
         });
@@ -468,10 +478,19 @@ describe('pickedFilesFromDirectoryInput', () => {
         const fileList = [img] as unknown as FileList;
 
         expect(pickedFilesFromDirectoryInput(fileList)).toEqual({
-            files: [{ file: img }],
+            files: [{ file: img, folderPath: '.backup' }],
             truncated: false,
             folderName: '.backup',
         });
+    });
+
+    it('leaves a file with no relative path (a synthetic list) without a folder', () => {
+        const file = makeTreeFile('loose.txt', '');
+        const fileList = [file] as unknown as FileList;
+
+        expect(pickedFilesFromDirectoryInput(fileList).files).toEqual([
+            { file },
+        ]);
     });
 
     it('leaves a multi-root selection unnamed', () => {

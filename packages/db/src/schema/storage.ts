@@ -89,6 +89,13 @@ export const files = pgTable(
             onDelete: 'set null',
         }),
         name: text('name').notNull(),
+        // The folder the file sat in, relative to the folder that was dropped
+        // (the batch's own), e.g. `104CANON` or `104CANON/RAW`; null for a file
+        // at the top of the drop or dropped loose (#405). Display metadata,
+        // not a tree: camera folders restart their numbering on every card, so
+        // without it two different `IMG_0001.JPG`s land side by side with
+        // nothing to tell them apart. Nothing moves or renames by it.
+        subpath: text('subpath'),
         size: bigint('size', { mode: 'number' }).notNull(),
         mimeType: text('mime_type'),
         s3Key: text('s3_key').notNull().unique(),
@@ -99,9 +106,9 @@ export const files = pgTable(
         thumbnailStatus: thumbnailStatusEnum('thumbnail_status')
             .notNull()
             .default('pending'),
-        // Worker-populated once the thumbnail is ready. Not consumed by the
-        // grid yet (its media boxes are a fixed ratio by design); kept for
-        // exact-aspect sizing in a future lightbox/preview surface.
+        // Worker-populated once the thumbnail is ready. The file viewer
+        // sizes its photo from them before the preview loads (#455); the
+        // grid's media boxes stay a fixed ratio by design.
         thumbnailWidth: integer('thumbnail_width'),
         thumbnailHeight: integer('thumbnail_height'),
         // Video-only, from ffprobe; drives the duration badge.

@@ -254,7 +254,19 @@ export const USE_CASES: UseCaseEntry[] = [
     },
     {
         id: 'files-grouped-render',
-        title: 'Files render grouped by upload batch (+ Ungrouped)',
+        title: 'The library shows each upload batch as a card (+ Ungrouped) that opens into its files',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
+        id: 'files-library-paging',
+        title: 'The library loads batch cards a page at a time, newest first',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
+        id: 'files-batch-paging',
+        title: 'An open batch loads its files 100 at a time, in natural filename order',
         area: 'files',
         routes: ['/dashboard/files'],
     },
@@ -266,7 +278,13 @@ export const USE_CASES: UseCaseEntry[] = [
     },
     {
         id: 'files-search',
-        title: 'Search filters files and shows no-match state',
+        title: 'Search runs on the server across file and batch names: a batch-name match shows whole, a file match shows its matches',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
+        id: 'files-search-subfolder',
+        title: 'Search matches a subfolder, opening its batch on only that folder’s files',
         area: 'files',
         routes: ['/dashboard/files'],
     },
@@ -277,14 +295,20 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/files'],
     },
     {
+        id: 'files-subfolder-grouping',
+        title: 'A batch with subfolders groups its files under folder rows; a single-folder batch stays flat',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
         id: 'files-batch-expand-collapse',
-        title: 'Expand/collapse a batch group',
+        title: 'Expand/collapse a folder row inside a batch',
         area: 'files',
         routes: ['/dashboard/files'],
     },
     {
         id: 'files-select-all',
-        title: 'Select-all checkbox selects all visible files',
+        title: 'A batch’s select-all selects the whole batch, loaded or not, and acts on it by batch id',
         area: 'files',
         routes: ['/dashboard/files'],
     },
@@ -302,7 +326,13 @@ export const USE_CASES: UseCaseEntry[] = [
     },
     {
         id: 'files-bulk-delete-at-scale',
-        title: 'Bulk delete a selection larger than the old 100-file cap',
+        title: 'Bulk delete a selection larger than the old 100-file cap, paged in',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
+        id: 'files-batch-delete',
+        title: 'Delete a whole batch from its menu, confirming with its file count',
         area: 'files',
         routes: ['/dashboard/files'],
     },
@@ -350,7 +380,7 @@ export const USE_CASES: UseCaseEntry[] = [
     },
     {
         id: 'files-deep-link-focus',
-        title: 'Deep-link ?file={id} highlights the target file (retrieval-ready email landing)',
+        title: 'Deep-link ?file={id} opens the target’s batch at its page, on the file (retrieval-ready email landing)',
         area: 'files',
         routes: ['/dashboard/files'],
     },
@@ -374,7 +404,7 @@ export const USE_CASES: UseCaseEntry[] = [
     },
     {
         id: 'files-thumbnails',
-        title: 'Ready thumbnails render in list + grid (icon fallback otherwise), video duration badge',
+        title: 'Ready thumbnails render on batch covers and in list + grid (icon fallback otherwise); the viewer shows a video’s duration',
         area: 'files',
         routes: ['/dashboard/files'],
     },
@@ -405,6 +435,12 @@ export const USE_CASES: UseCaseEntry[] = [
         title: 'A whole-folder upload names its batch after the folder',
         area: 'upload',
         routes: ['/dashboard/upload', '/dashboard/files'],
+    },
+    {
+        id: 'upload-folder-subpaths',
+        title: 'A whole-folder upload keeps each file’s subfolder within its batch',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
     },
     {
         id: 'upload-mixed-wave-fallback-name',

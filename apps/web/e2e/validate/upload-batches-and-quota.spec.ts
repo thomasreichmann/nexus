@@ -157,13 +157,13 @@ test.describe('upload batches + storage quota', () => {
             ).toBeVisible();
 
             // The auto-created batch uses the fallback name format
-            // `Upload YYYY-MM-DD HH:MM`. Match heading by that pattern.
-            await expect(
-                page.getByRole('heading', { name: /^Upload \d{4}-\d{2}-\d{2}/ })
-            ).toBeVisible();
-            // The single uploaded file should be visible (default expanded).
-            // visible+first: each name renders several times (dual mobile/
-            // desktop markup × MiddleTruncateName's two copies).
+            // `Upload YYYY-MM-DD HH:MM`: its card, opened, holds the file.
+            const card = page
+                .getByRole('button', { name: /^Open Upload \d{4}-\d{2}-\d{2}/ })
+                .first();
+            await expect(card).toBeVisible();
+            await card.click();
+            // visible+first: MiddleTruncateName renders each name twice.
             await expect(fileName(page, 'validate-')).toBeVisible();
 
             await page.screenshot({

@@ -33,6 +33,18 @@ export function activeRetrievalFilter() {
     );
 }
 
+// The join that pairs each file with its active retrieval, for a query that
+// reads a file's derived status. The partial unique index
+// `retrievals_active_file_id_idx` allows one active row per file, so the join
+// can't fan out.
+export function buildActiveRetrievalJoin(): SQL {
+    // and() is only `undefined` when called with no arguments
+    return and(
+        eq(schema.retrievals.fileId, schema.files.id),
+        activeRetrievalFilter()
+    )!;
+}
+
 // A `ready` row whose bytes can actually be fetched right now. Split out of
 // activeRetrievalFilter and exported so the retrieval-request repo counts a
 // request's ready files by the identical rule rather than a second copy of it

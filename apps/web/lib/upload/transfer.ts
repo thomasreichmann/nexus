@@ -48,6 +48,7 @@ interface UploadInit {
     sizeBytes: number;
     mimeType?: string;
     batchId?: string;
+    subpath?: string;
 }
 
 interface MultipartRef {
@@ -231,6 +232,7 @@ export function createTransfers(deps: TransferDeps): Transfers {
                     sizeBytes: file.size,
                     mimeType: file.type || undefined,
                     batchId: sessionBatchId,
+                    subpath: row.subpath,
                 });
                 fileId = init.fileId;
 
@@ -324,6 +326,7 @@ export function createTransfers(deps: TransferDeps): Transfers {
                     sizeBytes: file.size,
                     mimeType: file.type || undefined,
                     batchId: sessionBatchId,
+                    subpath: row.subpath,
                 });
                 fileId = result.fileId;
                 uploadId = result.uploadId;

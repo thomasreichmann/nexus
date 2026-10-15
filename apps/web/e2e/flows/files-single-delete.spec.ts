@@ -15,9 +15,10 @@ import { withSeededFiles } from '../fixtures/seeded-files';
 import { type TestUser } from '../helpers/auth';
 import {
     confirmSingleDelete,
+    fileItem,
+    openBatch,
     openSingleDeleteDialog,
 } from '../helpers/fileBrowser';
-import { fileName } from '../helpers/table';
 
 const SINGLE_DELETE_USER: TestUser = {
     email: 'files-single-delete-e2e@test.local',
@@ -41,23 +42,24 @@ test(
         const [target, bystander] = seededFiles;
 
         await page.goto(PAGE_URL);
-        await expect(fileName(page, target.name)).toBeVisible();
+        await openBatch(page, 'Ungrouped');
+        await expect(fileItem(page, target.name)).toBeVisible();
 
         // Backing out: the dialog shows which file is at stake, and Keep file
-        // leaves the row exactly where it was.
+        // leaves the file exactly where it was.
         const dialog = await openSingleDeleteDialog(page, target.name);
         await expect(
             dialog.getByText(target.name).filter({ visible: true }).first()
         ).toBeVisible();
         await dialog.getByRole('button', { name: 'Keep file' }).click();
         await expect(dialog).toBeHidden();
-        await expect(fileName(page, target.name)).toBeVisible();
+        await expect(fileItem(page, target.name)).toBeVisible();
 
-        // Confirming is what removes the row — and only that row.
+        // Confirming is what removes the file — and only that file.
         await confirmSingleDelete(page, target.name);
-        await expect(fileName(page, target.name)).toBeHidden({
+        await expect(fileItem(page, target.name)).toBeHidden({
             timeout: 10_000,
         });
-        await expect(fileName(page, bystander.name)).toBeVisible();
+        await expect(fileItem(page, bystander.name)).toBeVisible();
     }
 );

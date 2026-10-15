@@ -33,7 +33,9 @@ import { toastRetrievalRequested } from './retrievalFeedback';
 import type { FileWithRetrieval } from '@nexus/db/repo/files';
 import type { DerivedStatus } from './status';
 
-export function useFileActions(file: FileWithRetrieval) {
+export function useFileActions(
+    file: Pick<FileWithRetrieval, 'id' | 'size' | 'createdAt'>
+) {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
     const invalidateFileList = useInvalidateFileList();
@@ -76,19 +78,23 @@ export function useFileActions(file: FileWithRetrieval) {
         }
     }
 
+    // Pending for this file only: the viewer keeps one instance while it
+    // browses, and the next photo isn't the one being restored.
     return {
         onDelete: () => deleteMutation.mutate({ id: file.id }),
         onRetrieval: () => retrievalMutation.mutate({ fileId: file.id }),
         onDownload: handleDownload,
-        isDeleting: deleteMutation.isPending,
-        isRetrieving: retrievalMutation.isPending,
+        isDeleting:
+            deleteMutation.isPending && deleteMutation.variables.id === file.id,
+        isRetrieving:
+            retrievalMutation.isPending &&
+            retrievalMutation.variables.fileId === file.id,
     };
 }
 
 /**
  * What the menu's dialogs need from a file: the retrieve estimate's inputs
- * plus a name for the delete confirmation. Every caller passes a full
- * `FileWithRetrieval`.
+ * plus a name for the delete confirmation.
  */
 interface ActionableFile extends RetrievableFile {
     name: string;

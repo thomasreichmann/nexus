@@ -5,6 +5,7 @@
  */
 import { resetUserData } from '@nexus/db/test-db';
 import { test, expect } from '../fixtures';
+import { folderRows, openBatch } from '../helpers/fileBrowser';
 import { FILE_A, UPLOAD_PAGE_URL, uploadSpecUser } from '../helpers/uploadPage';
 import { stubS3Puts, writeFolderTree } from '../helpers/uploadStubs';
 
@@ -153,13 +154,77 @@ test(
     }
 );
 
+// The structure inside the folder (#405): each file keeps the subfolder it sat
+// in, relative to the batch the folder became, and the batch opens grouped by
+// it. Camera cards restart their numbering, so without it the files of two
+// cards can't be told apart.
+test(
+    'a whole-folder upload keeps each file’s subfolder within its batch',
+    {
+        tag: [
+            '@page:/dashboard/upload',
+            '@page:/dashboard/files',
+            '@uc:upload-folder-subpaths',
+        ],
+    },
+    async ({ page, db, seedUserId }) => {
+        const folderName = 'shoot-structured';
+        const tree = await writeFolderTree({
+            name: folderName,
+            files: {
+                'notes.txt': 'notes\n',
+                '104CANON/IMG_0001.txt': 'frame one\n',
+                '104CANON/RAW/IMG_0001.txt': 'raw one\n',
+            },
+        });
+        try {
+            await stubS3Puts(page);
+            await page.goto(UPLOAD_PAGE_URL);
+            await page.setInputFiles('[data-testid="folder-input"]', tree.dir);
+            await page.getByRole('button', { name: 'Upload 3 files' }).click();
+            await expect(
+                page.getByText('Uploaded', { exact: true })
+            ).toHaveCount(3, { timeout: 30_000 });
+
+            const files = await db.query.files.findMany({
+                where: (f, { eq }) => eq(f.userId, seedUserId),
+            });
+            expect(
+                files
+                    .map((f) => [f.subpath, f.name])
+                    .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+            ).toEqual([
+                ['104CANON', 'IMG_0001.txt'],
+                ['104CANON/RAW', 'IMG_0001.txt'],
+                [null, 'notes.txt'],
+            ]);
+
+            await page.goto('/dashboard/files');
+            await openBatch(page, folderName);
+            await expect(folderRows(page)).toHaveText([
+                /Top level/,
+                /104CANON.*1 file/,
+                /104CANON\/RAW.*1 file/,
+            ]);
+        } finally {
+            await tree.cleanup();
+        }
+    }
+);
+
 // The naming rule's other half: a wave assembled from more than one gesture
 // isn't about one folder, so it keeps the timestamp label rather than
-// borrowing the name of whichever folder happened to be picked first.
+// borrowing the name of whichever folder happened to be picked first. Its
+// files then keep that folder's own name in their subfolder (#405): the batch
+// isn't that folder, so it's the one thing telling its files apart.
 test(
     'a wave mixing a folder with a loose file keeps the fallback batch name',
     {
-        tag: ['@page:/dashboard/upload', '@uc:upload-mixed-wave-fallback-name'],
+        tag: [
+            '@page:/dashboard/upload',
+            '@uc:upload-mixed-wave-fallback-name',
+            '@uc:upload-folder-subpaths',
+        ],
     },
     async ({ page, db, seedUserId }) => {
         const tree = await writeFolderTree({
@@ -183,6 +248,13 @@ test(
             });
             expect(batches).toHaveLength(1);
             expect(batches[0].name).toMatch(/^Upload \d{4}-\d{2}-\d{2} /);
+
+            const files = await db.query.files.findMany({
+                where: (f, { eq }) => eq(f.userId, seedUserId),
+            });
+            expect(
+                Object.fromEntries(files.map((f) => [f.name, f.subpath]))
+            ).toEqual({ 'IMG_0001.txt': 'shoot-mixed', [FILE_A.name]: null });
         } finally {
             await tree.cleanup();
         }

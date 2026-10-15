@@ -1,5 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { formatBytes, formatDate, formatRelativeTimeCompact } from './format';
+import {
+    countLabel,
+    formatBytes,
+    formatDate,
+    formatRelativeTimeCompact,
+} from './format';
+
+describe('countLabel', () => {
+    it('pluralizes, irregular plurals included, with grouped digits', () => {
+        expect(countLabel(1, 'file')).toBe('1 file');
+        expect(countLabel(0, 'file')).toBe('0 files');
+        expect(countLabel(1204, 'file')).toBe('1,204 files');
+        expect(countLabel(1, 'batch', 'batches')).toBe('1 batch');
+        expect(countLabel(2, 'batch', 'batches')).toBe('2 batches');
+    });
+});
 
 describe('formatBytes', () => {
     it('returns "0 Bytes" for zero', () => {

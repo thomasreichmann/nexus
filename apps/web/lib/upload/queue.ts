@@ -11,6 +11,7 @@ import {
 import {
     patchRowById,
     patchRowsWhere,
+    resolveSubpath,
     resolveUnanimousFolderName,
     type UploadRow,
 } from './rows';
@@ -86,17 +87,27 @@ export interface UploadQueue {
 
 /**
  * What the pool needs to admit a row: an identity to de-duplicate on, a size to
- * weigh against the in-flight byte budget, and the batch the row belongs to.
- * The row itself is re-read at start time, so nothing here can go stale.
+ * weigh against the in-flight byte budget, and the batch (and folder within it)
+ * the row belongs to. The row itself is re-read at start time, so nothing here
+ * can go stale.
  */
 interface QueuedUpload {
     id: string;
     size: number;
     batchId?: string;
+    subpath?: string;
 }
 
-function toQueuedUpload(row: UploadRow, batchId?: string): QueuedUpload {
-    return { id: row.id, size: row.size, batchId: batchId ?? row.batchId };
+function toQueuedUpload(
+    row: UploadRow,
+    placement: { batchId?: string; subpath?: string } = {}
+): QueuedUpload {
+    return {
+        id: row.id,
+        size: row.size,
+        batchId: placement.batchId ?? row.batchId,
+        subpath: placement.subpath ?? row.subpath,
+    };
 }
 
 export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
@@ -129,7 +140,12 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
             updateRow(current.id, { status: 'paused' });
             return 'continue';
         }
-        return transfers.runUpload(current, item.batchId);
+        // The subpath rides on the queued item for the same reason as the
+        // batch: the click's row write may not have committed yet.
+        return transfers.runUpload(
+            { ...current, subpath: item.subpath ?? current.subpath },
+            item.batchId
+        );
     };
 
     const pool = createFilePool<QueuedUpload>({
@@ -203,32 +219,46 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
         // it, so only mint a session batch when some file still needs one —
         // and only those rows decide what the new batch is named after.
         const rowsNeedingBatch = pending.filter((row) => !row.batchId);
+        const folderName = resolveUnanimousFolderName(rowsNeedingBatch);
         if (rowsNeedingBatch.length > 0) {
             try {
-                ({ batchId } = await api.createBatch({
-                    name: resolveUnanimousFolderName(rowsNeedingBatch),
-                }));
+                ({ batchId } = await api.createBatch({ name: folderName }));
             } catch {
                 batchId = undefined;
             }
         }
 
-        // Retried/resumed rows keep their original batch; only rows without
-        // one join this session's batch. Written to the row for
-        // retry/persistence, but carried on the queue item too — a row read
-        // won't reflect this update until the next commit.
-        const rowBatchIds = new Map(
-            pending.map((row) => [row.id, row.batchId ?? batchId])
+        // Retried/resumed rows keep their original batch and folder; only
+        // rows without one join this session's batch, placed relative to it.
+        // Written to the row for retry/persistence, but carried on the queue
+        // item too — a row read won't reflect this update until the next
+        // commit. With no session batch (createBatch failed), nothing is
+        // named after the folder, so its name stays in the path.
+        const isBatchNamedAfterFolder =
+            folderName !== undefined && batchId !== undefined;
+        const placements = new Map(
+            pending.map((row) => [
+                row.id,
+                row.batchId
+                    ? { batchId: row.batchId, subpath: row.subpath }
+                    : {
+                          batchId,
+                          subpath: resolveSubpath(
+                              row.folderPath,
+                              isBatchNamedAfterFolder
+                          ),
+                      },
+            ])
         );
         rows.set((prev) =>
             patchRowsWhere(
                 prev,
-                (row) => rowBatchIds.has(row.id),
-                (row) => ({ batchId: rowBatchIds.get(row.id) })
+                (row) => placements.has(row.id),
+                (row) => placements.get(row.id)!
             )
         );
         const queued = pending.map((row) =>
-            toQueuedUpload(row, rowBatchIds.get(row.id))
+            toQueuedUpload(row, placements.get(row.id))
         );
 
         await drive(queued);
@@ -314,7 +344,7 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
             const reattach = new Map<string, PickedFile>();
             const appended: UploadRow[] = [];
 
-            picked.forEach(({ file, handle }, i) => {
+            picked.forEach(({ file, handle, folderPath }, i) => {
                 const match = matches[i];
                 const existing =
                     match && isResumable(match)
@@ -358,6 +388,7 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
                     file,
                     fileHandle: handle,
                     folderOrigin,
+                    folderPath,
                 });
             });
 

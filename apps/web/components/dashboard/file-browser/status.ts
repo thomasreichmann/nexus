@@ -7,7 +7,6 @@ import {
     FileText,
     FileVideo,
 } from 'lucide-react';
-import { formatDownloadWindow } from '@/lib/format';
 import type {
     ActiveRetrievalSummary,
     File,
@@ -33,9 +32,12 @@ export const STATUS_LABELS: Record<DerivedStatus, string> = {
 };
 
 // Keep in lockstep with countStatusesByUser in
-// packages/db/src/repositories/files.ts — the library-wide stats bar bucket
-// counts must match the per-row status dots derived here.
-export function deriveStatus(file: FileWithRetrieval): DerivedStatus {
+// packages/db/src/repositories/files.ts and the batch summaries in
+// repositories/library.ts — the stats bar's and a batch's counts must match
+// the per-file status derived here.
+export function deriveStatus(
+    file: Pick<FileWithRetrieval, 'status' | 'activeRetrieval'>
+): DerivedStatus {
     // The active retrieval wins, uniformly across tiers (#259): a ready row
     // is downloadable within its window, a queued/restoring row is in flight.
     //
@@ -80,12 +82,6 @@ export function attachActiveRetrievals(
         ...file,
         activeRetrieval: byFileId.get(file.id) ?? null,
     }));
-}
-
-export function getDownloadWindowLabel(file: FileWithRetrieval): string | null {
-    const retrieval = file.activeRetrieval;
-    if (!retrieval) return null;
-    return formatDownloadWindow(retrieval.status, retrieval.expiresAt);
 }
 
 export function getFileExtension(name: string): string {

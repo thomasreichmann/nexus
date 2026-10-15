@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+    normalizeSubpath,
     patchRowById,
     patchRowsWhere,
+    resolveSubpath,
     resolveUnanimousFolderName,
 } from './rows';
 
@@ -116,5 +118,47 @@ describe('resolveUnanimousFolderName', () => {
 
     it('declines an empty wave', () => {
         expect(resolveUnanimousFolderName([])).toBeUndefined();
+    });
+});
+
+// #405: what a file's folder is stored as, relative to the batch it joins.
+describe('resolveSubpath', () => {
+    it('drops the folder’s own name when the batch is named after it', () => {
+        expect(resolveSubpath('Shoot/104CANON', true)).toBe('104CANON');
+        expect(resolveSubpath('Shoot/104CANON/RAW', true)).toBe('104CANON/RAW');
+    });
+
+    it('stores nothing for a file at the top of the batch’s folder', () => {
+        expect(resolveSubpath('Shoot', true)).toBeUndefined();
+    });
+
+    // Two cards of one camera, each in a folder with a 104CANON inside: in
+    // one unnamed batch, only the dropped folder's name tells them apart.
+    it('keeps the whole path when the batch is about more than one folder', () => {
+        expect(resolveSubpath('Loja 1/104CANON', false)).toBe(
+            'Loja 1/104CANON'
+        );
+        expect(resolveSubpath('Loja 1', false)).toBe('Loja 1');
+    });
+
+    it('stores nothing for a file dropped loose', () => {
+        expect(resolveSubpath(undefined, false)).toBeUndefined();
+        expect(resolveSubpath(undefined, true)).toBeUndefined();
+    });
+});
+
+// The library groups folder rows by equal subpaths, so one folder must have
+// one spelling however the client sent it.
+describe('normalizeSubpath', () => {
+    it('spells a folder one way whatever slashes it came with', () => {
+        expect(normalizeSubpath('104CANON/')).toBe('104CANON');
+        expect(normalizeSubpath('/104CANON')).toBe('104CANON');
+        expect(normalizeSubpath('Loja 1//104CANON')).toBe('Loja 1/104CANON');
+    });
+
+    it('treats a path with no folder in it as none', () => {
+        expect(normalizeSubpath('')).toBeUndefined();
+        expect(normalizeSubpath('//')).toBeUndefined();
+        expect(normalizeSubpath(undefined)).toBeUndefined();
     });
 });

@@ -296,25 +296,31 @@ async function requestBulkRetrieval(
     return restoreFiles(db, userId, files, tier, null);
 }
 
+// The batch's files as the browser shows them: an `uploading` or `deleted` row
+// isn't part of it, and would fail `restoreFiles`' availability check for the
+// whole batch. Null is the legacy Ungrouped group, which has no batch row to
+// own.
 async function findOwnedBatchFiles(
     db: DB,
     userId: string,
-    batchId: string
+    batchId: string | null
 ): Promise<File[]> {
-    const batchRepo = createUploadBatchRepo(db);
-    const batch = await batchRepo.findByUserAndId(userId, batchId);
-    if (!batch) {
-        throw new NotFoundError('UploadBatch', batchId);
+    if (batchId !== null) {
+        const batchRepo = createUploadBatchRepo(db);
+        const batch = await batchRepo.findByUserAndId(userId, batchId);
+        if (!batch) {
+            throw new NotFoundError('UploadBatch', batchId);
+        }
     }
 
     const fileRepo = createFileRepo(db);
-    return fileRepo.findByUserAndBatch(userId, batchId);
+    return fileRepo.findVisibleByUserAndBatch(userId, batchId);
 }
 
 async function requestBatchRetrieval(
     db: DB,
     userId: string,
-    batchId: string,
+    batchId: string | null,
     tier: RestoreTier = DEFAULT_RESTORE_TIER
 ): Promise<RetrievalRequestResult> {
     const files = await findOwnedBatchFiles(db, userId, batchId);

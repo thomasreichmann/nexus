@@ -9,6 +9,7 @@ import {
     AlertDialogPopup,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { countLabel } from '@/lib/format';
 import { DialogFileName } from './DialogFileName';
 
 interface DeleteDialogProps {
@@ -48,7 +49,7 @@ export function DeleteDialog({
                 <AlertDialogTitle>
                     {fileName
                         ? 'Delete this file?'
-                        : `Delete ${fileCount} file${isPlural ? 's' : ''}?`}
+                        : `Delete ${countLabel(fileCount, 'file')}?`}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                     {isPlural ? 'They’ll' : 'It’ll'} be removed from your vault
@@ -61,7 +62,9 @@ export function DeleteDialog({
                         {isPlural ? 'Keep files' : 'Keep file'}
                     </AlertDialogCancel>
                     <AlertDialogAction onClick={onConfirm}>
-                        {isPlural ? `Delete ${fileCount} files` : 'Delete file'}
+                        {isPlural
+                            ? `Delete ${countLabel(fileCount, 'file')}`
+                            : 'Delete file'}
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogPopup>

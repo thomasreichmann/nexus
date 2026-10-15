@@ -28,6 +28,7 @@ import {
 } from '@nexus/db/test-db';
 import { test as base, expect } from '../../fixtures';
 import { type TestUser } from '../../helpers/auth';
+import { batchCard } from '../../helpers/fileBrowser';
 import { expectNoHorizontalOverflow } from '../../helpers/overflow';
 
 const SPEC_USER: TestUser = {
@@ -83,11 +84,20 @@ test(
     'files page does not overflow horizontally with adversarial filenames',
     { tag: ['@page:/dashboard/files', '@uc:mobile-no-horizontal-overflow'] },
     async ({ page, adversarialLibrary }) => {
+        // The library: the newest card carries the longest batch name.
         await page.goto('/dashboard/files');
+        await expect(
+            batchCard(page, adversarialLibrary.batches[0]!.name)
+        ).toBeVisible();
+        await expectNoHorizontalOverflow(page);
+
+        // An open batch: the deep link lands on the long-name file's tile.
+        await page.goto(
+            `/dashboard/files?file=${adversarialLibrary.longNameFile.id}`
+        );
         await expect(
             page.getByText(adversarialLibrary.longNameFile.name).first()
         ).toBeVisible();
-
         await expectNoHorizontalOverflow(page);
     }
 );

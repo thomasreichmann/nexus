@@ -1,9 +1,12 @@
 import { z } from 'zod';
 import { DEFAULT_RESTORE_TIER, RESTORE_TIERS } from '@nexus/db/schema';
 import { createFileRepo } from '@nexus/db/repo/files';
+import { createLibraryRepo } from '@nexus/db/repo/library';
 import { fileService } from '@/server/services/files';
 import { retrievalService } from '@/server/services/retrieval';
+import { BATCH_PAGE_SIZE, FILE_PAGE_SIZE } from '@/lib/library/paging';
 import { MAX_FILES_PER_VAULT_LOOKUP } from '@/lib/upload/limits';
+import { normalizeSubpath } from '@/lib/upload/rows';
 import { protectedProcedure, router } from '../init';
 
 // One rule for both ways a batch gets named: per-file on `upload`, and up front
@@ -16,11 +19,18 @@ const fileNameSchema = z.string().min(1).max(255);
 // Shoot-to-full-archive scale, not the old 100 (#423, #400). A wedding
 // re-delivery is 500-1,500 files and the disaster-recovery case #406 is built
 // around is a whole library — the ICP reference is 8,934. The file browser
-// loads the library unpaginated, so select-all reaches every file a user owns
-// and any smaller cap rejects a real backlog. Shared by `deleteMany` and
+// now pages (#455) and runs whole-batch actions by batch id, but an API caller
+// selecting by id still gets the full backlog. Shared by `deleteMany` and
 // `requestBulkRetrieval` so the two can't drift; unrelated to the `10000` in
 // `multipart.complete`, which is S3's part-count limit.
 const MAX_BULK_FILE_IDS = 10_000;
+
+// The folder a file sat in, relative to its batch (#405).
+const subpathSchema = z
+    .string()
+    .max(1024)
+    .optional()
+    .transform(normalizeSubpath);
 
 const uploadInputSchema = z.object({
     name: fileNameSchema,
@@ -30,7 +40,16 @@ const uploadInputSchema = z.object({
     // Omit both to get an auto-named single-file batch.
     batchId: z.string().uuid().optional(),
     batchName: batchNameSchema.optional(),
+    subpath: subpathSchema,
 });
+
+// The browser's batch and file ids arrive from its URL (`?batch=`, `?file=`),
+// which anyone can edit, so the library's reads take any short string and
+// answer a malformed one the way they answer a missing one: with nothing.
+// Null is the legacy Ungrouped group.
+const libraryIdSchema = z.string().min(1).max(64);
+const libraryBatchIdSchema = libraryIdSchema.nullable();
+const librarySearchSchema = z.string().trim().max(255).optional();
 
 export const filesRouter = router({
     list: protectedProcedure
@@ -81,22 +100,93 @@ export const filesRouter = router({
         return fileRepo.countStatusesByUser(ctx.session.user.id);
     }),
 
-    // Files grouped by upload batch, with a synthetic "Ungrouped" group for
-    // legacy null-batch files. Separate procedure (not a `list` shape change)
-    // so the existing flat-list UI keeps working until the grouped UI lands.
-    listGrouped: protectedProcedure
+    // The file browser's library (#455): batch summaries a page at a time,
+    // newest first, from one aggregate query. `cursor` is the last batch id
+    // of the previous page (tRPC's infinite-query param); the first page also
+    // carries how many batches the library (or the search) holds.
+    listBatches: protectedProcedure
         .input(
             z
                 .object({
-                    includeHidden: z.boolean().default(false),
+                    search: librarySearchSchema,
+                    cursor: libraryIdSchema.nullish(),
+                    limit: z
+                        .number()
+                        .int()
+                        .min(1)
+                        .max(50)
+                        .default(BATCH_PAGE_SIZE),
                 })
                 .prefault({})
         )
-        .query(({ ctx, input }) => {
-            const fileRepo = createFileRepo(ctx.db);
-            return fileRepo.findByUserGroupedByBatch(ctx.session.user.id, {
-                includeHidden: input.includeHidden,
-            });
+        .query(async ({ ctx, input }) => {
+            const libraryRepo = createLibraryRepo(ctx.db);
+            const userId = ctx.session.user.id;
+            const [page, total] = await Promise.all([
+                libraryRepo.listBatchSummaries(userId, input),
+                input.cursor
+                    ? null
+                    : libraryRepo.countBatches(userId, {
+                          search: input.search,
+                      }),
+            ]);
+            return { ...page, total };
+        }),
+
+    // One batch, opened: its summary and its folders. Null for a batch that
+    // isn't the user's, or has nothing left in it.
+    getBatch: protectedProcedure
+        .input(
+            z.object({
+                batchId: libraryBatchIdSchema,
+                search: librarySearchSchema,
+            })
+        )
+        .query(async ({ ctx, input }) => {
+            const batch = await createLibraryRepo(ctx.db).findBatch(
+                ctx.session.user.id,
+                input.batchId,
+                { search: input.search }
+            );
+            return batch ?? null;
+        }),
+
+    // A page of an open batch's files (or one folder's), in natural filename
+    // order, paged both ways from a cursor file: `direction` is tRPC's own
+    // infinite-query param. A deep link opens forward from `locate`'s
+    // `pageStartId`.
+    listBatchFiles: protectedProcedure
+        .input(
+            z.object({
+                batchId: libraryBatchIdSchema,
+                folder: z.string().max(1024).nullable().optional(),
+                search: librarySearchSchema,
+                cursor: libraryIdSchema.nullish(),
+                direction: z.enum(['forward', 'backward']).default('forward'),
+                limit: z
+                    .number()
+                    .int()
+                    .min(1)
+                    .max(FILE_PAGE_SIZE)
+                    .default(FILE_PAGE_SIZE),
+            })
+        )
+        .query(({ ctx, input }) =>
+            createLibraryRepo(ctx.db).listBatchFiles(ctx.session.user.id, input)
+        ),
+
+    // Where a deep-linked file sits (`?file=`, the retrieval-ready email): its
+    // batch, its folder and the first file of its page, or null when it isn't
+    // the user's or is gone.
+    locate: protectedProcedure
+        .input(z.object({ fileId: libraryIdSchema }))
+        .query(async ({ ctx, input }) => {
+            const located = await createLibraryRepo(ctx.db).locateFile(
+                ctx.session.user.id,
+                input.fileId,
+                { pageSize: FILE_PAGE_SIZE }
+            );
+            return located ?? null;
         }),
 
     get: protectedProcedure
@@ -174,6 +264,14 @@ export const filesRouter = router({
             );
         }),
 
+    // A whole batch by id (#455), however much of it the browser has loaded.
+    // Null deletes the legacy Ungrouped files.
+    deleteBatch: protectedProcedure
+        .input(z.object({ batchId: z.string().uuid().nullable() }))
+        .mutation(({ ctx, input }) =>
+            fileService.deleteBatch(ctx.db, ctx.session.user.id, input.batchId)
+        ),
+
     requestRetrieval: protectedProcedure
         .input(
             z.object({
@@ -212,10 +310,11 @@ export const filesRouter = router({
             );
         }),
 
+    // Null restores the legacy Ungrouped files, which have no batch id.
     requestBatchRetrieval: protectedProcedure
         .input(
             z.object({
-                batchId: z.string().uuid(),
+                batchId: z.string().uuid().nullable(),
                 tier: z.enum(RESTORE_TIERS).default(DEFAULT_RESTORE_TIER),
             })
         )

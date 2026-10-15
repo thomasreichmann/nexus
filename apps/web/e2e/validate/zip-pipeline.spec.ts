@@ -57,6 +57,7 @@ import {
 } from '../helpers/aws';
 import { createTestS3, type TestS3 } from '../helpers/s3';
 import { type TestUser } from '../helpers/auth';
+import { openBatch } from '../helpers/fileBrowser';
 import type { File } from '@nexus/db/test-db';
 
 const ZIP_USER: TestUser = {
@@ -245,8 +246,11 @@ test(
         test.setTimeout(300_000);
         const userId = dedicatedUser!.userId;
 
+        // The files have no batch: they open as Ungrouped, and its select-all
+        // takes the whole of it, restored by batch on the server (#455).
         await page.goto('/dashboard/files');
-        const selectAll = page.getByRole('checkbox', { name: 'Select all' });
+        await openBatch(page, 'Ungrouped');
+        const selectAll = page.getByRole('checkbox', { name: 'Select all 3' });
         await expect(selectAll).toBeVisible();
         await selectAll.click();
         await page.screenshot({

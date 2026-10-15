@@ -1,11 +1,12 @@
 /**
  * Bulk delete past the old 100-file cap (#400).
  *
- * `listGrouped` is unpaginated and select-all takes everything visible, so a
- * real archive reaches a selection far bigger than the 100 `deleteMany` used to
- * accept — and the rejection surfaced as a toast holding the raw Zod payload.
- * This spec is the regression guard for the raised cap, so it deliberately
- * seeds past 100 rather than asserting the number in the schema.
+ * A batch now pages its files in 100 at a time (#455), but a selection of
+ * loaded rows still grows past 100 once the next page is in, and `deleteMany`
+ * used to reject anything over 100 — with a toast holding the raw Zod
+ * payload. This spec is the regression guard for the raised cap, so it
+ * deliberately seeds past 100, pages them all in and selects them by id with
+ * a shift-click range across both pages.
  *
  * Its own dedicated user (not `files-browser.spec.ts`'s) so the 120-row seed
  * can't perturb that file's exact-count assertions or its serial ordering.
@@ -15,8 +16,13 @@
 import { expect } from '../fixtures';
 import { withSeededFiles } from '../fixtures/seeded-files';
 import { type TestUser } from '../helpers/auth';
-import { confirmBulkDelete } from '../helpers/fileBrowser';
-import { fileName } from '../helpers/table';
+import { waitForTrpcRequest } from '../helpers/trpc';
+import {
+    confirmBulkDelete,
+    fileItem,
+    openBatch,
+    toggleFile,
+} from '../helpers/fileBrowser';
 
 const BULK_DELETE_USER: TestUser = {
     email: 'files-bulk-delete-e2e@test.local',
@@ -42,15 +48,32 @@ test(
     { tag: ['@uc:files-bulk-delete-at-scale'] },
     async ({ page, seededFiles }) => {
         test.slow();
-
+        // Named e2e-test-file-1 … -120: natural order lists them by number.
+        const first = seededFiles.find(
+            (f) => f.name === 'e2e-test-file-1.txt'
+        )!;
+        const last = seededFiles.find(
+            (f) => f.name === `e2e-test-file-${FILE_COUNT}.txt`
+        )!;
         await page.goto(PAGE_URL);
-        await expect(fileName(page, seededFiles[0]!.name)).toBeVisible();
+        await openBatch(page, 'Ungrouped');
+        await expect(
+            page.getByText(`Showing 100 of ${FILE_COUNT}`)
+        ).toBeVisible();
+        await page.getByRole('button', { name: 'Show next 20' }).click();
+        await expect(fileItem(page, last.name)).toBeVisible();
 
-        await page.getByRole('checkbox', { name: 'Select all' }).click();
+        await toggleFile(page, first.name);
+        await toggleFile(page, last.name, { modifiers: ['Shift'] });
         await expect(page.getByText(`${FILE_COUNT} selected`)).toBeVisible();
 
+        const deleted = waitForTrpcRequest(page, 'files.deleteMany');
         await confirmBulkDelete(page, FILE_COUNT);
 
+        // By id, every one of them: this is the path that hit the cap.
+        const body = (await deleted).postData() ?? '';
+        expect(body).toContain(first.id);
+        expect(body).toContain(last.id);
         // An empty vault is the proof the whole selection committed. Under the
         // old cap the mutation was rejected outright, so the rows would still
         // be here when this times out.

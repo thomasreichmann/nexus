@@ -26,7 +26,7 @@ import {
 } from '@/lib/format';
 import { getLivePollOptionsWhile } from '@/lib/trpc/polling';
 import { MiddleTruncateName } from '@/components/dashboard/MiddleTruncateName';
-import { StatusDot } from '@/components/dashboard/file-browser/SelectableIcon';
+import { StatusDot } from '@/components/dashboard/file-browser/StatusDot';
 import {
     attachActiveRetrievals,
     deriveStatus,

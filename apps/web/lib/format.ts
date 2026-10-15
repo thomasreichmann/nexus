@@ -10,6 +10,20 @@ export function formatBytes(bytes: number): string {
     );
 }
 
+/** A count as copy reads it: "1,204". */
+export function formatCount(n: number): string {
+    return n.toLocaleString('en-US');
+}
+
+/** "1 file", "1,204 files"; "2 batches" given its plural. */
+export function countLabel(
+    n: number,
+    noun: string,
+    plural = `${noun}s`
+): string {
+    return `${formatCount(n)} ${n === 1 ? noun : plural}`;
+}
+
 export function formatDate(date: Date | string): string {
     return format(new Date(date), 'MMM d, yyyy');
 }
@@ -58,8 +72,8 @@ export function formatDuration(totalSeconds: number): string {
  * Download-window copy for a ready retrieval, identical for both storage
  * tiers: standard fast-path rows carry a synthetic expiresAt, Deep Archive
  * rows the real S3 restore expiry (#257). Null when there is no window to
- * show. Shared by the file browser and the dashboard retrievals card so the
- * copy can't drift between them.
+ * show. Used by the dashboard retrievals card; the file browser's viewer
+ * says the same window in its own words (`readyWindowCopy`).
  */
 export function formatDownloadWindow(
     status: string,
