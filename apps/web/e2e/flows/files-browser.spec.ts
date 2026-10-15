@@ -3,17 +3,18 @@
  * `dedicatedUserConfig` fixture) so empty-state and exact-count assertions
  * can't race specs that share the regular/admin users.
  *
- * The seeded library is a worker-scoped fixture (`seededLibrary`): it seeds the
- * batch + files + ready retrieval once and the serial tests share it. The
- * empty-vault test doesn't request it, so under serial mode it runs first
- * against the freshly-provisioned (empty) user; the bulk-delete test runs last
- * and tears the library down.
+ * The library opens on batch cards (#455): every test opens the batch it
+ * needs. The seeded library is a worker-scoped fixture (`seededLibrary`): it
+ * seeds the batch + files + ready retrieval once and the serial tests share
+ * it. The empty-vault test doesn't request it, so under serial mode it runs
+ * first against the freshly-provisioned (empty) user; the deletes run last
+ * and tear the batch down.
  *
  * Server mutations that hit S3 Glacier (`restore`) are intercepted and observed
  * rather than executed — seeded s3 keys have no real objects, and a real
  * Glacier restore takes hours. Those interceptions still verify the complete UI
  * wiring: menu/button → correct tRPC mutation + payload. Deletion runs for real
- * (S3 DeleteObjects is a no-op for missing keys).
+ * (a soft delete, with no S3 call at all).
  */
 import {
     type UploadBatch,
@@ -32,7 +33,17 @@ import { test as base, expect } from '../fixtures';
 import { type TestUser } from '../helpers/auth';
 import { interceptTrpcCalls } from '../helpers/trpc';
 import { fileName } from '../helpers/table';
-import { confirmBulkDelete, openRowMenu } from '../helpers/fileBrowser';
+import {
+    backToLibrary,
+    batchCard,
+    confirmBatchDelete,
+    confirmBulkDelete,
+    expectBatchOpen,
+    fileItem,
+    openBatch,
+    openRowMenu,
+    toggleFile,
+} from '../helpers/fileBrowser';
 
 const FILES_USER: TestUser = {
     email: 'files-browser-e2e@test.local',
@@ -41,11 +52,13 @@ const FILES_USER: TestUser = {
 };
 const STATE_PATH = 'e2e/.auth/files-browser.json';
 const PAGE_URL = '/dashboard/files';
+const UNGROUPED = 'Ungrouped';
 
 interface SeededLibrary {
     batch: UploadBatch;
     archivedA: File;
     archivedB: File;
+    archivedC: File;
     readyDoc: File;
     standardDoc: File;
 }
@@ -61,39 +74,35 @@ const test = base.extend<
                 userId,
                 name: `Browser Batch ${Date.now()}`,
             });
-            // Two archived files in the batch. Files within a group sort by
-            // name (#404), so A (`arch-photo-…`) renders as the batch's first
-            // row — the shift-click range test anchors on it.
+            // Three archived files in the batch, listed in natural name
+            // order (#404): arch-photo-aaa, arch-scan-ccc, arch-video-bbb.
+            // The shift-click range test runs from the first to the last, so
+            // the middle one only joins through the range.
             //
             // "Archived" is no longer a column (#416): it is derived from the
-            // lifecycle policy, so these two have to be genuinely past the
-            // window and over the 128KB floor to read as cold. The other two
-            // stay warm on size alone, whatever their age.
+            // lifecycle policy, so these have to be genuinely past the window
+            // and over the 128KB floor to read as cold. The two ungrouped
+            // files stay warm on size alone, whatever their age.
             // Derived from the thresholds themselves so the fixture can't
             // drift from the policy it is standing in for.
             const COLD_SIZE = LIFECYCLE_TRANSITION_MIN_BYTES * 10;
             const COLD_DAYS = (LIFECYCLE_TRANSITION_LAG_HOURS / 24) * 4;
-            const archivedB = await insertFile(db, {
-                userId,
-                batchId: batch.id,
-                name: 'arch-video-bbb.mp4',
-                size: COLD_SIZE,
-                status: 'available',
-                createdAt: daysAgo(COLD_DAYS + 1),
-                updatedAt: daysAgo(COLD_DAYS + 1),
-            });
-            const archivedA = await insertFile(db, {
-                userId,
-                batchId: batch.id,
-                name: 'arch-photo-aaa.jpg',
-                size: COLD_SIZE,
-                status: 'available',
-                createdAt: daysAgo(COLD_DAYS),
-                updatedAt: daysAgo(COLD_DAYS),
-            });
+            const cold = (name: string, days: number) =>
+                insertFile(db, {
+                    userId,
+                    batchId: batch.id,
+                    name,
+                    size: COLD_SIZE,
+                    status: 'available',
+                    createdAt: daysAgo(days),
+                    updatedAt: daysAgo(days),
+                });
+            const archivedB = await cold('arch-video-bbb.mp4', COLD_DAYS + 1);
+            const archivedA = await cold('arch-photo-aaa.jpg', COLD_DAYS);
+            const archivedC = await cold('arch-scan-ccc.tif', COLD_DAYS + 2);
             // One ungrouped warm file with a ready retrieval (#257 fast path):
             // renders "available" with a download window, exactly like a
-            // restored Deep Archive copy would (#259). Sorts last by name.
+            // restored Deep Archive copy would (#259).
             const readyDoc = await insertFile(db, {
                 userId,
                 name: 'ready-doc-ccc.pdf',
@@ -110,9 +119,6 @@ const test = base.extend<
             // One ungrouped warm file with no retrieval: archived with
             // Retrieve only (#256), and the all-warm estimate case. Under the
             // 128KB floor, so it stays warm despite being the oldest row.
-            // `plain-doc-…` sorts first in the Ungrouped group (#404), so
-            // it's the third row overall — the shift-click range test ends
-            // on it.
             const standardDoc = await insertFile(db, {
                 userId,
                 name: 'plain-doc-ddd.txt',
@@ -122,7 +128,14 @@ const test = base.extend<
                 updatedAt: daysAgo(COLD_DAYS + 2),
             });
 
-            await use({ batch, archivedA, archivedB, readyDoc, standardDoc });
+            await use({
+                batch,
+                archivedA,
+                archivedB,
+                archivedC,
+                readyDoc,
+                standardDoc,
+            });
 
             // Tear the library down before the dedicated user is deleted.
             await deleteUserData(db, userId);
@@ -158,156 +171,162 @@ test.describe('with a seeded library', () => {
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
             await expect(
-                fileName(page, seededLibrary.archivedA.name)
+                batchCard(page, seededLibrary.batch.name)
             ).toBeVisible();
 
-            await expect(page.getByText('4 files')).toBeVisible();
-            // The ready-retrieval file counts as available (#259); files
-            // without one count as archived regardless of tier (#256).
-            await expect(page.getByText('3 archived')).toBeVisible();
-            await expect(page.getByText('1 ready to download')).toBeVisible();
+            await expect(page.getByText('5 files in 2 batches')).toBeVisible();
+            // The ready-retrieval file counts as ready (#259); files without
+            // one count as archived regardless of tier (#256).
+            await expect(page.getByText('4 archived')).toBeVisible();
+            // Visible: the Ungrouped card's phone-sized pill says "1 ready"
+            // too, hidden at this width.
+            await expect(
+                page
+                    .getByText('1 ready', { exact: true })
+                    .filter({ visible: true })
+            ).toBeVisible();
         }
     );
 
     test(
-        'deep-link ?file={id} highlights the target file',
+        'deep-link ?file={id} opens the batch on the target file',
         { tag: ['@uc:files-deep-link-focus'] },
         async ({ page, seededLibrary }) => {
-            // The retrieval-ready email lands here; the target row should be
-            // in view and visibly highlighted.
+            // The retrieval-ready email lands here: the file's batch opens,
+            // and the file with it.
             await page.goto(`${PAGE_URL}?file=${seededLibrary.archivedB.id}`);
 
-            const row = page.getByRole('row', {
+            const viewer = page.getByRole('dialog', {
                 name: seededLibrary.archivedB.name,
             });
-            await expect(row).toBeInViewport();
-            // The highlight tint is seeded from the query param at first paint
-            // and clears on a timer, so assert it before it fades.
-            await expect(row).toHaveClass(/bg-primary\/10/);
+            await expect(viewer).toBeVisible();
+            // In the header and the details panel alike.
+            await expect(viewer.getByText('3 of 3').first()).toBeVisible();
+
+            // Closing leaves the batch open behind it, the file in view.
+            await page.keyboard.press('Escape');
+            await expect(viewer).toBeHidden();
+            await expectBatchOpen(page, seededLibrary.batch.name);
+            await expect(
+                fileItem(page, seededLibrary.archivedB.name)
+            ).toBeInViewport();
+            await expect(page).toHaveURL(
+                new RegExp(`batch=${seededLibrary.batch.id}`)
+            );
         }
     );
 
     test(
-        'search filters files and shows the no-match state',
+        'search matches batch and file names, and shows the no-match state',
         { tag: ['@uc:files-search'] },
         async ({ page, seededLibrary }) => {
+            const shootCard = batchCard(page, seededLibrary.batch.name);
+            const ungroupedCard = batchCard(page, UNGROUPED);
             await page.goto(PAGE_URL);
-            await expect(
-                fileName(page, seededLibrary.archivedA.name)
-            ).toBeVisible();
+            await expect(shootCard).toBeVisible();
 
-            const search = page.getByPlaceholder('Search files...');
+            // A file-name match: its batch shows, with how many files match,
+            // and opens on only those.
+            const search = page.getByPlaceholder('Search files and batches');
             await search.fill('aaa');
-
+            await expect(ungroupedCard).toBeHidden();
             await expect(
-                fileName(page, seededLibrary.archivedA.name)
+                shootCard.getByText(/1 of 3 files match/)
+            ).toBeVisible();
+            await openBatch(page, seededLibrary.batch.name);
+            await expect(
+                fileItem(page, seededLibrary.archivedA.name)
             ).toBeVisible();
             await expect(
-                fileName(page, seededLibrary.archivedB.name)
+                fileItem(page, seededLibrary.archivedB.name)
             ).toBeHidden();
-            await expect(
-                fileName(page, seededLibrary.readyDoc.name)
-            ).toBeHidden();
+            await expect(page.getByText('1 matching file')).toBeVisible();
+            await backToLibrary(page);
+
+            // A batch-name match shows the batch whole.
+            await search.fill('Browser Batch');
+            await expect(ungroupedCard).toBeHidden();
+            await expect(shootCard.getByText(/^3 files ·/)).toBeVisible();
 
             await search.fill('zzz-no-such-file');
-            await expect(page.getByText(/No files match/)).toBeVisible();
+            await expect(
+                page.getByText(/No batches or files match/)
+            ).toBeVisible();
 
             await search.clear();
-            await expect(
-                fileName(page, seededLibrary.archivedB.name)
-            ).toBeVisible();
+            await expect(ungroupedCard).toBeVisible();
+            await expect(shootCard).toBeVisible();
         }
     );
 
     test(
-        'view toggles between list and grid',
+        'view toggles between grid and list',
         { tag: ['@uc:files-view-toggle'] },
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
-            await expect(page.locator('table')).toBeVisible();
+            await openBatch(page, seededLibrary.batch.name);
 
-            await page.getByRole('button', { name: 'Grid view' }).click();
-            await expect(page.locator('table')).toHaveCount(0);
-            await expect(
-                fileName(page, seededLibrary.archivedA.name)
-            ).toBeVisible();
+            const list = page.getByRole('button', { name: 'List view' });
+            const grid = page.getByRole('button', { name: 'Grid view' });
+            // Grid by default: a tile, so no status label on the file.
+            await expect(grid).toHaveAttribute('aria-pressed', 'true');
+            const item = fileItem(page, seededLibrary.archivedA.name);
+            await expect(item.getByText('Archived')).toHaveCount(0);
 
-            await page.getByRole('button', { name: 'List view' }).click();
-            await expect(page.locator('table')).toBeVisible();
+            await list.click();
+            await expect(list).toHaveAttribute('aria-pressed', 'true');
+            await expect(item.getByText('Archived')).toBeVisible();
+
+            await grid.click();
+            await expect(item.getByText('Archived')).toHaveCount(0);
         }
     );
 
     test(
-        'batch group collapses and re-expands',
-        { tag: ['@uc:files-batch-expand-collapse'] },
-        async ({ page, seededLibrary }) => {
-            await page.goto(PAGE_URL);
-            await expect(
-                fileName(page, seededLibrary.archivedA.name)
-            ).toBeVisible();
-
-            const batchToggle = page.getByRole('button', {
-                name: new RegExp(seededLibrary.batch.name),
-            });
-            await expect(batchToggle).toHaveAttribute('aria-expanded', 'true');
-
-            await batchToggle.click();
-            await expect(
-                fileName(page, seededLibrary.archivedA.name)
-            ).toBeHidden();
-            await expect(
-                fileName(page, seededLibrary.readyDoc.name)
-            ).toBeVisible(); // other group untouched
-
-            await batchToggle.click();
-            await expect(
-                fileName(page, seededLibrary.archivedA.name)
-            ).toBeVisible();
-        }
-    );
-
-    test(
-        'select-all selects every visible file',
+        'select-all selects the whole batch and restores it by batch id',
         { tag: ['@uc:files-select-all'] },
         async ({ page, seededLibrary }) => {
+            const calls = await interceptTrpcCalls(
+                page,
+                'files.requestBatchRetrieval'
+            );
             await page.goto(PAGE_URL);
-            await expect(
-                fileName(page, seededLibrary.archivedA.name)
-            ).toBeVisible();
+            await openBatch(page, seededLibrary.batch.name);
 
-            await page.getByRole('checkbox', { name: 'Select all' }).click();
-            await expect(page.getByText('4 selected')).toBeVisible();
+            await page.getByRole('checkbox', { name: 'Select all 3' }).click();
+            await expect(page.getByText('All 3 selected')).toBeVisible();
 
-            await page.getByRole('button', { name: 'Clear selection' }).click();
-            await expect(page.getByText('4 selected')).toBeHidden();
+            await page.getByRole('button', { name: 'Retrieve' }).click();
+            const dialog = page.getByRole('alertdialog');
+            await expect(dialog.getByText('Retrieve 3 files?')).toBeVisible();
+            await dialog.getByRole('button', { name: 'Retrieve' }).click();
+
+            // The batch, by id: not the file ids the browser loaded.
+            await expect.poll(() => calls.length).toBe(1);
+            expect(calls[0]).toContain(seededLibrary.batch.id);
+            expect(calls[0]).not.toContain('fileIds');
         }
     );
 
     test(
-        'multi-select via icon checkboxes and shift-click range',
+        'multi-select via checkboxes and a shift-click range',
         { tag: ['@uc:files-multi-select'] },
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
-            await expect(
-                fileName(page, seededLibrary.archivedA.name)
-            ).toBeVisible();
+            await openBatch(page, seededLibrary.batch.name);
 
-            // Click the first file's icon-checkbox, then shift-click the third
-            // row (first of the Ungrouped group) → the range spans both groups
-            // and stops short of the fourth row.
-            await page
-                .getByRole('button', {
-                    name: `Select ${seededLibrary.archivedA.name}`,
-                })
-                .click();
+            // First file, then a shift-click on the last: the middle one
+            // (arch-scan-ccc) joins only through the range.
+            await toggleFile(page, seededLibrary.archivedA.name);
             await expect(page.getByText('1 selected')).toBeVisible();
 
-            await page
-                .locator('tr', { hasText: seededLibrary.standardDoc.name })
-                .click({ modifiers: ['Shift'] });
+            await toggleFile(page, seededLibrary.archivedB.name, {
+                modifiers: ['Shift'],
+            });
             await expect(page.getByText('3 selected')).toBeVisible();
 
             await page.getByRole('button', { name: 'Clear selection' }).click();
+            await expect(page.getByText('3 selected')).toBeHidden();
         }
     );
 
@@ -326,33 +345,27 @@ test.describe('with a seeded library', () => {
             );
 
             await page.goto(PAGE_URL);
-            await expect(
-                fileName(page, seededLibrary.archivedA.name)
-            ).toBeVisible();
+            await openBatch(page, seededLibrary.batch.name);
 
             // Archived files selected → Retrieve opens the estimate dialog.
-            await page
-                .getByRole('button', {
-                    name: `Select ${seededLibrary.archivedA.name}`,
-                })
-                .click();
-            await page
-                .getByRole('button', {
-                    name: `Select ${seededLibrary.archivedB.name}`,
-                })
-                .click();
+            await toggleFile(page, seededLibrary.archivedA.name);
+            await toggleFile(page, seededLibrary.archivedB.name);
             await page.getByRole('button', { name: 'Retrieve' }).click();
 
             // Both selected files read as cold → slow estimate.
             const dialog = page.getByRole('alertdialog');
             await expect(dialog.getByText('Retrieve 2 files?')).toBeVisible();
             await expect(
-                dialog.getByText('Ready in up to 12 hours')
+                dialog.getByText('Ready in up to 48 hours')
             ).toBeVisible();
             await dialog.getByRole('button', { name: 'Retrieve' }).click();
 
+            // The files picked, by id, and not the one left out.
             await expect.poll(() => calls.length).toBe(1);
             expect(calls[0]).toContain('fileIds');
+            expect(calls[0]).toContain(seededLibrary.archivedA.id);
+            expect(calls[0]).toContain(seededLibrary.archivedB.id);
+            expect(calls[0]).not.toContain(seededLibrary.archivedC.id);
         }
     );
 
@@ -366,9 +379,7 @@ test.describe('with a seeded library', () => {
             );
 
             await page.goto(PAGE_URL);
-            await expect(
-                fileName(page, seededLibrary.archivedB.name)
-            ).toBeVisible();
+            await openBatch(page, seededLibrary.batch.name);
 
             await openRowMenu(page, seededLibrary.archivedB.name);
             await page
@@ -379,12 +390,12 @@ test.describe('with a seeded library', () => {
             const dialog = page.getByRole('alertdialog');
             await expect(dialog.getByText('Retrieve 1 file?')).toBeVisible();
             await expect(
-                dialog.getByText('Ready in up to 12 hours')
+                dialog.getByText('Ready in up to 48 hours')
             ).toBeVisible();
             await dialog.getByRole('button', { name: 'Retrieve' }).click();
 
             await expect.poll(() => calls.length).toBe(1);
-            expect(calls[0]).toContain('fileId');
+            expect(calls[0]).toContain(seededLibrary.archivedB.id);
         }
     );
 
@@ -398,21 +409,19 @@ test.describe('with a seeded library', () => {
             );
 
             await page.goto(PAGE_URL);
-            await expect(
-                fileName(page, seededLibrary.archivedA.name)
-            ).toBeVisible();
-            await expect(
-                page.getByRole('button', { name: /Restore batch/i })
-            ).toBeVisible();
-
+            await openBatch(page, seededLibrary.batch.name);
             await page.getByRole('button', { name: /Restore batch/i }).click();
 
+            // The estimate comes from the server's count of cold files.
             const dialog = page.getByRole('alertdialog');
-            await expect(dialog.getByText('Retrieve 2 files?')).toBeVisible();
+            await expect(dialog.getByText('Retrieve 3 files?')).toBeVisible();
+            await expect(
+                dialog.getByText('Ready in up to 48 hours')
+            ).toBeVisible();
             await dialog.getByRole('button', { name: 'Retrieve' }).click();
 
             await expect.poll(() => calls.length).toBe(1);
-            expect(calls[0]).toContain('batchId');
+            expect(calls[0]).toContain(seededLibrary.batch.id);
         }
     );
 
@@ -421,24 +430,26 @@ test.describe('with a seeded library', () => {
         { tag: ['@uc:files-ready-download-window'] },
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
-            await expect(
-                fileName(page, seededLibrary.readyDoc.name)
-            ).toBeVisible();
+            await openBatch(page, UNGROUPED);
+            await page.getByRole('button', { name: 'List view' }).click();
 
             // The synthetic 7-day window (#257) renders exactly like a real
-            // restore's: status "Ready to download" plus the expiry date.
-            const row = page.locator('tr', {
-                hasText: seededLibrary.readyDoc.name,
+            // restore's: "Ready to download" on the row, the expiry in the
+            // viewer.
+            const item = fileItem(page, seededLibrary.readyDoc.name);
+            await expect(item.getByText('Ready to download')).toBeVisible();
+            await item
+                .getByRole('button', { name: seededLibrary.readyDoc.name })
+                .click();
+            const viewer = page.getByRole('dialog', {
+                name: seededLibrary.readyDoc.name,
             });
-            await expect(row.getByText('Ready to download')).toBeVisible();
-            await expect(row.getByText(/until /)).toBeVisible();
+            await expect(viewer.getByText(/^Until /)).toBeVisible();
+            await page.keyboard.press('Escape');
+            await expect(viewer).toBeHidden();
 
             // Already downloadable → doesn't count toward bulk Retrieve.
-            await page
-                .getByRole('button', {
-                    name: `Select ${seededLibrary.readyDoc.name}`,
-                })
-                .click();
+            await toggleFile(page, seededLibrary.readyDoc.name);
             await expect(
                 page.getByRole('button', { name: 'Retrieve' })
             ).toBeDisabled();
@@ -466,16 +477,13 @@ test.describe('with a seeded library', () => {
         },
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
-            await expect(
-                fileName(page, seededLibrary.standardDoc.name)
-            ).toBeVisible();
+            await openBatch(page, UNGROUPED);
+            await page.getByRole('button', { name: 'List view' }).click();
 
             // No retrieval yet → archived with Retrieve only, no Download,
             // same as the colder tiers (#256).
-            const row = page.locator('tr', {
-                hasText: seededLibrary.standardDoc.name,
-            });
-            await expect(row.getByText('archived')).toBeVisible();
+            const item = fileItem(page, seededLibrary.standardDoc.name);
+            await expect(item.getByText('Archived')).toBeVisible();
             await openRowMenu(page, seededLibrary.standardDoc.name);
             await expect(
                 page.getByRole('menuitem', { name: 'Request retrieval' })
@@ -485,12 +493,8 @@ test.describe('with a seeded library', () => {
             ).toHaveCount(0);
             await page.keyboard.press('Escape');
 
-            // All-standard selection → fast estimate.
-            await page
-                .getByRole('button', {
-                    name: `Select ${seededLibrary.standardDoc.name}`,
-                })
-                .click();
+            // All-warm selection → fast estimate.
+            await toggleFile(page, seededLibrary.standardDoc.name);
             await page.getByRole('button', { name: 'Retrieve' }).click();
             const dialog = page.getByRole('alertdialog');
             await expect(dialog.getByText('Ready in ~minutes')).toBeVisible();
@@ -503,36 +507,41 @@ test.describe('with a seeded library', () => {
         { tag: ['@uc:files-bulk-delete'] },
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
-            await expect(
-                fileName(page, seededLibrary.archivedA.name)
-            ).toBeVisible();
+            await openBatch(page, seededLibrary.batch.name);
 
-            await page
-                .getByRole('button', {
-                    name: `Select ${seededLibrary.archivedA.name}`,
-                })
-                .click();
-            await page
-                .getByRole('button', {
-                    name: `Select ${seededLibrary.archivedB.name}`,
-                })
-                .click();
+            await toggleFile(page, seededLibrary.archivedA.name);
+            await toggleFile(page, seededLibrary.archivedB.name);
             await confirmBulkDelete(page, 2);
 
             await expect(
-                fileName(page, seededLibrary.archivedA.name)
-            ).toBeHidden({
-                timeout: 10_000,
-            });
+                fileItem(page, seededLibrary.archivedA.name)
+            ).toBeHidden({ timeout: 10_000 });
             await expect(
-                fileName(page, seededLibrary.archivedB.name)
+                fileItem(page, seededLibrary.archivedB.name)
             ).toBeHidden();
             await expect(
-                fileName(page, seededLibrary.readyDoc.name)
+                fileItem(page, seededLibrary.archivedC.name)
             ).toBeVisible();
-            await expect(
-                fileName(page, seededLibrary.standardDoc.name)
-            ).toBeVisible();
+        }
+    );
+
+    test(
+        'deleting a batch from its menu removes all of it, after confirming its file count',
+        { tag: ['@uc:files-batch-delete'] },
+        async ({ page, seededLibrary }) => {
+            await page.goto(PAGE_URL);
+            await openBatch(page, seededLibrary.batch.name);
+
+            // One file left after the bulk delete above.
+            await confirmBatchDelete(page, 1);
+
+            // Back to the library, where only the legacy files are left.
+            await expect(batchCard(page, seededLibrary.batch.name)).toBeHidden({
+                timeout: 10_000,
+            });
+            await expect(batchCard(page, UNGROUPED)).toBeVisible();
+            await expect(page.getByText('2 files in 1 batch')).toBeVisible();
+            await expect(fileName(page, 'Browser Batch')).toBeHidden();
         }
     );
 });

@@ -15,9 +15,9 @@ const features = [
     },
     {
         icon: Clock,
-        title: 'Retrieval within 12 hours',
+        title: 'Retrieval within 48 hours',
         description:
-            'Request files anytime. Archived files are ready within 12 hours; recent uploads in minutes.',
+            'Request files anytime. Archived files are ready within 48 hours; recent uploads in minutes.',
     },
     {
         icon: Download,

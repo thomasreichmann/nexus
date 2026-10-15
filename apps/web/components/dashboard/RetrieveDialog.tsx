@@ -10,6 +10,7 @@ import {
     AlertDialogPopup,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { countLabel } from '@/lib/format';
 import { DEFAULT_RESTORE_DAYS_TO_KEEP } from '@/lib/storage/types';
 
 export interface RetrievalEstimate {
@@ -43,41 +44,64 @@ export interface RetrievableFile {
 export function getRetrievalEstimate(
     files: RetrievableFile[]
 ): RetrievalEstimate {
-    const isAllWarm = files.length > 0 && !files.some((f) => isProbablyCold(f));
-    return isAllWarm
-        ? { speed: 'fast', label: 'Ready in ~minutes' }
-        : { speed: 'slow', label: 'Ready in up to 12 hours' };
+    return getRetrievalEstimateFromCounts(
+        files.length,
+        files.filter((f) => isProbablyCold(f)).length
+    );
 }
 
-interface RetrieveDialogProps {
+/**
+ * The same estimate for files the browser never loaded — a whole batch,
+ * restored by id (#455) — from the server's count of the ones probably cold,
+ * which applies `isProbablyCold`'s rule in SQL.
+ */
+export function getRetrievalEstimateFromCounts(
+    fileCount: number,
+    probablyColdCount: number
+): RetrievalEstimate {
+    const isAllWarm = fileCount > 0 && probablyColdCount === 0;
+    return isAllWarm
+        ? { speed: 'fast', label: 'Ready in ~minutes' }
+        : { speed: 'slow', label: 'Ready in up to 48 hours' };
+}
+
+type RetrieveDialogProps = {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    /** The files being retrieved; the estimate is derived from these. */
-    files: RetrievableFile[];
     fileCount: number;
     onConfirm: () => void;
-}
+} & (
+    | {
+          /** The files being retrieved; the estimate is derived from these. */
+          files: RetrievableFile[];
+      }
+    | {
+          /** For files not loaded: how many of `fileCount` are probably cold. */
+          probablyColdCount: number;
+      }
+);
 
 /**
  * Confirmation dialog for every retrieve trigger (bulk selection, batch
  * header, single file). Controlled by the caller so it can also be opened
  * from inside a dropdown menu, which unmounts its items on close.
  */
-export function RetrieveDialog({
-    open,
-    onOpenChange,
-    files,
-    fileCount,
-    onConfirm,
-}: RetrieveDialogProps) {
-    const estimate = getRetrievalEstimate(files);
+export function RetrieveDialog(props: RetrieveDialogProps) {
+    const { open, onOpenChange, fileCount, onConfirm } = props;
+    const estimate =
+        'files' in props
+            ? getRetrievalEstimate(props.files)
+            : getRetrievalEstimateFromCounts(
+                  fileCount,
+                  props.probablyColdCount
+              );
     const EstimateIcon = estimate.speed === 'fast' ? Zap : Clock;
 
     return (
         <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogPopup>
                 <AlertDialogTitle>
-                    Retrieve {fileCount} file{fileCount !== 1 ? 's' : ''}?
+                    Retrieve {countLabel(fileCount, 'file')}?
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                     Files are copied out of deep storage into a temporary

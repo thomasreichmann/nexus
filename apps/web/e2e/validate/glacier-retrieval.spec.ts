@@ -43,8 +43,7 @@ import { originalKey } from '@nexus/db/repo/files';
 import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
 import { test, expect } from '../fixtures';
 import { createTestS3, getStorageClass, type TestS3 } from '../helpers/s3';
-import { openRowMenu } from '../helpers/fileBrowser';
-import { fileName } from '../helpers/table';
+import { fileItem, openBatch, openRowMenu } from '../helpers/fileBrowser';
 import type { Connection, File } from '@nexus/db/test-db';
 
 test.describe.configure({ mode: 'serial' });
@@ -164,8 +163,12 @@ test.describe('glacier retrieval against real S3', () => {
             expect(await getStorageClass(s3, file.s3Key)).toBe('DEEP_ARCHIVE');
             expect(await getRestoreHeader(file.s3Key)).toBe('');
 
+            // The seeded file has no batch: it opens as Ungrouped. The list
+            // view, so the file's status reads as text.
             await page.goto('/dashboard/files');
-            await expect(fileName(page, file.name)).toBeVisible();
+            await openBatch(page, 'Ungrouped');
+            await page.getByRole('button', { name: 'List view' }).click();
+            await expect(fileItem(page, file.name)).toBeVisible();
 
             await openRowMenu(page, file.name);
             await page
@@ -212,8 +215,7 @@ test.describe('glacier retrieval against real S3', () => {
 
             // And the list reflects it after the mutation's invalidation.
             await expect(
-                page
-                    .locator('tr', { hasText: file.name })
+                fileItem(page, file.name)
                     .getByText(/Retrieving/i)
                     .first()
             ).toBeVisible();

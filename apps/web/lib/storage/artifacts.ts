@@ -2,6 +2,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '@/lib/env';
 import { client } from './client';
+import { getArtifactsDistribution, signGet } from './cloudfront';
 import { contentDisposition } from './presigned';
 import type { GetPresignOptions } from './types';
 
@@ -30,14 +31,25 @@ export async function get(
             'S3_RETRIEVAL_ARTIFACTS_BUCKET is not set — gate calls with artifacts.isConfigured()'
         );
     }
+    // Without a filename the browser saves the object key's UUID path; the
+    // reader wants "nexus-part-1.zip".
+    const disposition = contentDisposition(options?.filename);
+    const expiresIn = options?.expiresIn ?? 3600;
+
+    // Through CloudFront when its distribution is configured (#345), like
+    // `presigned.get` for single files.
+    const distribution = getArtifactsDistribution();
+    if (distribution) {
+        return signGet(distribution, key, {
+            expiresIn,
+            contentDisposition: disposition,
+        });
+    }
+
     const command = new GetObjectCommand({
         Bucket: env.S3_RETRIEVAL_ARTIFACTS_BUCKET,
         Key: key,
-        // Without a filename the browser saves the object key's UUID path; the
-        // reader wants "nexus-part-1.zip".
-        ResponseContentDisposition: contentDisposition(options?.filename),
+        ResponseContentDisposition: disposition,
     });
-    return getSignedUrl(client, command, {
-        expiresIn: options?.expiresIn ?? 3600,
-    });
+    return getSignedUrl(client, command, { expiresIn });
 }

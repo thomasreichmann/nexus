@@ -2,7 +2,8 @@
 
 Provisions one full Nexus AWS environment (S3 files bucket, SQS jobs queues,
 worker Lambda, the EventBridge retrieval-poll schedule, app IAM user,
-ops-alerts topic + webhook subscription + DLQ-depth alarms), parameterized by
+ops-alerts topic + webhook subscription + DLQ-depth alarms, the CloudFront
+download distributions), parameterized by
 `environment` and `region`. **Both environments are managed here and this is the source of
 truth**: prod since #53, dev since #127 (the hand-built dev resources were
 decommissioned and recreated from these files, which closed the main drift
@@ -123,14 +124,23 @@ production code.
    Actions secrets `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`S3_BUCKET`/
    `SQS_QUEUE_URL`, which are dev-scoped):
 
-    | Var                                           | Source                            |
-    | --------------------------------------------- | --------------------------------- |
-    | `S3_BUCKET`                                   | `s3_bucket` output                |
-    | `S3_DERIVED_BUCKET`                           | `s3_derived_bucket` output        |
-    | `AWS_REGION`                                  | `aws_region` output               |
-    | `SQS_QUEUE_URL`                               | `sqs_queue_url` output            |
-    | `SNS_OPS_ALERTS_TOPIC_ARN`                    | `sns_ops_alerts_topic_arn` output |
-    | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1            |
+    | Var                                           | Source                                            |
+    | --------------------------------------------- | ------------------------------------------------- |
+    | `S3_BUCKET`                                   | `s3_bucket` output                                |
+    | `S3_DERIVED_BUCKET`                           | `s3_derived_bucket` output                        |
+    | `AWS_REGION`                                  | `aws_region` output                               |
+    | `SQS_QUEUE_URL`                               | `sqs_queue_url` output                            |
+    | `SNS_OPS_ALERTS_TOPIC_ARN`                    | `sns_ops_alerts_topic_arn` output                 |
+    | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1                            |
+    | `CLOUDFRONT_FILES_DOMAIN`                     | `cloudfront_files_domain` output                  |
+    | `CLOUDFRONT_ARTIFACTS_DOMAIN`                 | `cloudfront_artifacts_domain` output              |
+    | `CLOUDFRONT_KEY_PAIR_ID`                      | `cloudfront_key_pair_id` output                   |
+    | `CLOUDFRONT_PRIVATE_KEY`                      | [CloudFront signing key](#cloudfront-signing-key) |
+
+    The four `CLOUDFRONT_*` vars go on all three Vercel tiers at once, or
+    `check:vercel-env-parity` flags the gap. Production gets the prod
+    distributions and key; Preview and Development get dev's. Until they are
+    set, downloads stay S3 presigned GETs (#345).
 
     `SNS_OPS_ALERTS_TOPIC_ARN` is not optional in practice: the alarm webhook
     rejects every message with a 503 on a deployed tier while it is unset
@@ -157,6 +167,39 @@ production code.
 
     Budget notifications (`budgets.tf`) go to the same address directly, not
     through SNS, so they need no confirmation step.
+
+## CloudFront signing key
+
+The download distributions (`cloudfront.tf`, #345) only serve URLs signed by
+one RSA key pair per environment. The public half is
+`cloudfront_public_key_pem` in that environment's tfvars. The private half never
+enters Terraform state, the same rule as the IAM access keys. It was generated
+once per environment with:
+
+```bash
+mkdir -p ~/.config/nexus/cloudfront && chmod 700 ~/.config/nexus/cloudfront
+cd ~/.config/nexus/cloudfront
+(umask 077; openssl genrsa -out <env>-private.pem 2048)
+openssl rsa -in <env>-private.pem -pubout -out <env>-public.pem
+```
+
+The private key goes to:
+
+- **`CLOUDFRONT_PRIVATE_KEY` on Vercel.** prod's on Production, dev's on Preview
+  and Development.
+- **The GitHub Actions secret `CLOUDFRONT_PRIVATE_KEY`.** dev's, for
+  `cloudfront.integration.test.ts`. The domains and key pair ID are inlined in
+  `ci.yml`, since none of them is secret.
+- **`apps/web/.env.local`.** dev's, as a single line with `\n` escapes if
+  needed.
+
+**Rotating** is one apply. Generate a new pair, put its public half in the
+tfvars, and apply. The apply creates the new key, swaps it into the key group,
+then deletes the old one (`create_before_destroy`). The key pair ID changes with
+it, so the app's links fail from that moment until `CLOUDFRONT_KEY_PAIR_ID`,
+`CLOUDFRONT_PRIVATE_KEY` and ci.yml's inlined ID carry the new values. Update
+them right after the apply. The config holds one key at a time, so there is no
+overlap window.
 
 ## Destroy
 

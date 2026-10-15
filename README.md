@@ -69,7 +69,7 @@ stateDiagram-v2
     in_progress --> failed: AWS error
 ```
 
-A download URL is only ever issued once S3 says the bytes are readable — the check is a `HeadObject` at request time, not a database column. The `ready` transition is made by a scheduled worker run that HEADs the objects behind its own pending retrievals, so the work is bounded by that set rather than by S3's event rate. Retrieval speed is a tier the user picks: expedited (minutes), standard (3–5 hours), or bulk (cheapest, up to ~12 hours).
+A download URL is only ever issued once S3 says the bytes are readable — the check is a `HeadObject` at request time, not a database column. The `ready` transition is made by a scheduled worker run that HEADs the objects behind its own pending retrievals, so the work is bounded by that set rather than by S3's event rate. Every restore runs at S3's Bulk tier, Deep Archive's cheapest, which AWS says typically finishes within 48 hours. Files that haven't transitioned to Deep Archive yet skip the restore and are ready in minutes.
 
 ## Engineering highlights
 

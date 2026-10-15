@@ -4,7 +4,10 @@ import {
 } from '@nexus/db/objectState';
 import { hoursAgo } from '@nexus/db/seed';
 import { describe, expect, it } from 'vitest';
-import { getRetrievalEstimate } from './RetrieveDialog';
+import {
+    getRetrievalEstimate,
+    getRetrievalEstimateFromCounts,
+} from './RetrieveDialog';
 
 // The dialog itself is presentational and covered by the files-browser e2e
 // flows (@uc:files-retrieve-dialog-estimate); only the estimate logic is
@@ -41,11 +44,27 @@ describe('getRetrievalEstimate', () => {
     it('is slow for an all-cold batch', () => {
         expect(getRetrievalEstimate([cold, cold])).toEqual({
             speed: 'slow',
-            label: 'Ready in up to 12 hours',
+            label: 'Ready in up to 48 hours',
         });
     });
 
     it('is conservatively slow for an empty selection', () => {
         expect(getRetrievalEstimate([]).speed).toBe('slow');
+    });
+});
+
+// A whole batch restored by id (#455): the server counts the cold files, so
+// only the verdict over the counts is left to the browser.
+describe('getRetrievalEstimateFromCounts', () => {
+    it('is fast when none of the files is expected to be cold', () => {
+        expect(getRetrievalEstimateFromCounts(120, 0).speed).toBe('fast');
+    });
+
+    it('is slow when even one is', () => {
+        expect(getRetrievalEstimateFromCounts(120, 1).speed).toBe('slow');
+    });
+
+    it('is conservatively slow for no files', () => {
+        expect(getRetrievalEstimateFromCounts(0, 0).speed).toBe('slow');
     });
 });

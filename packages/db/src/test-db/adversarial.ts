@@ -11,7 +11,8 @@
  * separator-free runs give CSS no break opportunity), unicode/emoji/CJK
  * names, enough rows to scroll, zero-byte / no-extension / multi-TB sizes,
  * every file status (including one soft-deleted row that
- * must NOT render), null mimeType, duplicate names across batches, and
+ * must NOT render), null mimeType, duplicate names across batches, camera
+ * folders (#405) with same-named siblings and an unbreakable folder name, and
  * retrievals in each active state.
  *
  * Data shape follows tooling/capture's photographer demo seed
@@ -36,6 +37,8 @@ interface AdversarialFile {
     mime: string | null;
     size: number;
     status?: 'uploading' | 'available' | 'restoring' | 'deleted';
+    /** The folder it was uploaded from, within its batch (#405). */
+    subpath?: string;
 }
 
 interface AdversarialBatch {
@@ -49,6 +52,11 @@ interface AdversarialBatch {
 const LONG_UNBREAKABLE_NAME =
     'Wedding_Marquez_2026_Ceremony_Processional_Cathedral_Wide_Angle_Master_0847_final_retouched_v3_full_resolution_export_KEEP.jpg';
 
+// The same class of name for a folder row (#405): a card dumped under its
+// camera's whole path, with no break opportunity in it.
+const LONG_UNBREAKABLE_FOLDER =
+    'Cerimonia_Catedral_da_Se_Sao_Paulo_2026_06_13_Camera_Principal_Canon_R5_Cartao_01_DCIM/104CANON';
+
 const BATCHES: AdversarialBatch[] = [
     {
         // Newest batch: its files top every newest-first list, so the
@@ -60,12 +68,28 @@ const BATCHES: AdversarialBatch[] = [
                 name: LONG_UNBREAKABLE_NAME,
                 mime: 'image/jpeg',
                 size: 48 * MB,
+                subpath: LONG_UNBREAKABLE_FOLDER,
             },
             {
                 // Separator-free run — not even an underscore to hint at.
                 name: 'IMG20260613140000BURST000123456789COVERTOPENHANCEDSTABILIZED.CR2',
                 mime: 'image/x-canon-cr2',
                 size: 41 * MB,
+                subpath: '105CANON',
+            },
+            // Two cards of one camera, each starting at IMG_0001: two
+            // different photos with one name, told apart only by folder.
+            {
+                name: 'IMG_0001.JPG',
+                mime: 'image/jpeg',
+                size: 9 * MB,
+                subpath: LONG_UNBREAKABLE_FOLDER,
+            },
+            {
+                name: 'IMG_0001.JPG',
+                mime: 'image/jpeg',
+                size: 8 * MB,
+                subpath: '105CANON',
             },
             {
                 name: 'Ensaio_Pré-Wedding_São_Paulo_—_Fernanda_&_João_Fotos_Selecionadas_Alta_Resolução_0234.NEF',
@@ -232,6 +256,7 @@ export async function seedAdversarialLibrary(
             userId,
             batchId,
             name: f.name,
+            subpath: f.subpath ?? null,
             size,
             mimeType: f.mime,
             status,
