@@ -195,11 +195,19 @@ describe('mapPosition', () => {
         expect(mapPosition(chunk, 1, 1, projectRoot)).toBeNull();
     });
 
-    it('leaves a file outside .next/server/chunks unmapped, even with a map', () => {
-        const file = writeChunk(freshDir('dist'), [inlineBase64()]);
+    // Each path lacks exactly one of the three segments, so each pins one.
+    it.each([
+        ['.next', ['dist', 'server', 'chunks']],
+        ['server', ['.next', 'static', 'chunks']],
+        ['chunks', ['.next', 'server', 'app']],
+    ])(
+        'leaves a file outside a %s directory unmapped, even with a map',
+        (_segment, under) => {
+            const file = writeChunk(freshDir(...under), [inlineBase64()]);
 
-        expect(mapNewError(file)).toBeNull();
-    });
+            expect(mapNewError(file)).toBeNull();
+        }
+    );
 
     it('leaves a chunk without a source map unmapped', () => {
         const chunk = writeChunk(freshDir(), []);
