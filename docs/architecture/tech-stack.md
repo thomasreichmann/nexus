@@ -61,8 +61,8 @@ Technology choices and rationale for the Nexus MVP.
 
 ### Storage: AWS S3
 
-- **S3 Glacier Deep Archive** - default for all files (Glacier-first strategy)
-- Users don't see storage tiers - all files have retrieval time
+- **S3 Glacier** - V1 uploads files directly to standard Glacier, not Deep Archive
+- There is no S3 Standard staging step or lifecycle transition in V1; see [[../decisions/003-glacier-direct-upload-v1|ADR-003]]
 
 ### Payments: Stripe
 
