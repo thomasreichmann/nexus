@@ -50,6 +50,12 @@ const RADII = {
     tile: ['8px', '8px', '8px'],
 };
 
+// The motion study's timings, played at this fraction of their length: at
+// full length an open took over two seconds to settle, which reads as slow
+// on a page you use rather than watch. Every duration and delay below is in
+// the study's terms; springs keep their shape, just faster.
+const TEMPO = 0.6;
+
 const fx = (name: string) => `[data-fx="${name}"]`;
 const LIB_CHROME = fx('lib-chrome');
 const PANE_CHROME = `${fx('pane-chrome')}, ${fx('paging')}, ${fx('folder')}`;
@@ -77,10 +83,10 @@ export function createBatchTransitions(
 ): BatchTransitions {
     const { library: lib, split: sp, fx: layer } = roots;
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
-    const S = readSlowMotion();
+    const S = readSlowMotion() * TEMPO;
     const SP = {
         hero: spring(90, 16),
-        pop: spring(420, 15, 'cubic-bezier(.34,1.56,.64,1)'),
+        pop: spring(600, 22, 'cubic-bezier(.34,1.56,.64,1)'),
     };
     let running: Animation[] = [];
     const held = new Set<HTMLElement>();
@@ -432,8 +438,8 @@ export function createBatchTransitions(
         const bar = $(fx('status-bar'), pane);
         if (bar)
             A(bar, [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], {
-                d: 760,
-                delay: o.tiles + 380,
+                d: 560,
+                delay: o.tiles + 300,
                 e: EASE.emph,
             });
         // A restoring batch can badge every tile on screen; the cascade is
@@ -530,14 +536,34 @@ export function createBatchTransitions(
             })
         );
 
+    // A name's first line, which is what its one-line ghost stands for. On
+    // phone a card's name wraps, and scaling by its whole height would blow
+    // the ghost up to two or three times the title's size.
+    function lineRect(el: HTMLElement): Rect {
+        const r = rel(el);
+        const line = parseFloat(getComputedStyle(el).lineHeight);
+        return Number.isFinite(line) ? { ...r, h: Math.min(r.h, line) } : r;
+    }
+
     // FLIP a text ghost that sits at `to` so it starts visually at `from`.
+    // Its width travels too, in its own unscaled terms, so a long name keeps
+    // its ellipsis where each end truncates it instead of spilling across
+    // the cards beside it.
     function flipText(g: HTMLElement, from: Rect, to: Rect, o: AnimOptions) {
-        g.style.transformOrigin = '0 0';
+        const scale = from.h / to.h;
+        Object.assign(g.style, {
+            display: 'block',
+            transformOrigin: '0 0',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+        });
+        A(g, [{ width: `${from.w / scale}px` }, { width: `${to.w}px` }], o);
         return A(
             g,
             [
                 {
-                    transform: `translate(${from.x - to.x}px, ${from.y - to.y}px) scale(${from.h / to.h})`,
+                    transform: `translate(${from.x - to.x}px, ${from.y - to.y}px) scale(${scale})`,
                 },
                 { transform: 'none' },
             ],
@@ -611,7 +637,7 @@ export function createBatchTransitions(
         const coverPieces = $$(`${fx('cover')} ${fx('piece')}`, card);
         const m = {
             card: rel(card),
-            name: rel($(fx('card-name'), card) ?? card),
+            name: lineRect($(fx('card-name'), card) ?? card),
             pieces: coverPieces.map(rel),
             border: getComputedStyle(card).borderTopColor,
         };
@@ -691,8 +717,6 @@ export function createBatchTransitions(
             unframe(pane);
         });
         const tg = ghost(title, titleR);
-        tg.style.whiteSpace = 'nowrap';
-        tg.style.overflow = 'visible';
         void fin(
             flipText(tg, m.name, titleR, {
                 d: SP.hero.d,
@@ -765,7 +789,7 @@ export function createBatchTransitions(
                         { background: 'rgba(43,127,255,.34)', offset: 0.25 },
                         { background: rowBg },
                     ],
-                    { d: 760, e: EASE.std }
+                    { d: 560, e: EASE.std }
                 );
             });
         } else {
@@ -807,7 +831,7 @@ export function createBatchTransitions(
         const coverPieces = $$(`${fx('cover')} ${fx('piece')}`, card);
         const target = {
             card: rel(card),
-            name: rel($(fx('card-name'), card) ?? card),
+            name: lineRect($(fx('card-name'), card) ?? card),
             pieces: coverPieces.map(rel),
         };
         const openRow = rows.find(
@@ -917,8 +941,6 @@ export function createBatchTransitions(
         hold([title]);
         const nameEl = $(fx('card-name'), card) ?? title;
         const tg = ghost(nameEl, target.name);
-        tg.style.whiteSpace = 'nowrap';
-        tg.style.overflow = 'visible';
         const ta = flipText(tg, titleR, target.name, {
             d: SP.hero.d,
             e: SP.hero.e,
