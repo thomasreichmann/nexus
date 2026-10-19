@@ -44,6 +44,7 @@ vi.mock('@/lib/storage', () => ({
 }));
 
 import { createFileRepo } from '@nexus/db/repo/files';
+import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
 import { NotFoundError } from '@/server/errors';
 import { fileService } from './files';
 
@@ -298,6 +299,51 @@ describe('upload transitions under concurrency (#381)', () => {
             usedBytes: FILE_SIZE,
             fileCount: 1,
         });
+    });
+});
+
+// #408: a shoot is filed by what it was, not by when its upload ran.
+describe('renameBatch', () => {
+    const nameOf = async (db: DB, userId: string, batchId: string) =>
+        (await createUploadBatchRepo(db).findByUserAndId(userId, batchId))
+            ?.name;
+
+    it('renames the batch asked for, and not the owner’s other one', async ({
+        db,
+        user,
+    }) => {
+        const [batch, other] = await Promise.all([
+            insertUploadBatch(db, { userId: user.id, name: 'Upload 1' }),
+            insertUploadBatch(db, { userId: user.id, name: 'Upload 2' }),
+        ]);
+
+        const result = await fileService.renameBatch(
+            db,
+            user.id,
+            batch.id,
+            'Silva wedding'
+        );
+
+        expect(result).toEqual({ batchId: batch.id, name: 'Silva wedding' });
+        expect(await nameOf(db, user.id, batch.id)).toBe('Silva wedding');
+        expect(await nameOf(db, user.id, other.id)).toBe('Upload 2');
+    });
+
+    it('refuses another user’s batch and leaves its name', async ({
+        db,
+        user,
+        createUser,
+    }) => {
+        const stranger = await createUser();
+        const theirs = await insertUploadBatch(db, {
+            userId: stranger.id,
+            name: 'Theirs',
+        });
+
+        await expect(
+            fileService.renameBatch(db, user.id, theirs.id, 'Mine now')
+        ).rejects.toBeInstanceOf(NotFoundError);
+        expect(await nameOf(db, stranger.id, theirs.id)).toBe('Theirs');
     });
 });
 

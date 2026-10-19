@@ -14,6 +14,7 @@ import {
     LayoutList,
     Loader2,
     MoreHorizontal,
+    Pencil,
     RotateCw,
     Trash2,
 } from 'lucide-react';
@@ -46,6 +47,7 @@ import {
 import { cn } from '@/lib/cn';
 import { countLabel, formatBytes, formatCount } from '@/lib/format';
 import { FILE_PAGE_SIZE } from '@/lib/library/paging';
+import type { PaneViewMode } from '@/lib/library/viewMode';
 import { useTRPC } from '@/lib/trpc/client';
 import { toastContext } from '@/lib/trpc/error-link';
 import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
@@ -56,10 +58,11 @@ import {
     restoringPercent,
     type BatchView,
 } from './batchSummary';
+import { RenameBatchDialog } from './RenameBatchDialog';
 import type { BatchSection } from './useBatchFiles';
 import type { LibraryFile } from '@nexus/db/repo/library';
 
-export type PaneViewMode = 'grid' | 'list';
+export type { PaneViewMode };
 
 /**
  * What's selected in the open batch: the whole of it, loaded or not, which
@@ -703,11 +706,21 @@ interface BatchMenuProps {
 }
 
 function BatchMenu({ batch, restore, onDeleted }: BatchMenuProps) {
+    const [isRenameOpen, setIsRenameOpen] = useState(false);
     const [isRetrieveOpen, setIsRetrieveOpen] = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const { isPending: isDeleting, remove } = useBatchDelete(batch, onDeleted);
     return (
         <>
+            {/* The legacy Ungrouped files have no batch row to name. */}
+            {batch.batchId !== null && (
+                <RenameBatchDialog
+                    batchId={batch.batchId}
+                    name={batch.name}
+                    open={isRenameOpen}
+                    onOpenChange={setIsRenameOpen}
+                />
+            )}
             <BatchRetrieveDialog
                 batch={batch}
                 open={isRetrieveOpen}
@@ -735,6 +748,14 @@ function BatchMenu({ batch, restore, onDeleted }: BatchMenuProps) {
                 </DropdownMenuTrigger>
                 <DropdownMenuPositioner align="end">
                     <DropdownMenuContent>
+                        {batch.batchId !== null && (
+                            <DropdownMenuItem
+                                onClick={() => setIsRenameOpen(true)}
+                            >
+                                <Pencil className="mr-2 size-4" />
+                                Rename batch
+                            </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                             onClick={() => setIsRetrieveOpen(true)}
                             disabled={

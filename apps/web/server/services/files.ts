@@ -588,6 +588,26 @@ async function deleteBatch(
     });
 }
 
+interface RenameBatchResult {
+    batchId: string;
+    name: string;
+}
+
+/**
+ * Rename one of the user's batches (#408): the fallback name records when an
+ * upload happened, and a photographer files a shoot by what it was.
+ */
+async function renameBatch(
+    db: DB,
+    userId: string,
+    batchId: string,
+    name: string
+): Promise<RenameBatchResult> {
+    const batch = await createUploadBatchRepo(db).rename(userId, batchId, name);
+    if (!batch) throw new NotFoundError('UploadBatch', batchId);
+    return { batchId: batch.id, name: batch.name };
+}
+
 export const fileService = {
     createBatch,
     initiateUpload,
@@ -600,5 +620,6 @@ export const fileService = {
     abandonUpload,
     deleteUserFile,
     deleteBatch,
+    renameBatch,
     getThumbnailUrls,
 } as const;

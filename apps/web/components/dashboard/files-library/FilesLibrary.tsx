@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { BATCH_PAGE_SIZE } from '@/lib/library/paging';
+import { rememberViewMode } from '@/lib/library/viewMode';
 import { useTRPC } from '@/lib/trpc/client';
 import { getLivePollOptionsWhile } from '@/lib/trpc/polling';
 import { BatchPane, type PaneSelection, type PaneViewMode } from './BatchPane';
@@ -94,7 +95,12 @@ const pollWhileBatchRestores = getLivePollOptionsWhile<LibraryBatch | null>(
  * `?file=<id>` from a retrieval-ready email — so the browser's back button
  * closes a batch like "All batches" does.
  */
-export function FilesLibrary() {
+interface FilesLibraryProps {
+    /** The grid/list choice remembered in this browser (#408). */
+    initialViewMode: PaneViewMode;
+}
+
+export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
     const searchParams = useSearchParams();
@@ -209,7 +215,11 @@ export function FilesLibrary() {
         key: null,
     });
     const [selection, setSelection] = useState<PaneSelection>(NO_SELECTION);
-    const [viewMode, setViewMode] = useState<PaneViewMode>('grid');
+    const [viewMode, setViewMode] = useState(initialViewMode);
+    const changeViewMode = useStableCallback((mode: PaneViewMode) => {
+        setViewMode(mode);
+        rememberViewMode(mode);
+    });
     // The file viewer over the open batch. `?file=` drives it the way
     // `?batch=` drives the batch: a deep link from a retrieval-ready email
     // lands straight on the file.
@@ -790,7 +800,7 @@ export function FilesLibrary() {
                             onLoadPrevious={onLoadPrevious}
                             onRetrySection={onRetrySection}
                             viewMode={viewMode}
-                            onViewModeChange={setViewMode}
+                            onViewModeChange={changeViewMode}
                             onOpenFile={onOpenFile}
                             onBatchDeleted={onBatchDeleted}
                         />

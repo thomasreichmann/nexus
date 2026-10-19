@@ -9,6 +9,7 @@ import {
     toFileIdentityKey,
 } from './parts';
 import {
+    formatSessionBatchName,
     patchRowById,
     patchRowsWhere,
     resolveSubpath,
@@ -210,10 +211,11 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
         );
 
         // One batch per Upload click: every pending file in this pass joins
-        // it, so a multi-file selection lands in a single upload_batches row.
-        // Created fresh per invocation — files queued later get a new batch on
-        // the next click. On failure we proceed without an id and each file
-        // falls back to the server's auto-created single-file batch.
+        // it, so a multi-file selection lands in a single upload_batches row,
+        // named after its folder or else after the click (#408). Created fresh
+        // per invocation — files queued later get a new batch on the next
+        // click. On failure we proceed without an id and each file falls back
+        // to the server's auto-created single-file batch.
         let batchId: string | undefined;
         // Rows that already have a batch (retries, re-added resumables) keep
         // it, so only mint a session batch when some file still needs one —
@@ -222,7 +224,9 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
         const folderName = resolveUnanimousFolderName(rowsNeedingBatch);
         if (rowsNeedingBatch.length > 0) {
             try {
-                ({ batchId } = await api.createBatch({ name: folderName }));
+                ({ batchId } = await api.createBatch({
+                    name: folderName ?? formatSessionBatchName(new Date()),
+                }));
             } catch {
                 batchId = undefined;
             }
