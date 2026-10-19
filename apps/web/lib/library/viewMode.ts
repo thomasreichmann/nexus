@@ -18,6 +18,20 @@ export function parseViewMode(value: string | undefined): PaneViewMode {
     return value === 'list' ? 'list' : 'grid';
 }
 
+/**
+ * The remembered mode as the browser has it now, or null on the server. Back
+ * and Forward restore a page from the router's cache, server props and all,
+ * so the page's own read can be older than the cookie.
+ */
+export function readRememberedViewMode(): PaneViewMode | null {
+    if (typeof document === 'undefined') return null;
+    const cookie = document.cookie
+        .split('; ')
+        .find((entry) => entry.startsWith(`${VIEW_MODE_COOKIE}=`));
+    if (cookie === undefined) return null;
+    return parseViewMode(cookie.slice(VIEW_MODE_COOKIE.length + 1));
+}
+
 export function rememberViewMode(mode: PaneViewMode): void {
     document.cookie = `${VIEW_MODE_COOKIE}=${mode}; path=/dashboard/files; max-age=${ONE_YEAR_SECONDS}; samesite=lax`;
 }

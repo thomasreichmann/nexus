@@ -712,9 +712,11 @@ function BatchMenu({ batch, restore, onDeleted }: BatchMenuProps) {
     const { isPending: isDeleting, remove } = useBatchDelete(batch, onDeleted);
     return (
         <>
-            {/* The legacy Ungrouped files have no batch row to name. */}
+            {/* The legacy Ungrouped files have no batch row to name. Keyed so a
+                rename still in flight stays with its own batch's dialog. */}
             {batch.batchId !== null && (
                 <RenameBatchDialog
+                    key={batch.batchId}
                     batchId={batch.batchId}
                     name={batch.name}
                     open={isRenameOpen}

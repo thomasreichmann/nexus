@@ -67,20 +67,31 @@ export function RenameBatchDialog({
     );
 
     const trimmed = draft.trim();
-    const canRename =
-        trimmed.length > 0 && trimmed !== name && !rename.isPending;
+    const canSubmit = trimmed.length > 0 && !rename.isPending;
 
     const submit = (event: FormEvent) => {
         event.preventDefault();
-        if (!canRename) return;
+        if (!canSubmit) return;
+        // Nothing to change: Enter just closes, as it would on a rename.
+        if (trimmed === name) {
+            onOpenChange(false);
+            return;
+        }
         rename.mutate(
             { batchId, name: trimmed },
             { onSuccess: () => onOpenChange(false) }
         );
     };
 
+    // Open until the rename settles: closed mid-flight, a failure would toast
+    // over nothing and lose what was typed.
+    const changeOpen = (next: boolean) => {
+        if (!next && rename.isPending) return;
+        onOpenChange(next);
+    };
+
     return (
-        <AlertDialog open={open} onOpenChange={onOpenChange}>
+        <AlertDialog open={open} onOpenChange={changeOpen}>
             <AlertDialogPopup initialFocus={inputRef}>
                 <form onSubmit={submit} className="grid gap-4">
                     <AlertDialogTitle>Rename batch</AlertDialogTitle>
@@ -96,8 +107,10 @@ export function RenameBatchDialog({
                         />
                     </div>
                     <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <Button type="submit" disabled={!canRename}>
+                        <AlertDialogCancel disabled={rename.isPending}>
+                            Cancel
+                        </AlertDialogCancel>
+                        <Button type="submit" disabled={!canSubmit}>
                             {rename.isPending ? 'Renaming…' : 'Rename'}
                         </Button>
                     </AlertDialogFooter>

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     formatSessionBatchName,
     normalizeSubpath,
@@ -122,17 +122,15 @@ describe('resolveUnanimousFolderName', () => {
     });
 });
 
-// #405: what a file's folder is stored as, relative to the batch it joins.
 describe('formatSessionBatchName', () => {
-    const zone = process.env.TZ;
     afterEach(() => {
-        process.env.TZ = zone;
+        vi.unstubAllEnvs();
     });
 
     // #408: the alpha cohort is in Brazil, and a UTC name put a 16:47 upload
     // at 19:47. Pinned to a zone other than UTC so a UTC name can't pass.
     it('names the moment in the uploader’s own time zone, to the second', () => {
-        process.env.TZ = 'America/Sao_Paulo';
+        vi.stubEnv('TZ', 'America/Sao_Paulo');
 
         expect(formatSessionBatchName(new Date('2026-08-18T19:47:05Z'))).toBe(
             'Upload 2026-08-18 16:47:05'
@@ -140,6 +138,7 @@ describe('formatSessionBatchName', () => {
     });
 });
 
+// #405: what a file's folder is stored as, relative to the batch it joins.
 describe('resolveSubpath', () => {
     it('drops the folder’s own name when the batch is named after it', () => {
         expect(resolveSubpath('Shoot/104CANON', true)).toBe('104CANON');

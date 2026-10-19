@@ -73,9 +73,18 @@ test(
         await field.fill(`  ${NEW_NAME}  `);
         await field.press('Enter');
 
-        // The dialog closes onto the new name, not the old one.
+        // The dialog closes onto the new name: read once, not polled, since
+        // it stays open until the library has the new name.
         await expect(dialog).toBeHidden();
-        await expectBatchOpen(page, NEW_NAME);
+        expect(await page.locator('[data-fx="pane-title"]').innerText()).toBe(
+            NEW_NAME
+        );
+        // And the batch list beside the pane renames its row.
+        await expect(
+            page
+                .getByRole('region', { name: 'Batches' })
+                .locator('[aria-current="true"]')
+        ).toContainText(NEW_NAME);
 
         await page.reload();
         await expectBatchOpen(page, NEW_NAME);

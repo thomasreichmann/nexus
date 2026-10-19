@@ -13,8 +13,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
+import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
 import { BATCH_PAGE_SIZE } from '@/lib/library/paging';
-import { rememberViewMode } from '@/lib/library/viewMode';
+import {
+    readRememberedViewMode,
+    rememberViewMode,
+} from '@/lib/library/viewMode';
 import { useTRPC } from '@/lib/trpc/client';
 import { getLivePollOptionsWhile } from '@/lib/trpc/polling';
 import { BatchPane, type PaneSelection, type PaneViewMode } from './BatchPane';
@@ -215,11 +219,18 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
         key: null,
     });
     const [selection, setSelection] = useState<PaneSelection>(NO_SELECTION);
-    const [viewMode, setViewMode] = useState(initialViewMode);
+    const [viewMode, setViewMode] = useState(
+        () => readRememberedViewMode() ?? initialViewMode
+    );
     const changeViewMode = useStableCallback((mode: PaneViewMode) => {
         setViewMode(mode);
         rememberViewMode(mode);
     });
+    // The toggle only shows from `sm` up, so below it the pane is a grid
+    // whatever this browser remembers: a list chosen on a phone held sideways
+    // would otherwise outlive turning it upright, with no control to undo it.
+    const isViewModeToggleShown = useMediaQuery('(min-width: 40rem)', true);
+    const paneViewMode = isViewModeToggleShown ? viewMode : 'grid';
     // The file viewer over the open batch. `?file=` drives it the way
     // `?batch=` drives the batch: a deep link from a retrieval-ready email
     // lands straight on the file.
@@ -799,7 +810,7 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
                             onLoadNext={onLoadNext}
                             onLoadPrevious={onLoadPrevious}
                             onRetrySection={onRetrySection}
-                            viewMode={viewMode}
+                            viewMode={paneViewMode}
                             onViewModeChange={changeViewMode}
                             onOpenFile={onOpenFile}
                             onBatchDeleted={onBatchDeleted}
