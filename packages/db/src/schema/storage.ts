@@ -318,6 +318,14 @@ export const retrievalRequestItems = pgTable(
             () => retrievalArtifacts.id,
             { onDelete: 'set null' }
         ),
+        // The file's path inside the zip, folder included (#452). Resolved
+        // once per request, at the partition, and written with `artifactId`:
+        // two same-named files in different chunks can only be told apart by
+        // a pass that sees the whole request, and a chunk rebuilt in
+        // isolation must reproduce the name its siblings already shipped
+        // around. Null on rows partitioned before it existed, whose zip falls
+        // back to naming within the chunk.
+        entryName: text('entry_name'),
         ...timestamps(),
     },
     (table) => [

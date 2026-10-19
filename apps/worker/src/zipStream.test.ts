@@ -44,6 +44,18 @@ async function collect(stream: Readable): Promise<Buffer> {
     return Buffer.concat(chunks);
 }
 
+/** The path each local file header names, in archive order. */
+function entryNames(zip: Buffer): string[] {
+    const names: string[] = [];
+    let at = zip.indexOf(LOCAL_FILE_HEADER);
+    while (at !== -1) {
+        const length = zip.readUInt16LE(at + 26);
+        names.push(zip.toString('utf8', at + 30, at + 30 + length));
+        at = zip.indexOf(LOCAL_FILE_HEADER, at + 30 + length);
+    }
+    return names;
+}
+
 /** Compression method of the nth local file header. 0 is STORE, 8 is deflate. */
 function compressionMethods(zip: Buffer): number[] {
     const methods: number[] = [];
@@ -142,31 +154,41 @@ describe('createZipStream', () => {
         expect(peakConcurrentBodies).toBe(1);
     });
 
-    // Burst siblings from two shoots are routinely both `_MG_4501.CR2`, and a
-    // zip with duplicate entry names silently loses one on extraction.
-    it('disambiguates files that share a name', async () => {
+    // The partition named these across the whole request (#452). A part that
+    // re-chose them from its own files alone would put this one back at
+    // `IMG_0001.JPG`, onto its sibling's path in the other part.
+    it('writes each file under the entry name the partition resolved for it', async () => {
         const files = given([
-            file('_MG_4501.CR2', 16, 'shootA/_MG_4501.CR2'),
-            file('_MG_4501.CR2', 32, 'shootB/_MG_4501.CR2'),
-            file('_MG_4501.CR2', 48, 'shootC/_MG_4501.CR2'),
+            {
+                ...file('IMG_0001.JPG', 16, 'shootA/IMG_0001.JPG'),
+                subpath: '104CANON',
+                entryName: '104CANON/IMG_0001 (2).JPG',
+            },
+            {
+                ...file('notes.txt', 32, 'shootA/notes.txt'),
+                entryName: 'notes.txt',
+            },
         ]);
 
         const zip = await collect(createZipStream('bucket', files));
-        const text = zip.toString('latin1');
 
-        expect(text).toContain('_MG_4501.CR2');
-        expect(text).toContain('_MG_4501 (2).CR2');
-        expect(text).toContain('_MG_4501 (3).CR2');
+        expect(entryNames(zip)).toEqual([
+            '104CANON/IMG_0001 (2).JPG',
+            'notes.txt',
+        ]);
     });
 
-    it('flattens path-shaped names so nothing extracts outside the folder', async () => {
-        const files = given([file('../../etc/passwd', 16, 'key/escape')]);
+    // Items partitioned before entry names were stored: named within the
+    // chunk, as every chunk was then.
+    it('names a chunk partitioned before entry names were stored within itself', async () => {
+        const files = given([
+            file('_MG_4501.CR2', 16, 'shootA/_MG_4501.CR2'),
+            file('_MG_4501.CR2', 32, 'shootB/_MG_4501.CR2'),
+        ]);
 
         const zip = await collect(createZipStream('bucket', files));
-        const text = zip.toString('latin1');
 
-        expect(text).not.toContain('../');
-        expect(text).toContain('etc_passwd');
+        expect(entryNames(zip)).toEqual(['_MG_4501.CR2', '_MG_4501 (2).CR2']);
     });
 
     // The size on the row is what the user's quota was billed on and what the

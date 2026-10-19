@@ -252,6 +252,8 @@ export function createRetrievalRequestFileFixture(
         fileId: TEST_FILE_ID,
         s3Key: `${TEST_USER_ID}/${TEST_FILE_ID}/photo.cr2`,
         name: 'photo.cr2',
+        subpath: null,
+        entryName: null,
         size: 1024,
         createdAt: new Date('2026-08-01T12:00:00Z'),
         ...overrides,
