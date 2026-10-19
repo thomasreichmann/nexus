@@ -401,23 +401,6 @@ async function findArtifactByUserAndId(
     return row?.artifact;
 }
 
-/**
- * Read a timestamp that came back through a raw `sql` fragment.
- *
- * Aggregates like `min(completed_at)` have no drizzle column behind them, so
- * the driver's value arrives unmapped — and drizzle configures postgres-js to
- * hand date types over as raw strings precisely because its column mappers do
- * the conversion. Every column here is `timestamp without time zone` holding
- * UTC, so the offset has to be reattached or `new Date` would read it as local
- * time and silently shift the download window by the server's offset. This is
- * `PgTimestamp.mapFromDriverValue`, applied by hand.
- */
-function toDate(value: unknown): Date | null {
-    if (value === null || value === undefined) return null;
-    if (value instanceof Date) return value;
-    return new Date(`${String(value)}+0000`);
-}
-
 export interface RetrievalRequestTimings {
     /** Items the user asked for — the count the request is measured against. */
     fileCount: number;
@@ -446,11 +429,21 @@ async function findTimings(
     // Ungrouped aggregate: exactly one row, zeros for an empty request. Same
     // shape as findReadiness, and left-joined for the same reason — an item
     // whose restore failed still counts as something the user asked for.
+    //
+    // An aggregate has no column of its own for drizzle to map it through, so
+    // the driver would hand it over as a raw string; `mapWith` borrows the
+    // aggregated column's mapper instead.
     const [row] = await db
         .select({
             fileCount: sql<number>`count(*)::int`,
-            initiatedAt: sql<unknown>`min(${schema.retrievals.initiatedAt})`,
-            readyAt: sql<unknown>`max(${schema.retrievals.readyAt})`,
+            initiatedAt:
+                sql<Date | null>`min(${schema.retrievals.initiatedAt})`.mapWith(
+                    schema.retrievals.initiatedAt
+                ),
+            readyAt:
+                sql<Date | null>`max(${schema.retrievals.readyAt})`.mapWith(
+                    schema.retrievals.readyAt
+                ),
         })
         .from(schema.retrievalRequestItems)
         .leftJoin(
@@ -459,11 +452,7 @@ async function findTimings(
         )
         .where(eq(schema.retrievalRequestItems.requestId, requestId));
 
-    return {
-        fileCount: row!.fileCount,
-        initiatedAt: toDate(row!.initiatedAt),
-        readyAt: toDate(row!.readyAt),
-    };
+    return row!;
 }
 
 export interface DownloadableRequest {
@@ -519,7 +508,12 @@ async function findDownloadableByUser(
             // and one null would poison the whole sum.
             // The driver hands a bigint over as a string; converted below.
             totalBytes: sql<string>`coalesce(sum(${schema.retrievalArtifacts.sizeBytes}), 0)::bigint`,
-            builtAt: sql<unknown>`min(${schema.retrievalArtifacts.completedAt})`,
+            // Never null: the inner join leaves at least one artifact, and
+            // the HAVING below only passes a non-null minimum.
+            builtAt:
+                sql<Date>`min(${schema.retrievalArtifacts.completedAt})`.mapWith(
+                    schema.retrievalArtifacts.completedAt
+                ),
         })
         .from(schema.retrievalRequests)
         .innerJoin(
@@ -537,12 +531,11 @@ async function findDownloadableByUser(
         )
         .groupBy(schema.retrievalRequests.id)
         .having(
-            // `::timestamp` on an ISO string, not a bound Date: inside a raw
+            // `::timestamptz` on an ISO string, not a bound Date: inside a raw
             // `sql` fragment drizzle has no column to take a mapper from, so
-            // the driver is handed a Date it cannot serialise. The column is
-            // `timestamp without time zone` holding UTC, which is exactly what
-            // casting a UTC ISO string yields.
-            sql`min(${schema.retrievalArtifacts.completedAt}) > ${oldestDownloadableBuild.toISOString()}::timestamp`
+            // the driver is handed a Date it cannot serialise. The string
+            // carries its `Z`, so the cast is the same instant in any session.
+            sql`min(${schema.retrievalArtifacts.completedAt}) > ${oldestDownloadableBuild.toISOString()}::timestamptz`
         )
         .orderBy(sql`min(${schema.retrievalArtifacts.completedAt}) desc`);
 
@@ -550,7 +543,6 @@ async function findDownloadableByUser(
         ...row,
         completedAt: row.completedAt!,
         totalBytes: Number(row.totalBytes),
-        builtAt: toDate(row.builtAt)!,
     }));
 }
 

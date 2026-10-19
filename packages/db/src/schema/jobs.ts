@@ -27,8 +27,8 @@ export const backgroundJobs = pgTable(
         status: jobStatusEnum('status').notNull().default('pending'),
         attempts: integer('attempts').notNull().default(0),
         error: text('error'),
-        startedAt: timestamp('started_at'),
-        completedAt: timestamp('completed_at'),
+        startedAt: timestamp('started_at', { withTimezone: true }),
+        completedAt: timestamp('completed_at', { withTimezone: true }),
         ...timestamps(),
     },
     (table) => [
