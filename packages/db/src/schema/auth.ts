@@ -17,7 +17,7 @@ export const user = pgTable('user', {
 
 export const session = pgTable('session', {
     id: text('id').primaryKey(),
-    expiresAt: timestamp('expires_at').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     token: text('token').notNull().unique(),
     ...timestamps(),
     ipAddress: text('ip_address'),
@@ -37,8 +37,12 @@ export const account = pgTable('account', {
     accessToken: text('access_token'),
     refreshToken: text('refresh_token'),
     idToken: text('id_token'),
-    accessTokenExpiresAt: timestamp('access_token_expires_at'),
-    refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at', {
+        withTimezone: true,
+    }),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at', {
+        withTimezone: true,
+    }),
     scope: text('scope'),
     password: text('password'),
     ...timestamps(),
@@ -48,6 +52,6 @@ export const verification = pgTable('verification', {
     id: text('id').primaryKey(),
     identifier: text('identifier').notNull(),
     value: text('value').notNull(),
-    expiresAt: timestamp('expires_at').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     ...timestamps(),
 });

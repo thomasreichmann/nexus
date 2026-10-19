@@ -50,6 +50,28 @@ describe('schema timestamps', () => {
         expect(violations).toEqual([]);
     });
 
+    // A plain `timestamp` holds a wall-clock reading with no zone, so what it
+    // means depends on who wrote it and who reads it (#488).
+    // helpers.integration.test.ts shows the cost on the shared columns; this
+    // keeps a new column from bringing it back.
+    it('every timestamp column is timestamptz', () => {
+        const violations: string[] = [];
+
+        for (const { name, table } of getAllTables()) {
+            for (const column of getTableConfig(table).columns) {
+                const type = column.getSQLType();
+                if (
+                    type.startsWith('timestamp') &&
+                    !type.endsWith('with time zone')
+                ) {
+                    violations.push(`${name}.${column.name} is ${type}`);
+                }
+            }
+        }
+
+        expect(violations).toEqual([]);
+    });
+
     it('timestamps helper produces correct column configuration', () => {
         const { timestamps } = schema;
         const cols = timestamps();

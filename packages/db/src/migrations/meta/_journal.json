@@ -176,6 +176,13 @@
       "when": 1791850532809,
       "tag": "0024_flowery_richard_fisk",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792446015274,
+      "tag": "0025_naive_kronos",
+      "breakpoints": true
     }
   ]
 }

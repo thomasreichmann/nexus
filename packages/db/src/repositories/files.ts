@@ -685,7 +685,10 @@ async function uploadHistoryByDay(
 
     const rows = await db
         .select({
-            date: sql<string>`to_char(${schema.files.createdAt}, 'YYYY-MM-DD')`.as(
+            // UTC days, which is what the chart's day keys are built in.
+            // `to_char` on a timestamptz formats in the session's zone, so
+            // without the conversion a day's edge would move with it.
+            date: sql<string>`to_char(${schema.files.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`.as(
                 'date'
             ),
             totalBytes:
