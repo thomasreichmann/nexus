@@ -197,8 +197,9 @@ export const filesRouter = router({
         }),
 
     // Pre-create a session batch so a multi-file upload can pass one batchId to
-    // every per-file initiate call. `name` labels a whole-folder upload after
-    // its folder; without it the batch gets the timestamp fallback name.
+    // every per-file initiate call. The browser names it after the dropped
+    // folder, or else after the click in its own time zone (#408); without a
+    // name the batch gets the server's UTC timestamp fallback.
     createBatch: protectedProcedure
         .input(z.object({ name: batchNameSchema.optional() }).prefault({}))
         .mutation(({ ctx, input }) =>
@@ -270,6 +271,23 @@ export const filesRouter = router({
         .input(z.object({ batchId: z.string().uuid().nullable() }))
         .mutation(({ ctx, input }) =>
             fileService.deleteBatch(ctx.db, ctx.session.user.id, input.batchId)
+        ),
+
+    // Not null: the legacy Ungrouped files have no batch row to name.
+    renameBatch: protectedProcedure
+        .input(
+            z.object({
+                batchId: z.string().uuid(),
+                name: z.string().trim().min(1).max(255),
+            })
+        )
+        .mutation(({ ctx, input }) =>
+            fileService.renameBatch(
+                ctx.db,
+                ctx.session.user.id,
+                input.batchId,
+                input.name
+            )
         ),
 
     requestRetrieval: protectedProcedure

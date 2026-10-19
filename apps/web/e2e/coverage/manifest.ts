@@ -290,7 +290,7 @@ export const USE_CASES: UseCaseEntry[] = [
     },
     {
         id: 'files-view-toggle',
-        title: 'Toggle between list and grid view',
+        title: 'Toggle between list and grid view; the choice survives a reload',
         area: 'files',
         routes: ['/dashboard/files'],
     },
@@ -333,6 +333,12 @@ export const USE_CASES: UseCaseEntry[] = [
     {
         id: 'files-batch-delete',
         title: 'Delete a whole batch from its menu, confirming with its file count',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
+        id: 'files-batch-rename',
+        title: 'Rename a batch from its menu; the new name shows everywhere and sticks',
         area: 'files',
         routes: ['/dashboard/files'],
     },

@@ -260,7 +260,7 @@ test.describe('with a seeded library', () => {
     );
 
     test(
-        'view toggles between grid and list',
+        'view toggles between grid and list, and the choice survives a reload',
         { tag: ['@uc:files-view-toggle'] },
         async ({ page, seededLibrary }) => {
             await page.goto(PAGE_URL);
@@ -274,6 +274,12 @@ test.describe('with a seeded library', () => {
             await expect(item.getByText('Archived')).toHaveCount(0);
 
             await list.click();
+            await expect(list).toHaveAttribute('aria-pressed', 'true');
+            await expect(item.getByText('Archived')).toBeVisible();
+
+            // #408: the batch reopens from its URL, still a list.
+            await page.reload();
+            await expectBatchOpen(page, seededLibrary.batch.name);
             await expect(list).toHaveAttribute('aria-pressed', 'true');
             await expect(item.getByText('Archived')).toBeVisible();
 

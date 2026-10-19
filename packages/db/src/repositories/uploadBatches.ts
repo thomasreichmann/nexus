@@ -27,9 +27,30 @@ async function insert(db: DB, data: NewUploadBatch): Promise<UploadBatch> {
     return batch;
 }
 
+/** Renames one of the user's batches; undefined when it isn't theirs. */
+async function rename(
+    db: DB,
+    userId: string,
+    batchId: string,
+    name: string
+): Promise<UploadBatch | undefined> {
+    const [batch] = await db
+        .update(schema.uploadBatches)
+        .set({ name })
+        .where(
+            and(
+                eq(schema.uploadBatches.id, batchId),
+                eq(schema.uploadBatches.userId, userId)
+            )
+        )
+        .returning();
+    return batch;
+}
+
 export const createUploadBatchRepo = createRepository({
     findByUserAndId,
     insert,
+    rename,
 });
 
 export type UploadBatchRepo = ReturnType<typeof createUploadBatchRepo>;

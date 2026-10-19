@@ -1,5 +1,7 @@
+import { cookies } from 'next/headers';
 import { FilesLibrary } from '@/components/dashboard/files-library/FilesLibrary';
 import { RetrievalDownloads } from '@/components/dashboard/RetrievalDownloads';
+import { parseViewMode, VIEW_MODE_COOKIE } from '@/lib/library/viewMode';
 
 interface FilesPageProps {
     searchParams: Promise<{ request?: string }>;
@@ -13,11 +15,14 @@ interface FilesPageProps {
 // reader arrives here after authenticating.
 export default async function FilesPage({ searchParams }: FilesPageProps) {
     const { request } = await searchParams;
+    const viewMode = parseViewMode(
+        (await cookies()).get(VIEW_MODE_COOKIE)?.value
+    );
 
     return (
         <div className="mx-auto max-w-6xl space-y-6">
             {request && <RetrievalDownloads requestId={request} />}
-            <FilesLibrary />
+            <FilesLibrary initialViewMode={viewMode} />
         </div>
     );
 }

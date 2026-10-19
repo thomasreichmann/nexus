@@ -27,6 +27,11 @@ beforeEach(resetUploadStore);
 const smallFiles = (count: number) =>
     Array.from({ length: count }, (_, i) => fakeFile(`f${i}.jpg`, 1000));
 
+/** A batch named after the Upload click rather than a folder (#408). */
+const SESSION_BATCH_NAME = expect.stringMatching(
+    /^Upload \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/
+);
+
 const statusOf = (harness: QueueHarness) =>
     Object.fromEntries(harness.rows().map((row) => [row.name, row.status]));
 
@@ -238,7 +243,29 @@ describe('the Upload click', () => {
         ]);
     });
 
-    it('leaves the batch unnamed when the rows came from two drops of a same-named folder', async () => {
+    // #408: the server's UTC-to-the-minute fallback named one evening of
+    // clicks as a pile of identical batches.
+    it('names a batch no folder names after the click, to the second', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(new Date(2026, 7, 18, 16, 47, 5));
+        try {
+            const harness = createQueueHarness();
+
+            await harness.queue.addFiles(picked(...smallFiles(2)));
+            await harness.queue.startUpload();
+
+            expect(harness.backend.batches).toEqual([
+                {
+                    batchId: expect.any(String),
+                    name: 'Upload 2026-08-18 16:47:05',
+                },
+            ]);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('names the batch after the click, not the folder, when the rows came from two drops of a same-named folder', async () => {
         const harness = createQueueHarness();
 
         await harness.queue.addFiles(picked(fakeFile('a.jpg', 10)), 'Shoot');
@@ -246,7 +273,7 @@ describe('the Upload click', () => {
         await harness.queue.startUpload();
 
         expect(harness.backend.batches).toEqual([
-            { batchId: expect.any(String), name: undefined },
+            { batchId: expect.any(String), name: SESSION_BATCH_NAME },
         ]);
     });
 
@@ -282,8 +309,8 @@ describe('the Upload click', () => {
     });
 
     // Two cards of one camera, each dropped as its own folder before one
-    // click: one unnamed batch, so only the folders' own names tell the two
-    // IMG_0001s apart.
+    // click: one batch named after neither, so only the folders' own names
+    // tell the two IMG_0001s apart.
     it('keeps the dropped folders’ own names when one batch holds two of them', async () => {
         const harness = createQueueHarness();
         await harness.queue.addFiles(
@@ -309,7 +336,7 @@ describe('the Upload click', () => {
         await harness.queue.startUpload();
 
         expect(harness.backend.batches).toEqual([
-            { batchId: expect.any(String), name: undefined },
+            { batchId: expect.any(String), name: SESSION_BATCH_NAME },
         ]);
         expect(harness.backend.files.map((file) => file.subpath)).toEqual([
             'Loja 1/104CANON',
