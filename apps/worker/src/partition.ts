@@ -29,9 +29,9 @@ export const MAX_CHUNK_FILES = 10_000;
  * Split a request's files into the chunks that become zip artifacts.
  *
  * Next-fit over the caller's ordering, not a size-sorted bin-pack: the input
- * arrives sorted by S3 key, so walking it in order and closing the current
- * chunk when the next file would overflow keeps files that were uploaded
- * together in the same zip. A first-fit-decreasing pack would waste fewer bytes
+ * arrives batch by batch, folder by folder, so walking it in order and closing
+ * the current chunk when the next file would overflow keeps files that were
+ * uploaded together in the same zip. A first-fit-decreasing pack would waste fewer bytes
  * per chunk and scatter one shoot across every part of the download, which is
  * the opposite of what the user is trying to do with them.
  *
@@ -40,11 +40,11 @@ export const MAX_CHUNK_FILES = 10_000;
  * alternative is refusing to deliver a file the user already stored, and
  * raising the cap properly is out of scope (#406).
  */
-export function partitionIntoChunks(
-    files: RetrievalRequestFile[]
-): RetrievalRequestFile[][] {
-    const chunks: RetrievalRequestFile[][] = [];
-    let current: RetrievalRequestFile[] = [];
+export function partitionIntoChunks<
+    File extends Pick<RetrievalRequestFile, 'size'>,
+>(files: File[]): File[][] {
+    const chunks: File[][] = [];
+    let current: File[] = [];
     let currentBytes = 0;
 
     for (const file of files) {

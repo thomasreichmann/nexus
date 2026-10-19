@@ -183,6 +183,13 @@
       "when": 1792446015274,
       "tag": "0025_naive_kronos",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792446602895,
+      "tag": "0026_secret_scarlet_spider",
+      "breakpoints": true
     }
   ]
 }

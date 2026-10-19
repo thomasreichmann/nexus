@@ -56,7 +56,10 @@ export function createMockDb() {
         orderBy: whereOrderBy,
         limit: whereLimit,
     }));
-    const set: AnyMock = vi.fn(() => ({ where }));
+    // `update().set().from(...)`: an UPDATE joined against a VALUES list
+    // (assignItemsToArtifact) before its WHERE.
+    const setFrom: AnyMock = vi.fn(() => ({ where }));
+    const set: AnyMock = vi.fn(() => ({ where, from: setFrom }));
     const onConflictDoUpdate: AnyMock = vi.fn(() => ({ returning }));
     const onConflictDoNothing: AnyMock = vi.fn(() => ({ returning }));
     const values: AnyMock = vi.fn(() => ({
@@ -193,6 +196,7 @@ export function createMockDb() {
             onConflictDoNothing,
             update,
             set,
+            setFrom,
             delete: deleteFn,
             returning,
             groupBy,

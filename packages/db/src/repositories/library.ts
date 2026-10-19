@@ -172,10 +172,11 @@ const COVER_SIZE = 3;
 // IMG_10.JPG, the order cameras write them (#404). The `natural` collation is
 // ICU's numeric one (migration 0023). Equal names (the same file uploaded
 // twice) fall back to oldest first, then id, which makes the key unique: a
-// keyset cursor over it can't skip or repeat a row.
+// keyset cursor over it can't skip or repeat a row. A restore's zips are
+// written in it too (retrievalRequests' selectFilesWhere).
 const FOLDER_ORDER = sql`coalesce(${schema.files.subpath}, '') collate "natural"`;
 const NAME_ORDER = sql`${schema.files.name} collate "natural"`;
-const FILE_ORDER = [
+export const FILE_ORDER = [
     FOLDER_ORDER,
     NAME_ORDER,
     schema.files.createdAt,

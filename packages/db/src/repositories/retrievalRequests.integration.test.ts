@@ -7,7 +7,9 @@ import {
     insertRetrievalArtifact,
     insertRetrievalRequest,
     insertRetrievalRequestItem,
+    insertUploadBatch,
     type DB,
+    type File,
     type Retrieval,
     type RetrievalRequest,
 } from '../test-db';
@@ -348,20 +350,41 @@ describe.concurrent('worker scans', () => {
 });
 
 describe.concurrent('files of a request', () => {
-    it('findFiles returns the request’s files in s3Key order, and no other request’s', async ({
+    // The zip order (#479): a batch's files together, top-level files and
+    // then each folder, natural by name. The keys run the other way, so a
+    // sort on them (the old order, effectively random within a batch) fails.
+    it('findFiles returns the request’s files batch by batch, folder by folder, in natural name order, and no other request’s', async ({
         db,
         user,
     }) => {
         const repo = createRetrievalRequestRepo(db);
         const request = await insertRetrievalRequest(db, { userId: user.id });
         const other = await insertRetrievalRequest(db, { userId: user.id });
-        const [second, first, elsewhere] = await Promise.all([
-            insertFile(db, { userId: user.id, s3Key: `${user.id}/b` }),
-            insertFile(db, { userId: user.id, s3Key: `${user.id}/a` }),
-            insertFile(db, { userId: user.id }),
+        // Ids chosen so batch `a` sorts first in any collation.
+        const run = crypto.randomUUID();
+        const [batchA, batchB] = await Promise.all([
+            insertUploadBatch(db, { userId: user.id, id: `${run}-a` }),
+            insertUploadBatch(db, { userId: user.id, id: `${run}-b` }),
+        ]);
+        const file = (key: string, overrides: Partial<File>) =>
+            insertFile(db, {
+                userId: user.id,
+                s3Key: `${user.id}/${key}`,
+                ...overrides,
+            });
+        const [inB, inFolder, img10, img9, elsewhere] = await Promise.all([
+            file('0', { batchId: batchB.id, name: 'IMG_2.JPG' }),
+            file('1', {
+                batchId: batchA.id,
+                name: 'IMG_1.JPG',
+                subpath: '104CANON',
+            }),
+            file('2', { batchId: batchA.id, name: 'IMG_10.JPG' }),
+            file('3', { batchId: batchA.id, name: 'IMG_9.JPG' }),
+            file('4', {}),
         ]);
         await repo.insertItems(
-            [second, first].map((file) => ({
+            [inB, inFolder, img10, img9].map((file) => ({
                 id: crypto.randomUUID(),
                 requestId: request.id,
                 fileId: file.id,
@@ -373,17 +396,19 @@ describe.concurrent('files of a request', () => {
         });
 
         expect(await repo.findFiles(request.id)).toEqual(
-            [first, second].map((file) => ({
+            [img9, img10, inFolder, inB].map((file) => ({
                 fileId: file.id,
                 s3Key: file.s3Key,
                 name: file.name,
+                subpath: file.subpath,
+                entryName: null,
                 size: file.size,
                 createdAt: file.createdAt,
             }))
         );
     });
 
-    it('findArtifactFiles returns only that artifact’s files, in s3Key order', async ({
+    it('findArtifactFiles returns only that artifact’s files, in zip order', async ({
         db,
         user,
     }) => {
@@ -393,8 +418,8 @@ describe.concurrent('files of a request', () => {
             insertRetrievalArtifact(db, { requestId: request.id, position: 1 }),
         ]);
         const [second, first, inB] = await Promise.all([
-            insertFile(db, { userId: user.id, s3Key: `${user.id}/b` }),
-            insertFile(db, { userId: user.id, s3Key: `${user.id}/a` }),
+            insertFile(db, { userId: user.id, name: 'IMG_10.JPG' }),
+            insertFile(db, { userId: user.id, name: 'IMG_9.JPG' }),
             insertFile(db, { userId: user.id }),
         ]);
         await Promise.all(
@@ -419,7 +444,7 @@ describe.concurrent('files of a request', () => {
 
     // The partition's unit is the request: the same file in an overlapping
     // request is a different item, and belongs to that request's own zip.
-    it('assignItemsToArtifact points only the named files of that request at the artifact', async ({
+    it('assignItemsToArtifact points only the named files of that request at the artifact, under their entry names', async ({
         db,
         user,
     }) => {
@@ -450,11 +475,52 @@ describe.concurrent('files of a request', () => {
             requestId: request.id,
         });
 
-        await repo.assignItemsToArtifact(request.id, artifact.id, [shared.id]);
+        await repo.assignItemsToArtifact(request.id, artifact.id, [
+            { fileId: shared.id, entryName: '104CANON/IMG_0001 (2).JPG' },
+        ]);
 
         expect(
-            (await repo.findArtifactFiles(artifact.id)).map((f) => f.fileId)
-        ).toEqual([shared.id]);
+            (await repo.findArtifactFiles(artifact.id)).map((f) => ({
+                fileId: f.fileId,
+                entryName: f.entryName,
+            }))
+        ).toEqual([
+            { fileId: shared.id, entryName: '104CANON/IMG_0001 (2).JPG' },
+        ]);
+    });
+
+    // One statement writes the whole chunk: each row has to take its own
+    // pair's name, not one name for all.
+    it('assignItemsToArtifact gives each file of the chunk its own entry name', async ({
+        db,
+        user,
+    }) => {
+        const repo = createRetrievalRequestRepo(db);
+        const request = await insertRetrievalRequest(db, { userId: user.id });
+        const [a, b] = await Promise.all([
+            insertFile(db, { userId: user.id, name: 'a.jpg' }),
+            insertFile(db, { userId: user.id, name: 'b.jpg' }),
+        ]);
+        await Promise.all(
+            [a, b].map((file) =>
+                insertRetrievalRequestItem(db, {
+                    requestId: request.id,
+                    fileId: file.id,
+                })
+            )
+        );
+        const artifact = await insertRetrievalArtifact(db, {
+            requestId: request.id,
+        });
+
+        await repo.assignItemsToArtifact(request.id, artifact.id, [
+            { fileId: b.id, entryName: 'second/b.jpg' },
+            { fileId: a.id, entryName: 'first/a.jpg' },
+        ]);
+
+        expect(
+            (await repo.findArtifactFiles(artifact.id)).map((f) => f.entryName)
+        ).toEqual(['first/a.jpg', 'second/b.jpg']);
     });
 
     it('assignItemsToArtifact with no files is a no-op', async ({

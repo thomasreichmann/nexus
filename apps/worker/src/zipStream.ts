@@ -2,6 +2,7 @@ import { Readable } from 'node:stream';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { ZipFile } from 'yazl';
 import { getS3 } from './aws';
+import { resolveEntryNames } from './entryNames';
 import type { RetrievalRequestFile } from '@nexus/db/repo/retrievalRequests';
 
 /**
@@ -32,44 +33,6 @@ function lazyObjectStream(bucket: string, key: string): Readable {
 }
 
 /**
- * Make one file's name safe and unique as a zip entry name.
- *
- * Uniqueness matters more than it looks: burst siblings from two different
- * shoots are routinely both `_MG_4501.CR2`, and a zip with duplicate entry
- * names silently loses one of them on extraction. The ` (2)` suffix is what
- * every desktop file manager does, so it reads as intended rather than as
- * corruption.
- *
- * Path separators and `..` are stripped rather than escaped: names are supposed
- * to be flat (folder uploads keep only the top folder, as the batch name), so
- * anything path-shaped is either a stored oddity or an attempt to write outside
- * the extraction directory.
- */
-function toEntryName(name: string, taken: Set<string>): string {
-    const flat =
-        name
-            .replace(/[/\\]+/g, '_')
-            .replace(/^\.+/, '')
-            .trim() || 'file';
-
-    if (!taken.has(flat)) {
-        taken.add(flat);
-        return flat;
-    }
-
-    const dot = flat.lastIndexOf('.');
-    const stem = dot > 0 ? flat.slice(0, dot) : flat;
-    const ext = dot > 0 ? flat.slice(dot) : '';
-    for (let n = 2; ; n++) {
-        const candidate = `${stem} (${n})${ext}`;
-        if (!taken.has(candidate)) {
-            taken.add(candidate);
-            return candidate;
-        }
-    }
-}
-
-/**
  * A zip of the given files, as a stream, read straight from the files bucket.
  *
  * STORE, never deflate: the archives are photographs and video, which are
@@ -79,6 +42,10 @@ function toEntryName(name: string, taken: Set<string>): string {
  * Nothing here forces zip64. yazl reaches for it only when an entry or offset
  * crosses the 32-bit ceiling, which the chunk cap keeps below — see
  * MAX_CHUNK_BYTES for why that ceiling is worth respecting.
+ *
+ * Each file goes in under the entry name the partition resolved for the whole
+ * request (resolveEntryNames), not one chosen here: this chunk can't see its
+ * siblings, so a name picked from inside it could repeat one of theirs.
  */
 export function createZipStream(
     bucket: string,
@@ -86,7 +53,7 @@ export function createZipStream(
 ): Readable {
     const zipfile = new ZipFile();
     const output = zipfile.outputStream as Readable;
-    const taken = new Set<string>();
+    const entryNames = resolveEntryNames(files);
 
     // yazl reports failures by emitting `error` on the ZipFile, and a piped
     // source stream reports its own on itself — neither reaches `outputStream`,
@@ -102,10 +69,10 @@ export function createZipStream(
     };
     zipfile.on('error', fail);
 
-    for (const file of files) {
+    files.forEach((file, index) => {
         const source = lazyObjectStream(bucket, file.s3Key);
         source.on('error', fail);
-        zipfile.addReadStream(source, toEntryName(file.name, taken), {
+        zipfile.addReadStream(source, entryNames[index]!, {
             compress: false,
             // Declaring the size makes yazl fail loudly if S3 hands back a
             // different number of bytes than the row claims. That mismatch
@@ -116,7 +83,7 @@ export function createZipStream(
             mtime: file.createdAt,
             mode: 0o100644,
         });
-    }
+    });
 
     zipfile.end();
     return output;
