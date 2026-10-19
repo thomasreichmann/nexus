@@ -135,10 +135,11 @@ export interface FolderOrigin {
 }
 
 /**
- * The folder name to label a wave's batch with, or undefined to leave it to the
- * server's timestamp fallback. Set only when every row joining the new batch
- * came from the same folder gesture — a loose file or a second folder in the
- * mix makes the batch about more than one folder, so it stays generically named.
+ * The folder name to label a wave's batch with, or undefined to name it after
+ * the click instead (`formatSessionBatchName`). Set only when every row joining
+ * the new batch came from the same folder gesture — a loose file or a second
+ * folder in the mix makes the batch about more than one folder, so it stays
+ * generically named.
  */
 export function resolveUnanimousFolderName(
     rows: { folderOrigin?: FolderOrigin }[]
@@ -148,6 +149,23 @@ export function resolveUnanimousFolderName(
     return rows.every((row) => row.folderOrigin?.gestureId === origin.gestureId)
         ? origin.name
         : undefined;
+}
+
+/**
+ * The name of a batch no folder names: the moment of the Upload click, in the
+ * uploader's own time zone and to the second (#408). The server's fallback is
+ * UTC to the minute, which named one evening of retries as a pile of identical
+ * batches three hours off the photographer's clock. Only the browser knows
+ * the zone, so it names the batch itself.
+ *
+ * Absolute, not "Today 4:47 PM": the name is stored, and that one would be
+ * wrong tomorrow.
+ */
+export function formatSessionBatchName(date: Date): string {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    const time = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    return `Upload ${day} ${time}`;
 }
 
 /**

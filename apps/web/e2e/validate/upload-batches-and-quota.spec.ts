@@ -11,7 +11,7 @@
  * What it covers:
  *  - Fresh upload through the UI → new s3Key shape
  *    (`${userId}/${batchId}/${fileId}/${name}`), `upload_batches` row created
- *    with fallback name `Upload YYYY-MM-DD HH:MM`, `files.batch_id` set,
+ *    with fallback name `Upload YYYY-MM-DD HH:MM:SS`, `files.batch_id` set,
  *    `storage_usage` incremented by the file's bytes.
  *  - Dashboard "Storage Usage" widget renders after the upload.
  *  - Multi-file upload in one click (#268): both files land in a single
@@ -101,9 +101,10 @@ test.describe('upload batches + storage quota', () => {
             });
             expect(batches).toHaveLength(1);
             const batch = batches[0];
-            // Fallback name shape: `Upload YYYY-MM-DD HH:MM`.
+            // Fallback name shape: `Upload YYYY-MM-DD HH:MM:SS`, the click's
+            // moment in the browser's time zone (#408).
             expect(batch.name).toMatch(
-                /^Upload \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/
+                /^Upload \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/
             );
 
             const files = await db.query.files.findMany({
@@ -157,7 +158,7 @@ test.describe('upload batches + storage quota', () => {
             ).toBeVisible();
 
             // The auto-created batch uses the fallback name format
-            // `Upload YYYY-MM-DD HH:MM`: its card, opened, holds the file.
+            // `Upload YYYY-MM-DD HH:MM:SS`: its card, opened, holds the file.
             const card = page
                 .getByRole('button', { name: /^Open Upload \d{4}-\d{2}-\d{2}/ })
                 .first();
@@ -236,7 +237,7 @@ test.describe('upload batches + storage quota', () => {
             expect(batches).toHaveLength(1);
             const batch = batches[0];
             expect(batch.name).toMatch(
-                /^Upload \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/
+                /^Upload \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/
             );
 
             const names = filesToUpload.map((f) => f.name);
