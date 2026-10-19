@@ -40,11 +40,11 @@ export const MAX_CHUNK_FILES = 10_000;
  * alternative is refusing to deliver a file the user already stored, and
  * raising the cap properly is out of scope (#406).
  */
-export function partitionIntoChunks(
-    files: RetrievalRequestFile[]
-): RetrievalRequestFile[][] {
-    const chunks: RetrievalRequestFile[][] = [];
-    let current: RetrievalRequestFile[] = [];
+export function partitionIntoChunks<
+    File extends Pick<RetrievalRequestFile, 'size'>,
+>(files: File[]): File[][] {
+    const chunks: File[][] = [];
+    let current: File[] = [];
     let currentBytes = 0;
 
     for (const file of files) {

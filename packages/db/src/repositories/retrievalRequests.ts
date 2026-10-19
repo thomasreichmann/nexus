@@ -1,7 +1,8 @@
-import { and, eq, inArray, isNull, not, sql, type SQL } from 'drizzle-orm';
+import { and, eq, isNull, not, sql, type SQL } from 'drizzle-orm';
 import { artifactWindowStart, ZIP_DELIVERY_MIN_FILES } from '../objectState';
 import * as schema from '../schema';
 import { createRepository } from './create';
+import { FILE_ORDER } from './library';
 import { readyAndDownloadable } from './retrievals';
 import type { DB } from '../connection';
 
@@ -300,8 +301,15 @@ async function findDirectDeliverable(
 export interface RetrievalRequestFile {
     fileId: string;
     s3Key: string;
-    /** Original upload name — the entry name inside the zip. */
+    /** Original upload name. */
     name: string;
+    /** The folder it was uploaded from, within its batch (#405). */
+    subpath: string | null;
+    /**
+     * Its path inside the zip, once the partition has resolved it (#452);
+     * null before that, and on items partitioned before it was stored.
+     */
+    entryName: string | null;
     size: number;
     /** Upload time, written as the zip entry's modification time. */
     createdAt: Date;
@@ -310,11 +318,12 @@ export interface RetrievalRequestFile {
 /**
  * The files behind some set of request items, in zip order.
  *
- * Ordered by `s3Key` rather than by name: the key embeds the upload batch, so
- * sorting on it keeps files that were uploaded together adjacent, and the
- * partition's next-fit walk turns that adjacency into "one shoot per zip"
- * instead of scattering a folder across chunks. Name alone would interleave
- * identically-named files from different batches.
+ * Batch by batch, then the order the batch lists them in on the files page:
+ * folder by folder, natural by name (FILE_ORDER, #479). The partition's
+ * next-fit walk turns that adjacency into "one shoot per zip", and where a
+ * shoot does span two zips the cut falls between folders or between
+ * IMG_0999 and IMG_1000, not at random: a batch's files sorted by their
+ * random file ids would scatter each folder across every part.
  *
  * Shared by the two callers below so the ordering is defined once — the
  * partition and the zip writer disagreeing about it would put files in a
@@ -326,6 +335,8 @@ function selectFilesWhere(db: DB, where: SQL): Promise<RetrievalRequestFile[]> {
             fileId: schema.files.id,
             s3Key: schema.files.s3Key,
             name: schema.files.name,
+            subpath: schema.files.subpath,
+            entryName: schema.retrievalRequestItems.entryName,
             size: schema.files.size,
             createdAt: schema.files.createdAt,
         })
@@ -335,7 +346,7 @@ function selectFilesWhere(db: DB, where: SQL): Promise<RetrievalRequestFile[]> {
             eq(schema.retrievalRequestItems.fileId, schema.files.id)
         )
         .where(where)
-        .orderBy(schema.files.s3Key);
+        .orderBy(schema.files.batchId, ...FILE_ORDER);
 }
 
 /** Everything a request asked for, the input to the partition. */
@@ -567,21 +578,39 @@ async function insertArtifacts(
         .returning();
 }
 
-/** Point a chunk's files at the artifact that will contain them. */
+/** One file's place in the partition: the path it takes inside its zip. */
+export interface ArtifactEntry {
+    fileId: string;
+    entryName: string;
+}
+
+/**
+ * Point a chunk's files at the artifact that will contain them, under the
+ * entry names the partition resolved for them (#452).
+ *
+ * One statement per chunk, joined against its (file, name) pairs as a VALUES
+ * list. That's two parameters a file, so the worker's chunk cap
+ * (MAX_CHUNK_FILES, 10,000) keeps it well inside Postgres's 65,535.
+ */
 async function assignItemsToArtifact(
     db: DB,
     requestId: string,
     artifactId: string,
-    fileIds: string[]
+    entries: ArtifactEntry[]
 ): Promise<void> {
-    if (fileIds.length === 0) return;
+    if (entries.length === 0) return;
+    const pairs = sql.join(
+        entries.map((entry) => sql`(${entry.fileId}, ${entry.entryName})`),
+        sql`, `
+    );
     await db
         .update(schema.retrievalRequestItems)
-        .set({ artifactId })
+        .set({ artifactId, entryName: sql`entry.name` })
+        .from(sql`(values ${pairs}) as entry(file_id, name)`)
         .where(
             and(
                 eq(schema.retrievalRequestItems.requestId, requestId),
-                inArray(schema.retrievalRequestItems.fileId, fileIds)
+                eq(schema.retrievalRequestItems.fileId, sql`entry.file_id`)
             )
         );
 }

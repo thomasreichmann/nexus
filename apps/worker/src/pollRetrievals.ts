@@ -10,6 +10,7 @@ import { createRetrievalRepo } from '@nexus/db/repo/retrievals';
 import { captureWorkerEvent } from './analytics';
 import { headObjectState, S3_CONCURRENCY } from './aws';
 import { sendRetrievalFileReadyEmail } from './email';
+import { resolveEntryNames } from './entryNames';
 import { enqueueJob } from './jobs';
 import { partitionIntoChunks } from './partition';
 import { markRetrievalMissing, markRetrievalReady } from './retrievalWrites';
@@ -335,8 +336,13 @@ async function startZipBuilds(db: DB, summary: PollSummary): Promise<void> {
  * because the job only knows its file set through `items.artifact_id`: an
  * artifact that exists with nothing assigned to it would be a build that can
  * only fail.
+ *
+ * It names every file's zip entry in the same pass, across the whole request
+ * (#452): this is the only step that sees every part at once, and the names go
+ * into the same write as the assignment, so a part rebuilt later reuses them
+ * instead of choosing again without its siblings in view.
  */
-async function startZipBuild(
+export async function startZipBuild(
     db: DB,
     requestRepo: RetrievalRequestRepo,
     requestId: string
@@ -348,8 +354,14 @@ async function startZipBuild(
     // instead would re-partition a request whose chunks are mid-build on every
     // one of the 15-minute runs it takes to finish them.
     if (partitioned) {
+        const files = await requestRepo.findFiles(requestId);
+        const entryNames = resolveEntryNames(files);
         const chunks = partitionIntoChunks(
-            await requestRepo.findFiles(requestId)
+            files.map((file, index) => ({
+                fileId: file.fileId,
+                size: file.size,
+                entryName: entryNames[index]!,
+            }))
         );
 
         await db.transaction(async (tx) => {
@@ -370,7 +382,10 @@ async function startZipBuild(
                 await txRepo.assignItemsToArtifact(
                     requestId,
                     artifact.id,
-                    chunks[artifact.position].map((file) => file.fileId)
+                    chunks[artifact.position]!.map(({ fileId, entryName }) => ({
+                        fileId,
+                        entryName,
+                    }))
                 );
             }
         });

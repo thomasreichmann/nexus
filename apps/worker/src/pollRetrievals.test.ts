@@ -301,6 +301,8 @@ describe('pollRetrievals', () => {
                     ...f,
                     s3Key: `key/${f.fileId}`,
                     name: `${f.fileId}.cr2`,
+                    subpath: null,
+                    entryName: null,
                     createdAt: new Date(),
                 }))
             );
