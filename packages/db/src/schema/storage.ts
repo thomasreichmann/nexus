@@ -114,8 +114,8 @@ export const files = pgTable(
         // Video-only, from ffprobe; drives the duration badge.
         durationSeconds: integer('duration_seconds'),
         ...timestamps(),
-        lastAccessedAt: timestamp('last_accessed_at'),
-        deletedAt: timestamp('deleted_at'),
+        lastAccessedAt: timestamp('last_accessed_at', { withTimezone: true }),
+        deletedAt: timestamp('deleted_at', { withTimezone: true }),
     },
     (table) => [
         index('files_user_id_idx').on(table.userId),
@@ -157,9 +157,9 @@ export const retrievals = pgTable(
             .references(() => user.id, { onDelete: 'cascade' }),
         status: retrievalStatusEnum('status').notNull().default('pending'),
         tier: retrievalTierEnum('tier').notNull().default(DEFAULT_RESTORE_TIER),
-        initiatedAt: timestamp('initiated_at'), // When AWS restore was started
-        readyAt: timestamp('ready_at'), // When file became available
-        expiresAt: timestamp('expires_at'), // When temporary restore expires
+        initiatedAt: timestamp('initiated_at', { withTimezone: true }), // When AWS restore was started
+        readyAt: timestamp('ready_at', { withTimezone: true }), // When file became available
+        expiresAt: timestamp('expires_at', { withTimezone: true }), // When temporary restore expires
         // The `Days` we asked S3 for (#424). A fact from request time, not a
         // prediction: S3's own clock starts when the restore *completes*, which
         // is why `expiresAt` is still read from the restore header rather than
@@ -170,7 +170,7 @@ export const retrievals = pgTable(
         // Null on rows predating the split; they were all created at the
         // default.
         restoreDaysToKeep: integer('restore_days_to_keep'),
-        failedAt: timestamp('failed_at'), // When failure occurred
+        failedAt: timestamp('failed_at', { withTimezone: true }), // When failure occurred
         errorMessage: text('error_message'), // AWS error details if failed
         ...timestamps(),
     },
@@ -230,7 +230,7 @@ export const retrievalRequests = pgTable(
         // the only statement that sets it also asserts every artifact is
         // `ready` and every item downloadable (see completeIfDeliverable in
         // repositories/retrievalRequests).
-        completedAt: timestamp('completed_at'),
+        completedAt: timestamp('completed_at', { withTimezone: true }),
         ...timestamps(),
     },
     (table) => [
@@ -270,8 +270,8 @@ export const retrievalArtifacts = pgTable(
         // rebuild decides against, the message is what an operator reads.
         attempts: integer('attempts').notNull().default(0),
         error: text('error'),
-        startedAt: timestamp('started_at'),
-        completedAt: timestamp('completed_at'),
+        startedAt: timestamp('started_at', { withTimezone: true }),
+        completedAt: timestamp('completed_at', { withTimezone: true }),
         ...timestamps(),
     },
     (table) => [

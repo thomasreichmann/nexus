@@ -32,7 +32,7 @@ export const invites = pgTable(
         // Per-tester override; null → SPONSORED_DEFAULT_STORAGE_LIMIT
         storageLimit: bigint('storage_limit', { mode: 'number' }),
         status: inviteStatusEnum('status').notNull().default('pending'),
-        expiresAt: timestamp('expires_at'),
+        expiresAt: timestamp('expires_at', { withTimezone: true }),
         createdBy: text('created_by')
             .notNull()
             .references(() => user.id),
@@ -41,7 +41,7 @@ export const invites = pgTable(
             // Keep the invite as a historical record if the account is deleted
             { onDelete: 'set null' }
         ),
-        redeemedAt: timestamp('redeemed_at'),
+        redeemedAt: timestamp('redeemed_at', { withTimezone: true }),
         ...timestamps(),
     },
     (table) => [

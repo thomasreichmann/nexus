@@ -40,12 +40,16 @@ export const subscriptions = pgTable(
         planTier: planTierEnum('plan_tier').notNull().default('starter'),
         status: subscriptionStatusEnum('status').notNull().default('trialing'),
         storageLimit: bigint('storage_limit', { mode: 'number' }).notNull(),
-        currentPeriodStart: timestamp('current_period_start'),
-        currentPeriodEnd: timestamp('current_period_end'),
+        currentPeriodStart: timestamp('current_period_start', {
+            withTimezone: true,
+        }),
+        currentPeriodEnd: timestamp('current_period_end', {
+            withTimezone: true,
+        }),
         cancelAtPeriodEnd: boolean('cancel_at_period_end')
             .notNull()
             .default(false),
-        trialEnd: timestamp('trial_end'),
+        trialEnd: timestamp('trial_end', { withTimezone: true }),
         ...timestamps(),
     },
     (table) => [index('subscriptions_status_idx').on(table.status)]
