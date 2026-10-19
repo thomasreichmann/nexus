@@ -15,8 +15,11 @@ type NameSource = Pick<RetrievalRequestFile, 'name' | 'subpath' | 'entryName'>;
  * `_MG_4501.CR2`, and camera folders restart their numbering on every card.
  * A clash gets ` (2)`, ` (3)`, ... on the file's own name, what every desktop
  * file manager does, so it reads as intended rather than as corruption.
- * Compared case-insensitively: macOS and Windows extract `IMG_0001.JPG` and
- * `img_0001.jpg` onto the same file.
+ *
+ * What counts as a clash is what the user's disk would merge: paths compared
+ * case-insensitively and in one Unicode normalization, as macOS and Windows
+ * extract them, and a file never at the path of a folder some other file sits
+ * in (a top-level `RAW` beside `RAW/IMG.CR2` would cost the whole folder).
  *
  * Names a file already has (`entryName`, resolved by an earlier partition) are
  * kept and claimed first, so a new name can never land on one of them. Called
@@ -25,12 +28,23 @@ type NameSource = Pick<RetrievalRequestFile, 'name' | 'subpath' | 'entryName'>;
  * names within that one chunk, which is all those ever had.
  */
 export function resolveEntryNames(files: readonly NameSource[]): string[] {
+    const paths = files.map((file) =>
+        file.entryName === null ? toEntryPath(file) : null
+    );
+
+    const folders = new Set<string>();
     const taken = new Set<string>();
-    for (const file of files) {
-        if (file.entryName !== null) taken.add(file.entryName.toLowerCase());
-    }
+    files.forEach((file, index) => {
+        const folder =
+            file.entryName !== null
+                ? file.entryName.split('/').slice(0, -1).join('/')
+                : paths[index]!.folder;
+        for (const prefix of folderPrefixes(folder)) folders.add(keyOf(prefix));
+        if (file.entryName !== null) taken.add(keyOf(file.entryName));
+    });
+
     return files.map(
-        (file) => file.entryName ?? claim(toEntryPath(file), taken)
+        (file, index) => file.entryName ?? claim(paths[index]!, taken, folders)
     );
 }
 
@@ -40,11 +54,13 @@ interface EntryPath {
 }
 
 /**
- * Where a file goes inside the zip, made safe to extract.
- *
- * `.` and `..` segments are dropped and leading dots stripped, so no entry
- * can climb out of the extraction folder or hide itself; separators inside
- * the name itself are flattened, since a name is one path segment.
+ * Where a file goes inside the zip, made safe to extract — and safe to write:
+ * yazl refuses a path with a `..` segment or one that looks absolute
+ * (`/x`, `C:x`), and a refused name is stored, so it would fail that part's
+ * build on every retry. `.`, `..` and blank segments are dropped and leading
+ * dots stripped, so no entry can climb out of the extraction folder or hide
+ * itself; separators inside the name are flattened, since a name is one
+ * segment.
  */
 function toEntryPath(file: NameSource): EntryPath {
     const folder = (file.subpath ?? '')
@@ -56,11 +72,31 @@ function toEntryPath(file: NameSource): EntryPath {
     return { folder, name };
 }
 
+/**
+ * `:` and control characters become `_`: Windows can't extract either, and
+ * a first segment like `B:W prints` (Finder's "B/W prints") reads as a drive.
+ */
 function cleanSegment(segment: string): string {
-    return segment.replace(/^\.+/, '').trim();
+    return segment
+        .replace(/[:\p{Cc}]/gu, '_')
+        .replace(/^[\s.]+/, '')
+        .trim();
 }
 
-function claim({ folder, name }: EntryPath, taken: Set<string>): string {
+function folderPrefixes(folder: string): string[] {
+    const segments = folder ? folder.split('/') : [];
+    return segments.map((_, i) => segments.slice(0, i + 1).join('/'));
+}
+
+function keyOf(path: string): string {
+    return path.normalize('NFC').toLowerCase();
+}
+
+function claim(
+    { folder, name }: EntryPath,
+    taken: Set<string>,
+    folders: Set<string>
+): string {
     const at = (fileName: string) =>
         folder ? `${folder}/${fileName}` : fileName;
 
@@ -69,8 +105,9 @@ function claim({ folder, name }: EntryPath, taken: Set<string>): string {
     const extension = dot > 0 ? name.slice(dot) : '';
     for (let n = 1; ; n++) {
         const candidate = at(n === 1 ? name : `${stem} (${n})${extension}`);
-        if (!taken.has(candidate.toLowerCase())) {
-            taken.add(candidate.toLowerCase());
+        const key = keyOf(candidate);
+        if (!taken.has(key) && !folders.has(key)) {
+            taken.add(key);
             return candidate;
         }
     }

@@ -489,6 +489,40 @@ describe.concurrent('files of a request', () => {
         ]);
     });
 
+    // One statement writes the whole chunk: each row has to take its own
+    // pair's name, not one name for all.
+    it('assignItemsToArtifact gives each file of the chunk its own entry name', async ({
+        db,
+        user,
+    }) => {
+        const repo = createRetrievalRequestRepo(db);
+        const request = await insertRetrievalRequest(db, { userId: user.id });
+        const [a, b] = await Promise.all([
+            insertFile(db, { userId: user.id, name: 'a.jpg' }),
+            insertFile(db, { userId: user.id, name: 'b.jpg' }),
+        ]);
+        await Promise.all(
+            [a, b].map((file) =>
+                insertRetrievalRequestItem(db, {
+                    requestId: request.id,
+                    fileId: file.id,
+                })
+            )
+        );
+        const artifact = await insertRetrievalArtifact(db, {
+            requestId: request.id,
+        });
+
+        await repo.assignItemsToArtifact(request.id, artifact.id, [
+            { fileId: b.id, entryName: 'second/b.jpg' },
+            { fileId: a.id, entryName: 'first/a.jpg' },
+        ]);
+
+        expect(
+            (await repo.findArtifactFiles(artifact.id)).map((f) => f.entryName)
+        ).toEqual(['first/a.jpg', 'second/b.jpg']);
+    });
+
     it('assignItemsToArtifact with no files is a no-op', async ({
         db,
         user,

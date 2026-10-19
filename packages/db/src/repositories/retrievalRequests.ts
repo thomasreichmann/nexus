@@ -358,9 +358,8 @@ function findFiles(db: DB, requestId: string): Promise<RetrievalRequestFile[]> {
 }
 
 /**
- * The files a built artifact must contain, in zip order — by `s3Key`, the same
- * walk the partition used, so the entries come out in the order the chunking
- * assumed.
+ * The files a built artifact must contain, in zip order — the same walk the
+ * partition used, so the entries come out in the order the chunking assumed.
  */
 function findArtifactFiles(
     db: DB,

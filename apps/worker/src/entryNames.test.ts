@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ZipFile } from 'yazl';
 import { resolveEntryNames } from './entryNames';
 
 type Source = Parameters<typeof resolveEntryNames>[0][number];
@@ -70,9 +71,72 @@ describe('resolveEntryNames', () => {
         expect(
             resolveEntryNames([
                 file('passwd', '../../etc'),
+                file('passwd', ' .. / .. /etc'),
                 file('../../etc/shadow'),
                 file('.hidden', './.config'),
             ])
-        ).toEqual(['etc/passwd', '_.._etc_shadow', 'config/hidden']);
+        ).toEqual([
+            'etc/passwd',
+            'etc/passwd (2)',
+            '_.._etc_shadow',
+            'config/hidden',
+        ]);
+    });
+
+    // Finder shows a folder named "B/W prints" and stores it as `B:W prints`,
+    // which a zip writer reads as a drive letter.
+    it('keeps a colon from reading as a drive letter', () => {
+        expect(
+            resolveEntryNames([
+                file('IMG.JPG', 'B:W prints'),
+                file('C:notes.txt'),
+            ])
+        ).toEqual(['B_W prints/IMG.JPG', 'C_notes.txt']);
+    });
+
+    // Extracting `RAW` the file first would leave nowhere for `RAW/` the
+    // folder, and every file in it would be lost.
+    it('never gives a file the path of a folder another file sits in', () => {
+        expect(
+            resolveEntryNames([
+                file('raw'),
+                file('IMG.CR2', 'RAW/2026'),
+                file('2026', 'RAW'),
+            ])
+        ).toEqual(['raw (2)', 'RAW/2026/IMG.CR2', 'RAW/2026 (2)']);
+    });
+
+    // macOS hands over names decomposed; a name typed elsewhere arrives
+    // composed. Both extract to one file.
+    it('treats the composed and decomposed forms of a name as a clash', () => {
+        const composed = 'café.jpg';
+        const decomposed = 'café.jpg';
+
+        expect(resolveEntryNames([file(composed), file(decomposed)])).toEqual([
+            composed,
+            'café (2).jpg',
+        ]);
+    });
+
+    // A name the writer refuses is stored with the partition, so it would
+    // fail that part's build on every retry: whatever comes in, what comes
+    // out must be one yazl accepts.
+    it('only names paths a zip writer accepts', () => {
+        const names = resolveEntryNames([
+            file('a.jpg', ' ../ ../etc'),
+            file('a.jpg', 'C:'),
+            file('a.jpg', '/abs/olute'),
+            file('a.jpg', '\\\\server\\share'),
+            file('a.jpg', '. . /.'),
+            file('C:x.jpg'),
+            file('..'),
+            file(' '),
+            file('/'),
+        ]);
+
+        const zip = new ZipFile();
+        expect(() =>
+            names.forEach((name) => zip.addBuffer(Buffer.alloc(0), name))
+        ).not.toThrow();
     });
 });
