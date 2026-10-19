@@ -465,6 +465,60 @@ describe('multipart upload', () => {
         expect(harness.backend.putsFor(3)).toHaveLength(1);
         expect(harness.backend.putsFor(2)).toHaveLength(3);
     });
+
+    it('Retry shows the progress S3 already holds before sending another part', async () => {
+        const harness = createQueueHarness();
+        harness.backend.holdPuts();
+        await harness.queue.addFiles(
+            picked(fakeFile('clip.mov', MULTIPART_SIZE))
+        );
+        const wave = harness.queue.startUpload();
+        await vi.waitFor(() =>
+            expect(harness.backend.inFlight()).toHaveLength(
+                MAX_CONCURRENT_CHUNKS
+            )
+        );
+        harness.backend.completePuts((put) => put.partNumber! <= 2);
+        await vi.waitFor(() =>
+            expect(harness.backend.inFlight()).toHaveLength(
+                MAX_CONCURRENT_CHUNKS
+            )
+        );
+        // S3 has all of part 3 when part 4, refused on both URLs, fails the
+        // row and aborts it: the tab never hears that part 3 landed.
+        harness.backend.landWithoutResponse((put) => put.partNumber === 3);
+        harness.backend.failNextPuts(
+            (put) => put.partNumber === 4,
+            new UploadHttpError(403)
+        );
+        harness.backend.failPut(
+            (put) => put.partNumber === 4,
+            new UploadHttpError(403)
+        );
+        await wave;
+        expect(harness.row('clip.mov')).toMatchObject({
+            status: 'error',
+            progress: Math.round((2 / MULTIPART_PARTS) * 100),
+        });
+
+        const retry = harness.queue.retryFile(harness.row('clip.mov').id);
+
+        // Only parts 4 and 5 are sent, and the row already counts part 3.
+        await vi.waitFor(() =>
+            expect(
+                harness.backend.inFlight().map((put) => put.partNumber)
+            ).toEqual([4, 5])
+        );
+        expect(harness.row('clip.mov').progress).toBe(
+            Math.round((3 / MULTIPART_PARTS) * 100)
+        );
+        harness.backend.releasePuts();
+        await retry;
+        expect(harness.backend.putsFor(3)).toHaveLength(1);
+        expect(harness.backend.filesNamed('clip.mov')).toMatchObject([
+            { status: 'confirmed' },
+        ]);
+    });
 });
 
 describe('upload funnel events', () => {

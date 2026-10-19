@@ -9,6 +9,8 @@ describe('runScopedEmail', () => {
             workerIndex: undefined,
             scoped: 'admin-e2e--run-ab12cd34@test.local',
         },
+        // Playwright's first worker: a present index, however falsy.
+        { workerIndex: 0, scoped: 'admin-e2e--run-ab12cd34-w0@test.local' },
         { workerIndex: 3, scoped: 'admin-e2e--run-ab12cd34-w3@test.local' },
     ])(
         'scopes the local part to the run (worker $workerIndex)',
