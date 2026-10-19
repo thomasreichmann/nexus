@@ -6,10 +6,12 @@ import {
     afterEach,
     inRolledBackTransaction,
 } from '../test-db/integration';
-import { insertFile, insertUploadBatch } from '../test-db';
+import { insertFile, insertRetrieval, insertUploadBatch } from '../test-db';
 import { createFileRepo, originalKey } from './files';
 
 const LONG_AGO = new Date('2026-01-01T00:00:00Z');
+const HOUR_MS = 60 * 60 * 1000;
+const past = () => new Date(Date.now() - HOUR_MS);
 
 // Every file a user reaches by id goes through one of these. Without the
 // `userId` predicate, one user could read, delete or confirm another's file
