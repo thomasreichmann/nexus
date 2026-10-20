@@ -30,7 +30,8 @@
  * that creates them deletes them itself.
  *
  * `inRolledBackTransaction` is for a test whose query scans the whole table
- * and whose rows another run of the same test would also seed (below).
+ * and whose rows another run of the same test would also seed, or that checks
+ * one whole-table read against another (below).
  *
  * Kept out of `@nexus/db/test-db`'s index on purpose: that entrypoint is
  * vitest-free so Playwright can load it, and this module imports `vitest`.
@@ -117,16 +118,24 @@ export const it = test.extend<IntegrationFixtures>({
  * workers share one database, and so do engineers on dev. Two runs seeding
  * the same far-future dates would each read the other's rows (#524). A
  * failing assertion inside `fn` rolls back too, and fails the test as usual.
+ *
+ * At REPEATABLE READ, so every statement in `fn` reads one snapshot: its own
+ * rows, and whatever was committed before its first read. A whole-table count
+ * compared against another can't be split by a row some other connection
+ * commits in between (#543).
  */
 export async function inRolledBackTransaction(
     db: Connection,
     fn: (tx: Transaction) => Promise<void>
 ): Promise<void> {
     try {
-        await db.transaction(async (tx) => {
-            await fn(tx);
-            tx.rollback();
-        });
+        await db.transaction(
+            async (tx) => {
+                await fn(tx);
+                tx.rollback();
+            },
+            { isolationLevel: 'repeatable read' }
+        );
     } catch (error) {
         if (!(error instanceof TransactionRollbackError)) throw error;
     }
