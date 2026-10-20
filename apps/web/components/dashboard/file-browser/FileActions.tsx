@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import {
     Clock,
     Download,
@@ -9,7 +8,11 @@ import {
     RotateCw,
     Trash2,
 } from 'lucide-react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+    useMutation,
+    useMutationState,
+    useQueryClient,
+} from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { isProbablyCold } from '@nexus/db/objectState';
 import { useTRPC } from '@/lib/trpc/client';
@@ -30,12 +33,38 @@ import { DeleteDialog } from '@/components/dashboard/DeleteDialog';
 import { toastContext } from '@/lib/trpc/error-link';
 import type { RetrievableFile } from '@/components/dashboard/RetrieveDialog';
 import { toastRetrievalRequested } from './retrievalFeedback';
-import type { FileWithRetrieval } from '@nexus/db/repo/files';
 import type { DerivedStatus } from './status';
 
-export function useFileActions(
-    file: Pick<FileWithRetrieval, 'id' | 'size' | 'createdAt'>
-) {
+/**
+ * What a file's actions need from it: an id, the retrieve estimate's inputs,
+ * and a name for the delete confirmation.
+ */
+export interface ActionableFile extends RetrievableFile {
+    id: string;
+    name: string;
+}
+
+export type FileAction = 'retrieve' | 'download' | 'delete';
+
+export interface FileActionHandlers {
+    remove: (fileId: string) => void;
+    retrieve: (fileId: string) => void;
+    download: (file: ActionableFile) => Promise<void>;
+}
+
+interface UseFileActionsOptions {
+    /** Runs for each file once its delete is in. */
+    onDeleted: (fileId: string) => void;
+}
+
+/**
+ * The library's per-file delete, retrieve and download: one delete and one
+ * retrieval mutation shared by every tile, row and the viewer, rather than a
+ * pair per file (#477).
+ */
+export function useFileActions({
+    onDeleted,
+}: UseFileActionsOptions): FileActionHandlers {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
     const invalidateFileList = useInvalidateFileList();
@@ -43,7 +72,12 @@ export function useFileActions(
     const deleteMutation = useMutation(
         trpc.files.delete.mutationOptions({
             trpc: toastContext({ errorMessage: 'Failed to delete file' }),
-            onSuccess: invalidateFileList,
+            // Pending until the list has refetched without the file, so its
+            // tile never shows an idle Delete in between.
+            onSuccess(_file, { id }) {
+                onDeleted(id);
+                return invalidateFileList();
+            },
         })
     );
 
@@ -62,7 +96,7 @@ export function useFileActions(
         })
     );
 
-    async function handleDownload() {
+    async function download(file: ActionableFile) {
         try {
             const { url } = await queryClient.fetchQuery(
                 trpc.files.getDownloadUrl.queryOptions({ fileId: file.id })
@@ -78,117 +112,178 @@ export function useFileActions(
         }
     }
 
-    // Pending for this file only: the viewer keeps one instance while it
-    // browses, and the next photo isn't the one being restored.
     return {
-        onDelete: () => deleteMutation.mutate({ id: file.id }),
-        onRetrieval: () => retrievalMutation.mutate({ fileId: file.id }),
-        onDownload: handleDownload,
-        isDeleting:
-            deleteMutation.isPending && deleteMutation.variables.id === file.id,
-        isRetrieving:
-            retrievalMutation.isPending &&
-            retrievalMutation.variables.fileId === file.id,
+        remove: (fileId) => deleteMutation.mutate({ id: fileId }),
+        retrieve: (fileId) => retrievalMutation.mutate({ fileId }),
+        download,
     };
 }
 
 /**
- * What the menu's dialogs need from a file: the retrieve estimate's inputs
- * plus a name for the delete confirmation.
+ * A delete or retrieval of this file on its way, asked for from its menu or
+ * the viewer. Read from the mutation cache, not a mutation's own `isPending`:
+ * the library's one mutation of each would speak for whichever file went
+ * last. The cache gives the ids in flight and the file is looked up here,
+ * because a cache filter only re-runs on a cache event: the viewer, browsing
+ * on to the next file, would still be reading the last one's.
  */
-interface ActionableFile extends RetrievableFile {
-    name: string;
+export function useFilePending(fileId: string): {
+    isDeleting: boolean;
+    isRetrieving: boolean;
+} {
+    const trpc = useTRPC();
+    const deletingIds = useMutationState({
+        filters: {
+            mutationKey: trpc.files.delete.mutationKey(),
+            status: 'pending',
+        },
+        select: (m) => readVariable(m.state.variables, 'id'),
+    });
+    const retrievingIds = useMutationState({
+        filters: {
+            mutationKey: trpc.files.requestRetrieval.mutationKey(),
+            status: 'pending',
+        },
+        select: (m) => readVariable(m.state.variables, 'fileId'),
+    });
+    return {
+        isDeleting: deletingIds.includes(fileId),
+        isRetrieving: retrievingIds.includes(fileId),
+    };
+}
+
+function readVariable(variables: unknown, key: string): unknown {
+    return (variables as Record<string, unknown> | undefined)?.[key];
+}
+
+/** A file menu's retrieve or delete, waiting on its confirm. */
+export interface FileConfirm {
+    action: 'retrieve' | 'delete';
+    file: ActionableFile;
+    /**
+     * Off once it's answered, while the rest stays: the dialog keeps naming
+     * its file as it animates closed.
+     */
+    isOpen: boolean;
+}
+
+interface FileConfirmDialogsProps {
+    confirm: FileConfirm | null;
+    onOpenChange: (isOpen: boolean) => void;
+    actions: FileActionHandlers;
+}
+
+/**
+ * The confirm step of every file menu in the pane: one retrieve and one
+ * delete dialog, aimed at whichever file's menu asked (#477), rather than a
+ * pair mounted under each tile and row.
+ */
+export function FileConfirmDialogs({
+    confirm,
+    onOpenChange,
+    actions,
+}: FileConfirmDialogsProps) {
+    if (!confirm) return null;
+    const { action, file, isOpen } = confirm;
+    return (
+        <>
+            <RetrieveDialog
+                open={isOpen && action === 'retrieve'}
+                onOpenChange={onOpenChange}
+                files={[file]}
+                fileCount={1}
+                onConfirm={() => actions.retrieve(file.id)}
+            />
+            <DeleteDialog
+                open={isOpen && action === 'delete'}
+                onOpenChange={onOpenChange}
+                fileCount={1}
+                fileName={file.name}
+                onConfirm={() => actions.remove(file.id)}
+            />
+        </>
+    );
 }
 
 interface FileActionsProps {
     status: DerivedStatus;
     file: ActionableFile;
-    onDelete: () => void;
-    onRetrieval: () => void;
-    onDownload: () => void;
-    isDeleting: boolean;
-    isRetrieving: boolean;
+    /** Download runs at once; retrieve and delete go through a confirm. */
+    onAction: (action: FileAction, file: ActionableFile) => void;
 }
 
-export function FileActions({
-    status,
-    file,
-    onDelete,
-    onRetrieval,
-    onDownload,
-    isDeleting,
-    isRetrieving,
-}: FileActionsProps) {
-    // The dialogs live outside the dropdown: menu content unmounts on close,
-    // which would tear a dialog down mid-open.
-    const [isRetrieveDialogOpen, setIsRetrieveDialogOpen] = useState(false);
-    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+export function FileActions({ status, file, onAction }: FileActionsProps) {
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger
+                render={<Button variant="ghost" size="icon-sm" />}
+            >
+                <MoreHorizontal className="size-4" />
+                <span className="sr-only">Actions</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuPositioner align="end">
+                <DropdownMenuContent>
+                    <FileMenuItems
+                        status={status}
+                        fileId={file.id}
+                        onAction={(action) => onAction(action, file)}
+                    />
+                </DropdownMenuContent>
+            </DropdownMenuPositioner>
+        </DropdownMenu>
+    );
+}
+
+interface FileMenuItemsProps {
+    status: DerivedStatus;
+    fileId: string;
+    onAction: (action: FileAction) => void;
+}
+
+// Mounted only while the menu is open, so a pane of tiles doesn't keep a
+// watch on the mutation cache per file.
+function FileMenuItems({ status, fileId, onAction }: FileMenuItemsProps) {
+    const { isDeleting, isRetrieving } = useFilePending(fileId);
     return (
         <>
-            <RetrieveDialog
-                open={isRetrieveDialogOpen}
-                onOpenChange={setIsRetrieveDialogOpen}
-                files={[file]}
-                fileCount={1}
-                onConfirm={onRetrieval}
-            />
-            <DeleteDialog
-                open={isDeleteDialogOpen}
-                onOpenChange={setIsDeleteDialogOpen}
-                fileCount={1}
-                fileName={file.name}
-                onConfirm={onDelete}
-            />
-            <DropdownMenu>
-                <DropdownMenuTrigger
-                    render={<Button variant="ghost" size="icon-sm" />}
+            {status === 'archived' && (
+                <DropdownMenuItem
+                    onClick={() => onAction('retrieve')}
+                    disabled={isRetrieving}
                 >
-                    <MoreHorizontal className="size-4" />
-                    <span className="sr-only">Actions</span>
-                </DropdownMenuTrigger>
-                <DropdownMenuPositioner align="end">
-                    <DropdownMenuContent>
-                        {status === 'archived' && (
-                            <DropdownMenuItem
-                                onClick={() => setIsRetrieveDialogOpen(true)}
-                                disabled={isRetrieving}
-                            >
-                                {isRetrieving ? (
-                                    <Loader2 className="mr-2 size-4 animate-spin" />
-                                ) : (
-                                    <Clock className="mr-2 size-4" />
-                                )}
-                                Request retrieval
-                            </DropdownMenuItem>
-                        )}
-                        {status === 'available' && (
-                            <DropdownMenuItem onClick={onDownload}>
-                                <Download className="mr-2 size-4" />
-                                Download
-                            </DropdownMenuItem>
-                        )}
-                        {status === 'retrieving' && (
-                            <DropdownMenuItem disabled>
-                                <RotateCw className="mr-2 size-4" />
-                                Retrieving...
-                            </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => setIsDeleteDialogOpen(true)}
-                            disabled={isDeleting}
-                        >
-                            {isDeleting ? (
-                                <Loader2 className="mr-2 size-4 animate-spin" />
-                            ) : (
-                                <Trash2 className="mr-2 size-4" />
-                            )}
-                            Delete
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenuPositioner>
-            </DropdownMenu>
+                    {isRetrieving ? (
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                    ) : (
+                        <Clock className="mr-2 size-4" />
+                    )}
+                    Request retrieval
+                </DropdownMenuItem>
+            )}
+            {status === 'available' && (
+                <DropdownMenuItem onClick={() => onAction('download')}>
+                    <Download className="mr-2 size-4" />
+                    Download
+                </DropdownMenuItem>
+            )}
+            {status === 'retrieving' && (
+                <DropdownMenuItem disabled>
+                    <RotateCw className="mr-2 size-4" />
+                    Retrieving...
+                </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => onAction('delete')}
+                disabled={isDeleting}
+            >
+                {isDeleting ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                ) : (
+                    <Trash2 className="mr-2 size-4" />
+                )}
+                Delete
+            </DropdownMenuItem>
         </>
     );
 }

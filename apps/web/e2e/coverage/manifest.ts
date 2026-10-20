@@ -355,6 +355,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/files'],
     },
     {
+        id: 'files-delete-single-mid-selection',
+        title: 'A file deleted on its own (menu or viewer) leaves the selection; the bulk delete after it removes the rest',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
         id: 'files-request-retrieval-single',
         title: 'Request retrieval of an archived file',
         area: 'files',
@@ -369,6 +375,12 @@ export const USE_CASES: UseCaseEntry[] = [
     {
         id: 'files-ready-download-window',
         title: 'Ready retrieval renders available with a download window (uniform across tiers)',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
+        id: 'files-download-single',
+        title: 'Download a ready file from its actions menu',
         area: 'files',
         routes: ['/dashboard/files'],
     },

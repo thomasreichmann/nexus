@@ -35,7 +35,8 @@ import { DeleteDialog } from '@/components/dashboard/DeleteDialog';
 import { MiddleTruncateName } from '@/components/dashboard/MiddleTruncateName';
 import {
     FileActions,
-    useFileActions,
+    type ActionableFile,
+    type FileAction,
 } from '@/components/dashboard/file-browser/FileActions';
 import { StatusDot } from '@/components/dashboard/file-browser/StatusDot';
 import { toastRetrievalRequested } from '@/components/dashboard/file-browser/retrievalFeedback';
@@ -93,6 +94,8 @@ interface BatchPaneProps {
     onViewModeChange: (mode: PaneViewMode) => void;
     /** Opens the file viewer; `aspect` is the tile thumbnail's, if loaded. */
     onOpenFile: (fileId: string, aspect: number | null) => void;
+    /** A file menu's action, run or confirmed by the library (#477). */
+    onFileAction: (action: FileAction, file: ActionableFile) => void;
     onBatchDeleted: () => void;
 }
 
@@ -115,6 +118,7 @@ function BatchPaneContent({
     viewMode,
     onViewModeChange,
     onOpenFile,
+    onFileAction,
     onBatchDeleted,
 }: BatchPaneProps) {
     const hasSelection = selection.isWholeBatch || selection.files.size > 0;
@@ -193,6 +197,7 @@ function BatchPaneContent({
                         onLoadPrevious={onLoadPrevious}
                         onRetry={onRetrySection}
                         onOpenFile={onOpenFile}
+                        onFileAction={onFileAction}
                     />
                 ))
             )}
@@ -286,6 +291,7 @@ interface FileSectionProps {
     onLoadPrevious: (sectionKey: string) => void;
     onRetry: (sectionKey: string) => void;
     onOpenFile: (fileId: string, aspect: number | null) => void;
+    onFileAction: (action: FileAction, file: ActionableFile) => void;
 }
 
 /**
@@ -305,6 +311,7 @@ function FileSection({
     onLoadPrevious,
     onRetry,
     onOpenFile,
+    onFileAction,
 }: FileSectionProps) {
     const FileItem = FILE_ITEMS[viewMode];
     const isEmpty = section.files.length === 0;
@@ -380,6 +387,7 @@ function FileSection({
                                             readAspect(e.currentTarget)
                                         )
                                     }
+                                    onAction={onFileAction}
                                 />
                             ))}
                         </div>
@@ -819,6 +827,7 @@ interface FileItemProps {
     onActivate: (e: ReactMouseEvent<HTMLElement>) => void;
     /** Always opens, whatever the selection. */
     onOpen: (e: ReactMouseEvent<HTMLElement>) => void;
+    onAction: (action: FileAction, file: ActionableFile) => void;
 }
 
 function FileTile({
@@ -829,9 +838,9 @@ function FileTile({
     onToggle,
     onActivate,
     onOpen,
+    onAction,
 }: FileItemProps) {
     const status = deriveStatus(file);
-    const actions = useFileActions(file);
     return (
         <figure
             data-fx="tile"
@@ -889,7 +898,11 @@ function FileTile({
                     onClick={(e) => e.stopPropagation()}
                     className="absolute right-1 bottom-1 rounded-md bg-background/80 opacity-0 transition-opacity group-hover/tile:opacity-100 has-data-popup-open:opacity-100"
                 >
-                    <FileActions status={status} file={file} {...actions} />
+                    <FileActions
+                        status={status}
+                        file={file}
+                        onAction={onAction}
+                    />
                 </span>
                 <ExpandButton
                     fileName={file.name}
@@ -1071,9 +1084,9 @@ function FileListRow({
     isSelected,
     onToggle,
     onActivate,
+    onAction,
 }: FileItemProps) {
     const status = deriveStatus(file);
-    const actions = useFileActions(file);
     return (
         <div
             data-fx="tile"
@@ -1118,7 +1131,7 @@ function FileListRow({
                 <StatusDot status={status} isCold={isProbablyCold(file)} />
             </span>
             <span onClick={(e) => e.stopPropagation()}>
-                <FileActions status={status} file={file} {...actions} />
+                <FileActions status={status} file={file} onAction={onAction} />
             </span>
         </div>
     );

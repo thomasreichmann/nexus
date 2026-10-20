@@ -499,7 +499,21 @@ async function getThumbnailUrls(
     };
 }
 
-function deleteUserFile(db: DB, userId: string, fileId: string): Promise<File>;
+/**
+ * Soft-delete the user's files, one or a selection, in one transaction with
+ * the usage they give back. Returns the files this call deleted.
+ *
+ * An id that isn't one of the user's files fails the whole set: that's a
+ * client bug or a forged request, not a selection to half-apply. A file the
+ * user already deleted is no such thing. Its own menu, the viewer or another
+ * tab got there first, and what the user asked for holds, so it's skipped
+ * rather than rolling back the rest (#477).
+ */
+function deleteUserFile(
+    db: DB,
+    userId: string,
+    fileId: string
+): Promise<File | undefined>;
 function deleteUserFile(
     db: DB,
     userId: string,
@@ -509,7 +523,7 @@ async function deleteUserFile(
     db: DB,
     userId: string,
     fileIdOrIds: string | string[]
-): Promise<File | File[]> {
+): Promise<File | undefined | File[]> {
     const fileIds = Array.isArray(fileIdOrIds) ? fileIdOrIds : [fileIdOrIds];
     if (fileIds.length === 0) return [];
 
@@ -521,19 +535,20 @@ async function deleteUserFile(
         // ever reached `available` (or beyond) were counted in storage_usage —
         // decrementing for `uploading` files would drift usage negative.
         const before = await fileRepo.findManyByUserAndIds(userId, fileIds);
+        const ownedIds = new Set(before.map((f) => f.id));
+        const missingId = fileIds.find((id) => !ownedIds.has(id));
+        if (missingId) throw new NotFoundError('File', missingId);
 
+        // Leaves out the ones already deleted, before this call or by one
+        // racing it, so only what it returns gives usage back.
         const result = await fileRepo.softDeleteForUser(userId, fileIds);
-
-        // If count doesn't match, some files were missing or not owned
-        if (result.length !== fileIds.length) {
-            const deletedIds = new Set(result.map((f) => f.id));
-            const missingId = fileIds.find((id) => !deletedIds.has(id));
-            throw new NotFoundError('File', missingId!);
-        }
+        const deletedIds = new Set(result.map((f) => f.id));
 
         // Aggregate counted bytes/count and issue a single UPDATE so a
         // full-archive delete doesn't fan out into N round-trips.
-        const counted = before.filter((f) => f.status !== 'uploading');
+        const counted = before.filter(
+            (f) => deletedIds.has(f.id) && f.status !== 'uploading'
+        );
         if (counted.length > 0) {
             const totalBytes = counted.reduce((sum, f) => sum + f.size, 0);
             await usageRepo.decrementUsage(userId, totalBytes, counted.length);

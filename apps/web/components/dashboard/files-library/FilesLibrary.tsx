@@ -11,6 +11,13 @@ import {
     useQueryClient,
 } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
+import {
+    FileConfirmDialogs,
+    useFileActions,
+    type ActionableFile,
+    type FileAction,
+    type FileConfirm,
+} from '@/components/dashboard/file-browser/FileActions';
 import { cn } from '@/lib/cn';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
@@ -692,6 +699,26 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
         const loaded = byId(batchFiles.files);
         return [...selection.files.values()].map((f) => loaded.get(f.id) ?? f);
     }, [batchFiles.files, selection]);
+    // A file deleted on its own, from its menu or the viewer, leaves the
+    // selection, so the bulk delete after it doesn't send it again (#477).
+    // A whole-batch selection goes by batch id and has no ids to drop.
+    function dropFromSelection(fileId: string) {
+        setSelection((prev) => {
+            if (!prev.files.has(fileId)) return prev;
+            const files = new Map(prev.files);
+            files.delete(fileId);
+            return { ...prev, files };
+        });
+    }
+
+    /* ---- File actions ---- */
+    const fileActions = useFileActions({ onDeleted: dropFromSelection });
+    // The one confirm every tile's and row's menu shares (#477).
+    const [fileConfirm, setFileConfirm] = useState<FileConfirm | null>(null);
+    function runFileAction(action: FileAction, file: ActionableFile) {
+        if (action === 'download') void fileActions.download(file);
+        else setFileConfirm({ action, file, isOpen: true });
+    }
 
     // Stable identities for the memoized pane and library, so opening,
     // browsing and closing the viewer don't re-render them.
@@ -702,6 +729,7 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
     const onLoadPrevious = useStableCallback(batchFiles.loadPrevious);
     const onRetrySection = useStableCallback(batchFiles.retry);
     const onOpenFile = useStableCallback(openFile);
+    const onFileAction = useStableCallback(runFileAction);
     const onOpenBatch = useStableCallback(openFromLibrary);
     const onIntent = useStableCallback(prefetchBatch);
     const onBatchDeleted = useStableCallback(() => navigate(null, 'replace'));
@@ -813,6 +841,7 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
                             viewMode={paneViewMode}
                             onViewModeChange={changeViewMode}
                             onOpenFile={onOpenFile}
+                            onFileAction={onFileAction}
                             onBatchDeleted={onBatchDeleted}
                         />
                     </BatchSplitView>
@@ -831,6 +860,7 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
                     selectedIds={viewerSelectedIds}
                     selectedCount={selectedCount}
                     onToggleSelect={(fileId) => toggleFile(fileId, false)}
+                    actions={fileActions}
                     onNavigate={browseFile}
                     onClose={closeFile}
                     onSettled={onViewerSettled}
@@ -853,6 +883,13 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
                     />
                 </div>
             )}
+            <FileConfirmDialogs
+                confirm={fileConfirm}
+                onOpenChange={(isOpen) =>
+                    setFileConfirm((prev) => prev && { ...prev, isOpen })
+                }
+                actions={fileActions}
+            />
         </div>
     );
 }

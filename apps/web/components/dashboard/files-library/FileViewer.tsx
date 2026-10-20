@@ -33,7 +33,10 @@ import {
     RetrieveDialog,
     getRetrievalEstimate,
 } from '@/components/dashboard/RetrieveDialog';
-import { useFileActions } from '@/components/dashboard/file-browser/FileActions';
+import {
+    useFilePending,
+    type FileActionHandlers,
+} from '@/components/dashboard/file-browser/FileActions';
 import {
     deriveStatus,
     getFileExtension,
@@ -96,6 +99,8 @@ interface FileViewerProps {
     selectedIds: Set<string>;
     selectedCount: number;
     onToggleSelect: (fileId: string) => void;
+    /** The library's, shared with the pane's file menus. */
+    actions: FileActionHandlers;
     onNavigate: (fileId: string) => void;
     onClose: () => void;
     /** The opening or closing choreography has finished. */
@@ -165,6 +170,7 @@ function FileViewerContent({
     selectedIds,
     selectedCount,
     onToggleSelect,
+    actions,
     onNavigate,
     onClose,
     onSettled,
@@ -621,7 +627,7 @@ function FileViewerContent({
     }
 
     /* ---- Actions ---- */
-    const actions = useFileActions(file);
+    const { isRetrieving } = useFilePending(file.id);
     function confirmDelete() {
         // Move on before the row disappears, so the viewer never points at
         // a file that's gone.
@@ -632,7 +638,7 @@ function FileViewerContent({
         } else {
             onClose();
         }
-        actions.onDelete();
+        actions.remove(file.id);
     }
 
     const status = deriveStatus(file);
@@ -774,13 +780,13 @@ function FileViewerContent({
                     onShowOriginal={showOriginal}
                     onToggleSelect={() => onToggleSelect(file.id)}
                     onRestore={() => setIsRetrieveOpen(true)}
-                    onDownload={actions.onDownload}
+                    onDownload={() => void actions.download(file)}
                     onDelete={() => setIsDeleteOpen(true)}
                     onJumpTo={(id) => {
                         const target = files.findIndex((f) => f.id === id);
                         if (target >= 0) goTo(target);
                     }}
-                    isRetrieving={actions.isRetrieving}
+                    isRetrieving={isRetrieving}
                 />
             </aside>
 
@@ -794,7 +800,7 @@ function FileViewerContent({
                 onOpenChange={setIsRetrieveOpen}
                 files={[file]}
                 fileCount={1}
-                onConfirm={actions.onRetrieval}
+                onConfirm={() => actions.retrieve(file.id)}
             />
             <DeleteDialog
                 open={isDeleteOpen}
