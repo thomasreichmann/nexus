@@ -624,3 +624,62 @@ describe('the folder a file is uploaded from', () => {
         expect(file.subpath).toBeNull();
     });
 });
+
+// A batch records how many files it's meant to hold, so one with fewer
+// confirmed files is identifiable as partial (#399).
+describe('the files a batch expects', () => {
+    function readBatch(db: DB, id: string) {
+        return db.query.uploadBatches.findFirst({
+            where: (b, { eq }) => eq(b.id, id),
+        });
+    }
+
+    it('createBatch records the name and file count the upload sends', async ({
+        db,
+        user,
+    }) => {
+        const { batchId } = await fileService.createBatch(db, user.id, {
+            name: 'Silva wedding',
+            expectedFileCount: 40,
+        });
+
+        expect(await readBatch(db, batchId)).toMatchObject({
+            userId: user.id,
+            name: 'Silva wedding',
+            expectedFileCount: 40,
+        });
+    });
+
+    it('createBatch falls back to a timestamp name, and expects nothing it wasn’t told', async ({
+        db,
+        user,
+    }) => {
+        const { batchId } = await fileService.createBatch(db, user.id, {});
+
+        expect(await readBatch(db, batchId)).toMatchObject({
+            name: expect.stringMatching(
+                /^Upload \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/
+            ),
+            expectedFileCount: null,
+        });
+    });
+
+    // The fallback when the browser's createBatch failed: each file gets a
+    // batch of its own.
+    it('a file uploaded with no batch gets one expecting just it', async ({
+        db,
+        user,
+    }) => {
+        const { fileId } = await fileService.initiateUpload(
+            db,
+            user.id,
+            { name: 'loose.txt', sizeBytes: 1000 },
+            undefined
+        );
+
+        const [file] = await readFiles(db, [fileId]);
+        expect(await readBatch(db, file.batchId!)).toMatchObject({
+            expectedFileCount: 1,
+        });
+    });
+});

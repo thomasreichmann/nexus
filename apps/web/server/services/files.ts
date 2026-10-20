@@ -43,18 +43,25 @@ export function formatFallbackBatchName(date: Date): string {
     return `Upload ${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
 }
 
+interface NewBatchInput {
+    name?: string;
+    /** How many files the batch is meant to hold (#399). */
+    expectedFileCount?: number;
+}
+
 // Single insert point for new batches; the name falls back to the timestamp
 // label when the caller doesn't supply one.
 async function insertBatch(
     db: DB,
     userId: string,
-    name?: string
+    { name, expectedFileCount }: NewBatchInput
 ): Promise<UploadBatch> {
     const batchRepo = createUploadBatchRepo(db);
     return batchRepo.insert({
         id: crypto.randomUUID(),
         userId,
         name: name ?? formatFallbackBatchName(new Date()),
+        expectedFileCount,
     });
 }
 
@@ -71,7 +78,12 @@ async function resolveBatchId(
         }
         return existing.id;
     }
-    return (await insertBatch(db, userId, input.batchName)).id;
+    // A batch of its own for this one file, so it's expected to hold one.
+    const batch = await insertBatch(db, userId, {
+        name: input.batchName,
+        expectedFileCount: 1,
+    });
+    return batch.id;
 }
 
 interface CreateBatchResult {
@@ -80,13 +92,14 @@ interface CreateBatchResult {
 
 // Pre-create a session batch so every file in a multi-file upload joins the
 // same batch (the per-file initiate calls pass this id back as input.batchId).
-// `name` labels a whole-folder upload after its folder (#395).
+// `name` labels a whole-folder upload after its folder (#395), and
+// `expectedFileCount` is how many files the click is sending (#399).
 async function createBatch(
     db: DB,
     userId: string,
-    name?: string
+    input: NewBatchInput
 ): Promise<CreateBatchResult> {
-    return { batchId: (await insertBatch(db, userId, name)).id };
+    return { batchId: (await insertBatch(db, userId, input)).id };
 }
 
 interface InitiateUploadResult {

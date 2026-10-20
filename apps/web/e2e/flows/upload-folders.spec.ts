@@ -90,10 +90,13 @@ test(
                 })
             ).toHaveCount(2);
 
+            // A click from idle starts its wave clean (#399): the first
+            // wave's rows leave the queue, and the copies upload on their own.
             await page.getByRole('button', { name: 'Upload 2 files' }).click();
+            await expect(page.getByText('Selected Files (2)')).toBeVisible();
             await expect(
                 page.getByText('Uploaded', { exact: true })
-            ).toHaveCount(4, { timeout: 30_000 });
+            ).toHaveCount(2, { timeout: 30_000 });
             expect(puts.total).toBe(4);
             expect(await countRows()).toHaveLength(4);
 

@@ -71,6 +71,11 @@ export const uploadBatches = pgTable(
             .notNull()
             .references(() => user.id, { onDelete: 'cascade' }),
         name: text('name').notNull(),
+        // How many files the Upload click put in the batch (#399), so a batch
+        // that ended up with fewer confirmed files than this is identifiable
+        // as partial: a wave that died, or a file the user cancelled. Null on
+        // batches from before it was recorded.
+        expectedFileCount: integer('expected_file_count'),
         ...timestamps(),
     },
     (table) => [index('upload_batches_user_id_idx').on(table.userId)]

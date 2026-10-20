@@ -497,10 +497,22 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
-        id: 'upload-nav-guard',
-        title: 'Navigating away mid-wave asks for confirmation; confirmed leave strands no uploading row',
+        id: 'upload-survives-navigation',
+        title: 'A wave keeps uploading across in-app navigation, lands its batch whole, and only tab close asks first',
+        area: 'upload',
+        routes: ['/dashboard/upload', '/dashboard/files'],
+    },
+    {
+        id: 'upload-sign-out-clears',
+        title: 'Signing out mid-wave ends the wave and releases its uploading rows first',
         area: 'upload',
         routes: ['/dashboard/upload'],
+    },
+    {
+        id: 'upload-wave-pill',
+        title: 'A running wave shows as a pill on other dashboard pages, linking back to its queue',
+        area: 'upload',
+        routes: ['/dashboard/files'],
     },
     {
         id: 'upload-preflight-quota',
