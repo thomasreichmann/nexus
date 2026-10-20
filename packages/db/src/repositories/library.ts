@@ -31,6 +31,7 @@ import {
     type File,
 } from './files';
 import { buildActiveRetrievalJoin } from './retrievals';
+import { buildMissingFileCount } from './uploadBatches';
 import type { DB } from '../connection';
 
 /*
@@ -92,6 +93,13 @@ export interface LibraryBatchSummary {
     matchCount: number | null;
     /** Up to three files for the cover mosaic, thumbnailed ones first. */
     coverFiles: LibraryCoverFile[];
+    /** How many files the batch's Upload click sent; null without a record. */
+    expectedFileCount: number | null;
+    /**
+     * How many of them never finished uploading, once that can be told
+     * (`buildMissingFileCount`, #550); 0 otherwise.
+     */
+    missingFileCount: number;
 }
 
 export interface LibraryFolder {
@@ -281,6 +289,8 @@ interface SummaryRow {
     readyUntil: Date | null;
     archivedProbablyColdCount: number;
     matchCount: number;
+    expectedFileCount: number | null;
+    missingFileCount: number;
 }
 
 function selectBatchSummaries(db: DB, userId: string, pattern: string | null) {
@@ -293,6 +303,8 @@ function selectBatchSummaries(db: DB, userId: string, pattern: string | null) {
                 ? sql<boolean>`${schema.uploadBatches.name} ilike ${pattern}`
                 : sql<boolean>`false`,
             ...selectSummaryColumns(pattern),
+            expectedFileCount: schema.uploadBatches.expectedFileCount,
+            missingFileCount: buildMissingFileCount(),
         })
         .from(schema.uploadBatches)
         .innerJoin(
@@ -335,12 +347,15 @@ async function findUngroupedRow(
         .leftJoin(schema.retrievals, buildActiveRetrievalJoin())
         .where(and(buildVisibleFilesFilter(userId), buildBatchFilter(null)));
     if (!row || row.fileCount === 0) return undefined;
+    // No batch row, so no Upload click to have expected anything.
     return {
         ...row,
         batchId: null,
         name: null,
         createdAt: null,
         isNameMatch: false,
+        expectedFileCount: null,
+        missingFileCount: 0,
     };
 }
 

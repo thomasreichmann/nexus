@@ -36,6 +36,7 @@ export type Area =
     | 'settings'
     | 'admin-invites'
     | 'admin-jobs'
+    | 'admin-batches'
     | 'admin-dev-tools'
     | 'errors'
     | 'navigation'
@@ -75,6 +76,11 @@ export const PAGES: PageEntry[] = [
         auth: 'admin',
     },
     { route: '/dashboard/admin/jobs', title: 'Admin · Jobs', auth: 'admin' },
+    {
+        route: '/dashboard/admin/batches',
+        title: 'Admin · Partial batches',
+        auth: 'admin',
+    },
     {
         route: '/dashboard/admin/dev-tools',
         title: 'Admin · Dev tools',
@@ -497,6 +503,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'files-partial-batch',
+        title: 'A batch that came up short says how many files never finished uploading, on its card and when opened',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
         id: 'upload-wave-estimate',
         title: 'A long wave shows its transfer rate and time left, once there is enough signal',
         area: 'upload',
@@ -747,6 +759,16 @@ export const USE_CASES: UseCaseEntry[] = [
         title: 'Revoke a pending invite from the table',
         area: 'admin-invites',
         routes: ['/dashboard/admin/invites'],
+    },
+
+    /* ---------------------------------------------------------------- */
+    /* Admin · Partial batches                                           */
+    /* ---------------------------------------------------------------- */
+    {
+        id: 'admin-partial-batches',
+        title: 'Every user’s batches that came up short are listed with what they expected and what’s missing',
+        area: 'admin-batches',
+        routes: ['/dashboard/admin/batches'],
     },
 
     /* ---------------------------------------------------------------- */

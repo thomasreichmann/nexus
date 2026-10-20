@@ -570,7 +570,7 @@ async function claimUpload(
         .set(
             to === 'deleted'
                 ? { status: 'deleted', deletedAt: new Date() }
-                : { status: 'available' }
+                : { status: 'available', confirmedAt: new Date() }
         )
         .where(
             and(

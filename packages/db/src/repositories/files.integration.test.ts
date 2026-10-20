@@ -13,6 +13,32 @@ const LONG_AGO = new Date('2026-01-01T00:00:00Z');
 const HOUR_MS = 60 * 60 * 1000;
 const past = () => new Date(Date.now() - HOUR_MS);
 
+// #550: a confirm is stamped, so a file deleted later still counts as one its
+// batch received; an upload released before it landed never is.
+describe.concurrent('claimUpload', () => {
+    it('stamps a confirmed upload, and not a released one', async ({
+        db,
+        user,
+    }) => {
+        const repo = createFileRepo(db);
+        const [confirmed, released] = await Promise.all([
+            insertFile(db, { userId: user.id, status: 'uploading' }),
+            insertFile(db, { userId: user.id, status: 'uploading' }),
+        ]);
+        const before = new Date();
+
+        const [claimed, abandoned] = await Promise.all([
+            repo.claimUpload(user.id, confirmed.id, 'available'),
+            repo.claimUpload(user.id, released.id, 'deleted'),
+        ]);
+
+        expect(claimed?.confirmedAt?.getTime()).toBeGreaterThanOrEqual(
+            before.getTime()
+        );
+        expect(abandoned?.confirmedAt).toBeNull();
+    });
+});
+
 // Every file a user reaches by id goes through one of these. Without the
 // `userId` predicate, one user could read, delete or confirm another's file
 // by passing its id (#489).

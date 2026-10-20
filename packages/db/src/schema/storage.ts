@@ -120,6 +120,10 @@ export const files = pgTable(
         durationSeconds: integer('duration_seconds'),
         ...timestamps(),
         lastAccessedAt: timestamp('last_accessed_at', { withTimezone: true }),
+        // When the upload was confirmed: S3 held it and it counted (#550).
+        // Survives a later delete, which is how a batch tells the files the
+        // user removed apart from the ones that never finished.
+        confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
         deletedAt: timestamp('deleted_at', { withTimezone: true }),
     },
     (table) => [

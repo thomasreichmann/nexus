@@ -51,6 +51,11 @@ export function createFileFixture(overrides: Partial<File> = {}): File {
         createdAt: now,
         updatedAt: now,
         lastAccessedAt: null,
+        // Confirmed when it was made, as anything past `uploading` was.
+        confirmedAt:
+            overrides.status === 'uploading'
+                ? null
+                : (overrides.createdAt ?? now),
         deletedAt: null,
         ...overrides,
     };

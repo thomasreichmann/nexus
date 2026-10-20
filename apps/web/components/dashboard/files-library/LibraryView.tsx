@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Download, RotateCw, Search } from 'lucide-react';
+import { AlertTriangle, Download, RotateCw, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/cn';
@@ -221,6 +221,7 @@ function BatchCard({ batch, thumbnailUrls, onOpen, onIntent }: BatchCardProps) {
                 variant="cover"
             >
                 <StatusPill batch={batch} />
+                <MissingPill batch={batch} />
             </BatchMosaic>
             <span
                 data-fx="card-body"
@@ -294,6 +295,21 @@ function StatusPill({ batch }: { batch: BatchView }) {
             <Icon className="size-3" strokeWidth={2.5} />
             <span className="hidden sm:inline">{full}</span>
             <span className="sm:hidden">{short}</span>
+        </span>
+    );
+}
+
+/**
+ * Files the batch's Upload click sent that never finished (#550), on the
+ * cover's other corner: a status the restore pill can sit beside, and one the
+ * card's text lines would cut off at phone width.
+ */
+function MissingPill({ batch }: { batch: BatchView }) {
+    if (batch.missingFileCount <= 0) return null;
+    return (
+        <span className="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-background/80 px-2 py-0.5 text-xs font-medium text-amber-600 tabular-nums dark:text-amber-400">
+            <AlertTriangle className="size-3" strokeWidth={2.5} />
+            {formatCount(batch.missingFileCount)} missing
         </span>
     );
 }

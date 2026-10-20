@@ -91,9 +91,15 @@ export default defineConfig({
             testMatch: /admin\/files\.spec\.ts/,
         },
         {
-            name: 'admin-jobs',
+            name: 'admin-batches',
             use: adminChrome,
             dependencies: ['admin-files'],
+            testMatch: /admin\/batches\.spec\.ts/,
+        },
+        {
+            name: 'admin-jobs',
+            use: adminChrome,
+            dependencies: ['admin-batches'],
             testMatch: /admin\/jobs\.spec\.ts/,
         },
         {
@@ -112,6 +118,7 @@ export default defineConfig({
             testMatch: /admin\/.*/,
             testIgnore: [
                 /admin\/files\.spec\.ts/,
+                /admin\/batches\.spec\.ts/,
                 /admin\/jobs\.spec\.ts/,
                 /admin\/invites\.spec\.ts/,
             ],

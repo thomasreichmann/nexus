@@ -288,7 +288,10 @@ describe('files service', () => {
             );
 
             expect(result.file).toEqual(availableFile);
-            expect(mocks.set).toHaveBeenCalledWith({ status: 'available' });
+            expect(mocks.set).toHaveBeenCalledWith({
+                status: 'available',
+                confirmedAt: expect.any(Date),
+            });
             // Increment usage upserts via `insert + onConflictDoUpdate`.
             expect(mocks.onConflictDoUpdate).toHaveBeenCalledOnce();
             expect(mocks.values).toHaveBeenCalledWith(
@@ -515,7 +518,10 @@ describe('files service', () => {
             );
 
             expect(result.file.status).toBe('available');
-            expect(mocks.set).toHaveBeenCalledWith({ status: 'available' });
+            expect(mocks.set).toHaveBeenCalledWith({
+                status: 'available',
+                confirmedAt: expect.any(Date),
+            });
             expect(mocks.onConflictDoUpdate).toHaveBeenCalledOnce();
             expect(jobs.publish).toHaveBeenCalledWith(db, {
                 type: 'generate-thumbnail',
