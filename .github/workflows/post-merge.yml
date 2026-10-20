@@ -79,6 +79,40 @@ jobs:
               env:
                   DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
 
+    # A failed migration needs a person: Vercel deploys main on its own, so
+    # prod may already be serving code that reads what the migration adds
+    # (#550's did, and file pages broke until a rollback). A failed dev
+    # migration skips prod's, so it counts too. Same raw-curl Discord rail as
+    # the e2e job below; an unset secret degrades to a no-op.
+    notify-migration-failure:
+        name: Notify Discord of a failed migration
+        needs: [migrate, migrate-prod]
+        if: failure()
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - name: Notify Discord
+              env:
+                  DISCORD_ALERT_WEBHOOK_URL: ${{ secrets.DISCORD_ALERT_WEBHOOK_URL }}
+                  MESSAGE: >-
+                      **Post-merge migration failed** on `${{ github.sha }}`:
+                      dev ${{ needs.migrate.result }},
+                      prod ${{ needs.migrate-prod.result }}.
+                      Prod may already be running code that needs this
+                      migration —
+                      <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>.
+                      If the log says lock timeout:
+                      <${{ github.server_url }}/${{ github.repository }}/blob/main/docs/infra/prod-db-locks.md>
+              run: |
+                  if [ -z "$DISCORD_ALERT_WEBHOOK_URL" ]; then
+                      echo "DISCORD_ALERT_WEBHOOK_URL not configured — skipping Discord notification."
+                      exit 0
+                  fi
+                  jq -n --arg content "$MESSAGE" '{content: $content}' |
+                      curl --silent --show-error --max-time 15 \
+                          -H 'Content-Type: application/json' \
+                          -d @- "$DISCORD_ALERT_WEBHOOK_URL"
+
     # Ship the worker bundle on every merge so the Lambda code plane moves
     # with the schema plane (#417 follow-up: a column-dropping migration left
     # the old bundle emitting SELECTs for a dropped column until a human ran
@@ -223,8 +257,9 @@ jobs:
               if: ${{ !cancelled() }}
               run: pnpm -F web test:e2e:flows --workers=2
 
-            # Same raw-curl Discord rail as uptime.yml; an unset secret
-            # degrades to a no-op, and the red run stays the primary alert.
+            # Same raw-curl Discord rail as uptime.yml and
+            # notify-migration-failure; an unset secret degrades to a no-op,
+            # and the red run stays the primary alert.
             - name: Notify Discord
               if: failure()
               env:

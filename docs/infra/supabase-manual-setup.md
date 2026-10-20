@@ -1,7 +1,7 @@
 ---
 title: Supabase Manual Setup
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-10-20
 status: active
 tags:
     - infra
@@ -62,7 +62,7 @@ gh secret set DATABASE_URL_PROD --app actions
 
 Consumed by:
 
-- `post-merge.yml` — `migrate-prod` job applies migrations to prod after the dev apply succeeds
+- `post-merge.yml` — `migrate-prod` job applies migrations to prod after the dev apply succeeds; a migration blocked on a lock gives up and retries, and a failure posts to Discord ([[prod-db-locks|Prod DB Locks]])
 - `migration-drift.yml` — nightly drift check (prod matrix leg)
 - `supabase-keepalive.yml` — keepalive ping (prod matrix leg)
 - `s3-event-health.yml` — DB health checks (prod matrix leg)
@@ -129,5 +129,6 @@ gh workflow run supabase-keepalive.yml
 ## Related
 
 - [[aws-manual-setup|AWS Manual Setup]]
+- [[prod-db-locks|Prod DB Locks]]: a migration blocked on a lock
 - [[../guides/environment-setup|Environment Setup]]
 - [[../guides/database-workflow|Database Workflow]]

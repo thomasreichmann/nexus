@@ -1,7 +1,7 @@
 ---
 title: Code Conventions
 created: 2025-12-29
-updated: 2026-09-28
+updated: 2026-10-20
 status: active
 tags:
     - ai
@@ -148,6 +148,14 @@ still SELECTed the dropped column for another ~7 minutes on prod.
 - `pr-check.yml` fails on destructive DDL unless the PR carries the
   `migration:destructive` label — the author's acknowledgment that every
   consumer is already deployed without references.
+- **A migration waits at most 3 s for a lock** (#555). `db:migrate` is our
+  own script (`packages/db/src/scripts/migrate.ts`), not
+  `drizzle-kit migrate`. It gives up on a held lock, rolls back every pending
+  migration (they share one transaction), and retries after 10, 30 and 60 s. #550's
+  `ALTER TABLE files` waited 2 minutes behind a stranded session instead,
+  and every read of `files` waited behind it. A lock that outlasts the
+  retries fails post-merge and posts to Discord:
+  [[../infra/prod-db-locks|Prod DB Locks]].
 
 ## Issue-Driven Development
 

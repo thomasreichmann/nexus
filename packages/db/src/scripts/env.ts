@@ -36,9 +36,11 @@ export function formatDatabaseTarget(databaseUrl: string): string {
 }
 
 /**
- * Dev-only CLI bootstrap: loads the web app's .env.local — the single env
- * source for all local tooling (docs/guides/environment-setup.md) — and
- * returns DATABASE_URL, exiting with a friendly message when it's missing.
+ * CLI bootstrap: loads the web app's .env.local — the single env source for
+ * all local tooling (docs/guides/environment-setup.md) — and returns
+ * DATABASE_URL, exiting with a friendly message when it's missing. An
+ * exported DATABASE_URL wins, which is how CI's `db:migrate` and `db:query`
+ * runs reach their databases with no .env.local at all.
  *
  * Announces the target on stderr as a side effect, so no caller has to
  * remember to and stdout stays pipeable.

@@ -24,7 +24,7 @@ Schema in `packages/db/` (`@nexus/db`). Env vars: `import { env } from '@/lib/en
 
 ```bash
 pnpm -F db db:generate         # Generate migration from schema changes
-pnpm -F db db:migrate          # Apply pending migrations
+pnpm -F db db:migrate          # Apply pending migrations (3s lock wait + retries; stuck → docs/infra/prod-db-locks.md)
 pnpm -F db db:studio           # Open Drizzle Studio
 pnpm -F db db:custom <name>    # Empty migration for RLS/functions
 pnpm -F db db:query "<sql>"    # Read-only raw SQL against the current env's DB (forensics)
