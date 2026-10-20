@@ -226,14 +226,18 @@ describe('adding files', () => {
 });
 
 describe('the Upload click', () => {
-    it('puts every pending file of one folder gesture in one batch named after the folder', async () => {
+    it('puts every pending file of one folder gesture in one batch named after the folder, expecting all of them', async () => {
         const harness = createQueueHarness();
 
         await harness.queue.addFiles(picked(...smallFiles(3)), 'Wedding');
         await harness.queue.startUpload();
 
         expect(harness.backend.batches).toEqual([
-            { batchId: expect.any(String), name: 'Wedding' },
+            {
+                batchId: expect.any(String),
+                name: 'Wedding',
+                expectedFileCount: 3,
+            },
         ]);
         const [{ batchId }] = harness.backend.batches;
         expect(harness.backend.files.map((file) => file.batchId)).toEqual([
@@ -258,6 +262,7 @@ describe('the Upload click', () => {
                 {
                     batchId: expect.any(String),
                     name: 'Upload 2026-08-18 16:47:05',
+                    expectedFileCount: 2,
                 },
             ]);
         } finally {
@@ -273,8 +278,63 @@ describe('the Upload click', () => {
         await harness.queue.startUpload();
 
         expect(harness.backend.batches).toEqual([
-            { batchId: expect.any(String), name: SESSION_BATCH_NAME },
+            {
+                batchId: expect.any(String),
+                name: SESSION_BATCH_NAME,
+                expectedFileCount: 2,
+            },
         ]);
+    });
+
+    // #399: the queue lives as long as the tab, so a new wave's counts must be
+    // its own, while a click joining a running wave is still that wave.
+    it('starts a wave from idle without the last one’s uploaded rows, but keeps a running wave’s', async () => {
+        const harness = createQueueHarness();
+        harness.backend.holdPuts();
+        await harness.queue.addFiles(
+            picked(fakeFile('a.jpg', 10), fakeFile('b.jpg', 10))
+        );
+        const wave = harness.queue.startUpload();
+        await vi.waitFor(() =>
+            expect(harness.backend.inFlight()).toHaveLength(2)
+        );
+        harness.backend.completePuts((put) => put.fileName === 'a.jpg');
+        await vi.waitFor(() =>
+            expect(harness.row('a.jpg').status).toBe('complete')
+        );
+
+        await harness.queue.addFiles(picked(fakeFile('c.jpg', 10)));
+        const joining = harness.queue.startUpload();
+        expect(Object.keys(statusOf(harness))).toEqual([
+            'a.jpg',
+            'b.jpg',
+            'c.jpg',
+        ]);
+        harness.backend.releasePuts();
+        await Promise.all([wave, joining]);
+
+        await harness.upload(fakeFile('d.jpg', 10));
+        expect(statusOf(harness)).toEqual({ 'd.jpg': 'complete' });
+    });
+
+    // #399: a file rejoining the batch it started in was already counted
+    // there, so the click's new batch expects only the files joining it.
+    it('expects of a new batch only the files joining it', async () => {
+        const backend = createFakeUploadBackend();
+        const clip = fakeFile('clip.mov', MULTIPART_SIZE);
+        await interruptedUpload(backend, clip);
+        const harness = createQueueHarness({ backend });
+
+        await harness.queue.addFiles(picked(clip, fakeFile('new.jpg', 10)));
+        await harness.queue.startUpload();
+
+        expect(backend.batches.map((batch) => batch.expectedFileCount)).toEqual(
+            [1, 1]
+        );
+        expect(statusOf(harness)).toEqual({
+            'clip.mov': 'complete',
+            'new.jpg': 'complete',
+        });
     });
 
     // #405, through both engines: each one's init carries the folder.
@@ -336,7 +396,11 @@ describe('the Upload click', () => {
         await harness.queue.startUpload();
 
         expect(harness.backend.batches).toEqual([
-            { batchId: expect.any(String), name: SESSION_BATCH_NAME },
+            {
+                batchId: expect.any(String),
+                name: SESSION_BATCH_NAME,
+                expectedFileCount: 3,
+            },
         ]);
         expect(harness.backend.files.map((file) => file.subpath)).toEqual([
             'Loja 1/104CANON',
@@ -1010,6 +1074,45 @@ describe('resuming after a reload', () => {
             'a.mov': ['complete', files[0]],
             'b.mov': ['complete', files[1]],
         });
+    });
+
+    // Clear all, or a sign-out (#399), mid-resume: the rows go but their
+    // multipart sessions stay resumable, and nothing could abort an upload
+    // started for a row that's gone, so the next one must not start at all.
+    it('Resume all stops at a clear, leaving the rest to resume later', async () => {
+        const backend = createFakeUploadBackend();
+        const files = [
+            fakeFile('a.mov', MULTIPART_SIZE),
+            fakeFile('b.mov', MULTIPART_SIZE),
+        ];
+        for (const file of files) {
+            await interruptedUpload(backend, file, {} as FileSystemFileHandle);
+        }
+        const harness = createQueueHarness({
+            backend,
+            isFileSystemAccessSupported: () => true,
+            reacquireFile: async (row) =>
+                files.find((file) => file.name === row.name) ?? null,
+        });
+        await harness.queue.hydrate();
+        backend.holdPuts();
+
+        const resumed = harness.queue.resumeAllWithHandles();
+        await vi.waitFor(() =>
+            expect(backend.inFlight()).toHaveLength(partsLeftInFlight)
+        );
+        const putsBefore = backend.puts.length;
+        harness.queue.clearFiles();
+        backend.releasePuts();
+        await resumed;
+
+        expect(harness.rows()).toEqual([]);
+        // Nothing went out after the clear: not the rest of the first file,
+        // and none of the second.
+        expect(backend.puts).toHaveLength(putsBefore);
+        expect(
+            (await listUploads()).map((record) => record.name).sort()
+        ).toEqual(['a.mov', 'b.mov']);
     });
 
     it('Resume all reopens only the rows offering one-click resume', async () => {

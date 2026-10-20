@@ -199,11 +199,19 @@ export const filesRouter = router({
     // Pre-create a session batch so a multi-file upload can pass one batchId to
     // every per-file initiate call. The browser names it after the dropped
     // folder, or else after the click in its own time zone (#408); without a
-    // name the batch gets the server's UTC timestamp fallback.
+    // name the batch gets the server's UTC timestamp fallback. It also says
+    // how many files it's sending, so a partial batch can be told apart (#399).
     createBatch: protectedProcedure
-        .input(z.object({ name: batchNameSchema.optional() }).prefault({}))
+        .input(
+            z
+                .object({
+                    name: batchNameSchema.optional(),
+                    expectedFileCount: z.number().int().positive().optional(),
+                })
+                .prefault({})
+        )
         .mutation(({ ctx, input }) =>
-            fileService.createBatch(ctx.db, ctx.session.user.id, input.name)
+            fileService.createBatch(ctx.db, ctx.session.user.id, input)
         ),
 
     upload: protectedProcedure

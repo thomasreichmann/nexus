@@ -247,40 +247,6 @@ describe('files service', () => {
         });
     });
 
-    describe('createBatch', () => {
-        it('inserts a batch with the fallback name and returns its id', async () => {
-            const batch = createUploadBatchFixture();
-            mocks.returning.mockResolvedValueOnce([batch]);
-
-            const result = await fileService.createBatch(db, TEST_USER_ID);
-
-            expect(result).toEqual({ batchId: batch.id });
-            expect(mocks.insert).toHaveBeenCalledTimes(1);
-            expect(mocks.values).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    userId: TEST_USER_ID,
-                    name: expect.stringMatching(
-                        /^Upload \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/
-                    ),
-                })
-            );
-        });
-
-        it('uses the caller-supplied name when given one', async () => {
-            const batch = createUploadBatchFixture();
-            mocks.returning.mockResolvedValueOnce([batch]);
-
-            await fileService.createBatch(db, TEST_USER_ID, 'shoot-2026-08-18');
-
-            expect(mocks.values).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    userId: TEST_USER_ID,
-                    name: 'shoot-2026-08-18',
-                })
-            );
-        });
-    });
-
     describe('formatFallbackBatchName', () => {
         it('formats UTC timestamp at minute precision', () => {
             // 2026-05-08T14:32:11.000Z

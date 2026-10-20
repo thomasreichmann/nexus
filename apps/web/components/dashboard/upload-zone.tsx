@@ -38,15 +38,13 @@ import {
     type PickedFileBatch,
 } from '@/lib/upload/fileSystemAccess';
 import { MAX_FILES_PER_DROP } from '@/lib/upload/limits';
-import { waveProgress } from '@/lib/upload/parts';
+import { summarizeWave } from '@/lib/upload/parts';
 import { preflightQuota } from '@/lib/upload/preflight';
 import { getImagePreviewUrl } from '@/lib/upload/thumbnails';
 import { CancelUploadDialog } from './CancelUploadDialog';
 import { CappedSelectionDialog } from './CappedSelectionDialog';
-import { LeaveUploadDialog } from './LeaveUploadDialog';
 import { MiddleTruncateName } from './MiddleTruncateName';
 import { useUpload, type UploadFile, type UploadStatus } from './useUpload';
-import { useUploadNavigationGuard } from './useUploadNavigationGuard';
 
 // Formats the browser can decode natively — RAW files (NEF/CR3/ARW/…) carry
 // an empty or opaque mime type and fall through to the plain icon tile; their
@@ -194,26 +192,18 @@ export function UploadZone() {
 
     const totalSize = files.reduce((acc, f) => acc + f.size, 0);
     const pendingFiles = files.filter((f) => f.status === 'pending');
-    const completedCount = files.filter((f) => f.status === 'complete').length;
-    const errorCount = files.filter((f) => f.status === 'error').length;
     const pausedCount = files.filter((f) => f.status === 'paused').length;
-    const activeCount = files.filter(
-        (f) => f.status === 'queued' || f.status === 'uploading'
-    ).length;
     // Both vault-check states (#401) sit outside `pendingFiles`, so the Upload
     // button, the quota pre-flight and the wave ignore them: `checking` until
     // the server answers, `duplicate` until the user says "upload anyway".
     const checkingCount = files.filter((f) => f.status === 'checking').length;
     const duplicateCount = files.filter((f) => f.status === 'duplicate').length;
-    // The wave is live while the pool holds rows; `isUploading` alone would
-    // blink off during the batch-creation await before any row is admitted.
-    const hasActiveWave = isUploading || activeCount > 0;
-    // Leaving this page mid-wave unmounts the engine and aborts every
-    // in-flight PUT, so both #398 guards hang off the same liveness bit:
-    // beforeunload for tab close / reload, a link-click interceptor (feeding
-    // the LeaveUploadDialog at the bottom) for in-app navigation.
-    const { pendingHref, confirmNavigation, cancelNavigation } =
-        useUploadNavigationGuard(hasActiveWave);
+    // The aggregate header's view of the wave — at 50+ rows the per-row bars
+    // scroll out of sight, so the wave needs one bar that means something.
+    // The header's pill reads the same summary (#399).
+    const wave = summarizeWave(files, isUploading);
+    const hasActiveWave = wave.isActive;
+    const { completedCount, errorCount } = wave;
     const attemptedCount = completedCount + errorCount;
     // The outcome line waits for a settled queue: nothing moving, nothing the
     // user still has to submit, nothing parked waiting for a reconnect.
@@ -253,20 +243,6 @@ export function UploadZone() {
                   quotaBytes: usage.quotaBytes,
               })
             : 'ok';
-
-    // The aggregate header's view of the wave — at 50+ rows the per-row bars
-    // scroll out of sight, so the wave needs one bar that means something.
-    // One row set feeds both the bar and the "X of Y" caption, so they can
-    // never describe different waves (paused rows are in: a row parked by a
-    // connection drop is still the wave's work).
-    const waveRows = files.filter(
-        (f) =>
-            f.status !== 'pending' &&
-            f.status !== 'resumable' &&
-            f.status !== 'checking' &&
-            f.status !== 'duplicate'
-    );
-    const wavePercent = waveProgress(waveRows);
 
     // The queue list is contained and virtualized: page scroll must not grow
     // with the selection (#390), and neither may the DOM — reconciling 500
@@ -387,8 +363,8 @@ export function UploadZone() {
                                             Uploading —{' '}
                                         </span>
                                         <span className="font-medium">
-                                            {completedCount} of{' '}
-                                            {waveRows.length} files
+                                            {completedCount} of {wave.fileCount}{' '}
+                                            files
                                         </span>
                                         {errorCount > 0 && (
                                             <span className="text-destructive">
@@ -398,11 +374,11 @@ export function UploadZone() {
                                         )}
                                     </p>
                                     <span className="font-medium tabular-nums">
-                                        {wavePercent}%
+                                        {wave.percent}%
                                     </span>
                                 </div>
                                 <Progress
-                                    value={wavePercent}
+                                    value={wave.percent}
                                     className="h-1.5"
                                 />
                             </div>
@@ -623,21 +599,6 @@ export function UploadZone() {
                 onConfirm={() => {
                     if (cancelCandidate) cancelFile(cancelCandidate.id);
                     setCancelCandidateId(null);
-                }}
-            />
-            <LeaveUploadDialog
-                open={pendingHref !== null}
-                onOpenChange={(open) => {
-                    if (!open) cancelNavigation();
-                }}
-                onConfirm={() => {
-                    // Leaving unmounts the engine either way; clearing first
-                    // releases the server rows the wave already minted —
-                    // single-part rows would otherwise strand in `uploading`
-                    // (the Event Health check's stuck-uploads leg) — while
-                    // preserving multipart resume state, same as Clear all.
-                    clearFiles();
-                    confirmNavigation();
                 }}
             />
             <CappedSelectionDialog

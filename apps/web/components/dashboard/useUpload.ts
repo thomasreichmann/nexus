@@ -1,20 +1,27 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { createSemaphore } from '@nexus/async';
-import { useTRPC } from '@/lib/trpc/client';
+import { getQueryClient, getTRPC } from '@/lib/trpc/client';
 import { toastContext } from '@/lib/trpc/error-link';
-import { useInvalidateFileList } from '@/lib/hooks/useInvalidateFileList';
+import { createFireAndForgetFn, createMutateFn } from '@/lib/trpc/mutate';
+import { invalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { xhrPut } from '@/lib/http/xhr';
-import { createUploadQueue, type UploadQueue } from '@/lib/upload/queue';
+import type { UploadApi, UploadQueue } from '@/lib/upload/queue';
 import {
     isFileSystemAccessSupported,
     reacquireMatchingFile,
 } from '@/lib/upload/fileSystemAccess';
 import { CONFIRM_RETRIES, S3_CONNECTION_BUDGET } from '@/lib/upload/limits';
+import { summarizeWave, type WaveSummary } from '@/lib/upload/parts';
 import type { UploadFile, UploadRow } from '@/lib/upload/rows';
+import {
+    createUploadSession,
+    EMPTY_UPLOAD_SNAPSHOT,
+    type UploadSession,
+    type UploadSnapshot,
+} from '@/lib/upload/session';
 import {
     addCompletedPart,
     deleteUpload,
@@ -27,41 +34,112 @@ export type { UploadFile, UploadStatus } from '@/lib/upload/rows';
 // One budget for the whole tab, shared across every engine and file.
 const s3Budget = createSemaphore(S3_CONNECTION_BUDGET);
 
+let session: UploadSession | null = null;
+
 /**
- * Binds the upload queue (`lib/upload/queue.ts`, over the transfer engines in
- * `lib/upload/transfer.ts`) to React: rows live in component state, server
- * calls go through tRPC mutations, and browser events (mount, offline/online)
- * drive the queue. The decisions all live there, which is where they're tested.
+ * The tab's upload session (`lib/upload/session.ts`), built on first use in
+ * the browser: rows in a store of their own, server calls through the app's
+ * QueryClient and tRPC client, browser events driving the queue. The
+ * decisions all live in the queue, which is where they're tested.
  */
+function getUploadSession(): UploadSession {
+    session ??= createUploadSession({
+        api: createUploadApi(),
+        store: { putUpload, addCompletedPart, deleteUpload, listUploads },
+        put: xhrPut,
+        s3Budget,
+        onWaveDrained: () => invalidateFileList(getQueryClient(), getTRPC()),
+        notify: {
+            info: (message) => toast.info(message),
+            error: (message) => toast.error(message),
+        },
+        reacquireFile: reacquireRowFile,
+        isOnline: navigatorIsOnline,
+        isFileSystemAccessSupported,
+        connection: window,
+    });
+    return session;
+}
+
+// Module-level, so every subscriber shares one identity and the session is
+// only built once something in the browser actually reads it.
+const subscribe = (listener: () => void) =>
+    getUploadSession().subscribe(listener);
+const getSnapshot = () => getUploadSession().getSnapshot();
+const getServerSnapshot = () => EMPTY_UPLOAD_SNAPSHOT;
+
+function useUploadSnapshot(): UploadSnapshot {
+    return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
+
+/** The queue as the upload page renders and drives it. */
 export function useUpload() {
-    const trpc = useTRPC();
-    const [files, setFiles] = useState<UploadRow[]>([]);
-    const [isUploading, setIsUploading] = useState(false);
-    const filesRef = useRef(files);
-    filesRef.current = files;
+    const { rows, isUploading } = useUploadSnapshot();
+    // Expose only the public UploadFile shape (strip internal fields)
+    const files: UploadFile[] = rows.map(toPublicUploadFile);
+    return { files, isUploading, ...uploadActions };
+}
 
-    const invalidateFileList = useInvalidateFileList();
+/** The running wave, for anything outside the upload page that shows it. */
+export function useUploadWave(): WaveSummary {
+    const { rows, isUploading } = useUploadSnapshot();
+    return summarizeWave(rows, isUploading);
+}
 
-    // These observers are shared by every file the pool runs at once. Each
-    // `mutateAsync` call still builds its own mutation and resolves with its
-    // own result, but the observer's `isPending`/`data`/`error` are
-    // last-writer-wins across files — per-row state has to come from the row
-    // itself, never from these objects.
-    const mutations = {
-        upload: useMutation(trpc.files.upload.mutationOptions()),
-        createBatch: useMutation(trpc.files.createBatch.mutationOptions()),
+// The calls releasing what a dropped row minted on the server, still on their
+// way: a sign-out has to let them land while the session can authorize them.
+const releasesInFlight = new Set<Promise<unknown>>();
+
+// How long a sign-out waits on those before going ahead anyway: a hung call
+// must not hang the button, and the nightly stale-upload check is the backstop.
+const SIGN_OUT_RELEASE_WAIT_MS = 5_000;
+
+/**
+ * Empties the queue for a sign-out, the one way out of the dashboard that
+ * leaves this tab: the next account must not inherit a wave. Same as Clear
+ * all, so multipart uploads stay resumable from IndexedDB. Resolves once the
+ * server has heard about every upload it released, or the wait runs out.
+ */
+export async function clearUploadsForSignOut(): Promise<void> {
+    session?.queue.clearFiles();
+    await Promise.race([
+        Promise.all(releasesInFlight),
+        new Promise((resolve) => setTimeout(resolve, SIGN_OUT_RELEASE_WAIT_MS)),
+    ]);
+}
+
+// Every server procedure the queue calls, as the mutations `useMutation`
+// would build (`lib/trpc/mutate.ts`). One per procedure, shared by every file
+// in flight, the way one `useMutation` was.
+function createUploadApi(): UploadApi {
+    const trpc = getTRPC();
+    const queryClient = getQueryClient();
+    return {
+        upload: createMutateFn(
+            queryClient,
+            trpc.files.upload.mutationOptions()
+        ),
+        createBatch: createMutateFn(
+            queryClient,
+            trpc.files.createBatch.mutationOptions()
+        ),
         // Confirm/complete are retried in-mutation (default backoff matches
         // retryAsync's 1s/2s/4s) because the file data is already in S3. An
         // external retryAsync loop would fire the MutationCache Sentry capture
         // (lib/trpc/query-client.ts) once per attempt instead of once per
         // failure.
-        confirmUpload: useMutation(
+        confirmUpload: createMutateFn(
+            queryClient,
             trpc.files.confirmUpload.mutationOptions({
                 retry: CONFIRM_RETRIES,
             })
         ),
-        multipartInit: useMutation(trpc.files.multipart.init.mutationOptions()),
-        multipartComplete: useMutation(
+        multipartInit: createMutateFn(
+            queryClient,
+            trpc.files.multipart.init.mutationOptions()
+        ),
+        multipartComplete: createMutateFn(
+            queryClient,
             trpc.files.multipart.complete.mutationOptions({
                 retry: CONFIRM_RETRIES,
             })
@@ -69,26 +147,33 @@ export function useUpload() {
         // Both cleanup mutations fire and forget on a row the user already
         // dismissed, so a failure has nothing to tell them — the nightly
         // stale-`uploading` check is the backstop. Hence the shared skipToast.
-        multipartAbort: useMutation(
+        multipartAbort: createFireAndForgetFn(
+            queryClient,
             trpc.files.multipart.abort.mutationOptions({
                 trpc: toastContext({ skipToast: true }),
-            })
+            }),
+            releasesInFlight
         ),
-        abandonUpload: useMutation(
+        abandonUpload: createFireAndForgetFn(
+            queryClient,
             trpc.files.abandonUpload.mutationOptions({
                 trpc: toastContext({ skipToast: true }),
-            })
+            }),
+            releasesInFlight
         ),
-        multipartListParts: useMutation(
+        multipartListParts: createMutateFn(
+            queryClient,
             trpc.files.multipart.listParts.mutationOptions()
         ),
-        multipartSignParts: useMutation(
+        multipartSignParts: createMutateFn(
+            queryClient,
             trpc.files.multipart.signParts.mutationOptions()
         ),
         // The vault check fails open: a lookup that errors queues everything
         // as usual, and this toast is the only thing that says the check
         // didn't run.
-        findDuplicates: useMutation(
+        findDuplicates: createMutateFn(
+            queryClient,
             trpc.files.findDuplicates.mutationOptions({
                 trpc: toastContext({
                     errorMessage:
@@ -97,85 +182,6 @@ export function useUpload() {
             })
         ),
     };
-
-    // The queue is built once per mount and must outlive re-renders — a pool
-    // rebuilt mid-wave would lose its in-flight set — so everything that
-    // re-forms per render reaches it through refs.
-    const mutationsRef = useRef(mutations);
-    mutationsRef.current = mutations;
-    const invalidateFileListRef = useRef(invalidateFileList);
-    invalidateFileListRef.current = invalidateFileList;
-
-    const boundRef = useRef<BoundQueue | null>(null);
-    boundRef.current ??= bindQueue(
-        createUploadQueue({
-            api: {
-                upload: (input) =>
-                    mutationsRef.current.upload.mutateAsync(input),
-                createBatch: (input) =>
-                    mutationsRef.current.createBatch.mutateAsync(input),
-                confirmUpload: (input) =>
-                    mutationsRef.current.confirmUpload.mutateAsync(input),
-                abandonUpload: (input) =>
-                    mutationsRef.current.abandonUpload.mutate(input),
-                multipartInit: (input) =>
-                    mutationsRef.current.multipartInit.mutateAsync(input),
-                multipartListParts: (input) =>
-                    mutationsRef.current.multipartListParts.mutateAsync(input),
-                multipartSignParts: (input) =>
-                    mutationsRef.current.multipartSignParts.mutateAsync(input),
-                multipartComplete: (input) =>
-                    mutationsRef.current.multipartComplete.mutateAsync(input),
-                multipartAbort: (input) =>
-                    mutationsRef.current.multipartAbort.mutate(input),
-                findDuplicates: (input) =>
-                    mutationsRef.current.findDuplicates.mutateAsync(input),
-            },
-            store: { putUpload, addCompletedPart, deleteUpload, listUploads },
-            put: xhrPut,
-            s3Budget,
-            rows: { get: () => filesRef.current, set: setFiles },
-            setIsUploading,
-            onWaveDrained: () => invalidateFileListRef.current(),
-            notify: {
-                info: (message) => toast.info(message),
-                error: (message) => toast.error(message),
-            },
-            reacquireFile: reacquireRowFile,
-            isOnline: navigatorIsOnline,
-            isFileSystemAccessSupported,
-        })
-    );
-    const { queue, actions } = boundRef.current;
-
-    // Surface interrupted uploads found in IndexedDB on mount. Once per mount;
-    // the queue's dedupe (by fileId) keeps it idempotent under React
-    // StrictMode's double-invoked effects, so no cancel flag needed.
-    const hydratedRef = useRef(false);
-    useEffect(() => {
-        if (hydratedRef.current) return;
-        hydratedRef.current = true;
-        void queue.hydrate();
-    }, [queue]);
-
-    // Pause the active upload(s) when the browser goes offline; auto-resume the
-    // paused ones when it comes back. Same-session resume reuses the in-memory
-    // File, so it needs no user action.
-    useEffect(() => {
-        const onOffline = () => queue.pauseActive();
-        const onOnline = () => void queue.resumePaused();
-        window.addEventListener('offline', onOffline);
-        window.addEventListener('online', onOnline);
-        return () => {
-            window.removeEventListener('offline', onOffline);
-            window.removeEventListener('online', onOnline);
-        };
-    }, [queue]);
-
-    // Expose only the public UploadFile shape (strip internal fields)
-    const publicFiles: UploadFile[] = files.map(toPublicUploadFile);
-
-    return { files: publicFiles, isUploading, ...actions };
 }
 
 interface UploadActions {
@@ -191,33 +197,23 @@ interface UploadActions {
     uploadAllAnyway: () => void;
 }
 
-interface BoundQueue {
-    queue: UploadQueue;
-    actions: UploadActions;
-}
-
-// Built once per mount alongside the queue, so every callback keeps one
-// identity for the life of the mount — a fresh prop identity per render would
-// defeat UploadQueueRow's memo.
-function bindQueue(queue: UploadQueue): BoundQueue {
-    return {
-        queue,
-        actions: {
-            addFiles: queue.addFiles,
-            removeFile: queue.dropRow,
-            clearFiles: queue.clearFiles,
-            startUpload: queue.startUpload,
-            // Cancel on a row in flight and Remove on a queued one are the
-            // same operation behind two affordances.
-            cancelFile: queue.dropRow,
-            retryFile: (id) => void queue.retryFile(id),
-            resumeWithHandle: (id) => void queue.resumeWithHandle(id),
-            resumeAllWithHandles: () => void queue.resumeAllWithHandles(),
-            uploadAnyway: queue.uploadAnyway,
-            uploadAllAnyway: queue.uploadAllAnyway,
-        },
-    };
-}
+// Module-level, so every callback keeps one identity for the life of the tab
+// — a fresh prop identity per render would defeat UploadQueueRow's memo.
+const getQueue = () => getUploadSession().queue;
+const uploadActions: UploadActions = {
+    addFiles: (picked, folderName) => getQueue().addFiles(picked, folderName),
+    removeFile: (id) => getQueue().dropRow(id),
+    clearFiles: () => getQueue().clearFiles(),
+    startUpload: () => getQueue().startUpload(),
+    // Cancel on a row in flight and Remove on a queued one are the same
+    // operation behind two affordances.
+    cancelFile: (id) => getQueue().dropRow(id),
+    retryFile: (id) => void getQueue().retryFile(id),
+    resumeWithHandle: (id) => void getQueue().resumeWithHandle(id),
+    resumeAllWithHandles: () => void getQueue().resumeAllWithHandles(),
+    uploadAnyway: (id) => getQueue().uploadAnyway(id),
+    uploadAllAnyway: () => getQueue().uploadAllAnyway(),
+};
 
 // Public projection, cached per internal row object. Internal rows are
 // immutable (row updates replace, never mutate), so an unchanged row projects

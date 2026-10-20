@@ -7,8 +7,10 @@
 import { resetUserData } from '@nexus/db/test-db';
 import { MAX_CONCURRENT_FILES } from '@/lib/upload/limits';
 import { test, expect } from '../fixtures';
+import { batchCard } from '../helpers/fileBrowser';
 import { UPLOAD_PAGE_URL, uploadSpecUser } from '../helpers/uploadPage';
 import { makeTextFiles, stubS3Puts } from '../helpers/uploadStubs';
+import type { Page } from '@playwright/test';
 
 // One worker for the file, so it signs up one user rather than one per worker
 // its tests spread to. Not `serial`: no test hands state to the next.
@@ -141,6 +143,94 @@ test(
         );
         // Joining the wave respects the pool bound — no stampede.
         expect(puts.peak).toBeLessThanOrEqual(MAX_CONCURRENT_FILES);
+    }
+);
+
+// Playwright's own navigations never surface beforeunload prompts, so the tab
+// guard is read by dispatching a cancelable synthetic event.
+const isBeforeUnloadPrevented = (page: Page) =>
+    page.evaluate(() => {
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+    });
+
+// The wave used to live in the upload page's tree, so leaving it killed every
+// upload in flight (#398 could only warn). It lives outside React now (#399):
+// browsing away is harmless, a pill keeps it in sight, and only closing the
+// tab still asks.
+test(
+    'a wave keeps uploading while you browse, and its batch lands whole',
+    {
+        tag: [
+            '@page:/dashboard/upload',
+            '@page:/dashboard/files',
+            '@uc:upload-survives-navigation',
+            '@uc:upload-wave-pill',
+        ],
+    },
+    async ({ page, db, seedUserId }) => {
+        let finishPuts!: () => void;
+        await stubS3Puts(page, {
+            holdUntil: new Promise<void>((resolve) => {
+                finishPuts = resolve;
+            }),
+        });
+        const files = makeTextFiles(3, 'browse-wave');
+        const sidebarFilesLink = page
+            .getByRole('complementary')
+            .getByRole('link', { name: 'Files' });
+        const pill = page.getByRole('link', { name: /^Uploading \d+ of 3/ });
+
+        await page.goto(UPLOAD_PAGE_URL);
+        await page.setInputFiles('[data-testid="file-input"]', files);
+        // Rows the user hasn't submitted aren't a wave: nothing to guard.
+        const uploadButton = page.getByRole('button', {
+            name: 'Upload 3 files',
+        });
+        await expect(uploadButton).toBeVisible();
+        expect(await isBeforeUnloadPrevented(page)).toBe(false);
+        await uploadButton.click();
+        await expect(page.getByText(/Uploading — 0 of 3 files/)).toBeVisible();
+        // Polled: the guard arms in an effect, after the render shown above.
+        await expect.poll(() => isBeforeUnloadPrevented(page)).toBe(true);
+        // The page shows the wave itself, so no pill here.
+        await expect(pill).toHaveCount(0);
+
+        // A link just navigates, with the wave still running behind it.
+        await sidebarFilesLink.click();
+        await expect(page).toHaveURL(/\/dashboard\/files/);
+        await expect(pill).toBeVisible();
+        expect(await isBeforeUnloadPrevented(page)).toBe(true);
+
+        // The pill leads back to the same queue, mid-wave.
+        await pill.click();
+        await expect(page).toHaveURL(/\/dashboard\/upload/);
+        await expect(page.getByTestId('upload-queue-row')).toHaveCount(3);
+        await expect(page.getByText(/Uploading — 0 of 3 files/)).toBeVisible();
+
+        // Let it finish while the user is elsewhere.
+        await sidebarFilesLink.click();
+        await expect(pill).toBeVisible();
+        finishPuts();
+        await expect(pill).toHaveCount(0, { timeout: 15_000 });
+        await expect.poll(() => isBeforeUnloadPrevented(page)).toBe(false);
+
+        // Whole: every file confirmed into the one batch, which expected
+        // exactly that many.
+        const batches = await db.query.uploadBatches.findMany({
+            where: (b, { eq }) => eq(b.userId, seedUserId),
+        });
+        expect(batches).toHaveLength(1);
+        expect(batches[0].expectedFileCount).toBe(files.length);
+        const rows = await db.query.files.findMany({
+            where: (f, { eq }) => eq(f.userId, seedUserId),
+        });
+        expect(rows.map((row) => [row.status, row.batchId])).toEqual(
+            files.map(() => ['available', batches[0].id])
+        );
+        // The library the user is looking at refreshed when the wave ended.
+        await expect(batchCard(page, batches[0].name)).toBeVisible();
     }
 );
 

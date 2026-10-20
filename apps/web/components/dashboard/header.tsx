@@ -30,6 +30,8 @@ import {
     resetAnalytics,
     showFeedbackSurvey,
 } from '@/lib/posthog/client';
+import { UploadWaveIndicator } from './UploadWaveIndicator';
+import { clearUploadsForSignOut } from './useUpload';
 
 export function DashboardHeader() {
     const pathname = usePathname();
@@ -39,6 +41,10 @@ export function DashboardHeader() {
     const navItems = getNavItems(session?.user?.role);
 
     async function handleSignOut() {
+        // A wave outlives the page now (#399), so it would run on into the
+        // next account's session. Cleared first, and waited for, so the calls
+        // releasing what it minted land while this one is still signed in.
+        await clearUploadsForSignOut();
         await signOut();
         // Before the redirect: unbinds the distinct id so anything the next
         // visitor does on this browser isn't attributed to the user who left.
@@ -100,7 +106,8 @@ export function DashboardHeader() {
             </div>
             <div className="hidden md:block" />
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-3">
+                <UploadWaveIndicator />
                 <DropdownMenu>
                     <DropdownMenuTrigger
                         render={

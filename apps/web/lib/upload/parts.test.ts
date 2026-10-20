@@ -7,9 +7,11 @@ import {
     mergeParts,
     partByteRange,
     partsProgress,
+    summarizeWave,
     waveProgress,
     isResumable,
 } from './parts';
+import type { UploadStatus } from './rows';
 import type { ResumableUpload } from './uploadStore';
 
 describe('isFileMatch', () => {
@@ -152,6 +154,57 @@ describe('waveProgress', () => {
         expect(waveProgress([{ size: 10, progress: 100 }])).toBe(100);
         expect(waveProgress([])).toBe(0);
         expect(waveProgress([{ size: 0, progress: 100 }])).toBe(0);
+    });
+});
+
+describe('summarizeWave', () => {
+    const row = (status: UploadStatus, size = 100, progress = 0) => ({
+        status,
+        size,
+        progress,
+    });
+
+    it('counts and weighs only the rows the user submitted', () => {
+        const wave = summarizeWave(
+            [
+                row('complete', 100, 100),
+                row('error', 100, 40),
+                row('uploading', 200, 50),
+                row('paused', 100, 0),
+                // Not submitted: none of these is the wave's work.
+                row('pending', 1000),
+                row('resumable', 1000),
+                row('checking', 1000),
+                row('duplicate', 1000),
+            ],
+            true
+        );
+
+        expect(wave).toEqual({
+            isActive: true,
+            fileCount: 4,
+            completedCount: 1,
+            errorCount: 1,
+            // (100 + 40 + 100 + 0) of 500 bytes.
+            percent: 48,
+        });
+    });
+
+    // `isUploading` blinks off during the batch round trip of an Upload click
+    // made mid-wave, while the pool still holds rows.
+    it('is active while rows are queued or uploading, whatever isUploading says', () => {
+        expect(summarizeWave([row('queued')], false).isActive).toBe(true);
+        expect(summarizeWave([row('uploading')], false).isActive).toBe(true);
+        expect(summarizeWave([], true).isActive).toBe(true);
+    });
+
+    it('is over once nothing is in flight', () => {
+        expect(
+            summarizeWave(
+                [row('complete', 100, 100), row('error'), row('paused')],
+                false
+            ).isActive
+        ).toBe(false);
     });
 });
 
