@@ -78,6 +78,7 @@ export function createUploadBatchFixture(
         id: TEST_BATCH_ID,
         userId: TEST_USER_ID,
         name: 'Test Batch',
+        expectedFileCount: null,
         createdAt: now,
         updatedAt: now,
         ...overrides,

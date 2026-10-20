@@ -77,7 +77,7 @@ export async function seedResumableUpload(
  * The fileIds the resume store currently holds.
  *
  * Cancelling a row deletes its record fire-and-forget (`abandonServerUpload`
- * in `useUpload`), so the row leaves the UI before the delete lands. A test
+ * in `lib/upload/queue.ts`), so the row leaves the UI before the delete lands. A test
  * that reloads to prove the upload is really gone has to wait on the store
  * itself — an empty queue is not evidence the record went with it.
  */

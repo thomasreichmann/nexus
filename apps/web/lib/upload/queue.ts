@@ -30,13 +30,17 @@ import type { ResumableUpload } from './uploadStore';
 /**
  * The upload queue's engine: intake (resume matching + the vault check), the
  * Upload click, the file pool, retry, pause/resume, and teardown. It owns the
- * decisions; the caller owns where rows live. `useUpload` binds it to React
- * state, and tests bind it to a plain array (./testing).
+ * decisions; the caller owns where rows live. The tab's upload session
+ * (./session) keeps them in a store outside React, and tests bind it to a
+ * plain array (./testing).
  */
 
 /** Every server procedure the queue calls. */
 export interface UploadApi extends TransferApi {
-    createBatch(input: { name?: string }): Promise<{ batchId: string }>;
+    createBatch(input: {
+        name?: string;
+        expectedFileCount?: number;
+    }): Promise<{ batchId: string }>;
     findDuplicates(input: { files: VaultIdentity[] }): Promise<VaultIdentity[]>;
     /** Fire and forget: releases an S3 multipart session being dropped. */
     multipartAbort(input: { fileId: string; uploadId: string }): void;
@@ -197,6 +201,18 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
             .filter((row) => row.status === 'pending' && row.file);
         if (pending.length === 0) return;
 
+        // A click that starts a wave from idle starts it clean. The last
+        // wave's uploaded rows have said what they had to, and the queue
+        // lives as long as the tab (#399), so they'd otherwise pile up into
+        // every count the new wave shows. A click joining a running wave
+        // keeps them: they're that wave's work.
+        if (activeDrivers === 0) {
+            rows.set((prev) => {
+                const kept = prev.filter((row) => row.status !== 'complete');
+                return kept.length === prev.length ? prev : kept;
+            });
+        }
+
         // Claim the rows before the batch round trip: the Upload button stays
         // enabled while a wave runs (so added files can join it), which makes
         // a second click during the await possible — `queued` is what keeps
@@ -219,13 +235,15 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
         let batchId: string | undefined;
         // Rows that already have a batch (retries, re-added resumables) keep
         // it, so only mint a session batch when some file still needs one —
-        // and only those rows decide what the new batch is named after.
+        // and only those rows decide what the new batch is named after, and
+        // how many files it should end up holding (#399).
         const rowsNeedingBatch = pending.filter((row) => !row.batchId);
         const folderName = resolveUnanimousFolderName(rowsNeedingBatch);
         if (rowsNeedingBatch.length > 0) {
             try {
                 ({ batchId } = await api.createBatch({
                     name: folderName ?? formatSessionBatchName(new Date()),
+                    expectedFileCount: rowsNeedingBatch.length,
                 }));
             } catch {
                 batchId = undefined;
@@ -546,6 +564,9 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
             );
             let hasResumedAny = false;
             for (const { row, file } of reopened) {
+                // Removed while an earlier file resumed (Remove, Clear all,
+                // a sign-out): nothing could abort an upload started for it.
+                if (!findRow(row.id)) continue;
                 if (!file) {
                     updateRow(row.id, { isQuickResumable: false });
                     continue;

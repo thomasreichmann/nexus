@@ -1,10 +1,16 @@
 /**
- * Abandoning an upload in flight, by cancelling it or leaving the page, must
- * release the `uploading` row `files.upload` minted (#330). The PUT is stalled
- * locally (`stubS3Puts`) so the upload stays in flight and nothing reaches S3.
+ * Ending an upload in flight, by cancelling it or by signing out, must release
+ * the `uploading` row `files.upload` minted (#330). The PUT is stalled locally
+ * (`stubS3Puts`) so the upload stays in flight and nothing reaches S3.
  */
-import { resetUserData } from '@nexus/db/test-db';
+import {
+    deleteUserByEmail,
+    findUserByEmail,
+    resetUserData,
+    type DB,
+} from '@nexus/db/test-db';
 import { test, expect } from '../fixtures';
+import { signUpViaUi, uniqueTestEmail } from '../helpers/auth';
 import { FILE_A, UPLOAD_PAGE_URL, uploadSpecUser } from '../helpers/uploadPage';
 import { stubS3Puts } from '../helpers/uploadStubs';
 
@@ -15,10 +21,17 @@ test.use({ dedicatedUserConfig: uploadSpecUser('cancel') });
 
 // In a hook rather than at the end of the tests: both assert on an exact
 // status array, so a failure that skipped cleanup would leave rows behind and
-// fail the next test for the wrong reason.
+// fail a rerun for the wrong reason.
 test.afterEach(async ({ db, seedUserId }) => {
     await resetUserData(db, seedUserId);
 });
+
+async function readStatuses(db: DB, userId: string) {
+    const files = await db.query.files.findMany({
+        where: (f, { eq }) => eq(f.userId, userId),
+    });
+    return files.map((f) => f.status);
+}
 
 test(
     'cancelling an in-flight upload strands no uploading row',
@@ -28,13 +41,7 @@ test(
         // flight (so Cancel is the live affordance) and no object is ever
         // written.
         await stubS3Puts(page, { stall: true });
-
-        const readStatuses = async () =>
-            (
-                await db.query.files.findMany({
-                    where: (f, { eq }) => eq(f.userId, seedUserId),
-                })
-            ).map((f) => f.status);
+        const statuses = () => readStatuses(db, seedUserId);
 
         await page.goto(UPLOAD_PAGE_URL);
         await page.setInputFiles('[data-testid="file-input"]', [FILE_A]);
@@ -42,9 +49,7 @@ test(
 
         // Cancel only cleans up what `files.upload` already minted, so wait for
         // the row before clicking — otherwise the test passes on a no-op.
-        await expect
-            .poll(readStatuses, { timeout: 15_000 })
-            .toEqual(['uploading']);
+        await expect.poll(statuses, { timeout: 15_000 }).toEqual(['uploading']);
 
         await page.getByRole('button', { name: 'Cancel upload' }).click();
         // The X now opens the #389 confirmation guard; cleanup only fires
@@ -56,88 +61,48 @@ test(
 
         // The whole point of #330: no row left hidden in `uploading`, where no
         // list would ever show it and its S3 bytes would stay billed.
-        await expect
-            .poll(readStatuses, { timeout: 15_000 })
-            .toEqual(['deleted']);
+        await expect.poll(statuses, { timeout: 15_000 }).toEqual(['deleted']);
     }
 );
 
-// The upload engine is mounted on this page alone, so leaving mid-wave used to
-// abort every in-flight PUT with no warning — an interrupted batch that looked
-// complete (#398). Navigation now confirms first, and only while a wave is
-// actually running.
-test(
-    'navigating away mid-wave asks for confirmation',
-    { tag: ['@page:/dashboard/upload', '@uc:upload-nav-guard'] },
-    async ({ page, db, seedUserId }) => {
-        // Playwright's own navigations never surface beforeunload prompts, so
-        // that half of the guard is asserted by dispatching a cancelable
-        // synthetic event and reading back preventDefault.
-        const isBeforeUnloadPrevented = () =>
-            page.evaluate(() => {
-                const event = new Event('beforeunload', { cancelable: true });
-                window.dispatchEvent(event);
-                return event.defaultPrevented;
-            });
-        const sidebarFilesLink = page
-            .getByRole('complementary')
-            .getByRole('link', { name: 'Files' });
-        const readStatuses = async () =>
-            (
-                await db.query.files.findMany({
-                    where: (f, { eq }) => eq(f.userId, seedUserId),
-                })
-            ).map((f) => f.status);
+// A wave outlives the upload page now (#399), so sign-out is what ends it: the
+// next account to sign in on this tab must not inherit it, and its server rows
+// must be released while the session can still authorize that.
+test.describe('signing out', () => {
+    // A user and session of its own: signing out revokes the session, which
+    // must not be the one the dedicated user's state file holds.
+    const SIGN_OUT_USER = {
+        email: uniqueTestEmail('upload-sign-out'),
+        password: 'upload-sign-out-e2e-password-123',
+        name: 'Upload Sign Out E2E',
+    };
+    test.use({ storageState: { cookies: [], origins: [] } });
+    test.afterAll(async ({ db }) => {
+        await deleteUserByEmail(db, SIGN_OUT_USER.email);
+    });
 
-        await stubS3Puts(page, { stall: true });
-        await page.goto(UPLOAD_PAGE_URL);
+    test(
+        'signing out mid-wave ends it and strands no uploading row',
+        { tag: ['@page:/dashboard/upload', '@uc:upload-sign-out-clears'] },
+        async ({ page, db }) => {
+            await stubS3Puts(page, { stall: true });
+            await signUpViaUi(page, SIGN_OUT_USER);
+            const user = await findUserByEmail(db, SIGN_OUT_USER.email);
 
-        // A pending row is not a wave: no unload guard armed, and links
-        // navigate with no prompt.
-        await page.setInputFiles('[data-testid="file-input"]', [FILE_A]);
-        await expect(page.getByText(/Selected Files/)).toBeVisible();
-        expect(await isBeforeUnloadPrevented()).toBe(false);
-        await sidebarFilesLink.click();
-        await expect(page).toHaveURL(/\/dashboard\/files/);
+            await page.goto(UPLOAD_PAGE_URL);
+            await page.setInputFiles('[data-testid="file-input"]', [FILE_A]);
+            await page.getByRole('button', { name: 'Upload 1 file' }).click();
+            await expect
+                .poll(() => readStatuses(db, user!.id), { timeout: 15_000 })
+                .toEqual(['uploading']);
 
-        // Start a wave and hold it in flight (the stubbed PUT never answers).
-        await page.goto(UPLOAD_PAGE_URL);
-        await page.setInputFiles('[data-testid="file-input"]', [FILE_A]);
-        await page.getByRole('button', { name: 'Upload 1 file' }).click();
-        await expect(
-            page.getByRole('button', { name: 'Cancel upload' })
-        ).toBeVisible();
+            await page.getByRole('button', { name: 'User menu' }).click();
+            await page.getByRole('menuitem', { name: 'Sign out' }).click();
+            await expect(page).toHaveURL(/\/$/, { timeout: 10_000 });
 
-        // Tab close / reload is guarded while the wave runs. Also wait for
-        // the server row: the leave-anyway assertion below is about cleaning
-        // up what `files.upload` minted, so it must exist before we leave.
-        expect(await isBeforeUnloadPrevented()).toBe(true);
-        await expect
-            .poll(readStatuses, { timeout: 15_000 })
-            .toEqual(['uploading']);
-
-        // A sidebar click is intercepted: prompt shown, still on the page.
-        await sidebarFilesLink.click();
-        const dialog = page.getByRole('alertdialog');
-        await expect(dialog.getByText('Leave this page?')).toBeVisible();
-        await expect(page).toHaveURL(/\/dashboard\/upload/);
-
-        // Staying keeps the wave in place.
-        await dialog.getByRole('button', { name: 'Stay' }).click();
-        await expect(dialog).toBeHidden();
-        await expect(page).toHaveURL(/\/dashboard\/upload/);
-        await expect(
-            page.getByRole('button', { name: 'Cancel upload' })
-        ).toBeVisible();
-
-        // Confirming leaves for real — and releases the wave's server rows on
-        // the way out, so nothing strands hidden in `uploading` (#330; the
-        // Event Health check's stuck-uploads leg is what catches that).
-        await sidebarFilesLink.click();
-        await dialog.getByRole('button', { name: 'Leave anyway' }).click();
-        await expect(page).toHaveURL(/\/dashboard\/files/);
-        await expect
-            .poll(readStatuses, { timeout: 15_000 })
-            .toEqual(['deleted']);
-    }
-);
+            // Released before the session ended, not eventually: once the
+            // landing page shows, the row is already out of `uploading`.
+            expect(await readStatuses(db, user!.id)).toEqual(['deleted']);
+        }
+    );
+});

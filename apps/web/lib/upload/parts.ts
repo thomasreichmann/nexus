@@ -1,3 +1,4 @@
+import type { UploadFile } from './rows';
 import type { CompletedPart, ResumableUpload } from './uploadStore';
 
 /**
@@ -108,6 +109,51 @@ export function waveProgress(
         0
     );
     return Math.round((doneBytes / totalBytes) * 100);
+}
+
+export interface WaveSummary {
+    /**
+     * Whether a wave is running. Live while the pool holds rows, too:
+     * `isUploading` alone blinks off during the batch-creation await, before
+     * any row is admitted.
+     */
+    isActive: boolean;
+    /** The wave's rows: everything the user has submitted. */
+    fileCount: number;
+    completedCount: number;
+    errorCount: number;
+    /** `waveProgress` over the same rows the counts are of. */
+    percent: number;
+}
+
+/**
+ * One description of the wave, for the upload page's header and the
+ * header's pill (#399), so the two can never disagree about it. Paused rows
+ * are in: a row parked by a connection drop is still the wave's work. Rows
+ * the user hasn't submitted (pending, resumable, still being checked, or
+ * skipped as a duplicate) are not.
+ */
+export function summarizeWave(
+    rows: Pick<UploadFile, 'status' | 'size' | 'progress'>[],
+    isUploading: boolean
+): WaveSummary {
+    const waveRows = rows.filter(
+        (row) =>
+            row.status !== 'pending' &&
+            row.status !== 'resumable' &&
+            row.status !== 'checking' &&
+            row.status !== 'duplicate'
+    );
+    const countOf = (status: UploadFile['status']) =>
+        waveRows.filter((row) => row.status === status).length;
+    const inFlightCount = countOf('queued') + countOf('uploading');
+    return {
+        isActive: isUploading || inFlightCount > 0,
+        fileCount: waveRows.length,
+        completedCount: countOf('complete'),
+        errorCount: countOf('error'),
+        percent: waveProgress(waveRows),
+    };
 }
 
 /** Snapshot the fields a re-added file must match against a persisted record. */

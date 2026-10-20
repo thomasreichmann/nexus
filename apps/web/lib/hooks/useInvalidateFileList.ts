@@ -1,8 +1,10 @@
 'use client';
 
 import { useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useTRPC } from '@/lib/trpc/client';
+
+type TRPC = ReturnType<typeof useTRPC>;
 
 /**
  * Invalidates every cached variant of `files.list`, the file browser's
@@ -25,26 +27,25 @@ export function useInvalidateFileList() {
     const trpc = useTRPC();
     const queryClient = useQueryClient();
     return useCallback(
-        () =>
-            Promise.all([
-                queryClient.invalidateQueries(trpc.files.list.queryFilter()),
-                queryClient.invalidateQueries(
-                    trpc.files.listBatches.pathFilter()
-                ),
-                queryClient.invalidateQueries(trpc.files.getBatch.pathFilter()),
-                queryClient.invalidateQueries(
-                    trpc.files.listBatchFiles.pathFilter()
-                ),
-                queryClient.invalidateQueries(
-                    trpc.files.statusCounts.queryFilter()
-                ),
-                queryClient.invalidateQueries(
-                    trpc.storage.getUsage.queryFilter()
-                ),
-                queryClient.invalidateQueries(
-                    trpc.storage.getUploadHistory.queryFilter()
-                ),
-            ]),
+        () => invalidateFileList(queryClient, trpc),
         [trpc, queryClient]
     );
+}
+
+/** The hook's invalidation, for code outside React (the upload session). */
+export function invalidateFileList(
+    queryClient: QueryClient,
+    trpc: TRPC
+): Promise<void[]> {
+    return Promise.all([
+        queryClient.invalidateQueries(trpc.files.list.queryFilter()),
+        queryClient.invalidateQueries(trpc.files.listBatches.pathFilter()),
+        queryClient.invalidateQueries(trpc.files.getBatch.pathFilter()),
+        queryClient.invalidateQueries(trpc.files.listBatchFiles.pathFilter()),
+        queryClient.invalidateQueries(trpc.files.statusCounts.queryFilter()),
+        queryClient.invalidateQueries(trpc.storage.getUsage.queryFilter()),
+        queryClient.invalidateQueries(
+            trpc.storage.getUploadHistory.queryFilter()
+        ),
+    ]);
 }

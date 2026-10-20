@@ -130,6 +130,13 @@ interface PutEntry extends InFlightPut {
     reject: (error: unknown) => void;
 }
 
+/** A `createBatch` call as the server received it. */
+export interface FakeBatch {
+    batchId: string;
+    name?: string;
+    expectedFileCount?: number;
+}
+
 export interface FakeUploadBackend {
     api: UploadApi;
     put: typeof xhrPut;
@@ -137,7 +144,7 @@ export interface FakeUploadBackend {
     files: ServerFile[];
     /** Server files for one name, oldest attempt first. */
     filesNamed(name: string): ServerFile[];
-    batches: { batchId: string; name?: string }[];
+    batches: FakeBatch[];
     /** Every PUT the transport received, settled or not, in order. */
     puts: InFlightPut[];
     /** Every PUT of one part number, across files and attempts. */
@@ -185,7 +192,7 @@ export function createFakeUploadBackend(): FakeUploadBackend {
     const chunkSize = FAKE_CHUNK_SIZE;
     const files: ServerFile[] = [];
     const byId = new Map<string, ServerFile>();
-    const batches: { batchId: string; name?: string }[] = [];
+    const batches: FakeBatch[] = [];
     const vault: { name: string; size: number }[] = [];
     const puts: InFlightPut[] = [];
     const inFlight: PutEntry[] = [];
@@ -361,9 +368,9 @@ export function createFakeUploadBackend(): FakeUploadBackend {
                 file.parts.clear();
             }
         },
-        async createBatch({ name }) {
+        async createBatch({ name, expectedFileCount }) {
             await call('createBatch');
-            const batch = { batchId: nextId('batch'), name };
+            const batch = { batchId: nextId('batch'), name, expectedFileCount };
             batches.push(batch);
             return { batchId: batch.batchId };
         },

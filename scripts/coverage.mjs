@@ -68,7 +68,7 @@ const AREAS = [
     ['web scripts/', (f) => f.startsWith('apps/web/scripts/')],
     ['db repositories', (f) => f.startsWith('packages/db/src/repositories/')],
     [
-        'upload engine useUpload.ts',
+        'upload session wiring useUpload.ts',
         (f) => f === 'apps/web/components/dashboard/useUpload.ts',
     ],
     [

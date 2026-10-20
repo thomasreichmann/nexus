@@ -27,6 +27,11 @@ export interface StubS3PutsOptions {
      * replies. Omit for an instant answer.
      */
     holdMs?: number;
+    /**
+     * Keep every PUT open until this settles, so the test decides when the
+     * wave can finish: after it has navigated around mid-wave, say.
+     */
+    holdUntil?: Promise<unknown>;
     /** Answer 500 for the one file whose URL contains this string. */
     failFor?: string;
     /**
@@ -82,6 +87,7 @@ export async function stubS3Puts(
                     setTimeout(resolve, options.holdMs)
                 );
             }
+            await options.holdUntil;
             const isDoomed =
                 options.failFor !== undefined &&
                 route.request().url().includes(options.failFor);
