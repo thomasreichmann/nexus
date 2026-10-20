@@ -35,9 +35,9 @@ const SESSION_BATCH_NAME = expect.stringMatching(
 const statusOf = (harness: QueueHarness) =>
     Object.fromEntries(harness.rows().map((row) => [row.name, row.status]));
 
-/** A multipart row's progress once `parts` of its parts have landed. */
+/** A multipart row's progress once `parts` full parts have landed (#407). */
 const progressAfter = (parts: number) =>
-    Math.round((parts / MULTIPART_PARTS) * 100);
+    Math.round(((parts * FAKE_CHUNK_SIZE) / MULTIPART_SIZE) * 100);
 
 const quotaError = () =>
     makeClientError({

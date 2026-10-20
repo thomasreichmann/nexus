@@ -6,8 +6,9 @@ import {
     computeRemainingPartNumbers,
     mergeParts,
     partByteRange,
-    partsProgress,
+    computeLandedProgress,
     summarizeWave,
+    sumBytesLeft,
     waveProgress,
     isResumable,
 } from './parts';
@@ -129,14 +130,21 @@ describe('partByteRange', () => {
     });
 });
 
-describe('partsProgress', () => {
-    it('rounds completed/total to a percentage', () => {
-        expect(partsProgress(1, 3)).toBe(33);
-        expect(partsProgress(3, 3)).toBe(100);
+describe('computeLandedProgress', () => {
+    const part = (partNumber: number) => ({ partNumber, etag: '"e"' });
+
+    // Two full parts of a 250-byte file are 200 bytes, not two parts of three.
+    it('counts the bytes the parts hold, short last part included', () => {
+        expect(computeLandedProgress([part(1), part(2)], 100, 250)).toBe(80);
+        expect(computeLandedProgress([part(3)], 100, 250)).toBe(20);
+        expect(
+            computeLandedProgress([part(1), part(2), part(3)], 100, 250)
+        ).toBe(100);
     });
 
-    it('is 0 for zero total', () => {
-        expect(partsProgress(0, 0)).toBe(0);
+    it('is 0 with nothing landed, or nothing to land', () => {
+        expect(computeLandedProgress([], 100, 250)).toBe(0);
+        expect(computeLandedProgress([], 100, 0)).toBe(0);
     });
 });
 
@@ -154,6 +162,25 @@ describe('waveProgress', () => {
         expect(waveProgress([{ size: 10, progress: 100 }])).toBe(100);
         expect(waveProgress([])).toBe(0);
         expect(waveProgress([{ size: 0, progress: 100 }])).toBe(0);
+    });
+});
+
+describe('sumBytesLeft', () => {
+    it('adds up what the rows being sent still have to go', () => {
+        expect(
+            sumBytesLeft([
+                { status: 'uploading', size: 200, progress: 50 },
+                { status: 'queued', size: 100, progress: 0 },
+                { status: 'paused', size: 100, progress: 40 },
+                // Nothing more is going out for any of these.
+                { status: 'complete', size: 100, progress: 100 },
+                { status: 'error', size: 1000, progress: 5 },
+                { status: 'pending', size: 1000, progress: 0 },
+                { status: 'resumable', size: 1000, progress: 40 },
+                { status: 'checking', size: 1000, progress: 0 },
+                { status: 'duplicate', size: 1000, progress: 0 },
+            ])
+        ).toBe(100 + 100 + 60);
     });
 });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { createSemaphore } from '@nexus/async';
 import { getQueryClient, getTRPC } from '@/lib/trpc/client';
@@ -15,6 +15,7 @@ import {
 } from '@/lib/upload/fileSystemAccess';
 import { CONFIRM_RETRIES, S3_CONNECTION_BUDGET } from '@/lib/upload/limits';
 import { summarizeWave, type WaveSummary } from '@/lib/upload/parts';
+import type { WaveEstimate } from '@/lib/upload/rate';
 import type { UploadFile, UploadRow } from '@/lib/upload/rows';
 import {
     createUploadSession,
@@ -57,6 +58,7 @@ function getUploadSession(): UploadSession {
         isOnline: navigatorIsOnline,
         isFileSystemAccessSupported,
         connection: window,
+        now: Date.now,
     });
     return session;
 }
@@ -84,6 +86,28 @@ export function useUpload() {
 export function useUploadWave(): WaveSummary {
     const { rows, isUploading } = useUploadSnapshot();
     return summarizeWave(rows, isUploading);
+}
+
+// Re-read on a clock rather than on progress, so a stall slows the rate and,
+// once it outlasts the window, hides the estimate.
+const ESTIMATE_TICK_MS = 1_000;
+
+/** The running wave's transfer rate and time left (#407), once there's signal. */
+export function useWaveEstimate(isActive: boolean): WaveEstimate | null {
+    const [estimate, setEstimate] = useState<WaveEstimate | null>(null);
+    useEffect(() => {
+        if (!isActive) return;
+        const timer = setInterval(
+            () => setEstimate(getUploadSession().estimate(Date.now())),
+            ESTIMATE_TICK_MS
+        );
+        return () => {
+            clearInterval(timer);
+            // The next wave starts from nothing, not from this one's figure.
+            setEstimate(null);
+        };
+    }, [isActive]);
+    return estimate;
 }
 
 // The calls releasing what a dropped row minted on the server, still on their

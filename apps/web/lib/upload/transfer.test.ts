@@ -9,6 +9,7 @@ import {
 } from './limits';
 import {
     createQueueHarness,
+    FAKE_CHUNK_SIZE,
     fakeFile,
     MULTIPART_PARTS,
     MULTIPART_SIZE,
@@ -39,6 +40,118 @@ const firstParts = Array.from(
     { length: MAX_CONCURRENT_CHUNKS },
     (_, i) => i + 1
 );
+
+// #407: progress in bytes, so a part on a slow uplink moves the bar while it's
+// sent, but never ahead of what S3 actually holds.
+describe('multipart progress', () => {
+    async function startMultipart() {
+        const harness = createQueueHarness();
+        harness.backend.holdPuts();
+        await harness.queue.addFiles(
+            picked(fakeFile('clip.mov', MULTIPART_SIZE))
+        );
+        const wave = harness.queue.startUpload();
+        await vi.waitFor(() =>
+            expect(harness.backend.inFlight()).toHaveLength(
+                MAX_CONCURRENT_CHUNKS
+            )
+        );
+        return { harness, wave };
+    }
+
+    const half = FAKE_CHUNK_SIZE / 2;
+    const percentOf = (bytes: number) =>
+        Math.round((bytes / MULTIPART_SIZE) * 100);
+
+    it('moves while parts are in flight, before any has landed', async () => {
+        const { harness, wave } = await startMultipart();
+
+        harness.backend.reportProgress((put) => put.partNumber === 1, half);
+        harness.backend.reportProgress((put) => put.partNumber === 2, half);
+
+        expect(harness.row('clip.mov').progress).toBe(
+            percentOf(FAKE_CHUNK_SIZE)
+        );
+        harness.backend.releasePuts();
+        await wave;
+        expect(harness.row('clip.mov').progress).toBe(100);
+    });
+
+    it('backs out a failed attempt’s bytes, so progress is never ahead of what landed', async () => {
+        const { harness, wave } = await startMultipart();
+        harness.backend.completePuts((put) => put.partNumber === 1);
+        // Landed, not just sent: its record is in the resume store.
+        await vi.waitFor(async () =>
+            expect((await listUploads())[0]?.completedParts).toHaveLength(1)
+        );
+        harness.backend.reportProgress((put) => put.partNumber === 2, half);
+        expect(harness.row('clip.mov').progress).toBe(
+            percentOf(FAKE_CHUNK_SIZE + half)
+        );
+
+        // The attempt dies; its retry starts the part over from zero.
+        harness.backend.failPut(
+            (put) => put.partNumber === 2,
+            new UploadNetworkError()
+        );
+
+        await vi.waitFor(() =>
+            expect(harness.row('clip.mov').progress).toBe(
+                percentOf(FAKE_CHUNK_SIZE)
+            )
+        );
+        harness.backend.releasePuts();
+        await wave;
+        expect(harness.row('clip.mov').progress).toBe(100);
+    });
+});
+
+// What the wave's transfer rate is measured on (#407): the uplink's work, so
+// a failed attempt's bytes count, they were sent, and only once each.
+describe('bytes sent', () => {
+    it('reports every byte put on the wire, once', async () => {
+        const harness = createQueueHarness();
+        harness.backend.holdPuts();
+        await harness.queue.addFiles(picked(fakeFile('a.jpg', 1000)));
+        const wave = harness.queue.startUpload();
+        await vi.waitFor(() =>
+            expect(harness.backend.inFlight()).toHaveLength(1)
+        );
+
+        harness.backend.reportProgress(() => true, 256);
+        harness.backend.reportProgress(() => true, 256);
+        expect(harness.bytesSent()).toBe(256);
+        harness.backend.releasePuts();
+        await wave;
+
+        expect(harness.bytesSent()).toBe(1000);
+    });
+
+    it('counts a failed attempt’s bytes, and the retry’s again', async () => {
+        const harness = createQueueHarness();
+        harness.backend.holdPuts();
+        await harness.queue.addFiles(
+            picked(fakeFile('clip.mov', MULTIPART_SIZE))
+        );
+        const wave = harness.queue.startUpload();
+        await vi.waitFor(() =>
+            expect(harness.backend.inFlight()).toHaveLength(
+                MAX_CONCURRENT_CHUNKS
+            )
+        );
+        const half = FAKE_CHUNK_SIZE / 2;
+        harness.backend.reportProgress((put) => put.partNumber === 1, half);
+
+        harness.backend.failPut(
+            (put) => put.partNumber === 1,
+            new UploadNetworkError()
+        );
+        harness.backend.releasePuts();
+        await wave;
+
+        expect(harness.bytesSent()).toBe(MULTIPART_SIZE + half);
+    });
+});
 
 describe('engine choice', () => {
     it('sends a file at the multipart threshold through multipart and one byte under it as a single PUT', async () => {
@@ -245,7 +358,7 @@ describe('multipart upload', () => {
             ])
         );
         expect(harness.row('clip.mov').progress).toBe(
-            Math.round((2 / MULTIPART_PARTS) * 100)
+            Math.round(((2 * FAKE_CHUNK_SIZE) / MULTIPART_SIZE) * 100)
         );
         harness.backend.releasePuts();
         await wave;
@@ -498,7 +611,9 @@ describe('multipart upload', () => {
         await wave;
         expect(harness.row('clip.mov')).toMatchObject({
             status: 'error',
-            progress: Math.round((2 / MULTIPART_PARTS) * 100),
+            progress: Math.round(
+                ((2 * FAKE_CHUNK_SIZE) / MULTIPART_SIZE) * 100
+            ),
         });
 
         const retry = harness.queue.retryFile(harness.row('clip.mov').id);
@@ -510,7 +625,7 @@ describe('multipart upload', () => {
             ).toEqual([4, 5])
         );
         expect(harness.row('clip.mov').progress).toBe(
-            Math.round((3 / MULTIPART_PARTS) * 100)
+            Math.round(((3 * FAKE_CHUNK_SIZE) / MULTIPART_SIZE) * 100)
         );
         harness.backend.releasePuts();
         await retry;
