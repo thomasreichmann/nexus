@@ -30,6 +30,10 @@ export interface BatchView {
     matchCount: number | null;
     /** Up to three files whose thumbnails make the cover mosaic. */
     coverFiles: LibraryCoverFile[];
+    /** How many files its Upload click sent, when that was recorded. */
+    expectedFileCount: number | null;
+    /** Files that never finished uploading (#550); 0 for a whole batch. */
+    missingFileCount: number;
 }
 
 export const UNGROUPED_KEY = 'ungrouped';

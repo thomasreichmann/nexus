@@ -1,4 +1,5 @@
 import {
+    FileWarning,
     FolderOpen,
     LayoutDashboard,
     ListChecks,
@@ -31,6 +32,12 @@ export const dashboardNavigation: NavItem[] = [
         name: 'Jobs',
         href: '/dashboard/admin/jobs',
         icon: ListChecks,
+        isAdminOnly: true,
+    },
+    {
+        name: 'Partial batches',
+        href: '/dashboard/admin/batches',
+        icon: FileWarning,
         isAdminOnly: true,
     },
     {
