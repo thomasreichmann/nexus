@@ -85,6 +85,23 @@ describe.skipIf(isAwsUnavailable)('CloudFront download distributions', () => {
         );
     });
 
+    // A file or batch name is often not ASCII (#542). Sent raw, anything past
+    // Latin-1 gets the link refused with S3's 400.
+    it('serves a download named outside ASCII, in UTF-8 with a fallback for old clients', async () => {
+        const { artifactsBucket } = requireDevConfig();
+        const key = await putObject(artifactsBucket, 'nexus-part-1.zip');
+
+        const url = await artifacts.get(key, {
+            filename: 'São Paulo ☕ 東京 (part 1 of 2).zip',
+        });
+        const response = await fetch(url);
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get('content-disposition')).toBe(
+            `attachment; filename="S_o Paulo _ __ (part 1 of 2).zip"; filename*=UTF-8''S%C3%A3o%20Paulo%20%E2%98%95%20%E6%9D%B1%E4%BA%AC%20%28part%201%20of%202%29.zip`
+        );
+    });
+
     // A private S3 bucket would 403 both of these too, so each one first pins
     // the CloudFront host: the refusal has to be the trusted key group's.
     it.each([

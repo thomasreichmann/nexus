@@ -233,3 +233,27 @@ describe('download URL routing', () => {
         ).rejects.toThrow(/S3_RETRIEVAL_ARTIFACTS_BUCKET is not set/);
     });
 });
+
+// What S3 accepts in the header is cloudfront.integration.test.ts's to prove;
+// these pin the encoding at its edges (#542).
+describe('contentDisposition', () => {
+    it('keeps a printable ASCII name as it is, `~` included', () => {
+        expect(
+            presigned.contentDisposition('Silva wedding ~ (part 1 of 2).zip')
+        ).toBe('attachment; filename="Silva wedding ~ (part 1 of 2).zip"');
+    });
+
+    it('sends a control character in UTF-8, not in the quoted name', () => {
+        expect(presigned.contentDisposition('a\x7fb.zip')).toBe(
+            `attachment; filename="a_b.zip"; filename*=UTF-8''a%7Fb.zip`
+        );
+    });
+
+    it('encodes what an ext-value can’t carry, and still escapes the fallback', () => {
+        expect(
+            presigned.contentDisposition('Dad\'s "best" day* \\ é.zip')
+        ).toBe(
+            `attachment; filename="Dad's \\"best\\" day* \\\\ _.zip"; filename*=UTF-8''Dad%27s%20%22best%22%20day%2A%20%5C%20%C3%A9.zip`
+        );
+    });
+});

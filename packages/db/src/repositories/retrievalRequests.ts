@@ -465,10 +465,49 @@ async function findTimings(
     return row!;
 }
 
+/**
+ * The one upload batch every file of the request is in, or null when they
+ * span batches or any of them is in none: what a restore is named after
+ * (#542). `requestRef` is whatever the enclosing query correlates on, as for
+ * `itemCount`.
+ *
+ * From the files, not `retrieval_requests.upload_batch_id`: that's set only
+ * when the restore was asked for as a whole batch, and a multi-select never
+ * leaves one batch either.
+ *
+ * Only ever in a WHERE or a joined query's select list: a select list with no
+ * join drops the table from each column, and `id` is in both tables here.
+ */
+function requestBatchId(requestRef: SQL): SQL {
+    return sql`(
+        select min(${schema.files.batchId})
+        from ${schema.retrievalRequestItems}
+        inner join ${schema.files} on ${schema.files.id} = ${schema.retrievalRequestItems.fileId}
+        where ${schema.retrievalRequestItems.requestId} = ${requestRef}
+        having count(distinct ${schema.files.batchId}) = 1
+            and count(${schema.files.batchId}) = count(*)
+    )`;
+}
+
+/** The name of the request's batch (`requestBatchId`), or null. */
+async function findBatchName(
+    db: DB,
+    requestId: string
+): Promise<string | null> {
+    const [batch] = await db
+        .select({ name: schema.uploadBatches.name })
+        .from(schema.uploadBatches)
+        .where(eq(schema.uploadBatches.id, requestBatchId(sql`${requestId}`)))
+        .limit(1);
+    return batch?.name ?? null;
+}
+
 export interface DownloadableRequest {
     id: string;
     tier: RetrievalRequest['tier'];
     completedAt: Date;
+    /** See `requestBatchId`. */
+    batchName: string | null;
     /** Items the user asked for. */
     fileCount: number;
     /** Zip archives the request was partitioned into. */
@@ -509,6 +548,10 @@ async function findDownloadableByUser(
             // The plain column, so drizzle's own mapper reads it; the WHERE
             // below is what makes the non-null assertion true.
             completedAt: schema.retrievalRequests.completedAt,
+            batchName: sql<string | null>`(
+                select ${schema.uploadBatches.name} from ${schema.uploadBatches}
+                where ${schema.uploadBatches.id} = ${requestBatchId(sql`${schema.retrievalRequests.id}`)}
+            )`,
             fileCount: sql<number>`(
                 select count(*) from ${schema.retrievalRequestItems}
                 where ${schema.retrievalRequestItems.requestId} = ${schema.retrievalRequests.id}
@@ -757,6 +800,7 @@ export const createRetrievalRequestRepo = createRepository({
     findArtifactById,
     findArtifactByUserAndId,
     findTimings,
+    findBatchName,
     findDownloadableByUser,
     insertArtifacts,
     assignItemsToArtifact,

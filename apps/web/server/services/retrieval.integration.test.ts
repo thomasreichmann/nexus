@@ -9,6 +9,7 @@ import {
     insertFile,
     insertRetrieval,
     insertRetrievalRequest,
+    insertRetrievalRequestItem,
     insertRetrievalArtifact,
     insertUploadBatch,
     backdateRetrievalRequest,
@@ -22,6 +23,12 @@ import { InvalidStateError, NotFoundError } from '@/server/errors';
 // below exercise the actual unique index, status columns and horizon SQL.
 const s3Mocks = vi.hoisted(() => ({
     presignedGet: vi.fn(),
+    // The name a zip downloads as rides in the URL, where a test can read it
+    // without asserting on a mock the concurrent tests share.
+    artifactsGet: vi.fn(
+        async (key: string, options: { filename: string }) =>
+            `https://artifacts.test/${key}?filename=${encodeURIComponent(options.filename)}`
+    ),
     // Objects default to archived — the case that needs a restore. Tests
     // about warm objects override this per-test.
     getObjectState: vi.fn(
@@ -35,6 +42,7 @@ vi.mock('@/lib/storage', () => ({
     s3: {
         glacier: { getObjectState: s3Mocks.getObjectState },
         presigned: { get: s3Mocks.presignedGet },
+        artifacts: { get: s3Mocks.artifactsGet, isConfigured: () => true },
     },
 }));
 
@@ -763,6 +771,105 @@ describe.concurrent('tier-aware poll horizon (#423)', () => {
 
         expect(dueIds).toEqual(
             new Set([dueBulkRow.id, dueStandardRow.id, noAcceptTimeRow.id])
+        );
+    });
+});
+
+// A restore's zips are named after the batch its files came from (#542),
+// looked up the same way for the panel and for the download itself.
+describe.concurrent('zip names', () => {
+    /** A completed restore of two files in `batchId`, built into `partCount` zips. */
+    async function builtRestore(
+        db: DB,
+        userId: string,
+        batchId: string | null,
+        partCount: number
+    ) {
+        const request = await insertRetrievalRequest(db, {
+            userId,
+            completedAt: new Date(),
+        });
+        await Promise.all(
+            [0, 1].map(async () => {
+                const file = await insertFile(db, { userId, batchId });
+                await insertRetrievalRequestItem(db, {
+                    requestId: request.id,
+                    fileId: file.id,
+                });
+            })
+        );
+        const artifacts = await Promise.all(
+            Array.from({ length: partCount }, (_, position) =>
+                insertRetrievalArtifact(db, {
+                    requestId: request.id,
+                    position,
+                    status: 'ready',
+                    s3Key: `${userId}/${request.id}/${position}/nexus-part-${position + 1}.zip`,
+                    sizeBytes: 100,
+                    completedAt: new Date(),
+                })
+            )
+        );
+        return { request, artifacts };
+    }
+
+    async function downloadName(db: DB, userId: string, artifactId: string) {
+        const { url } = await retrievalService.getArtifactDownloadUrl(
+            db,
+            userId,
+            artifactId
+        );
+        return new URL(url).searchParams.get('filename');
+    }
+
+    it('names a batch’s zips after it, in the panel and the download', async ({
+        db,
+        user,
+    }) => {
+        const batch = await insertUploadBatch(db, {
+            userId: user.id,
+            name: 'Silva wedding',
+        });
+        const { request, artifacts } = await builtRestore(
+            db,
+            user.id,
+            batch.id,
+            2
+        );
+
+        const delivery = await retrievalService.getRequestDelivery(
+            db,
+            user.id,
+            request.id
+        );
+
+        expect(delivery).toMatchObject({
+            state: 'ready',
+            batchName: 'Silva wedding',
+            artifacts: [
+                { fileName: 'Silva wedding (part 1 of 2).zip' },
+                { fileName: 'Silva wedding (part 2 of 2).zip' },
+            ],
+        });
+        expect(await downloadName(db, user.id, artifacts[1]!.id)).toBe(
+            'Silva wedding (part 2 of 2).zip'
+        );
+    });
+
+    it('keeps the old names for a restore with no batch', async ({
+        db,
+        user,
+    }) => {
+        const { request, artifacts } = await builtRestore(db, user.id, null, 1);
+
+        const [ready] = await retrievalService.listReadyRequests(db, user.id);
+
+        expect(ready).toMatchObject({
+            requestId: request.id,
+            batchName: null,
+        });
+        expect(await downloadName(db, user.id, artifacts[0]!.id)).toBe(
+            'nexus-restore.zip'
         );
     });
 });

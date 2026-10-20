@@ -138,9 +138,10 @@ async function announceRequestReady(
     request: RetrievalRequest
 ): Promise<void> {
     try {
-        const [artifacts, timings] = await Promise.all([
+        const [artifacts, timings, batchName] = await Promise.all([
             requestRepo.findArtifacts(request.id),
             requestRepo.findTimings(request.id),
+            requestRepo.findBatchName(request.id),
         ]);
 
         const totalBytes = artifacts.reduce(
@@ -173,6 +174,7 @@ async function announceRequestReady(
         await sendRetrievalRequestReadyEmail(db, {
             userId: request.userId,
             requestId: request.id,
+            batchName,
             fileCount: timings.fileCount,
             partCount: artifacts.length,
             totalBytes,

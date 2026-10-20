@@ -14,6 +14,7 @@ import {
 const OPTS = {
     userId: 'user-1',
     requestId: 'request-1',
+    batchName: null,
     fileCount: 12,
     partCount: 3,
     totalBytes: 10_000,
@@ -152,6 +153,17 @@ describe('sendRetrievalRequestReadyEmail', () => {
             fileCount: 12,
             partCount: 3,
         });
+    });
+
+    it('names the batch the files came from (#542)', async () => {
+        await sendRetrievalRequestReadyEmail(db, {
+            ...OPTS,
+            batchName: 'Silva wedding',
+        });
+
+        const [sent] = mockEmail.send.mock.calls[0];
+        expect(sent.subject).toBe('Silva wedding is ready to download');
+        expect(sent.react.props.batchName).toBe('Silva wedding');
     });
 
     // The webhook-era contract (apps/web/server/services/email.ts): the request

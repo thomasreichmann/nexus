@@ -665,6 +665,66 @@ describe.concurrent('findTimings', () => {
     });
 });
 
+// What a restore's zips are named after (#542).
+describe.concurrent('findBatchName', () => {
+    /** A request over one file per entry, in that batch; null is in none. */
+    async function requestOver(
+        db: DB,
+        userId: string,
+        batchIds: (string | null)[]
+    ) {
+        const request = await insertRetrievalRequest(db, { userId });
+        await Promise.all(
+            batchIds.map(async (batchId) => {
+                const file = await insertFile(db, { userId, batchId });
+                await insertRetrievalRequestItem(db, {
+                    requestId: request.id,
+                    fileId: file.id,
+                });
+            })
+        );
+        return request;
+    }
+
+    it('names the batch every file is in, each request its own', async ({
+        db,
+        user,
+    }) => {
+        const [silva, costa] = await Promise.all([
+            insertUploadBatch(db, { userId: user.id, name: 'Silva wedding' }),
+            insertUploadBatch(db, { userId: user.id, name: 'Costa wedding' }),
+        ]);
+        const [ofSilva, ofCosta] = await Promise.all([
+            requestOver(db, user.id, [silva.id, silva.id]),
+            requestOver(db, user.id, [costa.id]),
+        ]);
+        const repo = createRetrievalRequestRepo(db);
+
+        expect(await repo.findBatchName(ofSilva.id)).toBe('Silva wedding');
+        expect(await repo.findBatchName(ofCosta.id)).toBe('Costa wedding');
+    });
+
+    it('names nothing when the files span batches, or any is in none', async ({
+        db,
+        user,
+    }) => {
+        const [a, b] = await Promise.all([
+            insertUploadBatch(db, { userId: user.id }),
+            insertUploadBatch(db, { userId: user.id }),
+        ]);
+        const [acrossBatches, partlyUngrouped, ungrouped] = await Promise.all([
+            requestOver(db, user.id, [a.id, b.id]),
+            requestOver(db, user.id, [a.id, null]),
+            requestOver(db, user.id, [null, null]),
+        ]);
+        const repo = createRetrievalRequestRepo(db);
+
+        expect(await repo.findBatchName(acrossBatches.id)).toBeNull();
+        expect(await repo.findBatchName(partlyUngrouped.id)).toBeNull();
+        expect(await repo.findBatchName(ungrouped.id)).toBeNull();
+    });
+});
+
 describe.concurrent('findDownloadableByUser', () => {
     /** A completed request with one built artifact per entry of `builtHoursAgo`. */
     async function completedRequest(
@@ -709,6 +769,7 @@ describe.concurrent('findDownloadableByUser', () => {
                 id: newer.request.id,
                 tier: newer.request.tier,
                 completedAt: newer.request.completedAt,
+                batchName: null,
                 fileCount: 2,
                 partCount: 1,
                 totalBytes: 100,
@@ -718,6 +779,7 @@ describe.concurrent('findDownloadableByUser', () => {
                 id: older.request.id,
                 tier: 'bulk',
                 completedAt: older.request.completedAt,
+                batchName: null,
                 fileCount: 2,
                 partCount: 2,
                 totalBytes: 300,

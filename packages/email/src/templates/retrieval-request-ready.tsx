@@ -23,6 +23,11 @@ export interface RetrievalRequestReadyEmailProps {
      * happen days after this message was sent (#426).
      */
     downloadUrl: string;
+    /**
+     * The one upload batch every file came from, which the message is named
+     * after (#542); null when they span batches or sit in none.
+     */
+    batchName: string | null;
     /** Files the user asked for — always ≥ 2, or this would be a single-file restore. */
     fileCount: number;
     /** Zip artifacts the request was partitioned into; 1 is the common case. */
@@ -42,8 +47,10 @@ export interface RetrievalRequestReadyEmailProps {
  * change can't drift between the inbox line and the body.
  */
 export function retrievalRequestReadySubject({
+    batchName,
     fileCount,
-}: Pick<RetrievalRequestReadyEmailProps, 'fileCount'>): string {
+}: Pick<RetrievalRequestReadyEmailProps, 'batchName' | 'fileCount'>): string {
+    if (batchName) return `${batchName} is ready to download`;
     return `Your ${fileCount} files are ready to download`;
 }
 
@@ -59,6 +66,7 @@ export function retrievalRequestReadySubject({
  */
 export function RetrievalRequestReadyEmail({
     downloadUrl,
+    batchName,
     fileCount,
     partCount,
     totalBytes,
@@ -73,7 +81,9 @@ export function RetrievalRequestReadyEmail({
             preview={`${fileCount} files are ready to download`}
             footer={<LinkFallback url={downloadUrl} />}
         >
-            <Heading style={heading}>Your files are ready</Heading>
+            <Heading style={heading}>
+                {batchName ? `${batchName} is ready` : 'Your files are ready'}
+            </Heading>
             <Text style={intro}>
                 <strong style={introStrong}>{fileCount} files</strong> have
                 finished restoring from archive.{' '}

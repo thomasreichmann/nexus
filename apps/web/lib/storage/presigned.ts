@@ -29,13 +29,34 @@ export async function put(
  * A `Content-Disposition` that names the saved file, with backslashes and
  * quotes escaped so a filename can't break out of the quoted string.
  *
+ * A name outside printable ASCII also goes in `filename*` (RFC 6266), as
+ * percent-encoded UTF-8, which browsers prefer. S3 refuses the link with a 400
+ * when the header itself would carry anything past Latin-1 (#542), so the
+ * quoted name stays ASCII, with `_` for each such character, for clients that
+ * don't read `filename*`.
+ *
  * Exported because every bucket the app presigns reads from needs the same
  * sanitisation, and a second copy is a second place to forget it (#426).
  */
 export function contentDisposition(filename?: string): string | undefined {
     if (!filename) return undefined;
     const escaped = filename.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    return `attachment; filename="${escaped}"`;
+    if (PRINTABLE_ASCII.test(filename)) {
+        return `attachment; filename="${escaped}"`;
+    }
+    const fallback = escaped.replace(/[^\x20-\x7e]/g, '_');
+    return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeExtValue(filename)}`;
+}
+
+const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
+
+// RFC 5987's attr-char: encodeURIComponent leaves `'()*` raw, and an ext-value
+// can't carry them.
+function encodeExtValue(value: string): string {
+    return encodeURIComponent(value).replace(
+        /['()*]/g,
+        (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+    );
 }
 
 /**
