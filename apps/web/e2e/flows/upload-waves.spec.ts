@@ -146,6 +146,28 @@ test(
     }
 );
 
+// A long wave says how fast it's going and roughly when it will end (#407),
+// once it has run long enough for that to be honest. Each round of PUTs is held
+// so the wave outlasts the estimate's minimum signal.
+test(
+    'a long wave shows its transfer rate and time left',
+    { tag: ['@page:/dashboard/upload', '@uc:upload-wave-estimate'] },
+    async ({ page }) => {
+        await stubS3Puts(page, { holdMs: 1500 });
+        const files = makeTextFiles(MAX_CONCURRENT_FILES * 6, 'rate-wave');
+
+        await page.goto(UPLOAD_PAGE_URL);
+        await page.setInputFiles('[data-testid="file-input"]', files);
+        await page
+            .getByRole('button', { name: `Upload ${files.length} files` })
+            .click();
+
+        await expect(
+            page.getByText(/\/s · (less than a minute|about .+) left$/)
+        ).toBeVisible({ timeout: 15_000 });
+    }
+);
+
 // Playwright's own navigations never surface beforeunload prompts, so the tab
 // guard is read by dispatching a cancelable synthetic event.
 const isBeforeUnloadPrevented = (page: Page) =>

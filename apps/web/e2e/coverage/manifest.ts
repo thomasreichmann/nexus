@@ -497,6 +497,12 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-wave-estimate',
+        title: 'A long wave shows its transfer rate and time left, once there is enough signal',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-survives-navigation',
         title: 'A wave keeps uploading across in-app navigation, lands its batch whole, and only tab close asks first',
         area: 'upload',

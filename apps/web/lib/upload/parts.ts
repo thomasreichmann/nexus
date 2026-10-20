@@ -88,10 +88,27 @@ export function partByteRange(
     return { start, end };
 }
 
-/** Progress as a 0-100 integer from completed vs total parts. */
-export function partsProgress(completed: number, total: number): number {
-    if (total <= 0) return 0;
-    return Math.round((completed / total) * 100);
+/**
+ * Progress as a 0-100 integer from the bytes the completed parts hold: the
+ * same measure the multipart engine reports while it runs (#407), so a
+ * resumed upload's bar picks up where it stopped. Sized part by part rather
+ * than counted, since the last one is usually short.
+ */
+export function computeLandedProgress(
+    completedParts: CompletedPart[],
+    chunkSize: number,
+    fileSize: number
+): number {
+    if (fileSize <= 0) return 0;
+    const landedBytes = completedParts.reduce((sum, part) => {
+        const { start, end } = partByteRange(
+            part.partNumber,
+            chunkSize,
+            fileSize
+        );
+        return sum + (end - start);
+    }, 0);
+    return Math.round((landedBytes / fileSize) * 100);
 }
 
 /**
@@ -134,16 +151,10 @@ export interface WaveSummary {
  * skipped as a duplicate) are not.
  */
 export function summarizeWave(
-    rows: Pick<UploadFile, 'status' | 'size' | 'progress'>[],
+    rows: WaveRow[],
     isUploading: boolean
 ): WaveSummary {
-    const waveRows = rows.filter(
-        (row) =>
-            row.status !== 'pending' &&
-            row.status !== 'resumable' &&
-            row.status !== 'checking' &&
-            row.status !== 'duplicate'
-    );
+    const waveRows = rows.filter(isWaveRow);
     const countOf = (status: UploadFile['status']) =>
         waveRows.filter((row) => row.status === status).length;
     const inFlightCount = countOf('queued') + countOf('uploading');
@@ -154,6 +165,39 @@ export function summarizeWave(
         errorCount: countOf('error'),
         percent: waveProgress(waveRows),
     };
+}
+
+/**
+ * The bytes the wave still has to send, for its time left (#407). Only rows
+ * something is going to send: a failed row waits on a Retry nobody may click,
+ * and counting it would hold "time left" above zero to the end.
+ */
+export function sumBytesLeft(rows: WaveRow[]): number {
+    let left = 0;
+    for (const row of rows) {
+        if (!STILL_SENDING.has(row.status)) continue;
+        left += (row.size * (100 - row.progress)) / 100;
+    }
+    return left;
+}
+
+const STILL_SENDING = new Set<UploadFile['status']>([
+    'queued',
+    'uploading',
+    'paused',
+]);
+
+type WaveRow = Pick<UploadFile, 'status' | 'size' | 'progress'>;
+
+// Not submitted, so not the wave's work: pending, resumable, still being
+// checked, or skipped as a duplicate.
+function isWaveRow(row: WaveRow): boolean {
+    return (
+        row.status !== 'pending' &&
+        row.status !== 'resumable' &&
+        row.status !== 'checking' &&
+        row.status !== 'duplicate'
+    );
 }
 
 /** Snapshot the fields a re-added file must match against a persisted record. */

@@ -4,7 +4,7 @@ import { MAX_CONCURRENT_FILES, MAX_IN_FLIGHT_BYTES } from './limits';
 import {
     indexByFileIdentity,
     isResumable,
-    partsProgress,
+    computeLandedProgress,
     toFileIdentity,
     toFileIdentityKey,
 } from './parts';
@@ -304,9 +304,10 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
                     id: record.fileId,
                     name: record.name,
                     size: record.size,
-                    progress: partsProgress(
-                        record.completedParts.length,
-                        record.totalParts
+                    progress: computeLandedProgress(
+                        record.completedParts,
+                        record.chunkSize,
+                        record.size
                     ),
                     status: 'resumable' as const,
                     isQuickResumable:
@@ -384,9 +385,10 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
                         id: match.fileId,
                         name: file.name,
                         size: file.size,
-                        progress: partsProgress(
-                            match.completedParts.length,
-                            match.totalParts
+                        progress: computeLandedProgress(
+                            match.completedParts,
+                            match.chunkSize,
+                            match.size
                         ),
                         status: 'pending',
                         file,
@@ -423,9 +425,10 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
                           // Keep any handle we already had if the re-add lacked one.
                           fileHandle: reattached.handle ?? row.fileHandle,
                           status: 'pending' as const,
-                          progress: partsProgress(
-                              row.completedParts?.length ?? 0,
-                              row.totalParts ?? 0
+                          progress: computeLandedProgress(
+                              row.completedParts ?? [],
+                              row.chunkSize ?? 0,
+                              row.size
                           ),
                       }
                     : row;

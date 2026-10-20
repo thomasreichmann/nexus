@@ -22,7 +22,6 @@ import {
     computeRemainingPartNumbers,
     mergeParts,
     partByteRange,
-    partsProgress,
 } from './parts';
 import type { FileRunOutcome } from './filePool';
 import type { UploadRow } from './rows';
@@ -95,6 +94,28 @@ export interface TransferDeps {
     s3Budget: Semaphore;
     updateRow: (id: string, updates: Partial<UploadRow>) => void;
     isOnline: () => boolean;
+    /**
+     * Bytes just put on the wire, as the XHRs report them, for the wave's
+     * transfer rate (#407). Exact and as they happen, unlike a row's whole
+     * percent; a failed attempt's bytes still count, since they were sent.
+     */
+    onBytesSent: (bytes: number) => void;
+}
+
+/**
+ * An XHR `onProgress` that passes on each attempt's new bytes: `loaded` is
+ * cumulative per attempt, and a retry is a new attempt from zero.
+ */
+function countBytesSent(
+    onBytesSent: (bytes: number) => void,
+    onLoaded?: (loaded: number) => void
+): (loaded: number) => void {
+    let reported = 0;
+    return (loaded) => {
+        if (loaded > reported) onBytesSent(loaded - reported);
+        reported = Math.max(reported, loaded);
+        onLoaded?.(loaded);
+    };
 }
 
 export interface Transfers {
@@ -238,14 +259,18 @@ export function createTransfers(deps: TransferDeps): Transfers {
 
                 updateRow(row.id, { fileId });
 
+                const onProgress = countBytesSent(deps.onBytesSent, (loaded) =>
+                    updateRow(row.id, {
+                        progress: Math.round((loaded / file.size) * 100),
+                    })
+                );
                 await deps.put(init.uploadUrl, file, {
-                    onProgress: (loaded, total) => {
-                        updateRow(row.id, {
-                            progress: Math.round((loaded / total) * 100),
-                        });
-                    },
+                    onProgress,
                     signal: abortController.signal,
                 });
+                // S3 holds every byte now, whether or not the browser fired
+                // the last progress event.
+                onProgress(file.size);
                 return init.fileId;
             });
 
@@ -393,10 +418,34 @@ export function createTransfers(deps: TransferDeps): Transfers {
                 }
             }
 
-            let completedCount = completed.length;
-            updateRow(row.id, {
-                progress: partsProgress(completedCount, totalParts),
-            });
+            // Progress in bytes rather than parts (#407), so a 10 MB part on
+            // a slow uplink moves the bar while it's sent instead of sitting
+            // at 0%: the parts S3 holds, plus what each part in flight has
+            // sent so far. An attempt that fails backs its bytes out again,
+            // so progress is never ahead of what's landed.
+            const partSize = (partNumber: number) => {
+                const { start, end } = partByteRange(
+                    partNumber,
+                    chunkSize,
+                    file.size
+                );
+                return end - start;
+            };
+            let landedBytes = completed.reduce(
+                (sum, part) => sum + partSize(part.partNumber),
+                0
+            );
+            const sendingBytes = new Map<number, number>();
+            const reportProgress = () => {
+                let sending = 0;
+                for (const bytes of sendingBytes.values()) sending += bytes;
+                updateRow(row.id, {
+                    progress: Math.round(
+                        ((landedBytes + sending) / file.size) * 100
+                    ),
+                });
+            };
+            reportProgress();
 
             const uploadOnePart = async (partNumber: number): Promise<void> => {
                 const { start, end } = partByteRange(
@@ -412,18 +461,38 @@ export function createTransfers(deps: TransferDeps): Transfers {
                 const retryablePutError = (error: unknown) =>
                     !isAbortError(error) && !isExpiredUrlError(error);
 
+                const putAttempt = async (url: string) => {
+                    const onProgress = countBytesSent(
+                        deps.onBytesSent,
+                        (loaded) => {
+                            sendingBytes.set(partNumber, loaded);
+                            reportProgress();
+                        }
+                    );
+                    try {
+                        const result = await deps.put(url, blob, {
+                            onProgress,
+                            signal: abortController.signal,
+                        });
+                        // The part is whole in S3, last progress event or not.
+                        onProgress(end - start);
+                        return result;
+                    } catch (error) {
+                        // Nothing this attempt sent landed: a retry or a
+                        // resume starts the part over from its first byte.
+                        sendingBytes.delete(partNumber);
+                        reportProgress();
+                        throw error;
+                    }
+                };
+
                 // One permit per attempt, taken and released around the PUT
                 // itself: the retry backoff and the re-presign below happen
                 // without holding a connection, and a chunk worker never
                 // holds one permit while waiting on another.
                 const put = (url: string) =>
                     retryAsync(
-                        () =>
-                            s3Budget.run(() =>
-                                deps.put(url, blob, {
-                                    signal: abortController.signal,
-                                })
-                            ),
+                        () => s3Budget.run(() => putAttempt(url)),
                         MAX_CHUNK_RETRIES,
                         1000,
                         retryablePutError
@@ -450,10 +519,9 @@ export function createTransfers(deps: TransferDeps): Transfers {
                 completed.push(part);
                 await store.addCompletedPart(fileId!, part);
 
-                completedCount++;
-                updateRow(row.id, {
-                    progress: partsProgress(completedCount, totalParts),
-                });
+                sendingBytes.delete(partNumber);
+                landedBytes += end - start;
+                reportProgress();
             };
 
             // Per-file part concurrency. Deliberately fail-fast, unlike the

@@ -40,11 +40,17 @@ import {
 import { MAX_FILES_PER_DROP } from '@/lib/upload/limits';
 import { summarizeWave } from '@/lib/upload/parts';
 import { preflightQuota } from '@/lib/upload/preflight';
+import { describeTimeLeft } from '@/lib/upload/rate';
 import { getImagePreviewUrl } from '@/lib/upload/thumbnails';
 import { CancelUploadDialog } from './CancelUploadDialog';
 import { CappedSelectionDialog } from './CappedSelectionDialog';
 import { MiddleTruncateName } from './MiddleTruncateName';
-import { useUpload, type UploadFile, type UploadStatus } from './useUpload';
+import {
+    useUpload,
+    useWaveEstimate,
+    type UploadFile,
+    type UploadStatus,
+} from './useUpload';
 
 // Formats the browser can decode natively — RAW files (NEF/CR3/ARW/…) carry
 // an empty or opaque mime type and fall through to the plain icon tile; their
@@ -203,6 +209,8 @@ export function UploadZone() {
     // The header's pill reads the same summary (#399).
     const wave = summarizeWave(files, isUploading);
     const hasActiveWave = wave.isActive;
+    // Rate and time left (#407), hidden until the wave has enough history.
+    const estimate = useWaveEstimate(hasActiveWave);
     const { completedCount, errorCount } = wave;
     const attemptedCount = completedCount + errorCount;
     // The outcome line waits for a settled queue: nothing moving, nothing the
@@ -381,6 +389,13 @@ export function UploadZone() {
                                     value={wave.percent}
                                     className="h-1.5"
                                 />
+                                {estimate && (
+                                    <p className="text-xs text-muted-foreground tabular-nums">
+                                        {formatBytes(estimate.bytesPerSecond)}
+                                        /s ·{' '}
+                                        {describeTimeLeft(estimate.secondsLeft)}
+                                    </p>
+                                )}
                             </div>
                         )}
                         {quickResumable.length > 0 && (

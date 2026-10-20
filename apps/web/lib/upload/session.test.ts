@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSemaphore } from '@nexus/async';
+import { UploadHttpError } from '@/lib/http/xhr';
 import { S3_CONNECTION_BUDGET } from './limits';
 import { createUploadSession, EMPTY_UPLOAD_SNAPSHOT } from './session';
 import {
@@ -21,6 +22,7 @@ beforeEach(resetUploadStore);
 function createSession(backend: FakeUploadBackend = createFakeUploadBackend()) {
     const connection = new EventTarget();
     let isOnline = true;
+    let clock = 0;
     const notices: string[] = [];
     const session = createUploadSession({
         api: backend.api,
@@ -36,11 +38,16 @@ function createSession(backend: FakeUploadBackend = createFakeUploadBackend()) {
         isOnline: () => isOnline,
         isFileSystemAccessSupported: () => false,
         connection,
+        now: () => clock,
     });
     return {
         session,
         backend,
         notices,
+        /** Moves the session's clock to `at` ms. */
+        setClock(at: number) {
+            clock = at;
+        },
         goOffline() {
             isOnline = false;
             connection.dispatchEvent(new Event('offline'));
@@ -146,6 +153,57 @@ describe('the upload session', () => {
                 { id: 'file-1', name: 'clip.mov', status: 'resumable' },
             ])
         );
+    });
+
+    // #407: the rate is measured where the wave lives, so it survives the
+    // page, and only while the wave runs.
+    // From the bytes as they're sent, not the rows' whole percents: one
+    // large file can take minutes to move 1%, too rare to measure by.
+    it('measures the running wave’s rate and time left from its bytes', async () => {
+        const { session, backend, setClock } = createSession();
+        backend.holdPuts();
+        await session.queue.addFiles(picked(fakeFile('a.mov', 100_000)));
+        const wave = session.queue.startUpload();
+        await vi.waitFor(() => expect(backend.inFlight()).toHaveLength(1));
+
+        // 40 bytes a second for ten seconds: 0.4%, so the row reads 0%.
+        for (let second = 1; second <= 10; second++) {
+            setClock(second * 1000);
+            backend.reportProgress(() => true, second * 40);
+        }
+
+        expect(statusOf(session)).toEqual(['uploading']);
+        expect(session.getSnapshot().rows[0]!.progress).toBe(0);
+        expect(session.estimate(10_000)).toEqual({
+            bytesPerSecond: 40,
+            secondsLeft: 2500,
+        });
+        backend.releasePuts();
+        await wave;
+        expect(session.estimate(11_000)).toBeNull();
+    });
+
+    // A wave whose bytes never drop below the last one's (a retry after a
+    // wave that failed at zero) still waits for its own history.
+    it('measures each wave afresh', async () => {
+        const { session, backend, setClock } = createSession();
+        backend.failNextPuts(() => true, new UploadHttpError(500));
+        await session.queue.addFiles(picked(fakeFile('a.jpg', 1000)));
+        await session.queue.startUpload();
+        expect(statusOf(session)).toEqual(['error']);
+
+        setClock(20_000);
+        backend.holdPuts();
+        const retry = session.queue.retryFile(
+            session.getSnapshot().rows[0]!.id
+        );
+        await vi.waitFor(() => expect(backend.inFlight()).toHaveLength(1));
+        setClock(22_000);
+        backend.reportProgress(() => true, 100);
+
+        expect(session.estimate(22_000)).toBeNull();
+        backend.releasePuts();
+        await retry;
     });
 
     it('starts from the same empty snapshot the server renders', () => {

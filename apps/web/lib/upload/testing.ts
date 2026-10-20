@@ -585,6 +585,8 @@ export interface QueueHarness {
     uploadingStates: boolean[];
     notices: { level: 'info' | 'error'; message: string }[];
     drainedWaves(): number;
+    /** Every byte the engines reported putting on the wire (#407). */
+    bytesSent(): number;
 }
 
 /**
@@ -610,6 +612,7 @@ export function createQueueHarness({
     let isCommitScheduled = false;
     let isOnline = true;
     let drained = 0;
+    let bytesSent = 0;
     const uploadingStates: boolean[] = [];
     const notices: QueueHarness['notices'] = [];
 
@@ -644,12 +647,16 @@ export function createQueueHarness({
         reacquireFile: async () => null,
         isOnline: () => isOnline,
         isFileSystemAccessSupported: () => false,
+        onBytesSent: (bytes) => {
+            bytesSent += bytes;
+        },
         ...overrides,
     });
 
     return {
         queue,
         backend,
+        bytesSent: () => bytesSent,
         upload: async (...files) => {
             await queue.addFiles(picked(...files));
             await queue.startUpload();
