@@ -152,6 +152,8 @@ describe.concurrent('revoke', () => {
 // Each test owns the newest rows in the table while it runs, and so would the
 // same test in another run (`pnpm mutate`'s workers share a database), with
 // the same dates. The rows are never committed, so neither sees the other's.
+// And a test's reads share one snapshot: the revoked count can't move between
+// `findMany` and the count it's checked against, whatever commits meanwhile.
 describe.concurrent('findMany', () => {
     it('filters the page and the total by status', ({ db, user }) =>
         inRolledBackTransaction(db, async (tx) => {
