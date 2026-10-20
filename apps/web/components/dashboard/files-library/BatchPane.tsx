@@ -7,6 +7,7 @@ import {
     type MouseEvent as ReactMouseEvent,
 } from 'react';
 import {
+    AlertTriangle,
     ChevronRight,
     Download,
     Folder,
@@ -147,6 +148,7 @@ function BatchPaneContent({
                         {formatBytes(batch.totalBytes)}
                         {date && ` · uploaded ${date}`}
                     </p>
+                    <MissingFilesNote batch={batch} />
                     <BatchStatusLine batch={batch} restore={restore} />
                 </div>
                 <div
@@ -503,6 +505,31 @@ function PagingFooter({
         <div data-fx="paging" className={base}>
             <span>{summary}</span>
         </div>
+    );
+}
+
+/**
+ * Files the batch's Upload click sent that never finished (#550), once the
+ * batch has gone quiet. Only the fact: the server never knew their names, and
+ * adding them again lands them in a batch of their own, so there's nothing
+ * here yet that would bring this batch whole.
+ */
+function MissingFilesNote({ batch }: { batch: BatchView }) {
+    if (batch.missingFileCount <= 0 || batch.expectedFileCount === null) {
+        return null;
+    }
+    return (
+        <p
+            data-fx="pane-chrome"
+            className="mt-2 flex items-start gap-1.5 text-[13px] text-amber-600 dark:text-amber-400"
+        >
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+                {formatCount(batch.missingFileCount)} of{' '}
+                {countLabel(batch.expectedFileCount, 'file')} didn&apos;t finish
+                uploading.
+            </span>
+        </p>
     );
 }
 

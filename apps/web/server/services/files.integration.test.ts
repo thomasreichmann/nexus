@@ -666,7 +666,9 @@ describe('the files a batch expects', () => {
 
     // The fallback when the browser's createBatch failed: each file gets a
     // batch of its own.
-    it('a file uploaded with no batch gets one expecting just it', async ({
+    // Its retry lands in a fresh one (the browser never learned this id), so
+    // an expectation here would read the first as short (#550).
+    it('a file uploaded with no batch gets one recording no expectation', async ({
         db,
         user,
     }) => {
@@ -679,7 +681,7 @@ describe('the files a batch expects', () => {
 
         const [file] = await readFiles(db, [fileId]);
         expect(await readBatch(db, file.batchId!)).toMatchObject({
-            expectedFileCount: 1,
+            expectedFileCount: null,
         });
     });
 });

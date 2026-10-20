@@ -78,11 +78,10 @@ async function resolveBatchId(
         }
         return existing.id;
     }
-    // A batch of its own for this one file, so it's expected to hold one.
-    const batch = await insertBatch(db, userId, {
-        name: input.batchName,
-        expectedFileCount: 1,
-    });
+    // A batch of its own for this one file, recording no expectation: the
+    // browser never learns its id, so a retry of the same file lands in a
+    // fresh one, and an expectation here would read the first as short.
+    const batch = await insertBatch(db, userId, { name: input.batchName });
     return batch.id;
 }
 

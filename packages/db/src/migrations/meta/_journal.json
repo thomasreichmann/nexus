@@ -197,6 +197,13 @@
       "when": 1792459111222,
       "tag": "0027_familiar_mantis",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792463063158,
+      "tag": "0028_aromatic_colonel_america",
+      "breakpoints": true
     }
   ]
 }

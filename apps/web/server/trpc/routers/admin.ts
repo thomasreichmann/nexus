@@ -6,6 +6,7 @@ import {
     type SqsMessageBody,
 } from '@nexus/db/repo/jobs';
 import { createInviteRepo } from '@nexus/db/repo/invites';
+import { createUploadBatchRepo } from '@nexus/db/repo/uploadBatches';
 import { sendToQueue } from '@/lib/jobs/publish';
 import { inviteService } from '@/server/services/invites';
 import { adminProcedure, router } from '../init';
@@ -22,6 +23,24 @@ const inviteStatusSchema = z.enum(['pending', 'redeemed', 'revoked']);
 
 export const adminRouter = router({
     devTools: devToolsRouter,
+    batches: router({
+        // Every user's batches that came up short (#550), newest first.
+        partial: adminProcedure
+            .input(
+                z
+                    .object({
+                        limit: z.number().min(1).max(100).default(20),
+                        offset: z.number().min(0).default(0),
+                    })
+                    .optional()
+            )
+            .query(({ ctx, input }) =>
+                createUploadBatchRepo(ctx.db).listPartial({
+                    limit: input?.limit ?? 20,
+                    offset: input?.offset ?? 0,
+                })
+            ),
+    }),
     invites: router({
         list: adminProcedure
             .input(
