@@ -417,6 +417,8 @@ async function getDownloadUrl(
  */
 export interface ReadyRetrievalRequest {
     requestId: string;
+    /** The one batch its files came from, or null (`findBatchName`). */
+    batchName: string | null;
     tier: RestoreTier;
     fileCount: number;
     partCount: number;
@@ -454,6 +456,7 @@ export type RetrievalRequestDelivery =
 function toReadyRequest(row: DownloadableRequest): ReadyRetrievalRequest {
     return {
         requestId: row.id,
+        batchName: row.batchName,
         tier: row.tier,
         fileCount: row.fileCount,
         totalBytes: row.totalBytes,
@@ -528,26 +531,66 @@ async function getRequestDelivery(
                 artifactId: artifact.id,
                 part: artifact.position + 1,
                 sizeBytes: artifact.sizeBytes ?? 0,
-                fileName: artifactFileName(artifact.s3Key!, row.partCount),
+                fileName: artifactFileName(
+                    { s3Key: artifact.s3Key!, position: artifact.position },
+                    row.partCount,
+                    row.batchName
+                ),
                 expiresAt: artifactWindowEnd(artifact.completedAt!),
             })),
     };
 }
 
-/** What a single-archive restore downloads as. */
+/** What a single-archive restore downloads as, when it has no batch name. */
 const SINGLE_ARCHIVE_FILE_NAME = 'nexus-restore.zip';
+
+/**
+ * Longest stretch of a batch name a zip is named with, in characters. The
+ * browser shortens a name further if the disk needs it.
+ */
+const MAX_ARCHIVE_NAME_LENGTH = 100;
 
 /**
  * What the browser saves an artifact as.
  *
- * The S3 key ends in `nexus-part-N.zip` for every chunk, because the worker
- * names objects before anything has counted them. A one-chunk restore is not
- * "part 1" of anything, so it gets a plain name; a chunked one keeps the key's
- * tail so the parts sort and read as a set.
+ * After the restore's batch when it has one (#542): `Silva wedding.zip`, or
+ * `Silva wedding (part 2 of 3).zip` for each of several, so they sort and read
+ * as a set. The zip's entries sit at its root, so extracting it makes the one
+ * folder, named after the zip.
+ *
+ * Without one, a one-chunk restore is `nexus-restore.zip` and a chunked one
+ * keeps its S3 key's tail, `nexus-part-N.zip`. The key says "part" even for
+ * one chunk, because the worker names objects before anything has counted
+ * them.
+ *
+ * Exported for its tests.
  */
-function artifactFileName(s3Key: string, partCount: number): string {
+export function artifactFileName(
+    artifact: { s3Key: string; position: number },
+    partCount: number,
+    batchName: string | null
+): string {
+    const base = batchName && toSafeFileName(batchName);
+    if (base) {
+        if (partCount === 1) return `${base}.zip`;
+        return `${base} (part ${artifact.position + 1} of ${partCount}).zip`;
+    }
     if (partCount === 1) return SINGLE_ARCHIVE_FILE_NAME;
-    return s3Key.slice(s3Key.lastIndexOf('/') + 1);
+    return artifact.s3Key.slice(artifact.s3Key.lastIndexOf('/') + 1);
+}
+
+/**
+ * A batch name as one filename: separators, `:` and control characters
+ * become `_`, as in the worker's zip entries, leading dots go so it can't hide
+ * itself, and it's capped at MAX_ARCHIVE_NAME_LENGTH. Empty when nothing's
+ * left.
+ */
+function toSafeFileName(name: string): string {
+    const cleaned = name.replace(/[/\\:\p{Cc}]/gu, '_').replace(/^[\s.]+/, '');
+    return Array.from(cleaned)
+        .slice(0, MAX_ARCHIVE_NAME_LENGTH)
+        .join('')
+        .trim();
 }
 
 /**
@@ -593,11 +636,18 @@ async function getArtifactDownloadUrl(
 
     // Every artifact of the request, building ones included: the count is the
     // partition's, and it is fixed the moment the rows are minted.
-    const parts = await requestRepo.findArtifacts(artifact.requestId);
+    const [parts, batchName] = await Promise.all([
+        requestRepo.findArtifacts(artifact.requestId),
+        requestRepo.findBatchName(artifact.requestId),
+    ]);
 
     const url = await s3.artifacts.get(artifact.s3Key, {
         expiresIn: DOWNLOAD_URL_EXPIRY_SECONDS,
-        filename: artifactFileName(artifact.s3Key, parts.length),
+        filename: artifactFileName(
+            { s3Key: artifact.s3Key, position: artifact.position },
+            parts.length,
+            batchName
+        ),
     });
 
     return {

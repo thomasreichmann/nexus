@@ -29,8 +29,47 @@ vi.mock('@/lib/storage', () => ({
 }));
 vi.mock('@/lib/jobs', () => ({ jobs: mockJobs }));
 
-import { retrievalService } from './retrieval';
+import { artifactFileName, retrievalService } from './retrieval';
 import type { ObjectAvailability } from '@nexus/db/objectState';
+
+// What the browser saves a restore's zip as (#542).
+describe('artifactFileName', () => {
+    const KEY = 'user/req/art/nexus-part-2.zip';
+    const second = { s3Key: KEY, position: 1 };
+
+    it('names a batch’s zip after it, and each of several by part', () => {
+        expect(
+            artifactFileName({ s3Key: KEY, position: 0 }, 1, 'Silva wedding')
+        ).toBe('Silva wedding.zip');
+        expect(artifactFileName(second, 3, 'Silva wedding')).toBe(
+            'Silva wedding (part 2 of 3).zip'
+        );
+    });
+
+    it('keeps the old names without a batch', () => {
+        expect(artifactFileName({ s3Key: KEY, position: 0 }, 1, null)).toBe(
+            'nexus-restore.zip'
+        );
+        expect(artifactFileName(second, 3, null)).toBe('nexus-part-2.zip');
+    });
+
+    it('makes the name one safe filename', () => {
+        expect(artifactFileName(second, 3, '..Shoots/2026: day\t1\\B ')).toBe(
+            'Shoots_2026_ day_1_B (part 2 of 3).zip'
+        );
+    });
+
+    // Characters, not UTF-16 units: the cap never splits one in two.
+    it('caps the name at 100 characters', () => {
+        expect(artifactFileName(second, 1, '🎉'.repeat(150))).toBe(
+            `${'🎉'.repeat(100)}.zip`
+        );
+    });
+
+    it('falls back to the old names when nothing of the batch name is left', () => {
+        expect(artifactFileName(second, 3, ' ... ')).toBe('nexus-part-2.zip');
+    });
+});
 
 describe('retrieval service', () => {
     let db: MockDb;
@@ -768,6 +807,7 @@ describe('retrieval service', () => {
                 id: TEST_RETRIEVAL_REQUEST_ID,
                 tier: 'bulk',
                 completedAt: new Date('2026-08-30T10:05:00Z'),
+                batchName: null,
                 fileCount: 12,
                 partCount: 2,
                 totalBytes: 4000,

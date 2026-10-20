@@ -41,6 +41,12 @@ const BIG_BATCH_FILES = 230;
 // Past one page of 12 cards.
 const OLDER_BATCHES = 13;
 const HOUR_MS = 60 * 60 * 1000;
+// For waits on more than one round trip. A deep link's viewer opens only once
+// `files.locate`, `getBatch` and the file's page of `listBatchFiles` have
+// answered, one after another, and a failed one retries after a second. Under
+// a full local run against the shared dev DB, that chain alone can take more
+// than 5 s (#546).
+const LOAD_TIMEOUT = 15_000;
 
 interface PagingLibrary {
     big: UploadBatch;
@@ -154,7 +160,7 @@ test(
 
         await page.goto(`${PAGE_URL}?file=${target.id}`);
         const viewer = page.getByRole('dialog', { name: target.name });
-        await expect(viewer).toBeVisible();
+        await expect(viewer).toBeVisible({ timeout: LOAD_TIMEOUT });
         await expect(viewer.getByText('150 of 230').first()).toBeVisible();
 
         // The batch behind it holds the file's page, 101-200, not the first.
@@ -180,7 +186,9 @@ test(
         // Arrows browse once the open has landed; Esc is the only key before.
         await expect(
             page.getByRole('dialog', { name: last.name })
-        ).toHaveAttribute('data-viewer-phase', 'open');
+        ).toHaveAttribute('data-viewer-phase', 'open', {
+            timeout: LOAD_TIMEOUT,
+        });
 
         // IMG_200 ends its page. One press is one step, whether the next
         // page is in yet or the step waits for it.
@@ -213,7 +221,7 @@ test(
         expect((await deleted).postData()).toContain(library.big.id);
 
         await expect(batchCard(page, library.big.name)).toHaveCount(0, {
-            timeout: 15_000,
+            timeout: LOAD_TIMEOUT,
         });
         await expect(page.getByText('13 files in 13 batches')).toBeVisible();
     }

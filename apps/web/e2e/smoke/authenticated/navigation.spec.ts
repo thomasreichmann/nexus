@@ -4,9 +4,25 @@
  * smoke specs sharing the regular user.
  */
 import { test, expect } from '../../fixtures/authenticated';
-import { ADMIN_STATE_PATH } from '../../helpers/auth';
+import { REGULAR_USER } from '../../helpers/auth';
+import type { Page } from '@playwright/test';
 
 test.use({ userRole: 'user' });
+
+/**
+ * Opens the dashboard once the browser's own session fetch has answered. The
+ * sidebar's admin links come from that fetch (`useSession`), not from the
+ * server render, so until it lands every user sees the regular list. A failed
+ * fetch fails here, with its status, rather than as a missing link (#544).
+ */
+async function openDashboard(page: Page) {
+    const session = page.waitForResponse(
+        (response) =>
+            new URL(response.url()).pathname === '/api/auth/get-session'
+    );
+    await page.goto('/dashboard');
+    expect((await session).status()).toBe(200);
+}
 
 test.describe('dashboard navigation', () => {
     test(
@@ -40,14 +56,19 @@ test.describe('dashboard navigation', () => {
     );
 
     test(
-        'admin nav items are hidden from regular users and shown to admins',
+        'admin nav items are hidden from regular users',
         { tag: ['@uc:sidebar-admin-visibility'] },
-        async ({ page, browser }) => {
-            await page.goto('/dashboard');
+        async ({ page }) => {
+            await openDashboard(page);
             const sidebar = page.getByRole('complementary');
 
-            // Regular user: core links render, admin links don't. Wait for
-            // the session-dependent nav to settle on a core link first.
+            // The account menu shows who's signed in only once the session
+            // has rendered, the same render that would add admin links: the
+            // response landing isn't that render yet.
+            await page.getByRole('button', { name: 'User menu' }).click();
+            await expect(page.getByText(REGULAR_USER.email)).toBeVisible();
+            await page.keyboard.press('Escape');
+
             await expect(
                 sidebar.getByRole('link', { name: 'Files' })
             ).toBeVisible();
@@ -57,23 +78,30 @@ test.describe('dashboard navigation', () => {
             await expect(
                 sidebar.getByRole('link', { name: 'Dev Tools' })
             ).toHaveCount(0);
-
-            // Admin sees both admin entries.
-            const adminContext = await browser.newContext({
-                storageState: ADMIN_STATE_PATH,
-            });
-            const adminPage = await adminContext.newPage();
-            await adminPage.goto('/dashboard');
-            const adminSidebar = adminPage.getByRole('complementary');
-            await expect(
-                adminSidebar.getByRole('link', { name: 'Jobs' })
-            ).toBeVisible();
-            await expect(
-                adminSidebar.getByRole('link', { name: 'Dev Tools' })
-            ).toBeVisible();
-            await adminContext.close();
         }
     );
+
+    test.describe('as an admin', () => {
+        // The test's own page rather than a second context, so a failure's
+        // snapshot is of the admin's dashboard (#544).
+        test.use({ userRole: 'admin' });
+
+        test(
+            'admin nav items are shown to admins',
+            { tag: ['@uc:sidebar-admin-visibility'] },
+            async ({ page }) => {
+                await openDashboard(page);
+                const sidebar = page.getByRole('complementary');
+
+                await expect(
+                    sidebar.getByRole('link', { name: 'Jobs' })
+                ).toBeVisible();
+                await expect(
+                    sidebar.getByRole('link', { name: 'Dev Tools' })
+                ).toBeVisible();
+            }
+        );
+    });
 
     test(
         'sidebar storage widget shows usage against quota',

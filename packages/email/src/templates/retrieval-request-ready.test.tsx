@@ -9,6 +9,7 @@ import {
 describe('RetrievalRequestReadyEmail', () => {
     const props = {
         downloadUrl: 'https://nexus.test/dashboard/files?request=req-123',
+        batchName: null,
         fileCount: 12,
         partCount: 3,
         totalBytes: 10_737_418_240,
@@ -49,6 +50,21 @@ describe('RetrievalRequestReadyEmail', () => {
         expect(retrievalRequestReadySubject(props)).toBe(
             'Your 12 files are ready to download'
         );
+    });
+
+    // A restore lands hours later, and with two in flight the name says
+    // which one is ready (#542).
+    it('names the batch the files came from, in the subject and heading', async () => {
+        const named = { ...props, batchName: 'Silva wedding' };
+
+        const batchHtml = await render(
+            <RetrievalRequestReadyEmail {...named} />
+        );
+
+        expect(retrievalRequestReadySubject(named)).toBe(
+            'Silva wedding is ready to download'
+        );
+        expect(batchHtml).toContain('Silva wedding is ready');
     });
 
     it('drops the multi-part copy for a single archive', async () => {

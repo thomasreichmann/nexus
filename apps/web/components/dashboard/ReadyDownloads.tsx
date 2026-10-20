@@ -6,6 +6,7 @@ import { ArrowRight, PackageCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/cn';
 import { formatBytes, formatDate } from '@/lib/format';
 import { useTRPC } from '@/lib/trpc/client';
 import { getLivePollOptions } from '@/lib/trpc/polling';
@@ -70,11 +71,26 @@ export function ReadyDownloads({ isRestoreInFlight }: ReadyDownloadsProps) {
                         className="flex items-center gap-3 rounded-lg border border-border bg-muted/50 p-3 transition-colors hover:bg-muted"
                     >
                         <div className="min-w-0 flex-1">
+                            {/* Named after the batch its files came from, when
+                                there's one: with two restores ready, the counts
+                                alone don't say which is which (#542). */}
+                            {request.batchName && (
+                                <p className="truncate text-sm font-medium">
+                                    {request.batchName}
+                                </p>
+                            )}
                             {/* "archives", the same word the panel this links
                                 to uses — two spellings of one request's shape
                                 across two surfaces of one feature reads as two
                                 different things. */}
-                            <p className="text-sm font-medium">
+                            <p
+                                className={cn(
+                                    'text-sm',
+                                    request.batchName
+                                        ? 'text-muted-foreground'
+                                        : 'font-medium'
+                                )}
+                            >
                                 {request.fileCount} files ·{' '}
                                 {formatBytes(request.totalBytes)}
                                 {request.partCount > 1 &&

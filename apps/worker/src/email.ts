@@ -95,6 +95,7 @@ export async function sendRetrievalFileReadyEmail(
 export interface RetrievalRequestReadyOptions {
     userId: string;
     requestId: string;
+    batchName: string | null;
     fileCount: number;
     partCount: number;
     totalBytes: number;
@@ -145,6 +146,7 @@ export async function sendRetrievalRequestReadyEmail(
 
     const props = {
         downloadUrl: retrievalRequestUrl(requireEnv('APP_URL'), opts.requestId),
+        batchName: opts.batchName,
         fileCount: opts.fileCount,
         partCount: opts.partCount,
         totalBytes: opts.totalBytes,

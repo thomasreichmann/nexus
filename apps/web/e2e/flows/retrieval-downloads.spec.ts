@@ -27,6 +27,7 @@ import {
     insertRetrievalArtifact,
     insertRetrievalRequest,
     insertRetrievalRequestItem,
+    insertUploadBatch,
 } from '@nexus/db/test-db';
 import { artifactWindowEnd } from '@nexus/db/objectState';
 import { daysAgo } from '@nexus/db/seed';
@@ -43,6 +44,8 @@ const STATE_PATH = 'e2e/.auth/retrieval-downloads.json';
 
 /** Built two days ago: well inside the artifacts' seven-day window. */
 const BUILT_DAYS_AGO = 2;
+/** Every seeded file's batch, which the restore is named after (#542). */
+const BATCH_NAME = 'Silva wedding';
 
 interface SeededDelivery {
     request: RetrievalRequest;
@@ -63,10 +66,15 @@ const test = base.extend<
                 completedAt: daysAgo(BUILT_DAYS_AGO),
             });
 
+            const batch = await insertUploadBatch(db, {
+                userId,
+                name: BATCH_NAME,
+            });
             const files: File[] = [];
             for (const name of ['shoot-a.cr2', 'shoot-b.cr2', 'shoot-c.cr2']) {
                 const file = await insertFile(db, {
                     userId,
+                    batchId: batch.id,
                     name,
                     size: 5_000_000,
                     status: 'available',
@@ -122,7 +130,7 @@ test(
         );
 
         await expect(
-            page.getByRole('heading', { name: 'Your restore is ready' })
+            page.getByRole('heading', { name: `${BATCH_NAME} is ready` })
         ).toBeVisible();
         await expect(
             page.getByText(/^3 files · .+ · 2 archives$/)
@@ -226,7 +234,7 @@ test(
         await expect(card).toBeVisible();
 
         await page
-            .getByRole('link', { name: /3 files/ })
+            .getByRole('link', { name: new RegExp(`${BATCH_NAME}.*3 files`) })
             .first()
             .click();
 
@@ -234,7 +242,7 @@ test(
             new RegExp(`request=${seededDelivery.request.id}`)
         );
         await expect(
-            page.getByRole('heading', { name: 'Your restore is ready' })
+            page.getByRole('heading', { name: `${BATCH_NAME} is ready` })
         ).toBeVisible();
     }
 );
