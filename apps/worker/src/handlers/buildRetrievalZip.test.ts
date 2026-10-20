@@ -215,6 +215,8 @@ describe('buildRetrievalZip', () => {
                     readyAt: new Date('2026-08-30T09:00:00Z'),
                 },
             ]);
+            // findBatchName's batch row.
+            mocks.whereLimit.mockResolvedValue([{ name: 'Silva wedding' }]);
         }
 
         it('sends one email with the artifacts own expiry window', async () => {
@@ -230,6 +232,7 @@ describe('buildRetrievalZip', () => {
             expect(opts).toMatchObject({
                 userId: 'user-1',
                 requestId: REQUEST_ID,
+                batchName: 'Silva wedding',
                 fileCount: 12,
                 partCount: 2,
                 totalBytes: 4_000,
