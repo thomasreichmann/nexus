@@ -2,8 +2,7 @@ import { config } from 'dotenv';
 // Dev-only tool: the web app's .env.local is the single env source for all
 // local tooling (drizzle, seed CLI, capture, e2e). Deployed code never uses
 // this path — see docs/guides/environment-setup.md.
-// quiet: keep the load notice out of drizzle-kit's output, where it otherwise
-// sits next to the target banner db:migrate prints.
+// quiet: keep dotenv's load notice out of drizzle-kit's output.
 config({ path: '../../apps/web/.env.local', quiet: true });
 import { defineConfig } from 'drizzle-kit';
 
