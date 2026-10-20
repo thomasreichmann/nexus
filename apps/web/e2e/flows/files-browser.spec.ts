@@ -474,6 +474,29 @@ test.describe('with a seeded library', () => {
     );
 
     test(
+        'a ready file’s Download asks for that file’s link, with no confirm',
+        { tag: ['@uc:files-download-single'] },
+        async ({ page, seededLibrary }) => {
+            // Observed, not followed: the seeded key has no object behind it.
+            const calls = await interceptTrpcCalls(
+                page,
+                'files.getDownloadUrl'
+            );
+            await page.goto(PAGE_URL);
+            await openBatch(page, UNGROUPED);
+
+            await openRowMenu(page, seededLibrary.readyDoc.name);
+            await page.getByRole('menuitem', { name: 'Download' }).click();
+
+            await expect.poll(() => calls.length).toBe(1);
+            expect(decodeURIComponent(calls[0])).toContain(
+                seededLibrary.readyDoc.id
+            );
+            await expect(page.getByRole('alertdialog')).toHaveCount(0);
+        }
+    );
+
+    test(
         'standard-tier file without a retrieval renders archived and estimates ~minutes',
         {
             tag: [

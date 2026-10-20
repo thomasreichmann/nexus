@@ -347,6 +347,138 @@ describe('renameBatch', () => {
     });
 });
 
+// Files by id: a file's own menu sends one, the selection bar a set. Each
+// usage row starts with a file outside the set still counted, so a wrong
+// decrement can't hide at zero.
+describe('deleteUserFile', () => {
+    it('deletes the files and gives back the bytes of the ones that were counted', async ({
+        db,
+        user,
+    }) => {
+        const [a, b, uploading] = await Promise.all([
+            insertFile(db, { userId: user.id, size: 100 }),
+            insertFile(db, { userId: user.id, size: 200 }),
+            // Never confirmed, so never counted.
+            insertFile(db, {
+                userId: user.id,
+                size: 400,
+                status: 'uploading',
+            }),
+            insertStorageUsage(db, {
+                userId: user.id,
+                usedBytes: 1300,
+                fileCount: 3,
+            }),
+        ]);
+        const ids = [a.id, b.id, uploading.id];
+
+        await fileService.deleteUserFile(db, user.id, ids);
+
+        expect((await readFiles(db, ids)).map((f) => f.status)).toEqual([
+            'deleted',
+            'deleted',
+            'deleted',
+        ]);
+        expect(await readUsage(db, user.id)).toEqual({
+            usedBytes: 1000,
+            fileCount: 1,
+        });
+    });
+
+    // #477: deleted from its own menu, then sent again with the selection.
+    it('skips a file that’s already deleted and deletes the rest', async ({
+        db,
+        user,
+    }) => {
+        const [gone, file] = await Promise.all([
+            insertFile(db, { userId: user.id, size: 100, status: 'deleted' }),
+            insertFile(db, { userId: user.id, size: 200 }),
+            // The gone file's delete already gave its bytes back.
+            insertStorageUsage(db, {
+                userId: user.id,
+                usedBytes: 1200,
+                fileCount: 2,
+            }),
+        ]);
+
+        const deleted = await fileService.deleteUserFile(db, user.id, [
+            gone.id,
+            file.id,
+        ]);
+
+        expect(deleted.map((f) => f.id)).toEqual([file.id]);
+        expect(await readUsage(db, user.id)).toEqual({
+            usedBytes: 1000,
+            fileCount: 1,
+        });
+    });
+
+    // A file's own menu, on a file another tab already deleted.
+    it('deleting one file that’s already deleted does nothing', async ({
+        db,
+        user,
+    }) => {
+        const [gone] = await Promise.all([
+            insertFile(db, { userId: user.id, size: 100, status: 'deleted' }),
+            insertStorageUsage(db, {
+                userId: user.id,
+                usedBytes: 1000,
+                fileCount: 1,
+            }),
+        ]);
+
+        await expect(
+            fileService.deleteUserFile(db, user.id, gone.id)
+        ).resolves.toBeUndefined();
+        expect(await readUsage(db, user.id)).toEqual({
+            usedBytes: 1000,
+            fileCount: 1,
+        });
+    });
+
+    it('two deletes of one file give its bytes back once', async ({
+        db,
+        user,
+    }) => {
+        const [file] = await Promise.all([
+            insertFile(db, { userId: user.id, size: FILE_SIZE }),
+            insertStorageUsage(db, {
+                userId: user.id,
+                usedBytes: FILE_SIZE * 2,
+                fileCount: 2,
+            }),
+        ]);
+
+        await Promise.all([
+            fileService.deleteUserFile(db, user.id, file.id),
+            fileService.deleteUserFile(db, user.id, [file.id]),
+        ]);
+
+        expect(await readUsage(db, user.id)).toEqual({
+            usedBytes: FILE_SIZE,
+            fileCount: 1,
+        });
+    });
+
+    it('refuses a set holding another user’s file, and deletes none of it', async ({
+        db,
+        user,
+        createUser,
+    }) => {
+        const stranger = await createUser();
+        const [mine, theirs] = await Promise.all([
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: stranger.id }),
+        ]);
+
+        await expect(
+            fileService.deleteUserFile(db, user.id, [mine.id, theirs.id])
+        ).rejects.toBeInstanceOf(NotFoundError);
+        const after = await readFiles(db, [mine.id, theirs.id]);
+        expect(after.map((f) => f.status)).toEqual(['available', 'available']);
+    });
+});
+
 // #455: a whole batch by id, however much of it a browser has paged in.
 describe('deleteBatch', () => {
     it('deletes the batch’s visible files and gives their bytes back to usage', async ({
