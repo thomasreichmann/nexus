@@ -14,10 +14,13 @@ import { s3 } from '@/lib/storage';
 import { MULTIPART_CHUNK_SIZE } from '@/lib/upload/limits';
 import { PostHogEvent } from '@/lib/posthog/events';
 import { captureServerEvent } from '@/lib/posthog/server';
+import { logger } from '@/server/lib/logger';
 import { quotaService } from './quota';
 import { enqueueThumbnailGeneration } from './thumbnails';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
 import type { DB } from '@nexus/db';
+
+const log = logger.child({service: "files"})
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 900; // 15 minutes
 const MULTIPART_URL_EXPIRY_SECONDS = 3600; // 1 hour
@@ -503,6 +506,8 @@ async function getThumbnailUrls(
                 });
             })
         );
+    } else {
+        log.warn("S3_DERIVED_BUCKET is not configured, thumbnails will not attempt to be fetched")
     }
 
     return {
