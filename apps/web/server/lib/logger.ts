@@ -44,7 +44,11 @@ const transport = isDev
           targets: [
               {
                   target: PRETTY_TRANSPORT,
-                  options: { colorize: true, singleLine: true },
+                  options: {
+                      colorize: true,
+                      singleLine: true,
+                      ignore: 'pid,hostname',
+                  },
                   level: 'debug',
               },
               {
