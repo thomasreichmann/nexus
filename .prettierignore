@@ -11,3 +11,13 @@ apps/web/test-results/
 next-env.d.ts
 **/.terraform/
 *.tfstate
+
+# Local dev-environment artifacts (devcontainer pnpm store, agent tooling).
+.pnpm-store/
+.tokensave/
+.openclaude-profile.json
+# Local ralph-loop agent state (untracked).
+scripts/.*.md
+scripts/audit/
+scripts/ralph/
+scripts/prd.json

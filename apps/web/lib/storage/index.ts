@@ -1,9 +1,64 @@
-import * as presigned from './presigned';
-import * as artifacts from './artifacts';
-import * as derived from './derived';
-import * as glacier from './glacier';
-import * as objects from './objects';
-import * as multipart from './multipart';
+import {
+    put as presignedPut,
+    get as presignedGet,
+    contentDisposition as presignedContentDisposition,
+} from './presigned';
+import {
+    isConfigured as artifactsIsConfigured,
+    get as artifactsGet,
+} from './artifacts';
+import {
+    isConfigured as derivedIsConfigured,
+    get as derivedGet,
+    probe as derivedProbe,
+} from './derived';
+import { getObjectState as glacierGetObjectState } from './glacier';
+import { remove as objectsRemove, listAll as objectsListAll } from './objects';
+import {
+    create as multipartCreate,
+    signParts as multipartSignParts,
+    signPartsByNumber as multipartSignPartsByNumber,
+    listParts as multipartListParts,
+    complete as multipartComplete,
+    listOpenKeys as multipartListOpenKeys,
+    abort as multipartAbort,
+} from './multipart';
+
+const presigned = {
+    put: presignedPut,
+    get: presignedGet,
+    contentDisposition: presignedContentDisposition,
+} as const;
+
+const artifacts = {
+    isConfigured: artifactsIsConfigured,
+    get: artifactsGet,
+} as const;
+
+const derived = {
+    isConfigured: derivedIsConfigured,
+    get: derivedGet,
+    probe: derivedProbe,
+} as const;
+
+const glacier = {
+    getObjectState: glacierGetObjectState,
+} as const;
+
+const objects = {
+    remove: objectsRemove,
+    listAll: objectsListAll,
+} as const;
+
+const multipart = {
+    create: multipartCreate,
+    signParts: multipartSignParts,
+    signPartsByNumber: multipartSignPartsByNumber,
+    listParts: multipartListParts,
+    complete: multipartComplete,
+    listOpenKeys: multipartListOpenKeys,
+    abort: multipartAbort,
+} as const;
 
 /**
  * S3 storage operations for file archival

@@ -28,9 +28,9 @@ Next.js API Routes / Server Actions
      │
      ├──► Supabase (Postgres + Auth + Real-time)
      │
-     └──► AWS S3 Storage
-           ├──► S3 Standard (frequently accessed files)
-           └──► S3 Glacier Deep Archive (cold storage)
+     └──► AWS S3 Glacier Storage
+           └──► Direct upload to standard Glacier for V1
+               (see [[../decisions/003-glacier-direct-upload-v1|ADR-003]])
 
 Stripe ◄── Payment Processing
 
@@ -65,9 +65,11 @@ nexus/
 1. User selects file in browser
 2. Client component initiates upload
 3. Server Action or API Route receives file
-4. File uploaded to S3 Standard tier
+4. File uploaded directly to standard S3 Glacier
 5. Metadata stored in Supabase
 6. User notified of success
+
+V1 does not use an intermediate S3 Standard stage or lifecycle transition; see [[../decisions/003-glacier-direct-upload-v1|ADR-003]].
 
 ### File Retrieval Flow (Cold Storage)
 
@@ -90,7 +92,6 @@ nexus/
 
 ## Open Questions
 
-- Exact S3 tier transition logic and timing
 - File upload chunking and resumability strategy
 - Caching strategy for frequently accessed files
 - Edge Functions for specific operations
