@@ -36,11 +36,13 @@ export async function runScene(
     opts: RunOptions
 ): Promise<string[]> {
     const out = scene.output ?? {};
-    const wantGif = opts.overrides.gif ?? out.gif ?? true;
+    const isStill = out.still ?? false;
+    const wantGif = opts.overrides.gif ?? out.gif ?? !isStill;
     const wantMp4 = opts.overrides.mp4 ?? out.mp4 ?? false;
+    const wantVideo = wantGif || wantMp4;
     // Resolve outputs up front so a misconfigured run (e.g. `--no-gif` with no
     // `--mp4`) fails in under a second, not after a full server start + record.
-    if (!wantGif && !wantMp4)
+    if (!wantVideo && !isStill)
         throw new Error(
             'Nothing to encode: both GIF and MP4 are disabled (--no-gif without --mp4).'
         );
@@ -49,6 +51,8 @@ export async function runScene(
     const statePath = join(TMP_DIR, 'auth', `${scene.name}.json`);
     const videoDir = join(TMP_DIR, 'video', scene.name);
     const db = connect();
+    // Filled by the seed (fileId -> local WebP), read by the recorder's route.
+    const thumbnails = new Map<string, string>();
 
     try {
         console.log(`• ${scene.name}: provisioning capture user`);
@@ -58,26 +62,36 @@ export async function runScene(
             db,
             user,
             baseUrl: server.baseUrl,
-            seedDemoLibrary: () => seedDemoLibrary(db, user),
+            seedDemoLibrary: () => seedDemoLibrary(db, user, thumbnails),
         };
 
         console.log(`• ${scene.name}: preparing state`);
         const data = await scene.setup(ctx);
 
-        console.log(`• ${scene.name}: recording`);
+        console.log(
+            `• ${scene.name}: ${wantVideo ? 'recording' : 'capturing'}`
+        );
         const rec = await startRecording({
             baseUrl: server.baseUrl,
             storageStatePath: statePath,
-            videoDir,
+            videoDir: wantVideo ? videoDir : undefined,
             viewport: scene.viewport ?? DEFAULT_VIEWPORT,
+            thumbnails,
         });
         await scene.record(rec.stage, data);
-        const { videoPath, trimStart } = await rec.finish();
+        const { video } = await rec.finish();
+
+        const written: string[] = [...rec.stage.stills];
+        if (isStill && written.length === 0)
+            throw new Error(
+                `${scene.name} is a still scene but wrote no stills (call stage.still()).`
+            );
+        if (!video) return written;
+        const { path: videoPath, trimStart } = video;
 
         const basename = out.name ?? scene.name;
         const speed = opts.overrides.speed ?? out.speed ?? 1;
 
-        const written: string[] = [];
         if (wantGif) {
             const dest = join(ASSETS_DIR, `${basename}.gif`);
             console.log(

@@ -17,7 +17,12 @@ export interface SceneContext {
 }
 
 export interface OutputOptions {
-    /** Encode a GIF (default true). */
+    /**
+     * A still-only scene: no video is recorded or encoded, and `gif`/`mp4`
+     * default to false. `record` writes its frames with `stage.still(name)`.
+     */
+    still?: boolean;
+    /** Encode a GIF (default true, false for a still scene). */
     gif?: boolean;
     /** Also encode an MP4 (default false) — the source of truth the GIF is re-encoded from. */
     mp4?: boolean;

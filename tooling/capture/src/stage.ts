@@ -1,3 +1,6 @@
+import { join } from 'node:path';
+
+import { ASSETS_DIR } from './paths';
 import type { Locator, Page } from '@playwright/test';
 
 const CURSOR_ID = '__capture_cursor';
@@ -16,6 +19,8 @@ const CURSOR_STYLE = `
     pointer-events: none; left: 50%; top: 72%;
     transition: left .5s cubic-bezier(.22,.61,.36,1), top .5s cubic-bezier(.22,.61,.36,1), transform .12s ease; }
   #${CURSOR_ID}.tap { transform: scale(.65); }
+  /* Next's dev-tools badge: dev-server chrome, not the app. */
+  nextjs-portal { display: none !important; }
 `;
 
 /**
@@ -25,6 +30,8 @@ const CURSOR_STYLE = `
  */
 export class Stage {
     private firstActionAt: number | null = null;
+    /** PNGs written by `still()`, for the runner to report. */
+    readonly stills: string[] = [];
 
     constructor(
         private readonly page: Page,
@@ -84,6 +91,25 @@ export class Stage {
         await this.glideTo(target);
         await target.hover();
         await this.page.waitForTimeout(holdMs);
+    }
+
+    /**
+     * Write the current viewport to `.github/assets/<name>.png`, without the
+     * fake cursor. Renders at the context's 2x scale, so a 1440x900 scene
+     * gives a 2880x1800 image.
+     */
+    async still(name: string): Promise<void> {
+        if (!/^[a-z0-9-]+$/.test(name))
+            throw new Error(`Still name must be kebab-case; got "${name}".`);
+        const path = join(ASSETS_DIR, `${name}.png`);
+        // Park the real pointer off the content so nothing shows a hover state.
+        const size = this.page.viewportSize();
+        if (size) await this.page.mouse.move(size.width - 1, size.height - 1);
+        await this.page.waitForTimeout(300);
+        await this.setCursorVisible(false);
+        await this.page.screenshot({ path, animations: 'disabled' });
+        await this.setCursorVisible(true);
+        this.stills.push(path);
     }
 
     /** Move the cursor to a field and type into it, replacing any current value. */
@@ -198,6 +224,16 @@ export class Stage {
             await this.page.waitForTimeout(Math.round(durationMs / steps));
         }
         await clear();
+    }
+
+    private async setCursorVisible(visible: boolean): Promise<void> {
+        await this.page.evaluate(
+            ({ id, visible }: { id: string; visible: boolean }) => {
+                const el = document.getElementById(id);
+                if (el) el.style.visibility = visible ? '' : 'hidden';
+            },
+            { id: CURSOR_ID, visible }
+        );
     }
 
     private async setTap(on: boolean): Promise<void> {

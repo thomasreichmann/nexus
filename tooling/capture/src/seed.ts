@@ -8,6 +8,7 @@ import {
 } from '@nexus/db/test-db';
 import { daysAgo, hoursAgo } from '@nexus/db/seed';
 
+import { thumbnailAsset, webpSize } from './thumbnails';
 import type { Db } from './db';
 import type { CaptureUser } from './scene';
 
@@ -20,6 +21,10 @@ interface DemoFile {
     size: number;
     /** A file in mid-restore renders the `Retrieving` state. */
     status?: 'available' | 'restoring';
+    /** Basename of a committed thumbnail under assets/thumbnails; omit for files with no preview. */
+    thumb?: string;
+    /** Video length, for the duration badge the worker would have probed. */
+    durationSeconds?: number;
 }
 
 interface Shoot {
@@ -28,16 +33,20 @@ interface Shoot {
     files: DemoFile[];
 }
 
-// Curated marketing data: a photographer's archive, grouped by shoot. Names
-// and sizes are hand-picked so the walkthrough reads as a real library, and
-// shoots are listed newest-first so the most recent sit at the top.
+const CR3 = 'image/x-canon-cr3';
+const NEF = 'image/x-nikon-nef';
+
+// Curated marketing data: a photographer's archive, grouped by shoot. The
+// thumbnails are real photos (see assets/thumbnails/README.md); the shoot and
+// file names are fictional and chosen to match them. Shoots are listed
+// newest-first so the most recent sit at the top.
 const SHOOTS: Shoot[] = [
     {
-        name: 'Client Deliverables — Q2 2026',
+        name: 'Client Deliverables — Q4 2026',
         created: daysAgo(3),
         files: [
             {
-                name: 'smith-wedding-gallery.zip',
+                name: 'showroom-gallery.zip',
                 mime: 'application/zip',
                 size: 4.2 * GB,
             },
@@ -52,150 +61,140 @@ const SHOOTS: Shoot[] = [
                 size: 1.1 * GB,
             },
             {
-                name: 'contract-marquez-signed.pdf',
+                name: 'contract-signed.pdf',
                 mime: 'application/pdf',
                 size: 1.4 * MB,
             },
         ],
     },
     {
-        name: 'Marquez Wedding — June 2026',
+        name: 'Launch Dinner — Catering',
         created: daysAgo(5),
         files: [
             {
-                name: 'ceremony-0148.NEF',
-                mime: 'image/x-nikon-nef',
-                size: 38 * MB,
+                name: 'rose-tart.CR3',
+                mime: CR3,
+                size: 31 * MB,
+                thumb: 'rose-tart',
             },
             {
-                name: 'ceremony-0212.NEF',
-                mime: 'image/x-nikon-nef',
-                size: 41 * MB,
-            },
-            {
-                name: 'first-dance.NEF',
-                mime: 'image/x-nikon-nef',
-                size: 36 * MB,
+                name: 'canapes-cherry.CR3',
+                mime: CR3,
+                size: 29 * MB,
                 status: 'restoring',
+                thumb: 'canapes-cherry',
             },
             {
-                name: 'couple-golden-hour.CR2',
-                mime: 'image/x-canon-cr2',
-                size: 32 * MB,
+                name: 'passed-bites.CR3',
+                mime: CR3,
+                size: 27 * MB,
+                thumb: 'passed-bites',
             },
             {
-                name: 'reception-toast.NEF',
-                mime: 'image/x-nikon-nef',
-                size: 39 * MB,
+                name: 'table-greens.CR3',
+                mime: CR3,
+                size: 33 * MB,
+                thumb: 'table-greens',
             },
             {
-                name: 'bridal-party.CR2',
-                mime: 'image/x-canon-cr2',
+                name: 'pastry-table.CR3',
+                mime: CR3,
+                size: 35 * MB,
+                thumb: 'pastry-table',
+            },
+            {
+                name: 'dessert-crumble.CR3',
+                mime: CR3,
                 size: 30 * MB,
+                thumb: 'dessert-crumble',
             },
             {
-                name: 'highlights-reel.mov',
-                mime: 'video/quicktime',
-                size: 1.4 * GB,
+                name: 'grissini-board.CR3',
+                mime: CR3,
+                size: 28 * MB,
+                thumb: 'grissini-board',
             },
             {
-                name: 'full-ceremony-4k.mp4',
-                mime: 'video/mp4',
-                size: 38 * GB,
+                name: 'glassware-tray.CR3',
+                mime: CR3,
+                size: 26 * MB,
+                thumb: 'glassware-tray',
             },
         ],
     },
     {
-        name: 'Studio Portraits — Vol. III',
+        name: 'Showroom Opening — Interiors',
         created: daysAgo(12),
         files: [
             {
-                name: 'headshot-final-01.png',
-                mime: 'image/png',
-                size: 18 * MB,
+                name: 'showroom-lounge-01.NEF',
+                mime: NEF,
+                size: 46 * MB,
+                thumb: 'showroom-lounge-01',
             },
             {
-                name: 'headshot-final-02.png',
-                mime: 'image/png',
-                size: 19 * MB,
+                name: 'showroom-lounge-02.NEF',
+                mime: NEF,
+                size: 44 * MB,
+                thumb: 'showroom-lounge-02',
             },
             {
-                name: 'headshot-final-03.png',
-                mime: 'image/png',
-                size: 21 * MB,
+                name: 'textile-detail.NEF',
+                mime: NEF,
+                size: 41 * MB,
+                thumb: 'textile-detail',
             },
             {
-                name: 'editorial-bw-04.tiff',
-                mime: 'image/tiff',
-                size: 96 * MB,
+                name: 'striped-cushions.NEF',
+                mime: NEF,
+                size: 43 * MB,
+                thumb: 'striped-cushions',
             },
             {
-                name: 'studio-setup-bts.jpg',
-                mime: 'image/jpeg',
-                size: 8 * MB,
+                name: 'showroom-walkthrough-4k.mp4',
+                mime: 'video/mp4',
+                size: 3.4 * GB,
+                thumb: 'shelving-display',
+                durationSeconds: 94,
+            },
+            {
+                name: 'reading-corner-pan.mov',
+                mime: 'video/quicktime',
+                size: 1.2 * GB,
+                thumb: 'reading-corner',
+                durationSeconds: 38,
             },
         ],
     },
     {
-        name: 'Iceland — Aurora & Glaciers',
+        name: 'Coffee Tasting — Morning Brunch',
         created: daysAgo(21),
         files: [
             {
-                name: 'aurora-jokulsarlon-007.CR2',
-                mime: 'image/x-canon-cr2',
-                size: 34 * MB,
+                name: 'pour-over-01.CR3',
+                mime: CR3,
+                size: 32 * MB,
                 status: 'restoring',
+                thumb: 'pour-over-01',
             },
             {
-                name: 'glacier-lagoon-pano.tiff',
-                mime: 'image/tiff',
-                size: 142 * MB,
+                name: 'pour-over-02.CR3',
+                mime: CR3,
+                size: 31 * MB,
+                thumb: 'pour-over-02',
             },
             {
-                name: 'vestrahorn-dawn.NEF',
-                mime: 'image/x-nikon-nef',
-                size: 40 * MB,
+                name: 'coffee-break-buffet.CR3',
+                mime: CR3,
+                size: 34 * MB,
+                thumb: 'coffee-break-buffet',
             },
             {
-                name: 'diamond-beach-longexp.CR2',
-                mime: 'image/x-canon-cr2',
-                size: 33 * MB,
-            },
-            {
-                name: 'highlands-aerial.tiff',
-                mime: 'image/tiff',
-                size: 118 * MB,
-            },
-            {
-                name: 'northern-lights-timelapse.mp4',
+                name: 'brunch-setup-timelapse.mp4',
                 mime: 'video/mp4',
-                size: 54 * GB,
-            },
-        ],
-    },
-    {
-        name: 'Drone — Big Sur Coastline',
-        created: daysAgo(31),
-        files: [
-            {
-                name: 'bigsur-coast-4k-01.mp4',
-                mime: 'video/mp4',
-                size: 14 * GB,
-            },
-            {
-                name: 'bixby-bridge-sunset.mp4',
-                mime: 'video/mp4',
-                size: 6.2 * GB,
-            },
-            {
-                name: 'cliffs-aerial-raw.mp4',
-                mime: 'video/mp4',
-                size: 24 * GB,
-            },
-            {
-                name: 'coastline-pano.tiff',
-                mime: 'image/tiff',
-                size: 134 * MB,
+                size: 900 * MB,
+                thumb: 'brunch-table',
+                durationSeconds: 45,
             },
         ],
     },
@@ -203,14 +202,10 @@ const SHOOTS: Shoot[] = [
 
 // A mix of retrieval states surfaces the restore UX — the engineering centerpiece.
 const RETRIEVALS: RetrievalSpec[] = [
-    { file: 'glacier-lagoon-pano.tiff', status: 'ready', init: hoursAgo(14) },
-    { file: 'ceremony-0212.NEF', status: 'ready', init: hoursAgo(9) },
-    { file: 'first-dance.NEF', status: 'in_progress', init: hoursAgo(2) },
-    {
-        file: 'aurora-jokulsarlon-007.CR2',
-        status: 'in_progress',
-        init: hoursAgo(6),
-    },
+    { file: 'textile-detail.NEF', status: 'ready', init: hoursAgo(14) },
+    { file: 'grissini-board.CR3', status: 'ready', init: hoursAgo(9) },
+    { file: 'canapes-cherry.CR3', status: 'in_progress', init: hoursAgo(2) },
+    { file: 'pour-over-01.CR3', status: 'in_progress', init: hoursAgo(6) },
     { file: 'raw-export-batch-04.7z', status: 'pending', init: hoursAgo(0.3) },
 ];
 
@@ -218,12 +213,18 @@ const RETRIEVALS: RetrievalSpec[] = [
  * Seed the curated demo library onto the capture user. Idempotent: clears the
  * user's existing files/batches/retrievals first, so a re-record never doubles
  * up. Recomputes the storage card from the seeded files.
+ *
+ * Files with a `thumb` are seeded as `ready` with the asset's real size, and
+ * their id → asset path is recorded in `thumbnails` so the recorder can serve
+ * the image (see serveThumbnails). The rest are `skipped`: no preview, icon tile.
  */
 export async function seedDemoLibrary(
     db: Db,
-    user: CaptureUser
+    user: CaptureUser,
+    thumbnails: Map<string, string>
 ): Promise<void> {
     await deleteUserData(db, user.id);
+    thumbnails.clear();
 
     const fileIdByName: Record<string, string> = {};
     let usedBytes = 0;
@@ -243,6 +244,8 @@ export async function seedDemoLibrary(
                 shoot.created.getTime() + i * 7 * 60_000
             );
             const size = Math.round(f.size);
+            const asset = f.thumb ? thumbnailAsset(f.thumb) : undefined;
+            const dims = asset ? webpSize(asset) : undefined;
             const file = await insertFile(db, {
                 userId: user.id,
                 batchId: batch.id,
@@ -250,9 +253,14 @@ export async function seedDemoLibrary(
                 size,
                 mimeType: f.mime,
                 status: f.status ?? 'available',
+                thumbnailStatus: dims ? 'ready' : 'skipped',
+                thumbnailWidth: dims?.width ?? null,
+                thumbnailHeight: dims?.height ?? null,
+                durationSeconds: f.durationSeconds ?? null,
                 createdAt,
                 updatedAt: createdAt,
             });
+            if (asset) thumbnails.set(file.id, asset);
             fileIdByName[f.name] = file.id;
             usedBytes += size;
             fileCount += 1;

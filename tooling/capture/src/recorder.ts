@@ -2,25 +2,34 @@ import { mkdirSync } from 'node:fs';
 
 import { chromium } from '@playwright/test';
 import { Stage } from './stage';
+import { serveThumbnails } from './thumbnails';
 import type { Browser, BrowserContext } from '@playwright/test';
 
 export interface RecorderOptions {
     baseUrl: string;
     storageStatePath: string;
-    videoDir: string;
+    /** Where Playwright writes the raw .webm; omit for a still-only scene (no video). */
+    videoDir?: string;
     viewport: { width: number; height: number };
+    /** fileId -> local WebP, served in place of the derived bucket's thumbnails. */
+    thumbnails: ReadonlyMap<string, string>;
 }
 
 export interface Recording {
     stage: Stage;
-    /** Stop recording; return the raw .webm path plus how many seconds of head to trim. */
-    finish: () => Promise<{ videoPath: string; trimStart: number }>;
+    /**
+     * Close the browser. With a video, return the raw .webm path plus how many
+     * seconds of head to trim; without one, `video` is null.
+     */
+    finish: () => Promise<{
+        video: { path: string; trimStart: number } | null;
+    }>;
 }
 
 export async function startRecording(
     opts: RecorderOptions
 ): Promise<Recording> {
-    mkdirSync(opts.videoDir, { recursive: true });
+    if (opts.videoDir) mkdirSync(opts.videoDir, { recursive: true });
 
     const browser: Browser = await chromium.launch();
     const context: BrowserContext = await browser.newContext({
@@ -29,8 +38,11 @@ export async function startRecording(
         // Render at 2x for crisp text, then downscale at encode time.
         deviceScaleFactor: 2,
         storageState: opts.storageStatePath,
-        recordVideo: { dir: opts.videoDir, size: opts.viewport },
+        recordVideo: opts.videoDir
+            ? { dir: opts.videoDir, size: opts.viewport }
+            : undefined,
     });
+    await serveThumbnails(context, opts.thumbnails);
     // Anchor the action clock to page creation, where Playwright starts the
     // video, so a trimmed offset lines up with the video's t=0.
     const page = await context.newPage();
@@ -48,12 +60,12 @@ export async function startRecording(
             // The video file isn't finalized until the context closes.
             await context.close();
             await browser.close();
+            if (!opts.videoDir) return { video: null };
             if (!video)
                 throw new Error(
                     'No video was recorded (recordVideo not active?).'
                 );
-            const videoPath = await video.path();
-            return { videoPath, trimStart };
+            return { video: { path: await video.path(), trimStart } };
         },
     };
 }

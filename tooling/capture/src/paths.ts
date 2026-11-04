@@ -9,6 +9,9 @@ export const REPO_ROOT = resolve(here, '../../..');
 /** Where finished GIF / MP4 files land; the README references this dir. */
 export const ASSETS_DIR = resolve(REPO_ROOT, '.github/assets');
 
+/** Demo thumbnails (512px WebP) the seeded library shows; see the README beside them. */
+export const THUMBNAILS_DIR = resolve(here, '..', 'assets', 'thumbnails');
+
 /** Scratch for raw video, extracted frames, palettes, and saved auth state (git-ignored). */
 export const TMP_DIR = resolve(here, '..', '.tmp');
 

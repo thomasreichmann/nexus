@@ -1,19 +1,28 @@
-# Recording captures (demo GIF / MP4)
+# Recording captures (demo GIF / MP4 / stills)
 
-The README walkthrough — `.github/assets/demo.gif` and its source `demo.mp4` —
-is **generated from code**, not hand-recorded. The tooling lives in
-`tooling/capture` (`@nexus/capture`): a scene drives a real browser through the
-app and the runner records it, so a clip can be regenerated after a UI change
-instead of going stale.
+The README walkthrough (`.github/assets/demo.gif` and its source `demo.mp4`)
+and the library still (`files.png`) are **generated from code**, not
+hand-recorded. The tooling lives in `tooling/capture` (`@nexus/capture`): a
+scene drives a real browser through the app and the runner records it, so an
+asset can be regenerated after a UI change instead of going stale.
 
-## Refresh the README walkthrough
+## Refresh the README captures
 
 ```bash
-pnpm dev                       # have a dev server running (the tool reuses it)
-pnpm capture files-walkthrough # writes .github/assets/demo.gif + demo.mp4
+pnpm capture files-walkthrough files-still  # demo.gif + demo.mp4, files.png
 ```
 
 Then commit the regenerated assets. `pnpm capture --list` shows the scenes.
+`dashboard.png` has no scene yet and is still hand-made.
+
+## Demo thumbnails
+
+The seeded library shows real photos: `tooling/capture/assets/thumbnails/`
+(see the README there for where they come from and the no-faces / no-logos
+rule). The seed marks those rows' thumbnails `ready` with the image's real
+size, and the recording browser answers the app's presigned `thumb.webp`
+requests from disk (`src/thumbnails.ts`). Nothing is uploaded to the derived
+bucket, so there is nothing to clean up.
 
 ### Prerequisites
 
@@ -76,11 +85,22 @@ export default defineScene<void>({
 `Stage` drives a fake cursor (Playwright's video doesn't capture the real
 pointer) and auto-trims the load/settle head up to just before the first action.
 Key methods: `goto`, `waitFor`, `settle`, `pause`, `moveClick`, `move` (hover, no
-click), `type`. `stage.raw` is the underlying Playwright `Page` for anything
-else.
+click), `type`, `still`. `stage.raw` is the underlying Playwright `Page` for
+anything else.
+
+For a still, set `output: { still: true }` (no video is recorded) and call
+`stage.still('name')` in `record`. It writes `.github/assets/<name>.png` at 2x
+with the fake cursor hidden and the real pointer parked in a corner. See
+`scenes/files-still.ts`.
 
 ## Gotchas
 
+- **Warm up before the first action.** Anything before the first
+  `move`/`moveClick` is trimmed off, so do route compiles and slow queries
+  there. Reach the starting page by client-side navigation (a link click), not
+  `goto`, or the query cache is thrown away. `files-walkthrough` shows the
+  pattern. To wait for a page's data, wait for no `.animate-pulse`: only the
+  shared `<Skeleton>` uses it.
 - **Never scroll with `scrollIntoViewIfNeeded()`.** It snaps the scroll position
   in a single frame, which on a recording reads as a hard splice / teleport.
   `Stage` scrolls by easing `scrollTop` over several frames so the list moves

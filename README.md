@@ -32,7 +32,7 @@ Glacier is cheap because retrieval isn't instant. Restoring an object takes minu
 
 ![Walkthrough: storage overview, bulk restore, and upload](.github/assets/demo.gif)
 
-<sub>A walkthrough: storage overview, archived shoots grouped by upload batch, multi-select with bulk restore, then upload.</sub>
+<sub>A walkthrough: storage overview, archived shoots grouped by upload batch, multi-select with bulk restore, a photo in the viewer, then upload.</sub>
 
 </div>
 
@@ -49,11 +49,11 @@ flowchart LR
     W -->|HeadObject on pending retrievals| S3
 ```
 
-Upload is a presigned `PUT` (or multipart for large files) straight to S3, with file metadata tracked in Postgres. **Every uploaded file is stored in Glacier by default** — a bucket lifecycle rule sweeps anything over 128 KB into Deep Archive. Nothing in the database mirrors an object's storage class: S3 owns that, and it is read with a `HeadObject` at the moment it matters. Files are grouped by upload batch (a photographer's natural unit is "a shoot"), and a restore in flight shows as `Retrieving`:
+Upload is a presigned `PUT` (or multipart for large files) straight to S3, with file metadata tracked in Postgres. **Every uploaded file is stored in Glacier by default** — a bucket lifecycle rule sweeps anything over 128 KB into Deep Archive. Nothing in the database mirrors an object's storage class: S3 owns that, and it is read with a `HeadObject` at the moment it matters. Files are grouped by upload batch (a photographer's natural unit is "a shoot"), and a restore in flight shows on the file and its batch:
 
 <div align="center">
 
-![Files grouped by shoot, with a restore in progress](.github/assets/files.png)
+![A shoot opened into its photos, with a restore in progress](.github/assets/files.png)
 
 </div>
 
