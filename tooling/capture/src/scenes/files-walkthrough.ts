@@ -12,7 +12,7 @@ function navLink(page: Page, name: string) {
  * The README walkthrough: the storage overview, then the archived library as
  * a shelf of shoots, one opened into its photos, a multi-select with the bulk
  * Retrieve, a photo in the viewer, and finally the upload surface. Writes to
- * .github/assets/demo.{gif,mp4}.
+ * .github/assets/demo.{webp,mp4}.
  *
  * To refresh after a UI change: `pnpm capture files-walkthrough`.
  */
@@ -23,17 +23,14 @@ export default defineScene<void>({
     viewport: { width: 1440, height: 900 },
     output: {
         name: 'demo',
-        gif: true,
+        // Animated WebP, not GIF: the library is photos now, and GIF's
+        // 256-colour palette bands and dithers them. At q75 / 1000px it
+        // weighs what the old q60 / 760px GIF did.
+        gif: false,
+        webp: true,
         mp4: true,
         // 1.25x keeps the pacing snappy; the smooth scroll still reads as motion.
         speed: 1.25,
-        // The open choreography fills many frames with full-frame motion —
-        // costly for a GIF (no interframe compression), so quality leans down
-        // to hold demo.gif under ~800KB at native 760px / 12fps. The flat dark
-        // UI stays legible.
-        gifWidth: 760,
-        gifFps: 12,
-        quality: 60,
     },
     setup: async (ctx) => {
         await ctx.seedDemoLibrary();

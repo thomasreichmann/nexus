@@ -10,7 +10,7 @@ export interface EncodeOptions {
     fps: number;
     /** Playback speed multiplier (1 = unchanged). */
     speed: number;
-    /** gifski quality 1-100 (default 80; the sweet spot for this flat dark UI). */
+    /** Encoder quality 1-100: gifski's for a GIF (default 80), img2webp's for a WebP (default 75). */
     quality?: number;
 }
 
@@ -35,23 +35,15 @@ function videoFilter(o: EncodeOptions): string {
 }
 
 /**
- * GIF via gifski. A GIF has to be a GIF on a README (GitHub doesn't autoplay
- * <video>), but the naive `ffmpeg in out.gif` lands at multiple megabytes —
- * GIF stores near-whole frames at 256 colours, where H.264 only stores deltas.
- * gifski is a purpose-built encoder that beats ffmpeg's palettegen on
- * quality-per-byte; downsampling frames first (fps + width) and feeding them in
- * gets the README clip to well under a megabyte. ffmpeg extracts the frames,
- * gifski encodes them.
+ * Extract the trimmed, sped-up, downscaled clip as PNG frames, hand their
+ * sorted paths to `encode`, and clean up. Both animated encoders take frames,
+ * not video.
  */
-export function encodeGif(
+function withFrames(
     input: string,
-    output: string,
-    o: EncodeOptions
+    o: EncodeOptions,
+    encode: (pngs: string[]) => void
 ): void {
-    ensure('ffmpeg', 'Install it (macOS: brew install ffmpeg), then re-run.');
-    ensure('gifski', 'Install it (macOS: brew install gifski), then re-run.');
-    mkdirSync(dirname(output), { recursive: true });
-
     const frames = mkdtempSync(join(dirname(input), 'frames-'));
     try {
         run('ffmpeg', [
@@ -78,7 +70,27 @@ export function encodeGif(
             throw new Error(
                 'No frames extracted (is the clip empty after trim?).'
             );
+        encode(pngs);
+    } finally {
+        rmSync(frames, { recursive: true, force: true });
+    }
+}
 
+/**
+ * GIF via gifski. The naive `ffmpeg in out.gif` lands at multiple megabytes;
+ * gifski beats ffmpeg's palettegen on quality-per-byte. GIF is still capped
+ * at 256 colours a frame, which bands and dithers photos badly, so the README
+ * walkthrough uses animated WebP instead (`encodeWebp`).
+ */
+export function encodeGif(
+    input: string,
+    output: string,
+    o: EncodeOptions
+): void {
+    ensure('ffmpeg', 'Install it (macOS: brew install ffmpeg), then re-run.');
+    ensure('gifski', 'Install it (macOS: brew install gifski), then re-run.');
+    mkdirSync(dirname(output), { recursive: true });
+    withFrames(input, o, (pngs) =>
         run('gifski', [
             '--fps',
             String(o.fps),
@@ -87,13 +99,46 @@ export function encodeGif(
             '-o',
             output,
             ...pngs,
-        ]);
-    } finally {
-        rmSync(frames, { recursive: true, force: true });
-    }
+        ])
+    );
 }
 
-/** H.264 MP4 (yuv420p, faststart). Kept as the source of truth the GIF is re-encoded from. */
+/**
+ * Animated WebP via img2webp. Autoplays and loops in an <img> like a GIF
+ * (GitHub doesn't autoplay <video> in a README), but each frame is real lossy
+ * (or, where smaller, lossless) compression rather than a 256-colour palette:
+ * for the same bytes as a q60 GIF at 760px it carries a 1000px clip with
+ * clean photos and text. `-mixed` picks lossy or lossless per frame, so flat
+ * UI frames stay crisp.
+ */
+export function encodeWebp(
+    input: string,
+    output: string,
+    o: EncodeOptions
+): void {
+    ensure('ffmpeg', 'Install it (macOS: brew install ffmpeg), then re-run.');
+    ensure('img2webp', 'Install it (macOS: brew install webp), then re-run.');
+    mkdirSync(dirname(output), { recursive: true });
+    withFrames(input, o, (pngs) =>
+        run('img2webp', [
+            '-loop',
+            '0',
+            '-lossy',
+            '-q',
+            String(o.quality ?? 75),
+            '-m',
+            '6',
+            '-mixed',
+            '-d',
+            String(Math.round(1000 / o.fps)),
+            ...pngs,
+            '-o',
+            output,
+        ])
+    );
+}
+
+/** H.264 MP4 (yuv420p, faststart). Kept as the source of truth beside the README's animated image. */
 export function encodeMp4(
     input: string,
     output: string,

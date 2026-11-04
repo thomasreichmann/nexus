@@ -18,19 +18,26 @@ export interface SceneContext {
 
 export interface OutputOptions {
     /**
-     * A still-only scene: no video is recorded or encoded, and `gif`/`mp4`
-     * default to false. `record` writes its frames with `stage.still(name)`.
+     * A still-only scene: no video is recorded or encoded, and `gif`
+     * defaults to false. `record` writes its frames with `stage.still(name)`.
      */
     still?: boolean;
     /** Encode a GIF (default true, false for a still scene). */
     gif?: boolean;
-    /** Also encode an MP4 (default false) — the source of truth the GIF is re-encoded from. */
+    /**
+     * Encode an animated WebP (default false). Autoplays like a GIF in a
+     * README with far fewer artifacts on photos; uses `width`/`fps`.
+     */
+    webp?: boolean;
+    /** img2webp quality 1-100 (default 75). */
+    webpQuality?: number;
+    /** Also encode an MP4 (default false), the source of truth beside the animated image. */
     mp4?: boolean;
-    /** Output basename, written to .github/assets/<name>.{gif,mp4}. Defaults to the scene name. */
+    /** Output basename, written to .github/assets/<name>.{gif,webp,mp4}. Defaults to the scene name. */
     name?: string;
-    /** MP4 width in px; height follows aspect (default 1000). */
+    /** MP4 and WebP width in px; height follows aspect (default 1000). */
     width?: number;
-    /** MP4 frames per second (default 15). */
+    /** MP4 and WebP frames per second (default 15). */
     fps?: number;
     /**
      * GIF width in px (default 760). Kept smaller than the MP4 on purpose: a GIF

@@ -14,7 +14,7 @@ function printUsage(): void {
         console.log(`  ${scene.name.padEnd(20)} ${scene.description}`);
     }
     console.log(
-        '\nUsage: pnpm capture <scene...> [--mp4] [--no-gif] [--width=N] [--fps=N] [--speed=N] [--quality=N] [--keep-video] [--no-server]'
+        '\nUsage: pnpm capture <scene...> [--webp] [--mp4] [--no-gif] [--width=N] [--fps=N] [--speed=N] [--quality=N] [--keep-video] [--no-server]'
     );
 }
 
@@ -37,6 +37,7 @@ async function main(): Promise<void> {
     };
 
     const overrides: RunOverrides = {
+        webp: flags.includes('--webp') ? true : undefined,
         mp4: flags.includes('--mp4') ? true : undefined,
         gif: flags.includes('--no-gif') ? false : undefined,
         width: parseNumber(valueOf('--width')),

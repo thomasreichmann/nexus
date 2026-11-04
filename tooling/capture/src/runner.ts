@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { deleteUserByEmail } from '@nexus/db/test-db';
 
 import { connect } from './db';
-import { encodeGif, encodeMp4 } from './encode';
+import { encodeGif, encodeMp4, encodeWebp } from './encode';
 import { ASSETS_DIR, TMP_DIR } from './paths';
 import { startRecording } from './recorder';
 import { seedDemoLibrary } from './seed';
@@ -15,6 +15,7 @@ import type { Scene, SceneContext } from './scene';
 /** CLI-level overrides; each falls back to the scene's own `output`, then a default. */
 export interface RunOverrides {
     gif?: boolean;
+    webp?: boolean;
     mp4?: boolean;
     width?: number;
     fps?: number;
@@ -38,13 +39,15 @@ export async function runScene(
     const out = scene.output ?? {};
     const isStill = out.still ?? false;
     const wantGif = opts.overrides.gif ?? out.gif ?? !isStill;
+    const wantWebp = opts.overrides.webp ?? out.webp ?? false;
     const wantMp4 = opts.overrides.mp4 ?? out.mp4 ?? false;
-    const wantVideo = wantGif || wantMp4;
-    // Resolve outputs up front so a misconfigured run (e.g. `--no-gif` with no
-    // `--mp4`) fails in under a second, not after a full server start + record.
+    const wantVideo = wantGif || wantWebp || wantMp4;
+    // Resolve outputs up front so a misconfigured run (e.g. `--no-gif` with
+    // nothing else on) fails in under a second, not after a full server start
+    // + record.
     if (!wantVideo && !isStill)
         throw new Error(
-            'Nothing to encode: both GIF and MP4 are disabled (--no-gif without --mp4).'
+            'Nothing to encode: GIF, WebP and MP4 are all disabled.'
         );
 
     const server = await ensureServer({ manage: opts.manageServer });
@@ -106,16 +109,36 @@ export async function runScene(
             });
             written.push(dest);
         }
-        if (wantMp4) {
-            const dest = join(ASSETS_DIR, `${basename}.mp4`);
-            console.log(`• ${scene.name}: encoding MP4`);
-            encodeMp4(videoPath, dest, {
-                trimStart,
-                speed,
-                width: opts.overrides.width ?? out.width ?? 1000,
-                fps: opts.overrides.fps ?? out.fps ?? 15,
-            });
-            written.push(dest);
+        const width = opts.overrides.width ?? out.width ?? 1000;
+        const fps = opts.overrides.fps ?? out.fps ?? 15;
+        // The WebP is built from the MP4, not the raw recording: H.264 smooths
+        // Playwright's noisy VP8 capture, which the WebP encoder would
+        // otherwise spend bytes on (q75 measured 1.6MB from the raw frames,
+        // 850KB from the MP4, with no visible difference). Without --mp4 the
+        // MP4 is an intermediate in the scratch dir.
+        if (wantMp4 || wantWebp) {
+            const mp4 = wantMp4
+                ? join(ASSETS_DIR, `${basename}.mp4`)
+                : join(videoDir, 'intermediate.mp4');
+            console.log(
+                `• ${scene.name}: encoding MP4 (trim ${trimStart.toFixed(1)}s)`
+            );
+            encodeMp4(videoPath, mp4, { trimStart, speed, width, fps });
+            if (wantMp4) written.push(mp4);
+
+            if (wantWebp) {
+                const dest = join(ASSETS_DIR, `${basename}.webp`);
+                console.log(`• ${scene.name}: encoding WebP`);
+                // Already trimmed, sped up and scaled: pass it through as is.
+                encodeWebp(mp4, dest, {
+                    trimStart: 0,
+                    speed: 1,
+                    width,
+                    fps,
+                    quality: opts.overrides.quality ?? out.webpQuality,
+                });
+                written.push(dest);
+            }
         }
 
         if (!opts.keepVideo) rmSync(videoDir, { recursive: true, force: true });

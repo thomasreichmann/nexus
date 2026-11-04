@@ -1,6 +1,7 @@
-# Recording captures (demo GIF / MP4 / stills)
+# Recording captures (demo WebP / MP4 / stills)
 
-The README walkthrough (`.github/assets/demo.gif` and its source `demo.mp4`)
+The README walkthrough (`.github/assets/demo.webp`, an animated WebP, and its
+source `demo.mp4`)
 and the library still (`files.png`) are **generated from code**, not
 hand-recorded. The tooling lives in `tooling/capture` (`@nexus/capture`): a
 scene drives a real browser through the app and the runner records it, so an
@@ -9,7 +10,7 @@ asset can be regenerated after a UI change instead of going stale.
 ## Refresh the README captures
 
 ```bash
-pnpm capture files-walkthrough files-still  # demo.gif + demo.mp4, files.png
+pnpm capture files-walkthrough files-still  # demo.webp + demo.mp4, files.png
 ```
 
 Then commit the regenerated assets. `pnpm capture --list` shows the scenes.
@@ -26,7 +27,8 @@ bucket, so there is nothing to clean up.
 
 ### Prerequisites
 
-- **ffmpeg + gifski** — the encoders. `brew install ffmpeg gifski`.
+- **ffmpeg, img2webp, gifski** — the encoders. `brew install ffmpeg webp gifski`
+  (gifski only for scenes that still write a GIF).
 - **A dev server** on `http://localhost:3000` (`pnpm dev`). If none is up, the
   tool starts one and stops it after; pass `--no-server` to require an existing
   one (faster — skips the cold compile).
@@ -46,11 +48,12 @@ users are never touched.
 | -------------- | ----------------------------------------------------------- |
 | `--no-server`  | fail instead of starting a dev server (reuse a running one) |
 | `--no-gif`     | skip the GIF (e.g. with nothing else → error)               |
-| `--mp4` / —    | the `files-walkthrough` scene writes both by default        |
+| `--webp`       | also write an animated WebP                                 |
+| `--mp4`        | also write an MP4                                           |
 | `--width=N`    | override output width                                       |
 | `--fps=N`      | override frame rate                                         |
 | `--speed=N`    | playback speed multiplier                                   |
-| `--quality=N`  | gifski quality 1-100                                        |
+| `--quality=N`  | gifski / img2webp quality 1-100                             |
 | `--keep-video` | keep the raw `.webm` under `tooling/capture/.tmp/`          |
 
 ## Adding a scene
@@ -63,7 +66,7 @@ time is never in the clip) and a `record` (drive the UI via the `Stage`):
 export default defineScene<void>({
     name: 'my-scene', // kebab-case; becomes the asset basename
     description: '...',
-    output: { gif: true, mp4: true, name: 'demo' /* override basename */ },
+    output: { webp: true, mp4: true, name: 'demo' /* override basename */ },
     setup: async (ctx) => {
         await ctx.seedDemoLibrary();
     },
@@ -111,9 +114,9 @@ with the fake cursor hidden and the real pointer parked in a corner. See
   function is serialized into the browser (`ReferenceError: __name is not
 defined`). Keep evaluate bodies free of `const fn = () => …`; do that work in
   Node instead (see `Stage.smoothScrollIntoView`).
-- **A GIF of a scroll is heavy.** GIF has no interframe compression, so the
-  full-frame motion of a scroll costs far more than a static UI — the same clip
-  is ~800KB as a GIF and ~500KB as an MP4. The scene trims GIF resolution /
-  quality (760px, 12fps, q60) to stay under ~800KB; the MP4 stays crisp at
-  1000px. GitHub doesn't autoplay `<video>` in a README, which is why the README
-  uses the GIF and keeps the MP4 only as the source of truth.
+- **Animated WebP, not GIF, for the README.** GitHub doesn't autoplay
+  `<video>` in a README, so the walkthrough has to be an animated image. GIF's
+  256-colour palette bands and dithers photos: at q60 / 760px (~800KB) the
+  thumbnails were visibly blotchy, and q90 cost 2.5MB and still fringed text.
+  An animated WebP at q75 / 1000px is ~850KB with clean photos and text. The
+  MP4 stays as the source of truth.
