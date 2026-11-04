@@ -218,7 +218,8 @@ export function logRequest<
             const userId = ctx.session?.user?.id;
             const timings = getTimings();
             const customFields = getCustomFields();
-            const shortRequestId = requestId.split("-").at(-1) ?? "SOMETHING WENT WRONG"
+            const shortRequestId =
+                requestId.split('-').at(-1) ?? 'SOMETHING WENT WRONG';
 
             const event: WideEvent = {
                 requestId: shortRequestId,

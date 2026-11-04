@@ -20,7 +20,7 @@ import { enqueueThumbnailGeneration } from './thumbnails';
 import type { Subscription } from '@nexus/db/repo/subscriptions';
 import type { DB } from '@nexus/db';
 
-const log = logger.child({service: "files"})
+const log = logger.child({ service: 'files' });
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 900; // 15 minutes
 const MULTIPART_URL_EXPIRY_SECONDS = 3600; // 1 hour
@@ -507,7 +507,9 @@ async function getThumbnailUrls(
             })
         );
     } else {
-        log.warn("S3_DERIVED_BUCKET is not configured, thumbnails will not attempt to be fetched")
+        log.warn(
+            'S3_DERIVED_BUCKET is not configured, thumbnails will not attempt to be fetched'
+        );
     }
 
     return {
