@@ -8,7 +8,6 @@ const hoisted = await vi.hoisted(async () => {
 vi.mock('@/lib/alerts', () => ({ alerts: { send: hoisted.alertsSend } }));
 vi.mock('@/server/lib/logger', () => ({ logger: hoisted.logger }));
 vi.mock('@/lib/env', () => ({ env: { S3_DERIVED_BUCKET: 'derived-bucket' } }));
-vi.mock('@/server/db', () => ({ db: {} }));
 
 import {
     createMockDb,
