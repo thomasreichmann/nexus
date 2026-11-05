@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
 import { countLabel, formatBytes, formatCount } from '@/lib/format';
@@ -24,6 +24,11 @@ interface BatchSplitViewProps {
     onIntent: (key: string) => void;
     onShowMore: () => void;
     isLoadingMore: boolean;
+    /**
+     * The library's first page is still on its way: a batch landed on
+     * (#546) shows before the list beside it does.
+     */
+    isLoading: boolean;
     /** The open batch's pane. */
     children: ReactNode;
 }
@@ -40,6 +45,7 @@ export function BatchSplitView({
     onIntent,
     onShowMore,
     isLoadingMore,
+    isLoading,
     children,
 }: BatchSplitViewProps) {
     const remaining = totalBatchCount - batches.length;
@@ -74,6 +80,11 @@ export function BatchSplitView({
                         <SearchField value={search} onChange={onSearchChange} />
                     </div>
                     <div className="min-h-0 flex-1 overflow-y-auto">
+                        {isLoading && (
+                            <div className="flex justify-center py-6">
+                                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                            </div>
+                        )}
                         {batches.map((batch) => (
                             <BatchRow
                                 key={batch.key}
@@ -90,8 +101,8 @@ export function BatchSplitView({
                         className="flex items-center justify-between border-t px-3 py-2.5 text-xs text-muted-foreground tabular-nums"
                     >
                         <span>
-                            {formatCount(batches.length)} of{' '}
-                            {formatCount(totalBatchCount)} batches
+                            {!isLoading &&
+                                `${formatCount(batches.length)} of ${formatCount(totalBatchCount)} batches`}
                         </span>
                         {remaining > 0 && (
                             <Button

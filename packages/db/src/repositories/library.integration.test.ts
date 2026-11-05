@@ -1146,7 +1146,7 @@ describe.concurrent('locateFile', () => {
         const locate = (fileId: string) =>
             repo.locateFile(user.id, fileId, { pageSize: 100 });
 
-        expect(await locate(mine.id)).toEqual({
+        expect(await locate(mine.id)).toMatchObject({
             batchId: batch.id,
             subpath: '104CANON',
             pageStartId: mine.id,
@@ -1217,12 +1217,69 @@ describe.concurrent('locateFile', () => {
         );
 
         // Third in its folder: the folder's second page.
-        expect(located).toEqual({
+        expect(located).toMatchObject({
             batchId: batch.id,
             subpath: '104CANON',
             pageStartId: idOf('IMG_3.JPG'),
         });
     });
+
+    // #546: the browser files the batch and page under the requests that
+    // would have fetched them, so they must be exactly those requests'
+    // answers. Off the first page, where the page knows of one before it.
+    it.for([
+        ['a flat batch', undefined],
+        ['a batch with folders', '104CANON'],
+    ] as const)(
+        'returns the batch and page its own requests would, in %s',
+        async ([, subpath], { db, user }) => {
+            const batch = await insertUploadBatch(db, { userId: user.id });
+            const [files] = await Promise.all([
+                insertNamed(
+                    db,
+                    user.id,
+                    batch.id,
+                    [
+                        'IMG_1.JPG',
+                        'IMG_2.JPG',
+                        'IMG_3.JPG',
+                        'IMG_4.JPG',
+                        'IMG_5.JPG',
+                    ],
+                    { subpath }
+                ),
+                // Makes the batch one with folders, when the others are in one.
+                // Two, ahead of the folder in the batch's order: counted
+                // across the whole batch, IMG_3 would land a page further on.
+                subpath &&
+                    insertNamed(db, user.id, batch.id, ['a.txt', 'b.txt']),
+            ]);
+            const repo = createLibraryRepo(db);
+
+            const located = await repo.locateFile(user.id, files[2]!.id, {
+                pageSize: 2,
+            });
+
+            expect(located?.pageStartId).toBe(files[2]!.id);
+            expect(located?.batch).toEqual(
+                await repo.findBatch(user.id, batch.id)
+            );
+            expect(located?.page).toEqual(
+                await repo.listBatchFiles(user.id, {
+                    batchId: batch.id,
+                    folder: located?.batch.folders ? subpath : undefined,
+                    cursor: located?.pageStartId,
+                    limit: 2,
+                })
+            );
+            expect(located?.page).toMatchObject({
+                startIndex: 2,
+                total: 5,
+                previousCursor: files[2]!.id,
+                nextCursor: files[4]!.id,
+            });
+        }
+    );
 });
 
 // The cold count's age cutoff, exactly at the edge, where its JS twin
