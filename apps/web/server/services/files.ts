@@ -104,6 +104,27 @@ async function createBatch(
     return { batchId: (await insertBatch(db, userId, input)).id };
 }
 
+/**
+ * An Upload click aimed at one of the user's existing batches (#454) rather
+ * than a new one: the rest of a half-uploaded shoot rejoins its first half.
+ * The batch expects that many more files, so a wave that dies on the way
+ * reads as short (#550). The files themselves join it at initiate, which
+ * checks the batch is the user's again on its own.
+ */
+async function extendBatch(
+    db: DB,
+    userId: string,
+    { batchId, addedFileCount }: { batchId: string; addedFileCount: number }
+): Promise<CreateBatchResult> {
+    const batch = await createUploadBatchRepo(db).expectMoreFiles(
+        userId,
+        batchId,
+        addedFileCount
+    );
+    if (!batch) throw new NotFoundError('UploadBatch', batchId);
+    return { batchId: batch.id };
+}
+
 interface InitiateUploadResult {
     fileId: string;
     uploadUrl: string;
@@ -730,6 +751,7 @@ async function mergeBatch(
 
 export const fileService = {
     createBatch,
+    extendBatch,
     initiateUpload,
     confirmUpload,
     initiateMultipartUpload,

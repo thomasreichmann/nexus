@@ -140,27 +140,31 @@ describe('formatSessionBatchName', () => {
 
 // #405: what a file's folder is stored as, relative to the batch it joins.
 describe('resolveSubpath', () => {
-    it('drops the folder’s own name when the batch is named after it', () => {
-        expect(resolveSubpath('Shoot/104CANON', true)).toBe('104CANON');
-        expect(resolveSubpath('Shoot/104CANON/RAW', true)).toBe('104CANON/RAW');
+    it('drops the folder’s own name when the batch is that folder', () => {
+        expect(resolveSubpath('Shoot/104CANON', 1)).toBe('104CANON');
+        expect(resolveSubpath('Shoot/104CANON/RAW', 1)).toBe('104CANON/RAW');
     });
 
     it('stores nothing for a file at the top of the batch’s folder', () => {
-        expect(resolveSubpath('Shoot', true)).toBeUndefined();
+        expect(resolveSubpath('Shoot', 1)).toBeUndefined();
+    });
+
+    // #454: one batch per subfolder of the dropped folder.
+    it('drops the subfolder too when the batch is one subfolder', () => {
+        expect(resolveSubpath('Library/Silva/104CANON', 2)).toBe('104CANON');
+        expect(resolveSubpath('Library/Silva', 2)).toBeUndefined();
     });
 
     // Two cards of one camera, each in a folder with a 104CANON inside: in
     // one unnamed batch, only the dropped folder's name tells them apart.
     it('keeps the whole path when the batch is about more than one folder', () => {
-        expect(resolveSubpath('Loja 1/104CANON', false)).toBe(
-            'Loja 1/104CANON'
-        );
-        expect(resolveSubpath('Loja 1', false)).toBe('Loja 1');
+        expect(resolveSubpath('Loja 1/104CANON', 0)).toBe('Loja 1/104CANON');
+        expect(resolveSubpath('Loja 1', 0)).toBe('Loja 1');
     });
 
     it('stores nothing for a file dropped loose', () => {
-        expect(resolveSubpath(undefined, false)).toBeUndefined();
-        expect(resolveSubpath(undefined, true)).toBeUndefined();
+        expect(resolveSubpath(undefined, 0)).toBeUndefined();
+        expect(resolveSubpath(undefined, 1)).toBeUndefined();
     });
 });
 

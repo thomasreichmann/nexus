@@ -7,6 +7,12 @@
  */
 
 /** Above this size an upload goes through the multipart engine. */
+/**
+ * The longest batch name the server takes, however it's named: on upload,
+ * on the upload page (#454) or by a rename (#408).
+ */
+export const MAX_BATCH_NAME_LENGTH = 255;
+
 export const MULTIPART_THRESHOLD = 100 * 1024 * 1024; // 100MB
 
 /**

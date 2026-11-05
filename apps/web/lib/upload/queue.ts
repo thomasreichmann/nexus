@@ -1,4 +1,5 @@
 import { planVaultLookups, vaultKey, type VaultIdentity } from './duplicates';
+import { isNotFoundError } from './errors';
 import { createFilePool, type FileRunOutcome } from './filePool';
 import { MAX_CONCURRENT_FILES, MAX_IN_FLIGHT_BYTES } from './limits';
 import {
@@ -9,11 +10,15 @@ import {
     toFileIdentityKey,
 } from './parts';
 import {
-    formatSessionBatchName,
+    planBatches,
+    selectDraftRows,
+    type BatchPlan,
+    type UploadChoices,
+} from './batchPlan';
+import {
     patchRowById,
     patchRowsWhere,
     resolveSubpath,
-    resolveUnanimousFolderName,
     type UploadRow,
 } from './rows';
 import {
@@ -41,6 +46,11 @@ export interface UploadApi extends TransferApi {
         name?: string;
         expectedFileCount?: number;
     }): Promise<{ batchId: string }>;
+    /** One of the user's batches expects `addedFileCount` more files (#454). */
+    extendBatch(input: {
+        batchId: string;
+        addedFileCount: number;
+    }): Promise<unknown>;
     findDuplicates(input: { files: VaultIdentity[] }): Promise<VaultIdentity[]>;
     /** Fire and forget: releases an S3 multipart session being dropped. */
     multipartAbort(input: { fileId: string; uploadId: string }): void;
@@ -74,11 +84,16 @@ export interface UploadQueue {
     /** Surfaces interrupted uploads persisted in IndexedDB as `resumable` rows. */
     hydrate(): Promise<void>;
     addFiles(picked: PickedFile[], folderName?: string): Promise<void>;
-    /** The Upload click: every `pending` row joins one batch and the pool. */
-    startUpload(): Promise<void>;
+    /**
+     * The Upload click: every `pending` row joins the pool, the ones with no
+     * batch yet the batch (or batches) `choices` make of them (#454). The app
+     * clicks through the session's `startUpload`, which spends its draft.
+     */
+    startUpload(choices?: UploadChoices): Promise<void>;
     retryFile(id: string): Promise<void>;
     /** Remove on a queued row and Cancel on one in flight: one operation. */
     dropRow(id: string): void;
+    /** The app clears through the session's `clearFiles`: it drops the draft. */
     clearFiles(): void;
     uploadAnyway(id: string): void;
     uploadAllAnyway(): void;
@@ -195,7 +210,41 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
     const drive = (items: QueuedUpload[]): Promise<void> =>
         withUploadingState(() => pool.enqueue(items));
 
-    const startUpload = async (): Promise<void> => {
+    // Where one planned batch's files go. A new batch the server couldn't
+    // make leaves them with none: each falls back to a batch of its own on
+    // the server.
+    const openNewBatch = async (
+        plan: Extract<BatchPlan, { kind: 'new' }>
+    ): Promise<string | undefined> => {
+        try {
+            const { batchId } = await api.createBatch({
+                name: plan.name,
+                expectedFileCount: plan.rows.length,
+            });
+            return batchId;
+        } catch {
+            return undefined;
+        }
+    };
+    // The batch the user picked still takes the files when its expectation
+    // couldn't grow: they aimed them there, and initiate checks it's theirs.
+    // Null when it's gone, merged away or deleted since the pick (#453):
+    // every file would be refused, so the click asks again instead.
+    const openExistingBatch = async (
+        plan: Extract<BatchPlan, { kind: 'existing' }>
+    ): Promise<string | null> => {
+        try {
+            await api.extendBatch({
+                batchId: plan.batchId,
+                addedFileCount: plan.rows.length,
+            });
+        } catch (error) {
+            if (isNotFoundError(error)) return null;
+        }
+        return plan.batchId;
+    };
+
+    const startUpload = async (choices: UploadChoices = {}): Promise<void> => {
         const pending = rows
             .get()
             .filter((row) => row.status === 'pending' && row.file);
@@ -226,52 +275,65 @@ export function createUploadQueue(deps: UploadQueueDeps): UploadQueue {
             })
         );
 
-        // One batch per Upload click: every pending file in this pass joins
-        // it, so a multi-file selection lands in a single upload_batches row,
-        // named after its folder or else after the click (#408). Created fresh
-        // per invocation — files queued later get a new batch on the next
-        // click. On failure we proceed without an id and each file falls back
-        // to the server's auto-created single-file batch.
-        let batchId: string | undefined;
-        // Rows that already have a batch (retries, re-added resumables) keep
-        // it, so only mint a session batch when some file still needs one —
-        // and only those rows decide what the new batch is named after, and
-        // how many files it should end up holding (#399).
-        const rowsNeedingBatch = pending.filter((row) => !row.batchId);
-        const folderName = resolveUnanimousFolderName(rowsNeedingBatch);
-        if (rowsNeedingBatch.length > 0) {
-            try {
-                ({ batchId } = await api.createBatch({
-                    name: folderName ?? formatSessionBatchName(new Date()),
-                    expectedFileCount: rowsNeedingBatch.length,
-                }));
-            } catch {
-                batchId = undefined;
-            }
+        // One batch per Upload click, so a multi-file selection lands in a
+        // single upload_batches row: named after its folder, or as the user
+        // typed, or else after the click (#408). Or one per subfolder, or
+        // one the user already has (#454). Made fresh per click: files
+        // queued later get their own on the next one. Rows that already have
+        // a batch (retries, re-added resumables) keep it, so only the rows
+        // without one decide what's made, and how many files each batch
+        // should end up holding (#399).
+        const plans = planBatches(
+            selectDraftRows(pending),
+            choices,
+            new Date()
+        );
+        const batchIds = await Promise.all(
+            plans.map((plan) =>
+                plan.kind === 'existing'
+                    ? openExistingBatch(plan)
+                    : openNewBatch(plan)
+            )
+        );
+        if (batchIds.includes(null)) {
+            rows.set((prev) =>
+                patchRowsWhere(prev, (row) => pendingIds.has(row.id), {
+                    status: 'pending',
+                })
+            );
+            deps.notify.error(
+                'The batch you picked is gone. Your files are still here: upload them as a new batch, or pick another.'
+            );
+            return;
         }
 
-        // Retried/resumed rows keep their original batch and folder; only
-        // rows without one join this session's batch, placed relative to it.
-        // Written to the row for retry/persistence, but carried on the queue
-        // item too — a row read won't reflect this update until the next
-        // commit. With no session batch (createBatch failed), nothing is
-        // named after the folder, so its name stays in the path.
-        const isBatchNamedAfterFolder =
-            folderName !== undefined && batchId !== undefined;
-        const placements = new Map(
-            pending.map((row) => [
-                row.id,
-                row.batchId
-                    ? { batchId: row.batchId, subpath: row.subpath }
-                    : {
-                          batchId,
-                          subpath: resolveSubpath(
-                              row.folderPath,
-                              isBatchNamedAfterFolder
-                          ),
-                      },
-            ])
+        // Retried/resumed rows keep their original batch and folder; the
+        // rest are placed relative to the batch they join. Written to the row
+        // for retry/persistence, but carried on the queue item too: a row
+        // read won't reflect this update until the next commit. With no batch
+        // (createBatch failed), nothing stands for a folder, so the whole
+        // path stays.
+        const placements = new Map<
+            string,
+            { batchId?: string; subpath?: string }
+        >(
+            pending
+                .filter((row) => row.batchId)
+                .map((row) => [
+                    row.id,
+                    { batchId: row.batchId, subpath: row.subpath },
+                ])
         );
+        plans.forEach((plan, i) => {
+            const batchId = batchIds[i] ?? undefined;
+            const rootDepth = batchId ? plan.rootDepth : 0;
+            for (const row of plan.rows) {
+                placements.set(row.id, {
+                    batchId,
+                    subpath: resolveSubpath(row.folderPath, rootDepth),
+                });
+            }
+        });
         rows.set((prev) =>
             patchRowsWhere(
                 prev,

@@ -1123,4 +1123,59 @@ describe('the files a batch expects', () => {
             expectedFileCount: null,
         });
     });
+
+    // #454: the rest of a shoot added to the batch its first half is in.
+    it('extendBatch grows the batch’s expectation by the files added, and leaves the user’s other batch alone', async ({
+        db,
+        user,
+    }) => {
+        const [batch, other] = await Promise.all([
+            insertUploadBatch(db, { userId: user.id, expectedFileCount: 60 }),
+            insertUploadBatch(db, { userId: user.id, expectedFileCount: 7 }),
+        ]);
+
+        expect(
+            await fileService.extendBatch(db, user.id, {
+                batchId: batch.id,
+                addedFileCount: 40,
+            })
+        ).toEqual({ batchId: batch.id });
+        expect((await readBatch(db, batch.id))?.expectedFileCount).toBe(100);
+        expect((await readBatch(db, other.id))?.expectedFileCount).toBe(7);
+    });
+
+    // From before #399: never tracked for missing files, and still not.
+    it('extendBatch leaves a batch that never recorded an expectation without one', async ({
+        db,
+        user,
+    }) => {
+        const legacy = await insertUploadBatch(db, { userId: user.id });
+
+        await fileService.extendBatch(db, user.id, {
+            batchId: legacy.id,
+            addedFileCount: 5,
+        });
+
+        expect((await readBatch(db, legacy.id))?.expectedFileCount).toBeNull();
+    });
+
+    it('extendBatch refuses another user’s batch and leaves its expectation', async ({
+        db,
+        user,
+        createUser,
+    }) => {
+        const stranger = await createUser();
+        const theirs = await insertUploadBatch(db, {
+            userId: stranger.id,
+            expectedFileCount: 3,
+        });
+
+        await expect(
+            fileService.extendBatch(db, user.id, {
+                batchId: theirs.id,
+                addedFileCount: 10,
+            })
+        ).rejects.toBeInstanceOf(NotFoundError);
+        expect((await readBatch(db, theirs.id))?.expectedFileCount).toBe(3);
+    });
 });
