@@ -44,6 +44,13 @@ export async function updateUserRole(
  *
  * Requests go first: their items and artifacts cascade, which is what lets the
  * retrieval and file deletes below stay single statements.
+ *
+ * Batches go before files. A spec that ends mid-wave leaves its last upload
+ * inits still running on the server, and the other way round one that landed
+ * between the two deletes outlived them: its batch's delete only blanked its
+ * `batch_id`, and the next spec found it. With the batch gone first, a late
+ * init can't insert (its batch is gone), and one that beat the batch delete
+ * is caught by the file delete after it.
  */
 export async function deleteUserData(db: DB, userId: string): Promise<void> {
     await db
@@ -52,10 +59,10 @@ export async function deleteUserData(db: DB, userId: string): Promise<void> {
     await db
         .delete(schema.retrievals)
         .where(eq(schema.retrievals.userId, userId));
-    await db.delete(schema.files).where(eq(schema.files.userId, userId));
     await db
         .delete(schema.uploadBatches)
         .where(eq(schema.uploadBatches.userId, userId));
+    await db.delete(schema.files).where(eq(schema.files.userId, userId));
 }
 
 /**
