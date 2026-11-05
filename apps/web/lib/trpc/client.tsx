@@ -2,7 +2,13 @@
 
 import { useState } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { createTRPCClient, httpBatchLink, type TRPCClient } from '@trpc/client';
+import {
+    createTRPCClient,
+    httpBatchLink,
+    httpLink,
+    splitLink,
+    type TRPCClient,
+} from '@trpc/client';
 import {
     createTRPCContext,
     createTRPCOptionsProxy,
@@ -60,9 +66,14 @@ function makeTRPCClient() {
     return createTRPCClient<AppRouter>({
         links: [
             errorLink(),
-            httpBatchLink({
-                transformer: superjson,
-                url: getUrl(),
+            // A batch answers when its slowest call does. A call that mustn't
+            // wait on its neighbours asks for `skipBatch` and goes alone: a
+            // deep link's `files.locate` beside the library's first page
+            // (#546).
+            splitLink({
+                condition: (op) => op.context.skipBatch === true,
+                true: httpLink({ transformer: superjson, url: getUrl() }),
+                false: httpBatchLink({ transformer: superjson, url: getUrl() }),
             }),
         ],
     });

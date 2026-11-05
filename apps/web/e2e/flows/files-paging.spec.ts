@@ -41,11 +41,10 @@ const BIG_BATCH_FILES = 230;
 // Past one page of 12 cards.
 const OLDER_BATCHES = 13;
 const HOUR_MS = 60 * 60 * 1000;
-// For waits on more than one round trip. A deep link's viewer opens only once
-// `files.locate`, `getBatch` and the file's page of `listBatchFiles` have
-// answered, one after another, and a failed one retries after a second. Under
-// a full local run against the shared dev DB, that chain alone can take more
-// than 5 s (#546).
+// For waits on a round trip that may be retried: a failed request retries
+// after a second, and a full local run against the shared dev DB is slow
+// enough already. A deep link used to be three requests in a row here (#546);
+// it's one now (`files-deep-link.spec.ts`).
 const LOAD_TIMEOUT = 15_000;
 
 interface PagingLibrary {

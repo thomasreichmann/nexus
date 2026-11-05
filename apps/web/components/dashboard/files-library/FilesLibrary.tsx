@@ -9,6 +9,7 @@ import {
     useInfiniteQuery,
     useQuery,
     useQueryClient,
+    type QueryClient,
 } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import {
@@ -54,7 +55,11 @@ import {
     useThumbnailUrlsByPage,
 } from './useOrderedThumbnailUrls';
 import { useStableCallback } from './useStableCallback';
-import type { LibraryBatch, LibraryFile } from '@nexus/db/repo/library';
+import type {
+    LibraryBatch,
+    LibraryFile,
+    LocatedFile,
+} from '@nexus/db/repo/library';
 
 const SEARCH_DEBOUNCE_MS = 300;
 const NO_COUNTS = { archived: 0, retrieving: 0, available: 0 };
@@ -165,17 +170,32 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
     // server says which batch and folder it sits in, and the pane opens at
     // the page holding it. Asked once: the answer anchors the pane's pages,
     // and a refetch moving it (the file deleted since) would reset them.
+    //
+    // One request opens it (#546): the answer carries the batch and that
+    // page too, filed under the requests the pane makes for them before the
+    // pane gets to ask. Alone rather than batched, so it doesn't wait on the
+    // library's first page.
     const batchParam = searchParams.get('batch');
     const fileParam = searchParams.get('file');
     const [landingFileId, setLandingFileId] = useState<string | null>(
         fileParam
     );
-    const locateQuery = useQuery(
-        trpc.files.locate.queryOptions(
-            landingFileId ? { fileId: landingFileId } : skipToken,
-            { staleTime: Infinity }
-        )
+    const locateOptions = trpc.files.locate.queryOptions(
+        landingFileId ? { fileId: landingFileId } : skipToken,
+        { staleTime: Infinity, trpc: { context: { skipBatch: true } } }
     );
+    const fetchLocated = locateOptions.queryFn;
+    const locateQuery = useQuery({
+        ...locateOptions,
+        queryFn:
+            typeof fetchLocated === 'function'
+                ? async (context) => {
+                      const found = await fetchLocated(context);
+                      if (found) fileLanding(queryClient, trpc, found);
+                      return found;
+                  }
+                : fetchLocated,
+    });
     const located = landingFileId ? locateQuery.data : undefined;
     const isLocating = !!landingFileId && locateQuery.isPending;
     const anchor = useMemo<(BatchAnchor & { key: string }) | null>(
@@ -277,7 +297,14 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
     // render that settles the phase.
     const [hasInitialized, setHasInitialized] = useState(false);
     if (!hasInitialized) {
-        if (!batchesQuery.isPending && resolvedTarget !== undefined) {
+        // Landing on a batch (reload, deep link) opens it as soon as it's
+        // found, not once the library's own first page is in too (#546):
+        // the list beside it fills in when that lands.
+        const isLandingOnBatch = !!resolvedTarget;
+        if (
+            resolvedTarget !== undefined &&
+            (isLandingOnBatch || !batchesQuery.isPending)
+        ) {
             setHasInitialized(true);
             // Landing on a batch (reload, deep link) skips the choreography.
             if (resolvedTarget)
@@ -825,6 +852,7 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
                         onIntent={onIntent}
                         onShowMore={showMoreBatches}
                         isLoadingMore={batchesQuery.isFetchingNextPage}
+                        isLoading={batchesQuery.isPending}
                     >
                         <BatchPane
                             batch={openBatch}
@@ -891,6 +919,27 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
                 actions={fileActions}
             />
         </div>
+    );
+}
+
+// A deep link's batch and page, filed under the queries the pane opens it
+// with: its `getBatch` (no search on a landing), and the `listBatchFiles`
+// page of the section holding it, from the file that starts that page.
+function fileLanding(
+    queryClient: QueryClient,
+    trpc: ReturnType<typeof useTRPC>,
+    { batch, page, subpath, pageStartId }: LocatedFile
+): void {
+    queryClient.setQueryData(
+        trpc.files.getBatch.queryKey({ batchId: batch.batchId }),
+        batch
+    );
+    const folder = batch.folders?.find((f) => f.subpath === subpath) ?? null;
+    queryClient.setQueryData(
+        trpc.files.listBatchFiles.queryKey(
+            batchFilesInput(batch, folder, undefined, { cursor: pageStartId })
+        ),
+        page
     );
 }
 
