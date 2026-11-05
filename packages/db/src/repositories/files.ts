@@ -120,8 +120,10 @@ export interface StatusCategoryCounts {
     available: number;
 }
 
+// Name sorts numeric-aware, IMG_9.JPG before IMG_10.JPG, like the library's
+// own FILE_ORDER (#479); the `natural` collation is migration 0023's.
 const SORT_COLUMNS = {
-    name: schema.files.name,
+    name: sql`${schema.files.name} collate "natural"`,
     size: schema.files.size,
     uploadedAt: schema.files.createdAt,
 } as const;
