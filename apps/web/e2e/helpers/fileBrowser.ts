@@ -119,6 +119,15 @@ export async function confirmBulkDelete(
     await confirmDeleteDialog(await expectDeleteDialog(page, fileCount));
 }
 
+/** Opens the open batch's menu and picks `item` from it. */
+export async function openBatchMenuItem(
+    page: Page,
+    item: string
+): Promise<void> {
+    await page.getByRole('button', { name: 'Batch actions' }).click();
+    await page.getByRole('menuitem', { name: item }).click();
+}
+
 /**
  * The open batch's menu → "Delete batch" → the "Delete N files?" confirm with
  * the batch's whole file count (#455), confirmed.
@@ -127,8 +136,7 @@ export async function confirmBatchDelete(
     page: Page,
     fileCount: number
 ): Promise<void> {
-    await page.getByRole('button', { name: 'Batch actions' }).click();
-    await page.getByRole('menuitem', { name: 'Delete batch' }).click();
+    await openBatchMenuItem(page, 'Delete batch');
     await confirmDeleteDialog(await expectDeleteDialog(page, fileCount));
 }
 

@@ -20,8 +20,8 @@ const fileNameSchema = z.string().min(1).max(255);
 // re-delivery is 500-1,500 files and the disaster-recovery case #406 is built
 // around is a whole library — the ICP reference is 8,934. The file browser
 // now pages (#455) and runs whole-batch actions by batch id, but an API caller
-// selecting by id still gets the full backlog. Shared by `deleteMany` and
-// `requestBulkRetrieval` so the two can't drift; unrelated to the `10000` in
+// selecting by id still gets the full backlog. Shared by `deleteMany`,
+// `moveFiles` and `requestBulkRetrieval` so they can't drift; unrelated to the `10000` in
 // `multipart.complete`, which is S3's part-count limit.
 const MAX_BULK_FILE_IDS = 10_000;
 
@@ -295,6 +295,45 @@ export const filesRouter = router({
                 ctx.session.user.id,
                 input.batchId,
                 input.name
+            )
+        ),
+
+    // Into one of the user's batches, never Ungrouped (#453): a move changes
+    // only `batch_id`, so the target is a batch row.
+    moveFiles: protectedProcedure
+        .input(
+            z.object({
+                fileIds: z
+                    .array(z.string().uuid())
+                    .min(1)
+                    .max(MAX_BULK_FILE_IDS),
+                targetBatchId: z.string().uuid(),
+            })
+        )
+        .mutation(({ ctx, input }) =>
+            fileService.moveFiles(
+                ctx.db,
+                ctx.session.user.id,
+                input.fileIds,
+                input.targetBatchId
+            )
+        ),
+
+    // A whole batch by id, like `deleteBatch`; null merges the legacy
+    // Ungrouped files.
+    mergeBatch: protectedProcedure
+        .input(
+            z.object({
+                sourceBatchId: z.string().uuid().nullable(),
+                targetBatchId: z.string().uuid(),
+            })
+        )
+        .mutation(({ ctx, input }) =>
+            fileService.mergeBatch(
+                ctx.db,
+                ctx.session.user.id,
+                input.sourceBatchId,
+                input.targetBatchId
             )
         ),
 

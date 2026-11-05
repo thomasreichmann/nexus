@@ -12,3 +12,10 @@ export const BATCH_PAGE_SIZE = 12;
  * a page's thumbnails are one request.
  */
 export const FILE_PAGE_SIZE = 100;
+
+/**
+ * How long a search box waits after the last keystroke before it asks the
+ * server: the library's and the Move to… dialog's (#453), so both feel the
+ * same.
+ */
+export const SEARCH_DEBOUNCE_MS = 300;
