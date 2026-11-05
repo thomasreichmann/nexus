@@ -6,8 +6,9 @@ export async function register(): Promise<void> {
 
         // Deployed envs only (#409). Local dev, CI and the e2e build (which
         // sets a synthetic bucket) have no VERCEL_ENV, and the build phase
-        // must not reach for AWS. The check never throws and caps its own
-        // wait, so awaiting it can't block boot for long.
+        // must not reach for AWS. The check never throws, caps its own wait,
+        // and closes its DB connection before returning, so awaiting it can't
+        // block boot for long or leave a query behind it (#554).
         if (
             process.env.VERCEL_ENV &&
             process.env.NEXT_PHASE !== 'phase-production-build'

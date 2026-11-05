@@ -1,8 +1,8 @@
+import { createDb } from '@nexus/db';
 import { createFileRepo, thumbnailKey } from '@nexus/db/repo/files';
 import { alerts } from '@/lib/alerts';
 import { env } from '@/lib/env';
 import { s3 } from '@/lib/storage';
-import { db } from '@/server/db';
 import { logger } from '@/server/lib/logger';
 import type { DB } from '@nexus/db';
 
@@ -70,8 +70,8 @@ export async function checkDerivedBucket(database: DB): Promise<void> {
 
 /**
  * How long a cold start will wait on the check: one DB read plus one
- * HeadObject is normally well under a second. Past this the check carries on
- * in the background rather than holding up the instance.
+ * HeadObject is normally well under a second. Past this the check is
+ * abandoned rather than holding up the instance.
  */
 const BOOT_CHECK_TIMEOUT_MS = 5000;
 
@@ -80,21 +80,42 @@ const BOOT_CHECK_TIMEOUT_MS = 5000;
  * Vercel may freeze an instance between requests, and an alert left pending
  * across that freeze may never send. Never throws: a check that can't run
  * (DB down, env invalid) is logged, and must not take the app down with it.
+ *
+ * The check reads through its own one-connection client, closed before this
+ * returns, never through the shared pool. A read abandoned at the timeout
+ * would otherwise stay on the wire into the freeze: on 2026-10-20 one sat
+ * half-sent behind the pooler, its backend holding a lock on `files` until
+ * the next migration's `ALTER TABLE` queued behind it and stalled every read
+ * of `files` (#554). postgres-js has no client-side query timeout and the
+ * pooler ignores `statement_timeout`, so closing the socket is the only way
+ * to end a read that is still in flight.
  */
-export async function runDerivedBucketCheck(): Promise<void> {
-    const check = checkDerivedBucket(db).catch((err: unknown) => {
+export async function runDerivedBucketCheck(
+    timeoutMs = BOOT_CHECK_TIMEOUT_MS
+): Promise<void> {
+    const database = createDb(env.DATABASE_URL, { max: 1 });
+    let isAbandoned = false;
+    const check = checkDerivedBucket(database).catch((err: unknown) => {
+        // Closing the connection on a timeout rejects the read still in
+        // flight. That's our doing and the warn below reports it, so only a
+        // check that failed on its own logs an error.
+        if (isAbandoned) return;
         log.error({ err }, 'Derived bucket check could not run');
     });
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<'timeout'>((resolve) => {
-        timer = setTimeout(() => resolve('timeout'), BOOT_CHECK_TIMEOUT_MS);
+        timer = setTimeout(() => resolve('timeout'), timeoutMs);
     });
 
     const outcome = await Promise.race([check, timeout]);
     clearTimeout(timer);
-    if (outcome === 'timeout') {
+    isAbandoned = outcome === 'timeout';
+    // `timeout: 0` destroys the socket instead of waiting for a pending read
+    // to finish.
+    await database.$client.end({ timeout: 0 });
+    if (isAbandoned) {
         log.warn(
-            `Derived bucket check still running after ${BOOT_CHECK_TIMEOUT_MS}ms; continuing boot`
+            `Derived bucket check still running after ${timeoutMs}ms; closed its DB connection and continuing boot`
         );
     }
 }
