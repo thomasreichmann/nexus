@@ -1,4 +1,14 @@
-import { eq, and, desc, gt, isNotNull, sql, type SQL } from 'drizzle-orm';
+import {
+    eq,
+    and,
+    desc,
+    gt,
+    inArray,
+    isNotNull,
+    ne,
+    sql,
+    type SQL,
+} from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import * as schema from '../schema';
 import { createRepository } from './create';
@@ -122,6 +132,82 @@ async function rename(
     return batch;
 }
 
+/**
+ * Before the user's listed files move to another batch (#453): each batch
+ * they leave stops expecting the received ones among them, floored at 0, so
+ * moving files out never makes it look short. The target's expectation
+ * stays, so files moved into a partial batch count toward completing it.
+ * Files already in the target, and Ungrouped ones, leave no batch.
+ */
+async function releaseMovedFiles(
+    db: DB,
+    userId: string,
+    fileIds: string[],
+    targetBatchId: string
+): Promise<void> {
+    const leaving = db
+        .select({
+            batchId: batchFile.batchId,
+            received:
+                sql<number>`count(*) filter (where ${IS_RECEIVED})::int`.as(
+                    'received'
+                ),
+        })
+        .from(batchFile)
+        .where(
+            and(
+                eq(batchFile.userId, userId),
+                inArray(batchFile.id, fileIds),
+                ne(batchFile.batchId, targetBatchId)
+            )
+        )
+        .groupBy(batchFile.batchId)
+        .as('leaving');
+    await db
+        .update(schema.uploadBatches)
+        .set({
+            expectedFileCount: sql`greatest(${schema.uploadBatches.expectedFileCount} - ${leaving.received}, 0)`,
+        })
+        .from(leaving)
+        .where(
+            and(
+                eq(schema.uploadBatches.id, leaving.batchId),
+                // greatest() ignores nulls: without this, a batch that never
+                // recorded an expectation would start expecting 0.
+                isNotNull(schema.uploadBatches.expectedFileCount)
+            )
+        );
+}
+
+const sourceBatch = alias(schema.uploadBatches, 'source_batch');
+
+/**
+ * Before a batch merges into another (#453): the target expects the larger
+ * of the two counts (greatest() ignores a null), and the source nothing, as
+ * its files are all leaving. A shoot's remainder merged back into its first
+ * half then reads as complete, whichever way round the merge goes.
+ */
+async function mergeExpectations(
+    db: DB,
+    sourceBatchId: string,
+    targetBatchId: string
+): Promise<void> {
+    await db
+        .update(schema.uploadBatches)
+        .set({
+            expectedFileCount: sql`greatest(${schema.uploadBatches.expectedFileCount}, (
+                select ${sourceBatch.expectedFileCount}
+                from ${schema.uploadBatches} ${sourceBatch}
+                where ${sourceBatch.id} = ${sourceBatchId}
+            ))`,
+        })
+        .where(eq(schema.uploadBatches.id, targetBatchId));
+    await db
+        .update(schema.uploadBatches)
+        .set({ expectedFileCount: null })
+        .where(eq(schema.uploadBatches.id, sourceBatchId));
+}
+
 /** A batch that came up short, as the admin Uploads page lists it (#550). */
 export interface PartialBatch {
     batchId: string;
@@ -185,6 +271,8 @@ export const createUploadBatchRepo = createRepository({
     findByUserAndId,
     insert,
     rename,
+    releaseMovedFiles,
+    mergeExpectations,
     listPartial,
 });
 

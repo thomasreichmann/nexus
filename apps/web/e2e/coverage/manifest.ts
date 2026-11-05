@@ -349,6 +349,18 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/files'],
     },
     {
+        id: 'files-move-files',
+        title: 'Move picked files, or one from its menu, into another batch; an emptied batch leaves the library',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
+        id: 'files-batch-merge',
+        title: 'Merge a batch, Ungrouped included, into another from its menu or a whole-batch selection',
+        area: 'files',
+        routes: ['/dashboard/files'],
+    },
+    {
         id: 'files-bulk-retrieve',
         title: 'Bulk retrieve archived files from selection bar',
         area: 'files',
