@@ -14,9 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useTRPC } from '@/lib/trpc/client';
 import { toastContext } from '@/lib/trpc/error-link';
-
-/** `files.renameBatch`'s own limit. */
-const MAX_NAME_LENGTH = 255;
+import { MAX_BATCH_NAME_LENGTH } from '@/lib/upload/limits';
 
 interface RenameBatchDialogProps {
     batchId: string;
@@ -101,7 +99,7 @@ export function RenameBatchDialog({
                             ref={inputRef}
                             id={inputId}
                             value={draft}
-                            maxLength={MAX_NAME_LENGTH}
+                            maxLength={MAX_BATCH_NAME_LENGTH}
                             onChange={(event) => setDraft(event.target.value)}
                             onFocus={(event) => event.currentTarget.select()}
                         />

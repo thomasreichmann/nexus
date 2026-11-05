@@ -1288,3 +1288,254 @@ describe('removing rows', () => {
         expect(await listUploads()).toMatchObject([{ name: 'clip.mov' }]);
     });
 });
+
+// #454: what the user chose for the batch, on the page, before the click.
+describe('the Upload click, with the user’s choices', () => {
+    const shoot = () => [
+        { file: fakeFile('notes.txt', 10), folderPath: 'Shoot' },
+        { file: fakeFile('IMG_0001.JPG', 10), folderPath: 'Shoot/104CANON' },
+        { file: fakeFile('IMG_0002.JPG', 10), folderPath: 'Shoot/104CANON' },
+    ];
+    const subpaths = (backend: FakeUploadBackend) =>
+        Object.fromEntries(
+            backend.files.map((file) => [file.name, file.subpath])
+        );
+
+    it('names the batch as typed, and still stores the folder’s files relative to it', async () => {
+        const harness = createQueueHarness();
+        await harness.queue.addFiles(shoot(), 'Shoot');
+
+        await harness.queue.startUpload({ name: '  Silva wedding ' });
+
+        expect(harness.backend.batches).toEqual([
+            {
+                batchId: expect.any(String),
+                name: 'Silva wedding',
+                expectedFileCount: 3,
+            },
+        ]);
+        expect(subpaths(harness.backend)).toEqual({
+            'notes.txt': undefined,
+            'IMG_0001.JPG': '104CANON',
+            'IMG_0002.JPG': '104CANON',
+        });
+    });
+
+    it('names the batch after the click when the name was cleared', async () => {
+        const harness = createQueueHarness();
+        await harness.queue.addFiles(shoot(), 'Shoot');
+
+        await harness.queue.startUpload({ name: '   ' });
+
+        expect(harness.backend.batches).toMatchObject([
+            { name: SESSION_BATCH_NAME },
+        ]);
+    });
+
+    it('adds the files to the batch picked, which expects that many more, and makes none', async () => {
+        const harness = createQueueHarness();
+        harness.backend.batches.push({
+            batchId: 'first-half',
+            name: 'Shoot',
+            expectedFileCount: 60,
+        });
+        await harness.queue.addFiles(shoot(), 'Shoot');
+
+        await harness.queue.startUpload({ targetBatchId: 'first-half' });
+
+        expect(harness.backend.batches).toEqual([
+            { batchId: 'first-half', name: 'Shoot', expectedFileCount: 63 },
+        ]);
+        expect(harness.backend.files.map((file) => file.batchId)).toEqual([
+            'first-half',
+            'first-half',
+            'first-half',
+        ]);
+        // Laid out like the first half it rejoins.
+        expect(subpaths(harness.backend)['IMG_0001.JPG']).toBe('104CANON');
+    });
+
+    it('still sends the files to the batch picked when its expectation couldn’t grow', async () => {
+        const harness = createQueueHarness();
+        harness.backend.batches.push({ batchId: 'first-half' });
+        harness.backend.failNext('extendBatch', new Error('network'));
+        await harness.queue.addFiles(picked(...smallFiles(2)));
+
+        await harness.queue.startUpload({ targetBatchId: 'first-half' });
+
+        expect(harness.backend.files.map((file) => file.batchId)).toEqual([
+            'first-half',
+            'first-half',
+        ]);
+        expect(statusOf(harness)).toEqual({
+            'f0.jpg': 'complete',
+            'f1.jpg': 'complete',
+        });
+    });
+
+    it('makes one batch per subfolder, and one named after the parent for its loose files', async () => {
+        const harness = createQueueHarness();
+        await harness.queue.addFiles(
+            [
+                { file: fakeFile('index.txt', 10), folderPath: 'Library' },
+                {
+                    file: fakeFile('A1.JPG', 10),
+                    folderPath: 'Library/Silva/104CANON',
+                },
+                { file: fakeFile('A2.JPG', 10), folderPath: 'Library/Silva' },
+                { file: fakeFile('B1.JPG', 10), folderPath: 'Library/Costa' },
+            ],
+            'Library'
+        );
+
+        await harness.queue.startUpload({ isSplitBySubfolder: true });
+
+        const batchByName = Object.fromEntries(
+            harness.backend.batches.map((batch) => [batch.name, batch])
+        );
+        expect(
+            harness.backend.batches.map((batch) => [
+                batch.name,
+                batch.expectedFileCount,
+            ])
+        ).toEqual(
+            expect.arrayContaining([
+                ['Library', 1],
+                ['Silva', 2],
+                ['Costa', 1],
+            ])
+        );
+        expect(harness.backend.batches).toHaveLength(3);
+        const placed = Object.fromEntries(
+            harness.backend.files.map((file) => [
+                file.name,
+                [file.batchId, file.subpath],
+            ])
+        );
+        expect(placed).toEqual({
+            'index.txt': [batchByName.Library.batchId, undefined],
+            'A1.JPG': [batchByName.Silva.batchId, '104CANON'],
+            'A2.JPG': [batchByName.Silva.batchId, undefined],
+            'B1.JPG': [batchByName.Costa.batchId, undefined],
+        });
+    });
+
+    // Merged away (#453) or deleted between the pick and the click.
+    it('sends nothing, and asks again, when the batch picked is gone', async () => {
+        const harness = createQueueHarness();
+        await harness.queue.addFiles(picked(...smallFiles(2)));
+
+        await harness.queue.startUpload({ targetBatchId: 'merged-away' });
+
+        expect(harness.backend.files).toEqual([]);
+        expect(harness.backend.batches).toEqual([]);
+        expect(statusOf(harness)).toEqual({
+            'f0.jpg': 'pending',
+            'f1.jpg': 'pending',
+        });
+        expect(harness.notices).toEqual([
+            {
+                level: 'error',
+                message: expect.stringContaining(
+                    'The batch you picked is gone'
+                ),
+            },
+        ]);
+    });
+
+    // The split choice outlives the pick in the draft: the batch picked wins.
+    it('adds every file to the batch picked even with a split still chosen', async () => {
+        const harness = createQueueHarness();
+        harness.backend.batches.push({
+            batchId: 'first-half',
+            expectedFileCount: 10,
+        });
+        await harness.queue.addFiles(
+            [
+                { file: fakeFile('a.jpg', 10), folderPath: 'Library/Silva' },
+                { file: fakeFile('b.jpg', 10), folderPath: 'Library/Costa' },
+            ],
+            'Library'
+        );
+
+        await harness.queue.startUpload({
+            targetBatchId: 'first-half',
+            isSplitBySubfolder: true,
+        });
+
+        expect(harness.backend.batches).toEqual([
+            { batchId: 'first-half', expectedFileCount: 12 },
+        ]);
+        expect(harness.backend.files.map((file) => file.batchId)).toEqual([
+            'first-half',
+            'first-half',
+        ]);
+    });
+
+    // A second drop after the split was chosen: no one folder to split.
+    it('makes one batch, keeping whole paths, when a split was chosen and a second folder joined', async () => {
+        const harness = createQueueHarness();
+        await harness.queue.addFiles(
+            [
+                { file: fakeFile('a.jpg', 10), folderPath: 'Library/Silva' },
+                { file: fakeFile('b.jpg', 10), folderPath: 'Library/Costa' },
+            ],
+            'Library'
+        );
+        await harness.queue.addFiles(
+            [{ file: fakeFile('c.jpg', 10), folderPath: 'Card/104CANON' }],
+            'Card'
+        );
+
+        await harness.queue.startUpload({ isSplitBySubfolder: true });
+
+        expect(harness.backend.batches).toEqual([
+            {
+                batchId: expect.any(String),
+                name: SESSION_BATCH_NAME,
+                expectedFileCount: 3,
+            },
+        ]);
+        expect(subpaths(harness.backend)).toEqual({
+            'a.jpg': 'Library/Silva',
+            'b.jpg': 'Library/Costa',
+            'c.jpg': 'Card/104CANON',
+        });
+    });
+
+    it('makes one batch when a split was asked of a folder with one subfolder', async () => {
+        const harness = createQueueHarness();
+        await harness.queue.addFiles(shoot(), 'Shoot');
+
+        await harness.queue.startUpload({ isSplitBySubfolder: true });
+
+        expect(harness.backend.batches).toMatchObject([
+            { name: 'Shoot', expectedFileCount: 3 },
+        ]);
+    });
+
+    // A resumed upload was already counted where it started: the batch
+    // picked for this click neither takes it nor expects it.
+    it('leaves a resumed file in the batch it started in, whatever the click chose', async () => {
+        const backend = createFakeUploadBackend();
+        const clip = fakeFile('clip.mov', MULTIPART_SIZE);
+        await interruptedUpload(backend, clip);
+        const [{ batchId: original }] = backend.batches;
+        backend.batches.push({ batchId: 'picked', expectedFileCount: 5 });
+        const harness = createQueueHarness({ backend });
+        await harness.queue.addFiles(picked(clip, fakeFile('new.jpg', 10)));
+
+        await harness.queue.startUpload({ targetBatchId: 'picked' });
+
+        expect(backend.filesNamed('clip.mov')[0].batchId).toBe(original);
+        expect(backend.filesNamed('new.jpg')[0].batchId).toBe('picked');
+        expect(
+            backend.batches.find((batch) => batch.batchId === 'picked')
+                ?.expectedFileCount
+        ).toBe(6);
+        expect(statusOf(harness)).toEqual({
+            'clip.mov': 'complete',
+            'new.jpg': 'complete',
+        });
+    });
+});

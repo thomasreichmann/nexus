@@ -5,13 +5,16 @@ import { createLibraryRepo } from '@nexus/db/repo/library';
 import { fileService } from '@/server/services/files';
 import { retrievalService } from '@/server/services/retrieval';
 import { BATCH_PAGE_SIZE, FILE_PAGE_SIZE } from '@/lib/library/paging';
-import { MAX_FILES_PER_VAULT_LOOKUP } from '@/lib/upload/limits';
+import {
+    MAX_BATCH_NAME_LENGTH,
+    MAX_FILES_PER_VAULT_LOOKUP,
+} from '@/lib/upload/limits';
 import { normalizeSubpath } from '@/lib/upload/rows';
 import { protectedProcedure, router } from '../init';
 
 // One rule for both ways a batch gets named: per-file on `upload`, and up front
 // on `createBatch`.
-const batchNameSchema = z.string().min(1).max(255);
+const batchNameSchema = z.string().min(1).max(MAX_BATCH_NAME_LENGTH);
 // Stated once: the name limit an upload accepts is the one the vault check
 // (`findDuplicates`) matches against.
 const fileNameSchema = z.string().min(1).max(255);
@@ -214,6 +217,19 @@ export const filesRouter = router({
             fileService.createBatch(ctx.db, ctx.session.user.id, input)
         ),
 
+    // The Upload click's other target (#454): one of the user's batches, which
+    // then expects the files it's sending on top of the ones it has.
+    extendBatch: protectedProcedure
+        .input(
+            z.object({
+                batchId: z.string().uuid(),
+                addedFileCount: z.number().int().positive(),
+            })
+        )
+        .mutation(({ ctx, input }) =>
+            fileService.extendBatch(ctx.db, ctx.session.user.id, input)
+        ),
+
     upload: protectedProcedure
         .input(uploadInputSchema)
         .mutation(async ({ ctx, input }) => {
@@ -286,7 +302,7 @@ export const filesRouter = router({
         .input(
             z.object({
                 batchId: z.string().uuid(),
-                name: z.string().trim().min(1).max(255),
+                name: z.string().trim().min(1).max(MAX_BATCH_NAME_LENGTH),
             })
         )
         .mutation(({ ctx, input }) =>

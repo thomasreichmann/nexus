@@ -169,19 +169,21 @@ export function formatSessionBatchName(date: Date): string {
 }
 
 /**
- * The folder a file is stored under (#405), relative to its batch. A batch
- * named after the one folder it came from *is* that folder, so its name is
- * dropped: `Shoot/104CANON` stores `104CANON`, and `Shoot`'s own top-level
- * files store nothing. Any other batch keeps the whole path, so two dropped
- * folders that each hold a `104CANON` (two cards of one camera) stay apart.
+ * The folder a file is stored under (#405), relative to its batch, which
+ * stands for the first `rootDepth` folders of its path. A batch of the one
+ * folder dropped *is* that folder, whatever it ends up named (#454), so its
+ * name is dropped: `Shoot/104CANON` stores `104CANON`, and `Shoot`'s own
+ * top-level files store nothing. One batch per subfolder drops the subfolder
+ * too (depth 2). Any other batch keeps the whole path (depth 0), so two
+ * dropped folders that each hold a `104CANON` (two cards of one camera) stay
+ * apart.
  */
 export function resolveSubpath(
     folderPath: string | undefined,
-    isBatchNamedAfterFolder: boolean
+    rootDepth: number
 ): string | undefined {
     if (!folderPath) return undefined;
-    if (!isBatchNamedAfterFolder) return folderPath;
-    return folderPath.split('/').slice(1).join('/') || undefined;
+    return folderPath.split('/').slice(rootDepth).join('/') || undefined;
 }
 
 /**

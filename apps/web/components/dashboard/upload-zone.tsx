@@ -45,6 +45,7 @@ import { getImagePreviewUrl } from '@/lib/upload/thumbnails';
 import { CancelUploadDialog } from './CancelUploadDialog';
 import { CappedSelectionDialog } from './CappedSelectionDialog';
 import { MiddleTruncateName } from './MiddleTruncateName';
+import { UploadBatchSummary } from './UploadBatchSummary';
 import {
     useUpload,
     useWaveEstimate,
@@ -363,6 +364,7 @@ export function UploadZone() {
                                 </Button>
                             )}
                         </div>
+                        <UploadBatchSummary />
                         {hasActiveWave && (
                             <div className="mb-4 space-y-2 rounded-lg border border-border bg-muted/30 px-4 py-3">
                                 <div className="flex items-center justify-between gap-3 text-sm">

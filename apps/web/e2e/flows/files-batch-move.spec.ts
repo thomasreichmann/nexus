@@ -143,7 +143,17 @@ test(
         await page.goto(PAGE_URL);
         await openBatch(page, 'Silva wedding (remainder)');
 
+        // Each open starts from a clear search, not the last one's.
+        const search = mergeDialog(page).getByRole('searchbox', {
+            name: 'Search batches',
+        });
         await openBatchMenuItem(page, 'Merge into…');
+        await search.fill('nothing like this');
+        await mergeDialog(page).getByRole('button', { name: 'Cancel' }).click();
+        await expect(mergeDialog(page)).toBeHidden();
+        await openBatchMenuItem(page, 'Merge into…');
+        await expect(search).toHaveValue('');
+
         await moveInto(mergeDialog(page), 'Silva wedding', 'Merge');
 
         await expectBatchOpen(page, 'Silva wedding');

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { createSemaphore } from '@nexus/async';
 import { getQueryClient, getTRPC } from '@/lib/trpc/client';
@@ -9,6 +9,11 @@ import { createFireAndForgetFn, createMutateFn } from '@/lib/trpc/mutate';
 import { invalidateFileList } from '@/lib/hooks/useInvalidateFileList';
 import { xhrPut } from '@/lib/http/xhr';
 import type { UploadApi, UploadQueue } from '@/lib/upload/queue';
+import {
+    selectDraftRows,
+    summarizeDraft,
+    type DraftSummary,
+} from '@/lib/upload/batchPlan';
 import {
     isFileSystemAccessSupported,
     reacquireMatchingFile,
@@ -20,6 +25,7 @@ import type { UploadFile, UploadRow } from '@/lib/upload/rows';
 import {
     createUploadSession,
     EMPTY_UPLOAD_SNAPSHOT,
+    type UploadDraft,
     type UploadSession,
     type UploadSnapshot,
 } from '@/lib/upload/session';
@@ -82,6 +88,24 @@ export function useUpload() {
     return { files, isUploading, ...uploadActions };
 }
 
+/**
+ * The batch the next Upload click makes (#454): what the user chose for it,
+ * and what it's made of. From the internal rows: the public ones don't carry
+ * the folders a summary is built from.
+ */
+export function useUploadDraft(): {
+    draft: UploadDraft;
+    summary: DraftSummary;
+    setDraft: (changes: Partial<UploadDraft>) => void;
+} {
+    const { rows, draft } = useUploadSnapshot();
+    const summary = useMemo(
+        () => summarizeDraft(selectDraftRows(rows)),
+        [rows]
+    );
+    return { draft, summary, setDraft };
+}
+
 /** The running wave, for anything outside the upload page that shows it. */
 export function useUploadWave(): WaveSummary {
     const { rows, isUploading } = useUploadSnapshot();
@@ -125,7 +149,8 @@ const SIGN_OUT_RELEASE_WAIT_MS = 5_000;
  * server has heard about every upload it released, or the wait runs out.
  */
 export async function clearUploadsForSignOut(): Promise<void> {
-    session?.queue.clearFiles();
+    // The draft too: the next account mustn't inherit a target batch id.
+    session?.clearFiles();
     await Promise.race([
         Promise.all(releasesInFlight),
         new Promise((resolve) => setTimeout(resolve, SIGN_OUT_RELEASE_WAIT_MS)),
@@ -146,6 +171,10 @@ function createUploadApi(): UploadApi {
         createBatch: createMutateFn(
             queryClient,
             trpc.files.createBatch.mutationOptions()
+        ),
+        extendBatch: createMutateFn(
+            queryClient,
+            trpc.files.extendBatch.mutationOptions()
         ),
         // Confirm/complete are retried in-mutation (default backoff matches
         // retryAsync's 1s/2s/4s) because the file data is already in S3. An
@@ -224,11 +253,14 @@ interface UploadActions {
 // Module-level, so every callback keeps one identity for the life of the tab
 // — a fresh prop identity per render would defeat UploadQueueRow's memo.
 const getQueue = () => getUploadSession().queue;
+const setDraft = (changes: Partial<UploadDraft>) =>
+    getUploadSession().setDraft(changes);
 const uploadActions: UploadActions = {
     addFiles: (picked, folderName) => getQueue().addFiles(picked, folderName),
     removeFile: (id) => getQueue().dropRow(id),
-    clearFiles: () => getQueue().clearFiles(),
-    startUpload: () => getQueue().startUpload(),
+    // Through the session, not the queue: it spends or drops the draft too.
+    clearFiles: () => getUploadSession().clearFiles(),
+    startUpload: () => getUploadSession().startUpload(),
     // Cancel on a row in flight and Remove on a queued one are the same
     // operation behind two affordances.
     cancelFile: (id) => getQueue().dropRow(id),

@@ -18,9 +18,23 @@ import type { UploadRow } from './rows';
  * identity-preserving patches in ./rows) notifies no one.
  */
 
+/**
+ * What the user has chosen for the batch the next Upload click makes (#454).
+ * Kept with the rows rather than in the page, so it outlives a trip away and
+ * back the way the queue does.
+ */
+export interface UploadDraft {
+    /** The batch name as typed; undefined until the user types one. */
+    name?: string;
+    /** One of the user's batches to add the files to instead. */
+    target?: { batchId: string; name: string };
+    isSplitBySubfolder: boolean;
+}
+
 export interface UploadSnapshot {
     rows: UploadRow[];
     isUploading: boolean;
+    draft: UploadDraft;
 }
 
 export interface UploadSession {
@@ -29,6 +43,11 @@ export interface UploadSession {
     getSnapshot(): UploadSnapshot;
     /** The running wave's rate and time left at `at`, once there's signal. */
     estimate(at: number): WaveEstimate | null;
+    setDraft(changes: Partial<UploadDraft>): void;
+    /** The Upload click, with the draft's choices; the next starts fresh. */
+    startUpload(): Promise<void>;
+    /** Clear all: the queue, and the choices made for it. */
+    clearFiles(): void;
 }
 
 export interface UploadSessionDeps extends Omit<
@@ -41,10 +60,13 @@ export interface UploadSessionDeps extends Omit<
     now(): number;
 }
 
+const NO_DRAFT: UploadDraft = { isSplitBySubfolder: false };
+
 /** What there is before a session exists, server render included. */
 export const EMPTY_UPLOAD_SNAPSHOT: UploadSnapshot = {
     rows: [],
     isUploading: false,
+    draft: NO_DRAFT,
 };
 
 /**
@@ -109,6 +131,28 @@ export function createUploadSession(deps: UploadSessionDeps): UploadSession {
         estimate(at) {
             if (!snapshot.isUploading) return null;
             return meter.estimate(at, sumBytesLeft(snapshot.rows));
+        },
+        setDraft(changes) {
+            commit({ ...snapshot, draft: { ...snapshot.draft, ...changes } });
+        },
+        startUpload() {
+            const { name, target, isSplitBySubfolder } = snapshot.draft;
+            // Spent on these files: the next ones dropped start from their
+            // own folder's name, as a new batch.
+            if (snapshot.draft !== NO_DRAFT) {
+                commit({ ...snapshot, draft: NO_DRAFT });
+            }
+            return queue.startUpload({
+                name,
+                targetBatchId: target?.batchId,
+                isSplitBySubfolder,
+            });
+        },
+        clearFiles() {
+            queue.clearFiles();
+            if (snapshot.draft !== NO_DRAFT) {
+                commit({ ...snapshot, draft: NO_DRAFT });
+            }
         },
     };
 }

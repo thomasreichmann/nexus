@@ -485,6 +485,24 @@ export const USE_CASES: UseCaseEntry[] = [
         routes: ['/dashboard/upload'],
     },
     {
+        id: 'upload-batch-name-editable',
+        title: 'The batch summary shows the folder’s name before Upload, and the name typed there is the batch’s',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
+        id: 'upload-into-existing-batch',
+        title: 'Upload into a batch you already have; it expects the files added',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
+        id: 'upload-batch-per-subfolder',
+        title: 'A dropped folder of shoots uploads as one batch per subfolder, its loose files in one named after it',
+        area: 'upload',
+        routes: ['/dashboard/upload'],
+    },
+    {
         id: 'upload-clear-queue',
         title: 'Clear the pending upload queue',
         area: 'upload',

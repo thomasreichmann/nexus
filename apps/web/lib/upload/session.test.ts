@@ -212,3 +212,75 @@ describe('the upload session', () => {
         expect(session.getSnapshot()).toBe(EMPTY_UPLOAD_SNAPSHOT);
     });
 });
+
+// #454: what the user chose for the batch-to-be lives with the rows, so it
+// outlives the page, and is spent by the click it was chosen for.
+describe('the upload draft', () => {
+    it('keeps each choice when another is made', () => {
+        const { session } = createSession();
+
+        session.setDraft({ name: 'Silva wedding' });
+        session.setDraft({ isSplitBySubfolder: true });
+
+        expect(session.getSnapshot().draft).toEqual({
+            name: 'Silva wedding',
+            isSplitBySubfolder: true,
+        });
+    });
+
+    it('sends the click’s files where the draft says, then starts the next one fresh', async () => {
+        const { session, backend } = createSession();
+        backend.batches.push({ batchId: 'first-half', expectedFileCount: 2 });
+        await session.queue.addFiles(picked(fakeFile('a.jpg', 10)));
+        session.setDraft({
+            target: { batchId: 'first-half', name: 'Silva wedding' },
+        });
+
+        await session.startUpload();
+
+        expect(backend.filesNamed('a.jpg')[0].batchId).toBe('first-half');
+        expect(session.getSnapshot().draft).toBe(EMPTY_UPLOAD_SNAPSHOT.draft);
+    });
+
+    it('names the click’s batch as the draft has it', async () => {
+        const { session, backend } = createSession();
+        await session.queue.addFiles(picked(fakeFile('a.jpg', 10)));
+        session.setDraft({ name: 'Costa portraits' });
+
+        await session.startUpload();
+
+        expect(backend.batches).toMatchObject([{ name: 'Costa portraits' }]);
+    });
+
+    it('splits the click’s folder by subfolder when the draft says to', async () => {
+        const { session, backend } = createSession();
+        await session.queue.addFiles(
+            [
+                { file: fakeFile('a.jpg', 10), folderPath: 'Library/Silva' },
+                { file: fakeFile('b.jpg', 10), folderPath: 'Library/Costa' },
+            ],
+            'Library'
+        );
+        session.setDraft({ isSplitBySubfolder: true });
+
+        await session.startUpload();
+
+        expect(backend.batches.map((batch) => batch.name).sort()).toEqual([
+            'Costa',
+            'Silva',
+        ]);
+    });
+
+    it('drops the draft with the files on Clear all', async () => {
+        const { session } = createSession();
+        await session.queue.addFiles(picked(fakeFile('a.jpg', 10)));
+        session.setDraft({ name: 'Costa portraits', isSplitBySubfolder: true });
+
+        session.clearFiles();
+
+        expect(session.getSnapshot()).toMatchObject({
+            rows: [],
+            draft: EMPTY_UPLOAD_SNAPSHOT.draft,
+        });
+    });
+});

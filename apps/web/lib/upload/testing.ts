@@ -17,7 +17,9 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { createSemaphore } from '@nexus/async';
 import { deferred, type Deferred } from '@nexus/async/testing';
+import { DOMAIN_ERROR_CODES } from '@/lib/errors/codes';
 import { UploadHttpError, type xhrPut } from '@/lib/http/xhr';
+import { makeClientError } from '@/lib/trpc/test-fixtures';
 import {
     createUploadQueue,
     type UploadApi,
@@ -252,6 +254,18 @@ export function createFakeUploadBackend(): FakeUploadBackend {
         return file;
     };
 
+    // The server's NotFoundError('UploadBatch') for a batch that isn't there:
+    // never made, or merged away since (#453).
+    const requireBatch = (batchId: string): FakeBatch => {
+        const batch = batches.find((b) => b.batchId === batchId);
+        if (batch) return batch;
+        throw makeClientError({
+            code: 'NOT_FOUND',
+            domainCode: DOMAIN_ERROR_CODES.NOT_FOUND,
+            message: `UploadBatch ${batchId} not found`,
+        });
+    };
+
     const createFile = (
         engine: ServerFile['engine'],
         input: {
@@ -262,6 +276,8 @@ export function createFakeUploadBackend(): FakeUploadBackend {
             subpath?: string;
         }
     ): ServerFile => {
+        // Like resolveBatchId: a batch the client names must be one it has.
+        if (input.batchId !== undefined) requireBatch(input.batchId);
         const file: ServerFile = {
             fileId: nextId('file'),
             name: input.name,
@@ -373,6 +389,16 @@ export function createFakeUploadBackend(): FakeUploadBackend {
             const batch = { batchId: nextId('batch'), name, expectedFileCount };
             batches.push(batch);
             return { batchId: batch.batchId };
+        },
+        // A batch the user already has is one a test pushed to `batches`.
+        // Like the server, one with no expectation keeps none.
+        async extendBatch({ batchId, addedFileCount }) {
+            await call('extendBatch');
+            const batch = requireBatch(batchId);
+            if (batch.expectedFileCount !== undefined) {
+                batch.expectedFileCount += addedFileCount;
+            }
+            return { batchId };
         },
         async findDuplicates({ files: candidates }) {
             await call('findDuplicates');

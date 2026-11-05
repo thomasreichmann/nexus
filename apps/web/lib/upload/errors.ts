@@ -42,6 +42,17 @@ export function isQuotaExceededError(error: unknown): boolean {
 }
 
 /**
+ * The server has no such thing for this user: a batch picked to upload into
+ * that was merged away or deleted since (#454).
+ */
+export function isNotFoundError(error: unknown): boolean {
+    return (
+        error instanceof TRPCClientError &&
+        getDomainError(error)?.code === DOMAIN_ERROR_CODES.NOT_FOUND
+    );
+}
+
+/**
  * The message an upload row shows when its attempt terminally fails. Raw
  * `error.message` is written for logs ("Upload failed with status 500") and
  * Sentry already gets the real error via {@link reportUploadFailure}, so the

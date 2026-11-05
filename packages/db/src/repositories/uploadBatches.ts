@@ -133,6 +133,33 @@ async function rename(
 }
 
 /**
+ * An Upload click adding files to one of the user's existing batches (#454):
+ * it expects that many more. One that never recorded an expectation keeps
+ * none (null plus anything is null), so a batch from before #399 doesn't
+ * start reading short. Undefined when the batch isn't theirs.
+ */
+async function expectMoreFiles(
+    db: DB,
+    userId: string,
+    batchId: string,
+    addedFileCount: number
+): Promise<UploadBatch | undefined> {
+    const [batch] = await db
+        .update(schema.uploadBatches)
+        .set({
+            expectedFileCount: sql`${schema.uploadBatches.expectedFileCount} + ${addedFileCount}`,
+        })
+        .where(
+            and(
+                eq(schema.uploadBatches.id, batchId),
+                eq(schema.uploadBatches.userId, userId)
+            )
+        )
+        .returning();
+    return batch;
+}
+
+/**
  * Before the user's listed files move to another batch (#453): each batch
  * they leave stops expecting the received ones among them, floored at 0, so
  * moving files out never makes it look short. The target's expectation
@@ -271,6 +298,7 @@ export const createUploadBatchRepo = createRepository({
     findByUserAndId,
     insert,
     rename,
+    expectMoreFiles,
     releaseMovedFiles,
     mergeExpectations,
     listPartial,
