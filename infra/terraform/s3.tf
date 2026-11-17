@@ -242,6 +242,10 @@ resource "aws_s3_bucket_cors_configuration" "shares" {
     allowed_origins = var.cors_allowed_origins
     allowed_methods = ["PUT"]
     allowed_headers = ["*"]
+    # The uploader's XHR helper reads each PUT's ETag (the multipart flow on
+    # the files bucket needs it). Shares never use the value, but an
+    # unexposed header logs "Refused to get unsafe header" on every upload.
+    expose_headers = ["ETag"]
   }
 }
 
