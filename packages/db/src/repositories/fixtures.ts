@@ -4,6 +4,7 @@ import type { File, NewFile } from './files';
 import type { Invite } from './invites';
 import type { Job, NewJob } from './jobs';
 import type { Retrieval } from './retrievals';
+import type { Share, ShareFile } from './shares';
 import type {
     RetrievalArtifact,
     RetrievalRequest,
@@ -27,6 +28,8 @@ export const TEST_WEBHOOK_EVENT_ID = 'wh_test404';
 export const TEST_BATCH_ID = 'batch_test505';
 export const TEST_INVITE_ID = 'invite_test606';
 export const TEST_INVITE_TOKEN = 'test-invite-token-abcdefghijklmnopqrstuvwxyz';
+export const TEST_SHARE_ID = 'testshare707';
+export const TEST_SHARE_FILE_ID = 'share_file_test808';
 export const TEST_ADMIN_USER_ID = 'admin_test707';
 
 export type { User } from './users';
@@ -184,6 +187,38 @@ export function createInviteFixture(overrides: Partial<Invite> = {}): Invite {
         createdBy: TEST_ADMIN_USER_ID,
         redeemedByUserId: null,
         redeemedAt: null,
+        createdAt: now,
+        updatedAt: now,
+        ...overrides,
+    };
+}
+
+export function createShareFixture(overrides: Partial<Share> = {}): Share {
+    const now = new Date();
+    return {
+        id: TEST_SHARE_ID,
+        status: 'ready',
+        ipHash: 'test-ip-hash',
+        totalSize: 1024,
+        expiresAt: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+        createdAt: now,
+        updatedAt: now,
+        ...overrides,
+    };
+}
+
+export function createShareFileFixture(
+    overrides: Partial<ShareFile> = {}
+): ShareFile {
+    const now = new Date();
+    return {
+        id: TEST_SHARE_FILE_ID,
+        shareId: TEST_SHARE_ID,
+        name: 'test-share-file.txt',
+        size: 1024,
+        s3Key: `${TEST_SHARE_ID}/${TEST_SHARE_FILE_ID}`,
+        position: 0,
+        downloadCount: 0,
         createdAt: now,
         updatedAt: now,
         ...overrides,

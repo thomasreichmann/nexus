@@ -90,6 +90,14 @@ const multipartMocks = {
     abort: async (): Promise<void> => {},
 };
 
+const sharesMocks = {
+    isConfigured: (): boolean => true,
+    put: async (key: string): Promise<string> =>
+        `${MOCK_HOST}/shares-${MOCK_BUCKET}/${key}`,
+    get: async (key: string): Promise<string> =>
+        `${MOCK_HOST}/shares-${MOCK_BUCKET}/${key}`,
+};
+
 interface MockS3 {
     presigned: typeof presignedMocks;
     artifacts: typeof artifactMocks;
@@ -97,6 +105,7 @@ interface MockS3 {
     glacier: typeof glacierMocks;
     objects: typeof objectsMocks;
     multipart: typeof multipartMocks;
+    shares: typeof sharesMocks;
 }
 
 /**
@@ -127,6 +136,7 @@ export function createPresignedMocks(): MockS3 {
         glacier: glacierMocks,
         objects: objectsMocks,
         multipart: multipartMocks,
+        shares: sharesMocks,
     };
 }
 

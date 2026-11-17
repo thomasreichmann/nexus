@@ -4,6 +4,7 @@ import * as derived from './derived';
 import * as glacier from './glacier';
 import * as objects from './objects';
 import * as multipart from './multipart';
+import * as shares from './shares';
 
 /**
  * S3 storage operations for file archival
@@ -30,6 +31,7 @@ export const s3 = {
     glacier,
     objects,
     multipart,
+    shares,
 } as const;
 
 // Re-export types for convenience

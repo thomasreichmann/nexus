@@ -6,6 +6,7 @@ import {
     ForbiddenError,
     InvalidStateError,
     QuotaExceededError,
+    RateLimitedError,
     TrialExpiredError,
     isDomainError,
 } from './errors';
@@ -18,6 +19,7 @@ describe('DOMAIN_ERROR_CODES registry', () => {
             FORBIDDEN: 'FORBIDDEN',
             QUOTA_EXCEEDED: 'QUOTA_EXCEEDED',
             TRIAL_EXPIRED: 'TRIAL_EXPIRED',
+            RATE_LIMITED: 'RATE_LIMITED',
         });
     });
 
@@ -32,6 +34,7 @@ describe('DOMAIN_ERROR_CODES registry', () => {
                 case 'FORBIDDEN':
                 case 'QUOTA_EXCEEDED':
                 case 'TRIAL_EXPIRED':
+                case 'RATE_LIMITED':
                     return code;
             }
         }
@@ -237,5 +240,16 @@ describe('isDomainError', () => {
         });
 
         expect(isDomainError(halfMigrated)).toBe(false);
+    });
+});
+
+describe('RateLimitedError', () => {
+    it('maps to TOO_MANY_REQUESTS tRPC code and RATE_LIMITED domain code, keeping its message', () => {
+        const error = new RateLimitedError('Try again tomorrow');
+
+        expect(RateLimitedError.code).toBe(DOMAIN_ERROR_CODES.RATE_LIMITED);
+        expect(error.trpcCode).toBe('TOO_MANY_REQUESTS');
+        expect(error.code).toBe('RATE_LIMITED');
+        expect(error.message).toBe('Try again tomorrow');
     });
 });

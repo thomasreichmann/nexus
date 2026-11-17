@@ -179,6 +179,72 @@ resource "aws_s3_bucket_lifecycle_configuration" "retrieval_artifacts" {
   }
 }
 
+# Public share links: the files behind `/s/<id>`, uploaded by anyone and gone a
+# day later. Keys are `${shareId}/${fileId}` — see createShare() in
+# apps/web/server/services/shares.ts.
+#
+# A separate bucket for the same reason as `retrieval_artifacts`: the files
+# bucket's transition rule would sweep these into Deep Archive, and its
+# versioning would keep a "deleted" share's bytes for another 30 days. Nothing
+# here is worth recovering, so this one is unversioned and a delete is a delete.
+resource "aws_s3_bucket" "shares" {
+  bucket = "nexus-shares-${var.environment}"
+}
+
+resource "aws_s3_bucket_public_access_block" "shares" {
+  bucket = aws_s3_bucket.shares.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "shares" {
+  bucket = aws_s3_bucket.shares.id
+
+  # This rule is what deletes shared files; nothing in the app does. S3 rounds
+  # an expiration up to the next midnight UTC, so an object lives between 24
+  # and 48 hours from the start of its upload. The app stops serving a link 24
+  # hours after it was created (SHARE_TTL_MS, apps/web/lib/share/limits.ts),
+  # which is always before its first object can expire: the link is created
+  # before any upload starts. Raising the app's TTL past a day means raising
+  # this with it.
+  rule {
+    id     = "expire-shared-files"
+    status = "Enabled"
+    filter {}
+
+    expiration {
+      days = 1
+    }
+  }
+
+  # Shared files go up as single PUTs, so nothing should ever start a
+  # multipart upload here. If something does, don't keep its parts.
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+    filter {}
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
+  }
+}
+
+# Uploads are browser PUTs to presigned URLs. Downloads are plain navigations,
+# which CORS doesn't govern, so PUT is the only method listed.
+resource "aws_s3_bucket_cors_configuration" "shares" {
+  bucket = aws_s3_bucket.shares.id
+
+  cors_rule {
+    allowed_origins = var.cors_allowed_origins
+    allowed_methods = ["PUT"]
+    allowed_headers = ["*"]
+  }
+}
+
 resource "aws_s3_bucket_cors_configuration" "files" {
   bucket = aws_s3_bucket.files.id
 

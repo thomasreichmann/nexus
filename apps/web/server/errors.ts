@@ -85,6 +85,15 @@ export class TrialExpiredError extends DomainError {
     }
 }
 
+/** A caller went past a rate limit. The message says which, and when to retry. */
+export class RateLimitedError extends DomainError {
+    static readonly code = DOMAIN_ERROR_CODES.RATE_LIMITED;
+    readonly code = RateLimitedError.code;
+    constructor(message: string) {
+        super(message, 'TOO_MANY_REQUESTS');
+    }
+}
+
 /** Type guard to check for DomainError (handles cross-module instanceof issues). */
 export function isDomainError(error: unknown): error is DomainError {
     return (

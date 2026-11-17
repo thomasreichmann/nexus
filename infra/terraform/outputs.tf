@@ -2,6 +2,7 @@
 # values to Preview + Development and the GitHub Actions secrets (#127):
 #   S3_BUCKET         <- s3_bucket
 #   S3_DERIVED_BUCKET <- s3_derived_bucket
+#   S3_SHARES_BUCKET  <- s3_shares_bucket
 #   AWS_REGION        <- aws_region
 #   SQS_QUEUE_URL     <- sqs_queue_url
 #   SQS_ZIP_QUEUE_URL <- sqs_zip_queue_url
@@ -11,6 +12,7 @@
 #   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY <- manual access key on app_iam_user
 #   CLOUDFRONT_FILES_DOMAIN     <- cloudfront_files_domain
 #   CLOUDFRONT_ARTIFACTS_DOMAIN <- cloudfront_artifacts_domain
+#   CLOUDFRONT_SHARES_DOMAIN    <- cloudfront_shares_domain
 #   CLOUDFRONT_KEY_PAIR_ID      <- cloudfront_key_pair_id
 #   CLOUDFRONT_PRIVATE_KEY      <- the locally generated private key (README.md)
 #
@@ -25,6 +27,16 @@ output "s3_bucket" {
 output "s3_derived_bucket" {
   description = "Derived (thumbnails) bucket name -> Vercel S3_DERIVED_BUCKET"
   value       = aws_s3_bucket.derived.bucket
+}
+
+output "s3_shares_bucket" {
+  description = "Public share links bucket name -> Vercel S3_SHARES_BUCKET"
+  value       = aws_s3_bucket.shares.bucket
+}
+
+output "cloudfront_shares_domain" {
+  description = "Download distribution in front of the shares bucket -> Vercel CLOUDFRONT_SHARES_DOMAIN"
+  value       = aws_cloudfront_distribution.downloads["shares"].domain_name
 }
 
 output "cloudfront_files_domain" {

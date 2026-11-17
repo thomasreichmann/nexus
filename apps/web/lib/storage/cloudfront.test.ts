@@ -15,6 +15,7 @@ const { privateKey, publicKey } = generateKeyPairSync('rsa', {
 
 const FILES_DOMAIN = 'dfiles.cloudfront.net';
 const ARTIFACTS_DOMAIN = 'dartifacts.cloudfront.net';
+const SHARES_DOMAIN = 'dshares.cloudfront.net';
 
 function configure(): void {
     for (const key of Object.keys(hoisted.env)) delete hoisted.env[key];
@@ -24,8 +25,10 @@ function configure(): void {
         AWS_SECRET_ACCESS_KEY: 'secret',
         S3_BUCKET: 'files-bucket',
         S3_RETRIEVAL_ARTIFACTS_BUCKET: 'artifacts-bucket',
+        S3_SHARES_BUCKET: 'shares-bucket',
         CLOUDFRONT_FILES_DOMAIN: FILES_DOMAIN,
         CLOUDFRONT_ARTIFACTS_DOMAIN: ARTIFACTS_DOMAIN,
+        CLOUDFRONT_SHARES_DOMAIN: SHARES_DOMAIN,
         CLOUDFRONT_KEY_PAIR_ID: 'KTESTPAIR',
         CLOUDFRONT_PRIVATE_KEY: privateKey,
     });
@@ -34,10 +37,15 @@ function configure(): void {
 // client.ts builds the S3 client from env at import, so env must be filled
 // before the storage modules load.
 configure();
-const { getArtifactsDistribution, getFilesDistribution, signGet } =
-    await import('./cloudfront');
+const {
+    getArtifactsDistribution,
+    getFilesDistribution,
+    getSharesDistribution,
+    signGet,
+} = await import('./cloudfront');
 const presigned = await import('./presigned');
 const artifacts = await import('./artifacts');
+const shares = await import('./shares');
 
 const distribution = {
     domain: FILES_DOMAIN,
@@ -138,9 +146,11 @@ describe('distribution config', () => {
     it('is absent while the bucket has no domain, so S3 presigning stays', () => {
         hoisted.env.CLOUDFRONT_FILES_DOMAIN = undefined;
         hoisted.env.CLOUDFRONT_ARTIFACTS_DOMAIN = undefined;
+        hoisted.env.CLOUDFRONT_SHARES_DOMAIN = undefined;
 
         expect(getFilesDistribution()).toBeUndefined();
         expect(getArtifactsDistribution()).toBeUndefined();
+        expect(getSharesDistribution()).toBeUndefined();
     });
 
     it('throws when a domain is set without the key pair', () => {
@@ -151,6 +161,9 @@ describe('distribution config', () => {
         );
         expect(() => getArtifactsDistribution()).toThrow(
             /CLOUDFRONT_ARTIFACTS_DOMAIN is set/
+        );
+        expect(() => getSharesDistribution()).toThrow(
+            /CLOUDFRONT_SHARES_DOMAIN is set/
         );
     });
 });
@@ -178,6 +191,7 @@ describe('download URL routing', () => {
             'user-1/request-1/artifact-1/nexus-part-1.zip',
             ARTIFACTS_DOMAIN,
         ],
+        ['shares.get', shares.get, 'share-1/file-1', SHARES_DOMAIN],
     ])(
         '%s signs the key for its own distribution, with the caller’s filename and expiry',
         async (_, mint, key, domain) => {
@@ -213,6 +227,16 @@ describe('download URL routing', () => {
             () => artifacts.get('user-1/r/a/nexus-part-1.zip'),
             'artifacts-bucket',
         ],
+        [
+            'shares.get',
+            'CLOUDFRONT_SHARES_DOMAIN',
+            () =>
+                shares.get('share-1/file-1', {
+                    filename: 'a.txt',
+                    expiresIn: 3600,
+                }),
+            'shares-bucket',
+        ],
     ])(
         '%s falls back to an hour-long S3 presigned GET without %s',
         async (_, domainVar, mint, bucket) => {
@@ -231,6 +255,51 @@ describe('download URL routing', () => {
         await expect(
             artifacts.get('user-1/r/a/nexus-part-1.zip')
         ).rejects.toThrow(/S3_RETRIEVAL_ARTIFACTS_BUCKET is not set/);
+    });
+});
+
+describe('shares bucket', () => {
+    it('downloads as an attachment from S3 too, so nothing uploaded is rendered', async () => {
+        hoisted.env.CLOUDFRONT_SHARES_DOMAIN = undefined;
+
+        const url = new URL(
+            await shares.get('share-1/file-1', {
+                filename: 'page.html',
+                expiresIn: 60,
+            })
+        );
+
+        expect(url.searchParams.get('response-content-disposition')).toBe(
+            'attachment; filename="page.html"'
+        );
+        expect(url.searchParams.get('X-Amz-Expires')).toBe('60');
+    });
+
+    // A signed content-length is what holds an anonymous uploader to the size
+    // they declared: S3 rejects a body of any other length.
+    it('signs an upload URL for the file’s exact length', async () => {
+        const url = new URL(
+            await shares.put('share-1/file-1', {
+                contentLength: 1234,
+                expiresIn: 600,
+            })
+        );
+
+        expect(url.host).toBe('shares-bucket.s3.us-east-1.amazonaws.com');
+        expect(url.pathname).toBe('/share-1/file-1');
+        expect(url.searchParams.get('X-Amz-SignedHeaders')).toBe(
+            'content-length;host'
+        );
+        expect(url.searchParams.get('X-Amz-Expires')).toBe('600');
+    });
+
+    it('refuses to sign without the shares bucket', async () => {
+        hoisted.env.S3_SHARES_BUCKET = undefined;
+
+        expect(shares.isConfigured()).toBe(false);
+        await expect(
+            shares.put('share-1/file-1', { contentLength: 1, expiresIn: 60 })
+        ).rejects.toThrow(/S3_SHARES_BUCKET is not set/);
     });
 });
 

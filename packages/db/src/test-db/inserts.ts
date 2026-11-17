@@ -28,6 +28,8 @@ import {
     createStorageUsageFixture,
     createJobFixture,
     createInviteFixture,
+    createShareFixture,
+    createShareFileFixture,
     createWebhookEventFixture,
     type User,
     type StorageUsage,
@@ -45,6 +47,7 @@ import type {
 import type { Subscription } from '../repositories/subscriptions';
 import type { Job } from '../repositories/jobs';
 import type { Invite } from '../repositories/invites';
+import type { Share, ShareFile, ShareWithFiles } from '../repositories/shares';
 import type { WebhookEvent } from '../repositories/webhooks';
 
 /**
@@ -211,6 +214,48 @@ export async function insertInvite(
     if (overrides.token === undefined) row.token = `test-invite-${row.id}`;
     const [invite] = await db.insert(schema.invites).values(row).returning();
     return invite!;
+}
+
+/**
+ * A share and its files. `shares` rows belong to no user, so nothing cascades
+ * them away: delete what you insert (`deleteShare`, which takes the files with
+ * it).
+ *
+ * Each entry of `files` becomes one `share_files` row, in order; ids and keys
+ * are minted here. Unless overridden, `totalSize` is the files' sum and
+ * `ipHash` is derived from the fresh id, so a seeded share never counts
+ * against another test's uploader.
+ */
+export async function insertShare(
+    db: DB,
+    overrides: Partial<Share> = {},
+    files: Partial<ShareFile>[] = [{}]
+): Promise<ShareWithFiles> {
+    const id = overrides.id ?? `test${crypto.randomUUID().replaceAll('-', '')}`;
+    const fileRows = files.map((file, position) => {
+        const fileId = file.id ?? crypto.randomUUID();
+        return createShareFileFixture({
+            position,
+            s3Key: `${id}/${fileId}`,
+            ...file,
+            id: fileId,
+            shareId: id,
+        });
+    });
+    const row = createShareFixture({
+        ipHash: `test-ip-${id}`,
+        totalSize: fileRows.reduce((sum, file) => sum + file.size, 0),
+        ...overrides,
+        id,
+    });
+    const [share] = await db.insert(schema.shares).values(row).returning();
+    const inserted = fileRows.length
+        ? await db.insert(schema.shareFiles).values(fileRows).returning()
+        : [];
+    return {
+        ...share!,
+        files: inserted.sort((a, b) => a.position - b.position),
+    };
 }
 
 /**
