@@ -52,6 +52,15 @@ resource "aws_iam_user_policy" "app_s3" {
         Action   = "s3:GetObject"
         Resource = "${aws_s3_bucket.retrieval_artifacts.arn}/*"
       },
+      {
+        # Public share links: the app presigns the uploader's PUTs and the
+        # downloader's GETs, and a presigned URL can do only what its signer
+        # may. No delete: the bucket's lifecycle rule is the only thing that
+        # removes shared files.
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:GetObject"]
+        Resource = "${aws_s3_bucket.shares.arn}/*"
+      },
     ]
   })
 }

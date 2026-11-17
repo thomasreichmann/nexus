@@ -6,6 +6,7 @@ import { isDomainError } from '@/server/errors';
 import { db } from '@/server/db';
 import { lazyAsync } from '@/lib/async/lazy';
 import { auth } from '@/lib/auth/server';
+import { getClientIp } from '@/lib/http/clientIp';
 import { domainErrorFormatter } from './error-formatter';
 import { logRequest, type LoggingContext } from './middleware/logging';
 import type { Connection } from '@nexus/db';
@@ -18,7 +19,12 @@ type Session = Awaited<ReturnType<typeof auth.api.getSession>>;
  * without running the Next-specific session fetch. New ctx fields added
  * here flow into both production and test callers automatically.
  */
-export function buildContext(deps: { db: Connection; session: Session }) {
+export function buildContext(deps: {
+    db: Connection;
+    session: Session;
+    /** Undefined when no proxy reported one (local dev, tests). */
+    clientIp?: string;
+}) {
     return {
         ...deps,
         // Request-scoped: one DB fetch per HTTP request, shared across every
@@ -35,10 +41,13 @@ export function buildContext(deps: { db: Connection; session: Session }) {
 }
 
 export async function createTRPCContext() {
-    const session = await auth.api.getSession({
-        headers: await headers(),
+    const requestHeaders = await headers();
+    const session = await auth.api.getSession({ headers: requestHeaders });
+    return buildContext({
+        db,
+        session,
+        clientIp: getClientIp(requestHeaders),
     });
-    return buildContext({ db, session });
 }
 
 export type Context = Awaited<ReturnType<typeof createTRPCContext>>;

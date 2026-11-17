@@ -94,6 +94,7 @@ const AREA_LABELS: Record<string, string> = {
     errors: 'Errors & feedback',
     navigation: 'Navigation',
     'dev-pages': 'Dev pages',
+    share: 'Public share links',
 };
 
 const R = 56;

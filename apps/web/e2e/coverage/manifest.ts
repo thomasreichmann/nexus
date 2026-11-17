@@ -40,6 +40,7 @@ export type Area =
     | 'admin-dev-tools'
     | 'errors'
     | 'navigation'
+    | 'share'
     | 'dev-pages';
 
 export interface UseCaseEntry {
@@ -66,6 +67,8 @@ export const PAGES: PageEntry[] = [
     { route: '/forgot-password', title: 'Forgot password', auth: 'public' },
     { route: '/reset-password', title: 'Reset password', auth: 'public' },
     { route: '/invite/[token]', title: 'Invite redemption', auth: 'public' },
+    { route: '/share', title: 'Share files', auth: 'public' },
+    { route: '/s/[id]', title: 'Shared files', auth: 'public' },
     { route: '/dashboard', title: 'Dashboard overview', auth: 'user' },
     { route: '/dashboard/files', title: 'Files', auth: 'user' },
     { route: '/dashboard/upload', title: 'Upload', auth: 'user' },
@@ -899,6 +902,40 @@ export const USE_CASES: UseCaseEntry[] = [
         title: 'Landing CTA navigates to sign-up',
         area: 'navigation',
         routes: ['/'],
+    },
+
+    /* ---------------------------------------------------------------- */
+    /* Public share links                                                */
+    /* ---------------------------------------------------------------- */
+    {
+        id: 'share-create-link',
+        title: 'Upload files without an account and get a link that lists them',
+        area: 'share',
+        routes: ['/share', '/s/[id]'],
+    },
+    {
+        id: 'share-selection-over-limit',
+        title: 'A selection with more files than a link holds is refused before anything uploads',
+        area: 'share',
+        routes: ['/share'],
+    },
+    {
+        id: 'share-download-file',
+        title: 'Download a file from a share link under its own name',
+        area: 'share',
+        routes: ['/s/[id]'],
+    },
+    {
+        id: 'share-download-limit',
+        title: 'A shared file that has reached its download limit says so instead of downloading',
+        area: 'share',
+        routes: ['/s/[id]'],
+    },
+    {
+        id: 'share-unavailable-link',
+        title: 'Unknown, unfinished, or expired share links show a friendly message',
+        area: 'share',
+        routes: ['/s/[id]'],
     },
 
     /* ------------------------------------------------------------------

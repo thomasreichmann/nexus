@@ -44,6 +44,11 @@
             "import": "./src/repositories/retrievals.ts",
             "default": "./src/repositories/retrievals.ts"
         },
+        "./repo/shares": {
+            "types": "./src/repositories/shares.ts",
+            "import": "./src/repositories/shares.ts",
+            "default": "./src/repositories/shares.ts"
+        },
         "./repo/storage-usage": {
             "types": "./src/repositories/storage-usage.ts",
             "import": "./src/repositories/storage-usage.ts",

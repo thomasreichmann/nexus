@@ -26,6 +26,11 @@ export const serverSchema = z.object({
     // `s3.artifacts.isConfigured()`. Note the app can only *read* this bucket —
     // the zip worker is its sole writer.
     S3_RETRIEVAL_ARTIFACTS_BUCKET: z.string().min(1).optional(),
+    // Shares bucket: the files behind the public 24-hour links. Optional for
+    // the same rollout reason as S3_DERIVED_BUCKET. Unset, creating a share is
+    // refused with a message (`s3.shares.isConfigured()`); the rest of the app
+    // is unaffected.
+    S3_SHARES_BUCKET: z.string().min(1).optional(),
     // CloudFront download distributions (#345), one per bucket, from the
     // `cloudfront_*` Terraform outputs. Optional for rollout ordering: a
     // bucket whose domain is unset keeps serving S3 presigned GETs, so the code
@@ -34,6 +39,7 @@ export const serverSchema = z.object({
     // (lib/storage/cloudfront.ts) rather than silently paying S3 egress.
     CLOUDFRONT_FILES_DOMAIN: cloudfrontDomain.optional(),
     CLOUDFRONT_ARTIFACTS_DOMAIN: cloudfrontDomain.optional(),
+    CLOUDFRONT_SHARES_DOMAIN: cloudfrontDomain.optional(),
     CLOUDFRONT_KEY_PAIR_ID: z.string().trim().min(1).optional(),
     // PEM. Accepts literal `\n` escapes too, the form a PEM takes when it is
     // pasted into a single-line env field.

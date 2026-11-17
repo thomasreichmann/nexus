@@ -128,16 +128,22 @@ production code.
     | --------------------------------------------- | ------------------------------------------------- |
     | `S3_BUCKET`                                   | `s3_bucket` output                                |
     | `S3_DERIVED_BUCKET`                           | `s3_derived_bucket` output                        |
+    | `S3_SHARES_BUCKET`                            | `s3_shares_bucket` output                         |
     | `AWS_REGION`                                  | `aws_region` output                               |
     | `SQS_QUEUE_URL`                               | `sqs_queue_url` output                            |
     | `SNS_OPS_ALERTS_TOPIC_ARN`                    | `sns_ops_alerts_topic_arn` output                 |
     | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | access key from step 1                            |
     | `CLOUDFRONT_FILES_DOMAIN`                     | `cloudfront_files_domain` output                  |
     | `CLOUDFRONT_ARTIFACTS_DOMAIN`                 | `cloudfront_artifacts_domain` output              |
+    | `CLOUDFRONT_SHARES_DOMAIN`                    | `cloudfront_shares_domain` output                 |
     | `CLOUDFRONT_KEY_PAIR_ID`                      | `cloudfront_key_pair_id` output                   |
     | `CLOUDFRONT_PRIVATE_KEY`                      | [CloudFront signing key](#cloudfront-signing-key) |
 
-    The four `CLOUDFRONT_*` vars go on all three Vercel tiers at once, or
+    `S3_SHARES_BUCKET` backs the public share links (`/share`). Until it is
+    set, creating a link is refused with a message and the rest of the app is
+    unaffected.
+
+    The `CLOUDFRONT_*` vars go on all three Vercel tiers at once, or
     `check:vercel-env-parity` flags the gap. Production gets the prod
     distributions and key; Preview and Development get dev's. Until they are
     set, downloads stay S3 presigned GETs (#345).

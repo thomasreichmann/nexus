@@ -10,6 +10,7 @@ export const DOMAIN_ERROR_CODES = {
     FORBIDDEN: 'FORBIDDEN',
     QUOTA_EXCEEDED: 'QUOTA_EXCEEDED',
     TRIAL_EXPIRED: 'TRIAL_EXPIRED',
+    RATE_LIMITED: 'RATE_LIMITED',
 } as const;
 
 export type DomainErrorCode =

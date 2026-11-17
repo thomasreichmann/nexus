@@ -202,6 +202,12 @@ export async function deleteInvite(db: DB, id: string): Promise<void> {
     await db.delete(schema.invites).where(eq(schema.invites.id, id));
 }
 
+/** Deletes the shares and, by cascade, their files. */
+export async function deleteShares(db: DB, ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await db.delete(schema.shares).where(inArray(schema.shares.id, ids));
+}
+
 // Cleanup for invites created through the UI, where the test never sees the
 // row id: email-bound ones are found by their unique test email, link-only
 // ones by the token extracted from the displayed invite URL.

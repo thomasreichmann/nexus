@@ -1,7 +1,7 @@
 ---
 title: S3 Storage Module
 created: 2026-01-26
-updated: 2026-09-28
+updated: 2026-11-17
 status: active
 tags:
     - guide
@@ -147,6 +147,48 @@ which is why the ready email deep-links into the app instead of carrying a URL.
 Like `presigned.get`, this signs for the artifacts bucket's CloudFront
 distribution when one is configured.
 
+### Shares Bucket (public share links)
+
+Presigned uploads and downloads against the Standard-class shares bucket
+(`S3_SHARES_BUCKET`), which holds the files behind the public 24-hour links
+(`/share`, `/s/<id>`). Keys are `${shareId}/${fileId}` and are **stored** on
+`share_files.s3_key`. The filename is not part of the key; it reaches S3 only
+as a download's disposition.
+
+The app is the only writer, through presigned PUTs it hands to anonymous
+uploaders, and it never deletes: the bucket's `expire-shared-files` lifecycle
+rule removes every object a day after upload (`infra/terraform/s3.tf`). The
+bucket is unversioned, so that delete is final. The app's IAM user holds
+`s3:PutObject` and `s3:GetObject` here and nothing else.
+
+#### `s3.shares.isConfigured()`
+
+`true` when `S3_SHARES_BUCKET` is set. Optional (rollout ordering); the share
+service refuses to create a link without it.
+
+#### `s3.shares.put(key, options)`
+
+| Option          | Type     | Description                               |
+| --------------- | -------- | ----------------------------------------- |
+| `contentLength` | `number` | Exact size in bytes. Required, and signed |
+| `expiresIn`     | `number` | URL expiration in seconds                 |
+
+`contentLength` is a signed header, so S3 rejects a body of any other size.
+That is the size limit for anonymous uploads: the service checks the declared
+sizes against the caps, and the signature holds the uploader to them.
+
+#### `s3.shares.get(key, options)`
+
+| Option      | Type     | Description                                    |
+| ----------- | -------- | ---------------------------------------------- |
+| `filename`  | `string` | Download filename. Required: always attachment |
+| `expiresIn` | `number` | URL expiration in seconds                      |
+
+Every download is an attachment, so an uploaded HTML or SVG file is saved,
+never rendered. The service cuts `expiresIn` short so no URL outlives its
+link. Signs for the shares bucket's CloudFront distribution when one is
+configured.
+
 ### CloudFront delivery
 
 Every byte a user downloads leaves AWS. Straight from S3 that is $0.09/GB past
@@ -158,9 +200,10 @@ CloudFront distribution when theirs is configured:
 | --------------- | ------------------- | ----------------------------- |
 | `presigned.get` | files               | `CLOUDFRONT_FILES_DOMAIN`     |
 | `artifacts.get` | retrieval artifacts | `CLOUDFRONT_ARTIFACTS_DOMAIN` |
+| `shares.get`    | shares              | `CLOUDFRONT_SHARES_DOMAIN`    |
 | `derived.get`   | derived             | none; thumbnails stay on S3   |
 
-Both distributions trust one key pair, `CLOUDFRONT_KEY_PAIR_ID` and
+Every distribution trusts one key pair, `CLOUDFRONT_KEY_PAIR_ID` and
 `CLOUDFRONT_PRIVATE_KEY`. The internals live in `lib/storage/cloudfront.ts`.
 
 - **Unset domain: S3 presigned GET**, exactly as before. That is the rollout

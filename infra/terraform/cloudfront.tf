@@ -28,6 +28,9 @@ locals {
   download_buckets = {
     files               = aws_s3_bucket.files
     retrieval_artifacts = aws_s3_bucket.retrieval_artifacts
+    # Public share links. Their downloads are the one egress an anonymous
+    # visitor can run up, which makes the free CloudFront tier matter most here.
+    shares = aws_s3_bucket.shares
   }
 }
 
@@ -135,8 +138,8 @@ resource "aws_cloudfront_distribution" "downloads" {
   }
 }
 
-# Both buckets carried no policy before #345; the app and worker read through
-# IAM grants (iam.tf, lambda.tf), which this leaves untouched. A service
+# None of these buckets carries any other policy; the app and worker read
+# through IAM grants (iam.tf, lambda.tf), which this leaves untouched. A service
 # principal scoped by SourceArn is not "public", so the buckets' public access
 # blocks allow it.
 resource "aws_s3_bucket_policy" "cloudfront_read" {

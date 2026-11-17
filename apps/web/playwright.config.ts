@@ -204,11 +204,14 @@ export default defineConfig({
         // S3_DERIVED_BUCKET is synthetic: presigning is local HMAC (no AWS
         // round-trip), and the thumbnails spec fulfills this bucket's image
         // requests via page.route — no real derived bucket needed in e2e.
+        // S3_SHARES_BUCKET likewise: the share spec answers its PUTs and
+        // downloads from a route stub.
         // DATABASE_URL is passed explicitly rather than relying on inheritance,
         // so the server is provably on the same database the fixtures seed.
         env: {
             E2E: '1',
             S3_DERIVED_BUCKET: 'e2e-derived-bucket',
+            S3_SHARES_BUCKET: 'e2e-shares-bucket',
             ...(process.env.DATABASE_URL
                 ? { DATABASE_URL: process.env.DATABASE_URL }
                 : {}),

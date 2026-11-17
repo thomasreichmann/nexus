@@ -3,7 +3,8 @@ import { env } from '@/lib/env';
 
 /**
  * Signed download URLs through the CloudFront distributions in front of the
- * files and retrieval-artifacts buckets (#345, `infra/terraform/cloudfront.tf`).
+ * files, retrieval-artifacts and shares buckets (#345,
+ * `infra/terraform/cloudfront.tf`).
  * The same bytes as an S3 presigned GET, but S3 -> CloudFront transfer is free
  * and CloudFront -> user starts with 1 TB/month free, where S3 -> user bills
  * $0.09/GB from the first byte past 100 GB.
@@ -12,9 +13,9 @@ import { env } from '@/lib/env';
  * nothing at the edge rewrites it. Each distribution only honours URLs signed
  * by the key pair in CLOUDFRONT_KEY_PAIR_ID / CLOUDFRONT_PRIVATE_KEY.
  *
- * Internal to `lib/storage`: callers keep using `presigned.get` and
- * `artifacts.get`, which route here when their bucket's distribution is
- * configured.
+ * Internal to `lib/storage`: callers keep using `presigned.get`,
+ * `artifacts.get` and `shares.get`, which route here when their bucket's
+ * distribution is configured.
  */
 
 export interface Distribution {
@@ -43,6 +44,14 @@ export function getArtifactsDistribution(): Distribution | undefined {
     return resolveDistribution(
         'CLOUDFRONT_ARTIFACTS_DOMAIN',
         env.CLOUDFRONT_ARTIFACTS_DOMAIN
+    );
+}
+
+/** The shares bucket's distribution, or undefined to keep S3 presigned GETs. */
+export function getSharesDistribution(): Distribution | undefined {
+    return resolveDistribution(
+        'CLOUDFRONT_SHARES_DOMAIN',
+        env.CLOUDFRONT_SHARES_DOMAIN
     );
 }
 
