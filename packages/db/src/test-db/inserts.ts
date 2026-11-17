@@ -231,7 +231,7 @@ export async function insertShare(
     overrides: Partial<Share> = {},
     files: Partial<ShareFile>[] = [{}]
 ): Promise<ShareWithFiles> {
-    const id = overrides.id ?? `test${crypto.randomUUID().replaceAll('-', '')}`;
+    const id = overrides.id ?? `test${crypto.randomUUID().replace(/-/g, '')}`;
     const fileRows = files.map((file, position) => {
         const fileId = file.id ?? crypto.randomUUID();
         return createShareFileFixture({
