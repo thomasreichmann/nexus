@@ -394,6 +394,38 @@ describe.concurrent('file browser queries', () => {
         ).toEqual([a.name, b.name]);
     });
 
+    it('findByUser sorts by name numeric-aware, IMG_9 before IMG_10', async ({
+        db,
+        user,
+    }) => {
+        // Uploaded, and inserted, in an order no other sort gives: oldest
+        // first is 100, 9, 10 and newest first 10, 9, 100, while plain
+        // lexicographic order puts IMG_10 and IMG_100 before IMG_9.
+        const base = Date.now();
+        const add = (name: string, secondsAgo: number) =>
+            insertFile(db, {
+                userId: user.id,
+                name,
+                createdAt: new Date(base - secondsAgo * 1000),
+            });
+        await add('IMG_100.JPG', 3);
+        await add('IMG_9.JPG', 2);
+        await add('IMG_10.JPG', 1);
+
+        const found = await createFileRepo(db).findByUser(user.id, {
+            limit: 10,
+            offset: 0,
+            sortKey: 'name',
+            sortOrder: 'asc',
+        });
+
+        expect(found.map((f) => f.name)).toEqual([
+            'IMG_9.JPG',
+            'IMG_10.JPG',
+            'IMG_100.JPG',
+        ]);
+    });
+
     it('findExistingByNameAndSize matches committed files on name and size together, once each', async ({
         db,
         user,
