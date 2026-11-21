@@ -14,6 +14,7 @@ import {
     LayoutGrid,
     LayoutList,
     Loader2,
+    Merge,
     MoreHorizontal,
     Pencil,
     RotateCw,
@@ -60,6 +61,7 @@ import {
     restoringPercent,
     type BatchView,
 } from './batchSummary';
+import { MoveToBatchDialog } from './MoveToBatchDialog';
 import { RenameBatchDialog } from './RenameBatchDialog';
 import type { BatchSection } from './useBatchFiles';
 import type { LibraryFile } from '@nexus/db/repo/library';
@@ -98,6 +100,7 @@ interface BatchPaneProps {
     /** A file menu's action, run or confirmed by the library (#477). */
     onFileAction: (action: FileAction, file: ActionableFile) => void;
     onBatchDeleted: () => void;
+    onBatchMerged: (targetBatchId: string) => void;
 }
 
 // Memoized: the viewer's open/close re-renders the library several times a
@@ -121,6 +124,7 @@ function BatchPaneContent({
     onOpenFile,
     onFileAction,
     onBatchDeleted,
+    onBatchMerged,
 }: BatchPaneProps) {
     const hasSelection = selection.isWholeBatch || selection.files.size > 0;
     const date = formatBatchDate(batch.createdAt);
@@ -177,6 +181,7 @@ function BatchPaneContent({
                         batch={batch}
                         restore={restore}
                         onDeleted={onBatchDeleted}
+                        onMerged={onBatchMerged}
                     />
                 </div>
             </div>
@@ -738,11 +743,13 @@ interface BatchMenuProps {
     batch: BatchView;
     restore: BatchRestore;
     onDeleted: () => void;
+    onMerged: (targetBatchId: string) => void;
 }
 
-function BatchMenu({ batch, restore, onDeleted }: BatchMenuProps) {
+function BatchMenu({ batch, restore, onDeleted, onMerged }: BatchMenuProps) {
     const [isRenameOpen, setIsRenameOpen] = useState(false);
     const [isRetrieveOpen, setIsRetrieveOpen] = useState(false);
+    const [isMergeOpen, setIsMergeOpen] = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const { isPending: isDeleting, remove } = useBatchDelete(batch, onDeleted);
     return (
@@ -763,6 +770,15 @@ function BatchMenu({ batch, restore, onDeleted }: BatchMenuProps) {
                 open={isRetrieveOpen}
                 onOpenChange={setIsRetrieveOpen}
                 onConfirm={restore.restore}
+            />
+            {/* Ungrouped too: merging it files the legacy loose files into a
+                batch (#453). */}
+            <MoveToBatchDialog
+                key={batch.key}
+                source={batch}
+                open={isMergeOpen}
+                onOpenChange={setIsMergeOpen}
+                onMoved={onMerged}
             />
             <DeleteDialog
                 open={isDeleteOpen}
@@ -801,6 +817,10 @@ function BatchMenu({ batch, restore, onDeleted }: BatchMenuProps) {
                         >
                             <RotateCw className="mr-2 size-4" />
                             Restore batch
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setIsMergeOpen(true)}>
+                            <Merge className="mr-2 size-4" />
+                            Merge into…
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem

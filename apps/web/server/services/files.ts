@@ -598,13 +598,7 @@ async function deleteBatch(
     batchId: string | null
 ): Promise<DeleteBatchResult> {
     return db.transaction(async (tx) => {
-        if (batchId !== null) {
-            const batch = await createUploadBatchRepo(tx).findByUserAndId(
-                userId,
-                batchId
-            );
-            if (!batch) throw new NotFoundError('UploadBatch', batchId);
-        }
+        if (batchId !== null) await assertUserBatch(tx, userId, batchId);
 
         const deleted = await createFileRepo(tx).softDeleteBatchForUser(
             userId,
@@ -642,6 +636,98 @@ async function renameBatch(
     return { batchId: batch.id, name: batch.name };
 }
 
+async function assertUserBatch(
+    db: DB,
+    userId: string,
+    batchId: string
+): Promise<void> {
+    const batch = await createUploadBatchRepo(db).findByUserAndId(
+        userId,
+        batchId
+    );
+    if (!batch) throw new NotFoundError('UploadBatch', batchId);
+}
+
+interface MoveResult {
+    movedCount: number;
+}
+
+/**
+ * Move the user's listed files into another of their batches (#453), in one
+ * transaction. Like a delete, an id that isn't one of the user's files fails
+ * the whole set, and so does a target that isn't their batch: nothing moves.
+ *
+ * Only `batch_id` changes. A restore already requested keeps its files and
+ * entry names (they're on its items), and the batches they leave stop
+ * expecting them, so none looks short for it.
+ */
+async function moveFiles(
+    db: DB,
+    userId: string,
+    fileIds: string[],
+    targetBatchId: string
+): Promise<MoveResult> {
+    return db.transaction(async (tx) => {
+        await assertUserBatch(tx, userId, targetBatchId);
+
+        const fileRepo = createFileRepo(tx);
+        const owned = await fileRepo.findManyByUserAndIds(userId, fileIds);
+        const ownedIds = new Set(owned.map((f) => f.id));
+        const missingId = fileIds.find((id) => !ownedIds.has(id));
+        if (missingId) throw new NotFoundError('File', missingId);
+
+        // While the files still sit in the batches they're leaving.
+        await createUploadBatchRepo(tx).releaseMovedFiles(
+            userId,
+            fileIds,
+            targetBatchId
+        );
+        const moved = await fileRepo.moveToBatchForUser(
+            userId,
+            fileIds,
+            targetBatchId
+        );
+        return { movedCount: moved.length };
+    });
+}
+
+/**
+ * Merge a batch (null: the legacy Ungrouped files) into another of the
+ * user's batches (#453), by id on the server like `deleteBatch`, whatever
+ * the browser has loaded. Every row moves, deleted and uploading ones too.
+ *
+ * The emptied source row stays, for `deleteBatch`'s reason: an empty batch
+ * drops out of the library on its own, and a wave still sending into it
+ * would otherwise fail its next file. One that lands after the merge brings
+ * the source back as a batch of its own, to be merged again.
+ */
+async function mergeBatch(
+    db: DB,
+    userId: string,
+    sourceBatchId: string | null,
+    targetBatchId: string
+): Promise<MoveResult> {
+    if (sourceBatchId === targetBatchId) {
+        throw new InvalidStateError("A batch can't be merged into itself");
+    }
+    return db.transaction(async (tx) => {
+        await assertUserBatch(tx, userId, targetBatchId);
+        if (sourceBatchId !== null) {
+            await assertUserBatch(tx, userId, sourceBatchId);
+            await createUploadBatchRepo(tx).mergeExpectations(
+                sourceBatchId,
+                targetBatchId
+            );
+        }
+        const moved = await createFileRepo(tx).moveBatchForUser(
+            userId,
+            sourceBatchId,
+            targetBatchId
+        );
+        return { movedCount: moved.length };
+    });
+}
+
 export const fileService = {
     createBatch,
     initiateUpload,
@@ -655,5 +741,7 @@ export const fileService = {
     deleteUserFile,
     deleteBatch,
     renameBatch,
+    moveFiles,
+    mergeBatch,
     getThumbnailUrls,
 } as const;

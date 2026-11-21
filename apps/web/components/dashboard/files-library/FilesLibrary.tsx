@@ -21,7 +21,7 @@ import {
 import { cn } from '@/lib/cn';
 import { useDebouncedValue } from '@/lib/hooks/useDebouncedValue';
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
-import { BATCH_PAGE_SIZE } from '@/lib/library/paging';
+import { BATCH_PAGE_SIZE, SEARCH_DEBOUNCE_MS } from '@/lib/library/paging';
 import {
     readRememberedViewMode,
     rememberViewMode,
@@ -32,6 +32,7 @@ import { BatchPane, type PaneSelection, type PaneViewMode } from './BatchPane';
 import { BatchSplitView } from './BatchSplitView';
 import { FileViewer, type ViewerPhase, type ViewerPlace } from './FileViewer';
 import { LibraryHeading, LibraryView } from './LibraryView';
+import { MoveToBatchDialog } from './MoveToBatchDialog';
 import { SelectionBar } from './SelectionBar';
 import {
     batchIdOf,
@@ -56,7 +57,6 @@ import {
 import { useStableCallback } from './useStableCallback';
 import type { LibraryBatch, LibraryFile } from '@nexus/db/repo/library';
 
-const SEARCH_DEBOUNCE_MS = 300;
 const NO_COUNTS = { archived: 0, retrieving: 0, available: 0 };
 const NO_SELECTION: PaneSelection = { isWholeBatch: false, files: new Map() };
 // The viewer asks for a section's next page this close to its loaded edge,
@@ -480,7 +480,10 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
     // These only write the URL, so they're safe mid-transition: a click
     // during a choreography is honored once it settles, never dropped.
     function openFromLibrary(key: string) {
-        if (targetKey) return;
+        // A batch that went away on its own, its last files moved or deleted
+        // (#453), closes with its key still in the URL: that one is gone, and
+        // mustn't hold the library shut.
+        if (targetKey && resolvedTarget !== null) return;
         hasPushedHistory.current = true;
         navigate(key, 'push');
     }
@@ -719,6 +722,9 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
         if (action === 'download') void fileActions.download(file);
         else setFileConfirm({ action, file, isOpen: true });
     }
+    function changeFileConfirmOpen(isOpen: boolean) {
+        setFileConfirm((prev) => prev && { ...prev, isOpen });
+    }
 
     // Stable identities for the memoized pane and library, so opening,
     // browsing and closing the viewer don't re-render them.
@@ -733,6 +739,11 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
     const onOpenBatch = useStableCallback(openFromLibrary);
     const onIntent = useStableCallback(prefetchBatch);
     const onBatchDeleted = useStableCallback(() => navigate(null, 'replace'));
+    // Onto the batch it merged into (#453): the open one is empty now, so
+    // nothing to go Back to either.
+    const onBatchMerged = useStableCallback((targetBatchId: string) =>
+        navigate(batchKeyOf(targetBatchId), 'replace')
+    );
     const showMoreBatches = useStableCallback(() => {
         void batchesQuery.fetchNextPage();
     });
@@ -843,6 +854,7 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
                             onOpenFile={onOpenFile}
                             onFileAction={onFileAction}
                             onBatchDeleted={onBatchDeleted}
+                            onBatchMerged={onBatchMerged}
                         />
                     </BatchSplitView>
                 </div>
@@ -880,16 +892,24 @@ export function FilesLibrary({ initialViewMode }: FilesLibraryProps) {
                         selectedFiles={selectedFiles}
                         onClear={() => setSelection(NO_SELECTION)}
                         onBatchDeleted={onBatchDeleted}
+                        onBatchMerged={onBatchMerged}
                     />
                 </div>
             )}
             <FileConfirmDialogs
                 confirm={fileConfirm}
-                onOpenChange={(isOpen) =>
-                    setFileConfirm((prev) => prev && { ...prev, isOpen })
-                }
+                onOpenChange={changeFileConfirmOpen}
                 actions={fileActions}
             />
+            {fileConfirm?.action === 'move' && openBatch && (
+                <MoveToBatchDialog
+                    source={openBatch}
+                    fileIds={[fileConfirm.file.id]}
+                    open={fileConfirm.isOpen}
+                    onOpenChange={changeFileConfirmOpen}
+                    onMoved={() => dropFromSelection(fileConfirm.file.id)}
+                />
+            )}
         </div>
     );
 }

@@ -200,6 +200,57 @@ function softDeleteBatchForUser(
         .returning({ id: schema.files.id, size: schema.files.size });
 }
 
+// A move (#453) sets `batch_id` and nothing else: S3 keys are permanent, so
+// the batch segment of a moved file's key is only history from here on, and
+// nothing may read a batch out of it.
+function moveForUser(
+    db: DB,
+    userId: string,
+    which: SQL,
+    targetBatchId: string
+): Promise<Pick<File, 'id'>[]> {
+    return db
+        .update(schema.files)
+        .set({ batchId: targetBatchId })
+        .where(and(eq(schema.files.userId, userId), which))
+        .returning({ id: schema.files.id });
+}
+
+/** Move the user's listed files into a batch (#453). */
+function moveToBatchForUser(
+    db: DB,
+    userId: string,
+    fileIds: string[],
+    targetBatchId: string
+): Promise<Pick<File, 'id'>[]> {
+    return moveForUser(
+        db,
+        userId,
+        inArray(schema.files.id, fileIds),
+        targetBatchId
+    );
+}
+
+/**
+ * Move every row of a batch (null: the legacy Ungrouped files) into another
+ * (#453), deleted and still-uploading ones too: a deleted file still counts
+ * as one its batch received (#550), and an upload in flight confirms into
+ * the target.
+ */
+function moveBatchForUser(
+    db: DB,
+    userId: string,
+    sourceBatchId: string | null,
+    targetBatchId: string
+): Promise<Pick<File, 'id'>[]> {
+    return moveForUser(
+        db,
+        userId,
+        buildBatchFilter(sourceBatchId),
+        targetBatchId
+    );
+}
+
 /** The identity the vault check matches on — no mtime, no checksum (#401). */
 export interface NameAndSize {
     name: string;
@@ -720,6 +771,8 @@ export const createFileRepo = createRepository({
     findManyByUserAndIds,
     findVisibleByUserAndBatch,
     softDeleteBatchForUser,
+    moveToBatchForUser,
+    moveBatchForUser,
     findExistingByNameAndSize,
     findByUser,
     countByUser,

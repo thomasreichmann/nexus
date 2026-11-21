@@ -3,6 +3,7 @@
 import {
     Clock,
     Download,
+    FolderInput,
     Loader2,
     MoreHorizontal,
     RotateCw,
@@ -44,7 +45,7 @@ export interface ActionableFile extends RetrievableFile {
     name: string;
 }
 
-export type FileAction = 'retrieve' | 'download' | 'delete';
+export type FileAction = 'retrieve' | 'download' | 'move' | 'delete';
 
 export interface FileActionHandlers {
     remove: (fileId: string) => void;
@@ -156,9 +157,12 @@ function readVariable(variables: unknown, key: string): unknown {
     return (variables as Record<string, unknown> | undefined)?.[key];
 }
 
-/** A file menu's retrieve or delete, waiting on its confirm. */
+/**
+ * A file menu's retrieve, move or delete, waiting on its confirm (the move's
+ * is the library's: it needs the open batch).
+ */
 export interface FileConfirm {
-    action: 'retrieve' | 'delete';
+    action: 'retrieve' | 'move' | 'delete';
     file: ActionableFile;
     /**
      * Off once it's answered, while the rest stays: the dialog keeps naming
@@ -208,7 +212,7 @@ export function FileConfirmDialogs({
 interface FileActionsProps {
     status: DerivedStatus;
     file: ActionableFile;
-    /** Download runs at once; retrieve and delete go through a confirm. */
+    /** Download runs at once; retrieve, move and delete go through a confirm. */
     onAction: (action: FileAction, file: ActionableFile) => void;
 }
 
@@ -271,6 +275,10 @@ function FileMenuItems({ status, fileId, onAction }: FileMenuItemsProps) {
                     Retrieving...
                 </DropdownMenuItem>
             )}
+            <DropdownMenuItem onClick={() => onAction('move')}>
+                <FolderInput className="mr-2 size-4" />
+                Move to…
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
                 className="text-destructive focus:text-destructive"

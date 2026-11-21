@@ -9,6 +9,33 @@ import {
 import { insertFile, insertRetrieval, insertUploadBatch } from '../test-db';
 import { createFileRepo, originalKey } from './files';
 
+// #453: the service refuses a stranger's id before it moves anything, but
+// the repository's own owner scope is what holds for any other caller.
+describe.concurrent('moveToBatchForUser', () => {
+    it('moves only the user’s files among the ids it’s given', async ({
+        db,
+        user,
+        createUser,
+    }) => {
+        const stranger = await createUser();
+        const target = await insertUploadBatch(db, { userId: user.id });
+        const [mine, theirs] = await Promise.all([
+            insertFile(db, { userId: user.id }),
+            insertFile(db, { userId: stranger.id }),
+        ]);
+        const repo = createFileRepo(db);
+
+        const moved = await repo.moveToBatchForUser(
+            user.id,
+            [mine.id, theirs.id],
+            target.id
+        );
+
+        expect(moved).toEqual([{ id: mine.id }]);
+        expect((await repo.findById(theirs.id))?.batchId).toBeNull();
+    });
+});
+
 const LONG_AGO = new Date('2026-01-01T00:00:00Z');
 const HOUR_MS = 60 * 60 * 1000;
 const past = () => new Date(Date.now() - HOUR_MS);
