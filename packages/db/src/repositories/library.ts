@@ -171,6 +171,10 @@ export interface LocatedFile {
      * stays put however the pages around it change.
      */
     pageStartId: string;
+    /** Its batch, opened: what `findBatch` returns for it. */
+    batch: LibraryBatch;
+    /** The page from `pageStartId`: what `listBatchFiles` returns for it. */
+    page: BatchFilesPage;
 }
 
 const COVER_SIZE = 3;
@@ -508,19 +512,34 @@ async function findBatch(
     { search }: { search?: string } = {}
 ): Promise<LibraryBatch | undefined> {
     const searched = buildContainsPattern(search);
-    let row: SummaryRow | undefined;
-    if (batchId === null) {
-        row = await findUngroupedRow(db, userId, searched);
-    } else {
-        [row] = await selectBatchSummaries(db, userId, searched).where(
+    const findRow = async (): Promise<SummaryRow | undefined> => {
+        if (batchId === null) return findUngroupedRow(db, userId, searched);
+        const [row] = await selectBatchSummaries(db, userId, searched).where(
             and(
                 eq(schema.uploadBatches.userId, userId),
                 eq(schema.uploadBatches.id, batchId)
             )
         );
-    }
-    if (!row) return undefined;
+        return row;
+    };
 
+    // Unsearched, nothing the summary says changes which covers and folders
+    // it has, so all three are asked for at once: one round trip to the
+    // database, not two, on every batch opened and every deep link (#546).
+    if (!searched) {
+        const whole = { batchId, isNameMatch: true };
+        const [row, covers, folders] = await Promise.all([
+            findRow(),
+            selectCovers(db, userId, [whole], null),
+            findFolders(db, userId, batchId, null),
+        ]);
+        if (!row) return undefined;
+        const [summary] = withCovers([{ ...row, ...whole }], covers, null);
+        return { ...summary!, folders };
+    }
+
+    const row = await findRow();
+    if (!row) return undefined;
     const isSubset = !!searched && !row.isNameMatch && row.matchCount > 0;
     const pattern = isSubset ? searched : null;
     const [[summary], folders] = await Promise.all([
@@ -570,6 +589,22 @@ async function attachCovers(
     pattern: string | null
 ): Promise<LibraryBatchSummary[]> {
     if (rows.length === 0) return [];
+    return withCovers(
+        rows,
+        await selectCovers(db, userId, rows, pattern),
+        pattern
+    );
+}
+
+// The cover files of each group, keyed by batch id (null: Ungrouped). Needs
+// only which groups and whether each matched by name, so a lone batch's can
+// be asked for alongside its summary rather than after it.
+async function selectCovers(
+    db: DB,
+    userId: string,
+    rows: Pick<SummaryRow, 'batchId' | 'isNameMatch'>[],
+    pattern: string | null
+): Promise<Map<string | null, LibraryCoverFile[]>> {
     const batchIds = rows.flatMap((r) => (r.batchId ? [r.batchId] : []));
     const hasUngrouped = rows.some((r) => r.batchId === null);
     const wholeBatchIds = rows.flatMap((r) =>
@@ -624,7 +659,14 @@ async function attachCovers(
         list.push(cover);
         coversByBatch.set(batchId, list);
     }
+    return coversByBatch;
+}
 
+function withCovers(
+    rows: SummaryRow[],
+    coversByBatch: Map<string | null, LibraryCoverFile[]>,
+    pattern: string | null
+): LibraryBatchSummary[] {
     return rows.map(({ isNameMatch, matchCount, ...row }) => ({
         ...row,
         matchCount: pattern && !isNameMatch ? matchCount : null,
@@ -647,7 +689,8 @@ async function selectLibraryFiles(
     db: DB,
     where: SQL | undefined,
     direction: 'asc' | 'desc',
-    limit: number
+    limit: number,
+    offset = 0
 ): Promise<LibraryFile[]> {
     const order = direction === 'asc' ? asc : desc;
     const rows = await db
@@ -671,7 +714,8 @@ async function selectLibraryFiles(
         .leftJoin(schema.retrievals, buildActiveRetrievalJoin())
         .where(where)
         .orderBy(...FILE_ORDER.map((key) => order(key)))
-        .limit(limit);
+        .limit(limit)
+        .offset(offset);
     return rows.map(({ retrievalStatus, retrievalExpiresAt, ...file }) => ({
         ...file,
         activeRetrieval: retrievalStatus
@@ -736,22 +780,28 @@ async function listBatchFiles(
         };
     }
 
-    const rows = await selectLibraryFiles(
-        db,
-        cursor
-            ? and(
-                  where,
-                  sql`${FILE_KEY} >= ${selectFileKey(db, userId, cursor)}`
-              )
-            : where,
-        'asc',
-        limit + 1
-    );
+    // Counted from the cursor at the same time as the files are read, rather
+    // than from the page's first file after: the files are the scope's from
+    // the cursor's key on, so none sorts between the two, and the count is
+    // the same either way (#546).
+    const [rows, { total, before }] = await Promise.all([
+        selectLibraryFiles(
+            db,
+            cursor
+                ? and(
+                      where,
+                      sql`${FILE_KEY} >= ${selectFileKey(db, userId, cursor)}`
+                  )
+                : where,
+            'asc',
+            limit + 1
+        ),
+        countAround(db, userId, where, cursor ?? undefined),
+    ]);
     const files = rows.slice(0, limit);
     // From the cursor itself when everything from it on has gone since it
     // was handed out (a deep link's page, deleted): the way back stays open.
     const pivotId = cursor ? (files[0]?.id ?? cursor) : undefined;
-    const { total, before } = await countAround(db, userId, where, pivotId);
     return {
         files,
         startIndex: before,
@@ -762,10 +812,17 @@ async function listBatchFiles(
 }
 
 /**
- * Where one of the user's visible files sits, for the `?file=` deep link: its
- * batch and folder, and the page of `pageSize` it falls on, counted from the
- * start of the section the browser lists it in (its folder, when the batch
- * has folders). Undefined for a file that isn't theirs or is gone.
+ * Where one of the user's visible files sits, for the `?file=` deep link, and
+ * everything the browser needs to open it there in one request (#546): its
+ * batch, and the page of `pageSize` it falls on, counted from the start of
+ * the section the browser lists it in (its folder, when the batch has
+ * folders). Undefined for a file that isn't theirs or is gone.
+ *
+ * Three round trips to the database, each after the one it needs: the file,
+ * then its batch and its place in both possible sections at once (the
+ * batch's folders decide which one counts), then the page. The page is the
+ * one `listBatchFiles` returns from `pageStartId`, so the browser can file it
+ * under that request.
  */
 async function locateFile(
     db: DB,
@@ -784,20 +841,47 @@ async function locateFile(
         );
     if (!file) return undefined;
 
-    const folders = await findFolders(db, userId, file.batchId, null);
-    const where = buildScopeFilter(userId, {
-        batchId: file.batchId,
-        folder: folders ? file.subpath : undefined,
-    });
-    const { before } = await countAround(db, userId, where, fileId);
-    const [start] = await db
-        .select({ id: schema.files.id })
-        .from(schema.files)
-        .where(where)
-        .orderBy(...FILE_ORDER.map((key) => asc(key)))
-        .offset(Math.floor(before / pageSize) * pageSize)
-        .limit(1);
-    return { ...file, pageStartId: start?.id ?? fileId };
+    const fileKey = selectFileKey(db, userId, fileId);
+    const inFolder = buildFolderFilter(file.subpath)!;
+    const [batch, [place]] = await Promise.all([
+        findBatch(db, userId, file.batchId),
+        db
+            .select({
+                beforeInBatch: sql<number>`(count(*) filter (where ${FILE_KEY} < ${fileKey}))::int`,
+                totalInBatch: sql<number>`count(*)::int`,
+                beforeInFolder: sql<number>`(count(*) filter (where ${inFolder} and ${FILE_KEY} < ${fileKey}))::int`,
+                totalInFolder: sql<number>`(count(*) filter (where ${inFolder}))::int`,
+            })
+            .from(schema.files)
+            .where(buildScopeFilter(userId, { batchId: file.batchId })),
+    ]);
+    if (!batch || !place) return undefined;
+
+    const folder = batch.folders ? file.subpath : undefined;
+    const before = batch.folders ? place.beforeInFolder : place.beforeInBatch;
+    const total = batch.folders ? place.totalInFolder : place.totalInBatch;
+    const startIndex = Math.floor(before / pageSize) * pageSize;
+    const rows = await selectLibraryFiles(
+        db,
+        buildScopeFilter(userId, { batchId: file.batchId, folder }),
+        'asc',
+        pageSize + 1,
+        startIndex
+    );
+    const files = rows.slice(0, pageSize);
+    const pageStartId = files[0]?.id ?? fileId;
+    return {
+        ...file,
+        pageStartId,
+        batch,
+        page: {
+            files,
+            startIndex,
+            total,
+            nextCursor: rows[pageSize]?.id ?? null,
+            previousCursor: startIndex > 0 ? pageStartId : null,
+        },
+    };
 }
 
 export const createLibraryRepo = createRepository({
