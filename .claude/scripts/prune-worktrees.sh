@@ -46,9 +46,10 @@ done
 
 command -v gh >/dev/null || { echo "prune-worktrees: gh CLI is required" >&2; exit 1; }
 
-# launchd invokes this with cwd=/, so the repo is located from the script's own
-# path (<checkout>/.claude/scripts/) rather than the working directory. A copy
-# inside a linked worktree still resolves to the same shared .git.
+# launchd (macOS) and systemd (Linux) invoke this outside the repo, so the repo
+# is located from the script's own path (<checkout>/.claude/scripts/) rather
+# than the working directory. A copy inside a linked worktree still resolves to
+# the same shared .git.
 invoked_from=$PWD
 cd "$(dirname "$0")/../.." 2>/dev/null || { echo "prune-worktrees: cannot locate checkout" >&2; exit 1; }
 git rev-parse --git-common-dir >/dev/null 2>&1 || { echo "prune-worktrees: not a git repo" >&2; exit 1; }
@@ -56,10 +57,15 @@ main_root=$(cd "$(dirname "$(git rev-parse --git-common-dir)")" && pwd)
 cd "$main_root" || exit 1
 
 # Only set when invoked from inside a worktree - that one is never pruned out
-# from under the caller. Empty under launchd, where no worktree is "current".
+# from under the caller. Empty under a scheduler, where no worktree is "current".
 root=$(cd "$invoked_from" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
 
 [ "$fetch" = 1 ] && git fetch --quiet --prune origin 2>/dev/null
+
+# File mtime in epoch seconds. GNU stat (Linux) and BSD stat (macOS) spell it
+# differently, and on Linux `stat -f` means "file system", so it has to be
+# probed rather than tried and fallen through.
+if stat -c %Y / >/dev/null 2>&1; then stat_mtime=(stat -c %Y); else stat_mtime=(stat -f %m); fi
 
 # Claude keys a project dir by the worktree's absolute path with /, . and _ all
 # collapsed to '-'. Newest transcript mtime in that dir is the session clock.
@@ -68,14 +74,14 @@ session_age_hours() {
   slug=$(printf '%s' "$1" | tr '/._' '---')
   dir="$HOME/.claude/projects/$slug"
   [ -d "$dir" ] || { echo 99999; return; }
-  newest=$(find "$dir" -name '*.jsonl' -exec stat -f %m {} + 2>/dev/null | sort -rn | head -1)
+  newest=$(find "$dir" -name '*.jsonl' -exec "${stat_mtime[@]}" {} + 2>/dev/null | sort -rn | head -1)
   [ -n "$newest" ] || { echo 99999; return; }
   now=$(date +%s)
   echo $(( (now - newest) / 3600 ))
 }
 
 prunable=()
-# Under launchd every run appends to one log, so stamp non-tty output. A
+# Under a scheduler every run appends to one log, so stamp non-tty output. A
 # terminal already has the context and doesn't need the banner.
 [ -t 1 ] || printf '=== %s ===\n' "$(date '+%F %T')"
 printf '%-38s %-40s %s\n' WORKTREE BRANCH VERDICT
