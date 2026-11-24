@@ -26,7 +26,8 @@ Pick the smallest tier that covers your change:
 
 **Only `Checks` and `Integration tests` gate a PR.** Smoke, admin and flows
 run after merge, in sequence in one `E2E Tests` job
-(`.github/workflows/post-merge.yml`). A red run posts to Discord, and you fix
+(`.github/workflows/post-merge-e2e.yml`, which starts when `post-merge.yml`
+completes). A red run posts to Discord, and you fix
 forward. Flows was weighed as a pre-merge gate and stays post-merge (#499;
 smoke likewise, #500):
 

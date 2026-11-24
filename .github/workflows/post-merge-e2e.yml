@@ -1,0 +1,167 @@
+name: Post-Merge E2E
+
+# Smoke, admin and flows e2e tiers against dev (#384), after every Post-Merge
+# run. Post-merge only, by decision: browser tiers flake for reasons unrelated
+# to the change, so they alert instead of gating (the integration tier is the
+# pre-merge gate).
+#
+# Its own workflow, not a job in post-merge.yml (#556): GitHub won't re-run a
+# job until its whole run has finished, so an e2e job there held every
+# recovery re-run of a failed prod migration for its 5-15 min. Starting on
+# Post-Merge's completion also means the tiers run against the dev worker this
+# merge deployed, where the old job raced that deploy.
+on:
+    workflow_run:
+        workflows: [Post-Merge]
+        types: [completed]
+    workflow_dispatch:
+
+# One run at a time: the tiers share the global jobs table on dev (#419).
+concurrency:
+    group: post-merge-e2e
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+    actions: read
+
+jobs:
+    # Run only when the triggering attempt applied the dev migration itself
+    # and it succeeded. That skips e2e when the dev schema is broken (Post-Merge
+    # already alerted) and when a re-run touched only prod jobs, so a
+    # migrate-prod recovery re-run doesn't repeat e2e for a commit it covered.
+    dev-migration:
+        name: Check the dev migration
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        outputs:
+            ok: ${{ steps.check.outputs.ok }}
+        steps:
+            - name: Read the triggering run's dev migration
+              id: check
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  EVENT: ${{ github.event_name }}
+                  RUN_ID: ${{ github.event.workflow_run.id }}
+                  ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+              run: |
+                  if [ "$EVENT" = workflow_dispatch ]; then
+                      echo "ok=true" >> "$GITHUB_OUTPUT"
+                      exit 0
+                  fi
+                  job=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?filter=latest&per_page=100" \
+                      --jq '.jobs[] | select(.name == "Apply DB migrations (dev)") | "\(.conclusion) \(.run_attempt)"')
+                  echo "dev migration: ${job:-not found} (triggering attempt $ATTEMPT)"
+                  if [ "$job" = "success $ATTEMPT" ]; then
+                      echo "ok=true" >> "$GITHUB_OUTPUT"
+                  else
+                      echo "ok=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+    # One job, tiers in sequence: they share one install, browser setup and
+    # build. Each tier signs up its own e2e users (#484), so the tiers no
+    # longer reset each other's, but the global jobs table is still shared:
+    # admin runs before flows because flows leaves generate-thumbnail rows
+    # there that the admin jobs spec reads (#419).
+    e2e-tests:
+        name: E2E Tests
+        needs: dev-migration
+        if: needs.dev-migration.outputs.ok == 'true'
+        runs-on: ubuntu-latest
+        timeout-minutes: 40
+        # e2e runs against a production build (next build + next start), so the
+        # build step and the test step both need these at build/runtime.
+        env:
+            NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+            DATABASE_URL: ${{ secrets.DATABASE_URL }}
+            AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            AWS_REGION: ${{ secrets.AWS_REGION }}
+            S3_BUCKET: ${{ secrets.S3_BUCKET }}
+            SQS_QUEUE_URL: ${{ secrets.SQS_QUEUE_URL }}
+            STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+            STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+            RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+            RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+            BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+            # workflow_run checks out the default branch's HEAD by default,
+            # which may be newer than the merge Post-Merge ran for.
+            E2E_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ env.E2E_SHA }}
+
+            - name: Setup Node and pnpm
+              uses: ./.github/actions/setup-node-pnpm
+
+            - name: Get Playwright version
+              id: playwright-version
+              run: echo "version=$(pnpm -F web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+
+            - name: Cache Playwright browsers
+              uses: actions/cache@v4
+              with:
+                  path: ~/.cache/ms-playwright
+                  key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+            - name: Install Playwright OS dependencies
+              timeout-minutes: 5
+              run: pnpm -F web exec playwright install-deps chromium
+
+            - name: Install Playwright browsers
+              timeout-minutes: 5
+              run: pnpm -F web exec playwright install chromium
+
+            # Build the production bundle (and workspace deps, including
+            # trpc-devtools) up front so a build failure fails fast here with
+            # full logs. The Playwright webServer rebuilds via the same turbo
+            # task, so this warms the cache and that rebuild is a no-op hit.
+            - name: Build app and workspace packages
+              run: pnpm exec turbo run build --filter=@nexus/web
+
+            # Each tier runs even if an earlier one failed (`!cancelled()`), so
+            # one red run reports every broken tier at once.
+            - name: Run smoke tests
+              id: smoke
+              run: pnpm -F web test:e2e:smoke
+
+            - name: Run admin tests
+              id: admin
+              if: ${{ !cancelled() }}
+              run: pnpm -F web test:e2e:admin
+
+            # Two workers, not the config's CI default of one: every flows spec
+            # file has its own dedicated user, so files run side by side safely.
+            # Measured on this runner (#499): the test phase went from ~128 s at
+            # 1 worker to ~78 s at 2, and 3-4 bought only ~3 s more, because
+            # the multipart-budget spec (~50 s) is then the floor.
+            - name: Run flows tests
+              id: flows
+              if: ${{ !cancelled() }}
+              run: pnpm -F web test:e2e:flows --workers=2
+
+            # Same raw-curl Discord rail as uptime.yml and post-merge.yml's
+            # notify-migration-failure; an unset secret degrades to a no-op,
+            # and the red run stays the primary alert.
+            - name: Notify Discord
+              if: failure()
+              env:
+                  DISCORD_ALERT_WEBHOOK_URL: ${{ secrets.DISCORD_ALERT_WEBHOOK_URL }}
+                  MESSAGE: >-
+                      **Post-merge e2e failed** on `${{ env.E2E_SHA }}`:
+                      smoke ${{ steps.smoke.outcome }},
+                      admin ${{ steps.admin.outcome }},
+                      flows ${{ steps.flows.outcome }} —
+                      <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>
+              run: |
+                  if [ -z "$DISCORD_ALERT_WEBHOOK_URL" ]; then
+                      echo "DISCORD_ALERT_WEBHOOK_URL not configured — skipping Discord notification."
+                      exit 0
+                  fi
+                  jq -n --arg content "$MESSAGE" '{content: $content}' |
+                      curl --silent --show-error --max-time 15 \
+                          -H 'Content-Type: application/json' \
+                          -d @- "$DISCORD_ALERT_WEBHOOK_URL"
