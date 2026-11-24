@@ -98,9 +98,13 @@ A `main` build is built but kept off the production domains until the
 `Apply DB migrations (prod)` job in `post-merge.yml` succeeds on its commit
 (#556), so prod never serves code whose migration failed or hasn't run yet
 (#550's outage). The job fails, rather than being skipped, when the dev
-migration didn't succeed, because a skipped check counts as passing. If the migration fails, prod stays on the previous
-deployment, and re-running the failed job promotes the waiting one
-([prod DB locks runbook](../../docs/infra/prod-db-locks.md)). For a hotfix
+migration didn't succeed, because a skipped check counts as passing.
+
+If the migration fails, prod stays on the previous deployment and the new one
+sits `STAGED`. Re-run the failed job
+([prod DB locks runbook](../../docs/infra/prod-db-locks.md)), then check the
+staged deployment went live; if it didn't, promote it from its deployment
+page. For a hotfix
 that can't wait, **Force Promote** on the deployment page bypasses the check.
 It is also the fix for one rare case: three pushes inside a minute can cancel
 the middle one's queued `migrate-prod` (see the concurrency comment in
