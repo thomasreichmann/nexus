@@ -126,8 +126,10 @@ jobs:
 
     # A failed migration needs a person. Since #556 prod web keeps serving
     # the previous deployment instead of going live without its migration
-    # (#550's outage), but nothing ships until a re-run lands it. A failed
-    # dev migration fails prod's too (its first step).
+    # (#550's outage). After a re-run lands the migration, the staged
+    # deployment still needs a manual `vercel promote`: Vercel doesn't
+    # re-evaluate it (tested on #569). A failed dev migration fails prod's too
+    # (its first step).
     # Same raw-curl Discord rail as the e2e job below; an unset secret
     # degrades to a no-op.
     notify-migration-failure:
@@ -145,7 +147,8 @@ jobs:
                       dev ${{ needs.migrate.result }},
                       prod ${{ needs.migrate-prod.result }}.
                       Prod web stays on the previous deployment until the
-                      migration lands; re-run the failed jobs to promote it —
+                      migration lands; re-run the failed jobs, then
+                      `vercel promote` the staged deployment —
                       <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>.
                       If the log says lock timeout:
                       <${{ github.server_url }}/${{ github.repository }}/blob/main/docs/infra/prod-db-locks.md>

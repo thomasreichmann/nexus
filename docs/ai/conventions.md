@@ -143,7 +143,8 @@ still SELECTed the dropped column for another ~7 minutes on prod.
   waits on it through a Vercel Deployment Check (`apps/web/README.md` →
   Deployment). So a schema
   change and the code that reads it ship in one PR. If the prod migration
-  fails, prod stays on the previous deployment until a re-run lands it.
+  fails, prod stays on the previous deployment; recovery is a re-run plus a
+  manual promote ([[../infra/prod-db-locks|Prod DB Locks]]).
 - **Destructive DDL ships alone** (`DROP TABLE`/`DROP COLUMN`, `RENAME`,
   `SET DATA TYPE`): first merge the code that stops referencing the object
   and wait until it is fully deployed on every plane (web + worker), then

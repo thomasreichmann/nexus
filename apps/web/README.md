@@ -101,10 +101,12 @@ A `main` build is built but kept off the production domains until the
 migration didn't succeed, because a skipped check counts as passing.
 
 If the migration fails, prod stays on the previous deployment and the new one
-sits `STAGED`. Re-run the failed job
-([prod DB locks runbook](../../docs/infra/prod-db-locks.md)), then check the
-staged deployment went live; if it didn't, promote it from its deployment
-page. For a hotfix
+sits `STAGED`. Re-run the failed job, then promote the staged deployment
+yourself (`vercel promote <url>`, or Promote on its deployment page): Vercel
+doesn't re-evaluate a staged deployment when the check passes on a re-run
+(tested 2026-11-24). Steps in the
+[prod DB locks runbook](../../docs/infra/prod-db-locks.md). The next `main`
+merge whose migration succeeds goes live on its own as usual. For a hotfix
 that can't wait, **Force Promote** on the deployment page bypasses the check.
 It is also the fix for one rare case: three pushes inside a minute can cancel
 the middle one's queued `migrate-prod` (see the concurrency comment in
