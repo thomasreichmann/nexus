@@ -10,8 +10,8 @@ on:
 # order, but a merge's migrate-prod, which gates the web app's production
 # promotion, waits only for the previous migrate-prod, not for the previous
 # run's e2e tiers (5-15 min). GitHub keeps one queued entry per group and
-# cancels the one a newer push replaces; a replaced migrate-prod posts no
-# status, so that commit's deployment never promotes. Harmless when the newer
+# cancels the one a newer push replaces; a replaced migrate-prod ends
+# cancelled, so that commit's deployment never promotes. Harmless when the newer
 # commit has its own deployment, stuck when Vercel skipped building it
 # (turbo-ignore, e.g. docs-only); Force Promote recovers. Per-job groups shrink
 # that window from a whole run to one migrate-prod (~1 min).
@@ -67,42 +67,40 @@ jobs:
     # reasons unrelated to migrations (browsers, S3, Stripe), and gating prod
     # on it would leave prod drifted whenever e2e flakes.
     #
-    # This job also gates the web app's production promotion (#556). It posts
-    # a commit status that nexus-web requires as a Vercel Deployment Check
-    # (apps/web/README.md → Deployment), so a main build is built but kept off
-    # the production domains until this job passes on the same commit. Vercel
-    # matches on VERCEL_CHECK verbatim: renaming it silently drops the gate,
-    # and no other job may post the same name.
+    # This job also gates the web app's production promotion (#556): nexus-web
+    # requires its check run, matched by the job name `Apply DB migrations
+    # (prod)`, as a Vercel Deployment Check (apps/web/README.md → Deployment).
+    # A main build is built but kept off the production domains until this job
+    # succeeds on the same commit. Renaming the job silently drops the gate,
+    # and no other workflow may reuse the name (same-named check runs collide).
     #
-    # Not vercel/repository-dispatch/actions/status: it reads the conclusion
-    # of the run's FIRST job (sync-dev-branch here), not its own, so a failed
-    # migration would report success (vercel/repository-dispatch#15). A
-    # skipped run (dev migration failed) posts nothing, which also keeps the
-    # deployment unpromoted.
+    # The job must never end as `skipped`: GitHub counts a skipped check as
+    # passing, so a failed dev migration would promote code whose prod
+    # migration never ran. Hence always() plus the first step, which turns
+    # "dev didn't succeed" into a failure. always() also means cancelling the
+    # whole run doesn't stop this job; cancel the job itself.
+    #
+    # Why the job and not a commit status: Vercel's check picker lists check
+    # runs, and the status #567 posted from here never appeared in it. Vercel's
+    # own status action is no way round that either: it reports the run's
+    # first job's conclusion, not its own (vercel/repository-dispatch#15).
     migrate-prod:
         name: Apply DB migrations (prod)
         needs: migrate
+        if: always()
         runs-on: ubuntu-latest
         timeout-minutes: 10
         concurrency:
             group: post-merge-migrate-prod
             cancel-in-progress: false
-        # A permissions block replaces the defaults: contents for checkout,
-        # statuses for the Vercel check.
-        permissions:
-            contents: read
-            statuses: write
-        env:
-            VERCEL_CHECK: 'Vercel - nexus-web: migrate-prod'
-            GH_TOKEN: ${{ github.token }}
-            RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         steps:
-            - name: Report pending to Vercel
+            - name: Require the dev migration
+              if: needs.migrate.result != 'success'
+              env:
+                  DEV_RESULT: ${{ needs.migrate.result }}
               run: |
-                  gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-                      -f state=pending -f context="$VERCEL_CHECK" \
-                      -f target_url="$RUN_URL" \
-                      -f description='Applying prod migrations'
+                  echo "::error::dev migration $DEV_RESULT; prod migration not attempted"
+                  exit 1
 
             - name: Checkout
               uses: actions/checkout@v4
@@ -124,27 +122,10 @@ jobs:
               env:
                   DATABASE_URL: ${{ secrets.DATABASE_URL_PROD }}
 
-            # always(): a failed or cancelled job must post failure, not
-            # leave pending behind.
-            - name: Report result to Vercel
-              if: always()
-              env:
-                  JOB_STATUS: ${{ job.status }}
-              run: |
-                  if [ "$JOB_STATUS" = success ]; then
-                      state=success description='Prod migrations applied'
-                  else
-                      state=failure description="Prod migrations $JOB_STATUS"
-                  fi
-                  gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
-                      -f state="$state" -f context="$VERCEL_CHECK" \
-                      -f target_url="$RUN_URL" \
-                      -f description="$description"
-
     # A failed migration needs a person. Since #556 prod web keeps serving
     # the previous deployment instead of going live without its migration
     # (#550's outage), but nothing ships until a re-run lands it. A failed
-    # dev migration skips prod's, so it counts too.
+    # dev migration fails prod's too (its first step).
     # Same raw-curl Discord rail as the e2e job below; an unset secret
     # degrades to a no-op.
     notify-migration-failure:

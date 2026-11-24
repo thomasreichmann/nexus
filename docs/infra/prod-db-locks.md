@@ -36,7 +36,7 @@ Still blocked on a lock after 4 attempts. Find who holds it: docs/infra/prod-db-
 Post-merge then posts **Post-merge migration failed** to Discord. Act quickly:
 
 - Prod web keeps serving the previous deployment: the new one is built but
-  waits for the `Vercel - nexus-web: migrate-prod` Deployment Check (#556),
+  waits for the `Apply DB migrations (prod)` Deployment Check (#556),
   as does any later `main` deploy whose run hits the same lock. Free the
   lock, then re-run.
 - A lock held for minutes usually belongs to a session nobody is waiting on

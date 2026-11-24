@@ -94,21 +94,22 @@ is far worse than a build nobody needed.
 
 ### Production waits for the prod migration
 
-A `main` build is built but kept off the production domains until its commit
-carries a passing `Vercel - nexus-web: migrate-prod` status (#556). The
-`migrate-prod` job in `post-merge.yml` posts it after applying prod
-migrations, so prod never serves code whose migration failed or hasn't run
-yet (#550's outage). If the migration fails, prod stays on the previous
+A `main` build is built but kept off the production domains until the
+`Apply DB migrations (prod)` job in `post-merge.yml` succeeds on its commit
+(#556), so prod never serves code whose migration failed or hasn't run yet
+(#550's outage). The job fails, rather than being skipped, when the dev
+migration didn't succeed, because a skipped check counts as passing. If the migration fails, prod stays on the previous
 deployment, and re-running the failed job promotes the waiting one
 ([prod DB locks runbook](../../docs/infra/prod-db-locks.md)). For a hotfix
 that can't wait, **Force Promote** on the deployment page bypasses the check.
 It is also the fix for one rare case: three pushes inside a minute can cancel
 the middle one's queued `migrate-prod` (see the concurrency comment in
 `post-merge.yml`), and if the newest commit was skipped by turbo-ignore, the
-middle deployment waits with no status coming.
+middle deployment waits on a check that will never pass.
 
 The gate lives in the Vercel dashboard, where neither the repo nor Terraform
 can see it: nexus-web → Settings → Build and Deployment → Deployment Checks,
-with `Vercel - nexus-web: migrate-prod` required. Automatic production
-aliasing must stay on for the check to promote anything. Renaming the status
-in `post-merge.yml` silently drops the gate, so change both together.
+with the GitHub check `Apply DB migrations (prod)` required. Automatic
+production aliasing must stay on for the check to promote anything. Vercel
+matches the job name, so renaming the job in `post-merge.yml` silently drops
+the gate: change both together.
