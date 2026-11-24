@@ -6,10 +6,11 @@ on:
     workflow_dispatch:
 
 # Concurrency is per job, not per workflow (#556): each plane (dev branch,
-# migrations, worker deploys, e2e) still runs one merge at a time, in merge
-# order, but a merge's migrate-prod, which gates the web app's production
-# promotion, waits only for the previous migrate-prod, not for the previous
-# run's e2e tiers (5-15 min). GitHub keeps one queued entry per group and
+# migrations, worker deploys) still runs one merge at a time, in merge order,
+# but a merge's migrate-prod, which gates the web app's production promotion,
+# waits only for the previous migrate-prod, not for the previous run's other
+# jobs. (The e2e tiers live in post-merge-e2e.yml, which starts when this
+# workflow completes, so a recovery re-run never waits on them.) GitHub keeps one queued entry per group and
 # cancels the one a newer push replaces; a replaced migrate-prod ends
 # cancelled, so that commit's deployment never promotes. Harmless when the newer
 # commit has its own deployment, stuck when Vercel skipped building it
@@ -63,7 +64,7 @@ jobs:
                   DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     # Prod gates on the dev apply (same SQL against a schema-identical DB acts
-    # as a canary) but deliberately NOT on e2e-tests: e2e can fail for
+    # as a canary) but deliberately NOT on e2e (post-merge-e2e.yml): e2e can fail for
     # reasons unrelated to migrations (browsers, S3, Stripe), and gating prod
     # on it would leave prod drifted whenever e2e flakes.
     #
@@ -130,7 +131,7 @@ jobs:
     # deployment still needs a manual `vercel promote`: Vercel doesn't
     # re-evaluate it (tested on #569). A failed dev migration fails prod's too
     # (its first step).
-    # Same raw-curl Discord rail as the e2e job below; an unset secret
+    # Same raw-curl Discord rail as post-merge-e2e.yml; an unset secret
     # degrades to a no-op.
     notify-migration-failure:
         name: Notify Discord of a failed migration
@@ -200,7 +201,7 @@ jobs:
 
     # Gates on the dev deploy (same bundle, so a broken build or bad zip fails
     # there first) and on the prod migration, mirroring migrate-prod's canary
-    # ordering. Like migrate-prod, deliberately NOT gated on e2e-tests.
+    # ordering. Like migrate-prod, deliberately NOT gated on e2e.
     deploy-worker-prod:
         name: Deploy worker (prod)
         needs: [migrate-prod, deploy-worker]
@@ -229,111 +230,3 @@ jobs:
 
             - name: Build and deploy
               run: pnpm -F worker deploy:prod
-
-    # Smoke, admin and flows e2e tiers against dev (#384). Post-merge only, by
-    # decision: browser tiers flake for reasons unrelated to the change, so
-    # they alert instead of gating (the integration tier is the pre-merge
-    # gate). One job, tiers in sequence: they share one install, browser setup
-    # and build. Each tier signs up its own e2e users (#484), so the tiers no
-    # longer reset each other's, but the global jobs table is still shared:
-    # admin runs before flows because flows leaves generate-thumbnail rows
-    # there that the admin jobs spec reads (#419).
-    e2e-tests:
-        name: E2E Tests
-        needs: migrate
-        runs-on: ubuntu-latest
-        timeout-minutes: 40
-        concurrency:
-            group: post-merge-e2e-tests
-            cancel-in-progress: false
-        # e2e runs against a production build (next build + next start), so the
-        # build step and the test step both need these at build/runtime.
-        env:
-            NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
-            DATABASE_URL: ${{ secrets.DATABASE_URL }}
-            AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-            AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-            AWS_REGION: ${{ secrets.AWS_REGION }}
-            S3_BUCKET: ${{ secrets.S3_BUCKET }}
-            SQS_QUEUE_URL: ${{ secrets.SQS_QUEUE_URL }}
-            STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-            STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-            RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-            RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
-            BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
-
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
-
-            - name: Setup Node and pnpm
-              uses: ./.github/actions/setup-node-pnpm
-
-            - name: Get Playwright version
-              id: playwright-version
-              run: echo "version=$(pnpm -F web exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
-
-            - name: Cache Playwright browsers
-              uses: actions/cache@v4
-              with:
-                  path: ~/.cache/ms-playwright
-                  key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
-
-            - name: Install Playwright OS dependencies
-              timeout-minutes: 5
-              run: pnpm -F web exec playwright install-deps chromium
-
-            - name: Install Playwright browsers
-              timeout-minutes: 5
-              run: pnpm -F web exec playwright install chromium
-
-            # Build the production bundle (and workspace deps, including
-            # trpc-devtools) up front so a build failure fails fast here with
-            # full logs. The Playwright webServer rebuilds via the same turbo
-            # task, so this warms the cache and that rebuild is a no-op hit.
-            - name: Build app and workspace packages
-              run: pnpm exec turbo run build --filter=@nexus/web
-
-            # Each tier runs even if an earlier one failed (`!cancelled()`), so
-            # one red run reports every broken tier at once.
-            - name: Run smoke tests
-              id: smoke
-              run: pnpm -F web test:e2e:smoke
-
-            - name: Run admin tests
-              id: admin
-              if: ${{ !cancelled() }}
-              run: pnpm -F web test:e2e:admin
-
-            # Two workers, not the config's CI default of one: every flows spec
-            # file has its own dedicated user, so files run side by side safely.
-            # Measured on this runner (#499): the test phase went from ~128 s at
-            # 1 worker to ~78 s at 2, and 3-4 bought only ~3 s more, because
-            # the multipart-budget spec (~50 s) is then the floor.
-            - name: Run flows tests
-              id: flows
-              if: ${{ !cancelled() }}
-              run: pnpm -F web test:e2e:flows --workers=2
-
-            # Same raw-curl Discord rail as uptime.yml and
-            # notify-migration-failure; an unset secret degrades to a no-op,
-            # and the red run stays the primary alert.
-            - name: Notify Discord
-              if: failure()
-              env:
-                  DISCORD_ALERT_WEBHOOK_URL: ${{ secrets.DISCORD_ALERT_WEBHOOK_URL }}
-                  MESSAGE: >-
-                      **Post-merge e2e failed** on `${{ github.sha }}`:
-                      smoke ${{ steps.smoke.outcome }},
-                      admin ${{ steps.admin.outcome }},
-                      flows ${{ steps.flows.outcome }} —
-                      <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>
-              run: |
-                  if [ -z "$DISCORD_ALERT_WEBHOOK_URL" ]; then
-                      echo "DISCORD_ALERT_WEBHOOK_URL not configured — skipping Discord notification."
-                      exit 0
-                  fi
-                  jq -n --arg content "$MESSAGE" '{content: $content}' |
-                      curl --silent --show-error --max-time 15 \
-                          -H 'Content-Type: application/json' \
-                          -d @- "$DISCORD_ALERT_WEBHOOK_URL"

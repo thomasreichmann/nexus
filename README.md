@@ -188,7 +188,7 @@ pnpm -F db db:custom <name>   # Empty migration for RLS / SQL functions
     Test data is seeded through typed back-door helpers (`@nexus/db/test-db`). Only the behavior under test goes through the UI.
 - **Coverage gate** — `pnpm -F web e2e:coverage --check` fails CI when a page or use-case ships without a test (see the highlights above).
 
-CI ([`.github/workflows/`](.github/workflows)) runs lint/typecheck/build/unit tests plus the real-Postgres integration tier on every PR (`ci.yml`), gates PRs on a linked issue (`pr-check.yml`), checks for migration drift (`migration-drift.yml`), migrates and then runs the smoke, admin and flows e2e tiers after merge (`post-merge.yml`), and publishes `trpc-devtools` to npm with provenance (`publish-trpc-devtools.yml`).
+CI ([`.github/workflows/`](.github/workflows)) runs lint/typecheck/build/unit tests plus the real-Postgres integration tier on every PR (`ci.yml`), gates PRs on a linked issue (`pr-check.yml`), checks for migration drift (`migration-drift.yml`), migrates and deploys after merge (`post-merge.yml`), then runs the smoke, admin and flows e2e tiers against dev (`post-merge-e2e.yml`), and publishes `trpc-devtools` to npm with provenance (`publish-trpc-devtools.yml`).
 
 ## Status
 
