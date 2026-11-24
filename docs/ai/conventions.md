@@ -138,6 +138,12 @@ still SELECTed the dropped column for another ~7 minutes on prod.
 - **Every migration must be compatible with the bundle deployed both before
   and after its merge.** Migrations are the fastest deploy plane (dev + prod
   within ~1 minute of merge); Vercel and the worker deploy follow later.
+- **Code never goes live on prod before its migration** (#556). The prod
+  worker deploy needs `migrate-prod`, and the web app's production promotion
+  waits on it through a Vercel Deployment Check (`apps/web/README.md` →
+  Deployment). So a schema
+  change and the code that reads it ship in one PR. If the prod migration
+  fails, prod stays on the previous deployment until a re-run lands it.
 - **Destructive DDL ships alone** (`DROP TABLE`/`DROP COLUMN`, `RENAME`,
   `SET DATA TYPE`): first merge the code that stops referencing the object
   and wait until it is fully deployed on every plane (web + worker), then

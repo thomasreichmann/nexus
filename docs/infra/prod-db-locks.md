@@ -1,7 +1,7 @@
 ---
 title: Prod DB Locks
 created: 2026-10-20
-updated: 2026-10-20
+updated: 2026-11-24
 status: active
 tags:
     - infra
@@ -35,10 +35,10 @@ Still blocked on a lock after 4 attempts. Find who holds it: docs/infra/prod-db-
 
 Post-merge then posts **Post-merge migration failed** to Discord. Act quickly:
 
-- Vercel deploys `main` independently of the migration (#556), so prod may
-  already be serving code that needs the migration. If prod pages are
-  failing, roll back first with `vercel rollback`, which returns production
-  to the previous deployment. Then free the lock.
+- Prod web keeps serving the previous deployment: the new one is built but
+  waits for the `Vercel - nexus-web: migrate-prod` Deployment Check (#556),
+  as does any later `main` deploy whose run hits the same lock. Free the
+  lock, then re-run.
 - A lock held for minutes usually belongs to a session nobody is waiting on
   anymore.
 
@@ -114,12 +114,12 @@ Run the holder query again: no rows means the lock is free.
 ## Re-run and recover
 
 1. Re-run the failed jobs:
-   `gh run rerun <run-id> --failed`. The prod worker deploy waits for the prod
-   migration, so it goes out on this re-run as well.
+   `gh run rerun <run-id> --failed`. The prod worker deploy and the web
+   app's production promotion both wait for the prod migration, so they go
+   out on this re-run as well.
 2. Check the column, index or table landed:
    `prod_sql "select column_name from information_schema.columns where table_name = 'files'"`.
-3. If you rolled Vercel back while the migration was missing, put the new
-   deployment back with `vercel promote <deployment-url>`, then check
+3. Check the waiting deployment went live (`vercel ls --prod`), then
    `https://nexus.thomasar.dev/api/health`.
 
 ## Related
