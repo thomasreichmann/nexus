@@ -77,8 +77,10 @@ jobs:
     # The job must never end as `skipped`: GitHub counts a skipped check as
     # passing, so a failed dev migration would promote code whose prod
     # migration never ran. Hence always() plus the first step, which turns
-    # "dev didn't succeed" into a failure. always() also means cancelling the
-    # whole run doesn't stop this job; cancel the job itself.
+    # "dev didn't succeed" into a failure. always() also means a plain cancel
+    # doesn't stop this job once it runs (GitHub keeps jobs whose `if` still
+    # holds), and there is no per-job cancel. To stop it, force-cancel the run:
+    # gh api -X POST repos/{owner}/{repo}/actions/runs/<run-id>/force-cancel
     #
     # Why the job and not a commit status: Vercel's check picker lists check
     # runs, and the status #567 posted from here never appeared in it. Vercel's
